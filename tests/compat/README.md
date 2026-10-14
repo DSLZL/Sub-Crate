@@ -78,7 +78,10 @@ Six `operations` scenarios and a separate migrated-data restart cover default
 CORS/preflight/HEAD/404 behavior, download and flow cache hits/noCache/refresh,
 remote failure policies, Base64/invalid imports and legacy migrations. Three
 additional listeners exercise configured CORS, wildcard CORS and branded local
-origins with frontend-consumed metadata. The orchestrated total is 104 scenarios.
+origins with frontend-consumed metadata. Eight `gist` scenarios use a local
+controlled provider to verify create/update/delete/restore, placeholder retention,
+provider errors, plaintext/Base64 backup payloads, token strategies and no-change
+upload reuse. The orchestrated total is 112 scenarios.
 `--suite operations` includes its restart; selecting `operations-restart` alone
 requires the D06 state seed. `cors-configured`, `cors-wildcard` and `cors-branded`
 automatically set their documented fixture environment in `reference.py`.
@@ -110,6 +113,17 @@ converts legacy maps only when schemaVersion is falsy: truthy `1.0` updates the
 version marker while retaining the old shape. These frozen behaviors are explicit
 fixtures; they are not additional approved reference fixes.
 
+Provider fixtures seed only the controlled service, through `upstream_gists`.
+`upstream_state` compares its complete stored files; `base64_backup` strictly
+decodes the selected uploaded backup and compares all JSON fields/types. These
+checks retain actual outbound request evidence and reuse captured times from a
+subsequent public response. Plaintext backup replaces the token with its legacy
+placeholder; Base64 preserves the token. Both omit the uploaded age secret while
+retaining the local key. GET settings queries Gist and writes store status when
+artifactStore is absent. An unchanged upload must make no write request. These
+are controlled-provider contracts; live-provider acceptance, GitLab, encryption,
+write-error recovery and scheduling remain separate checks.
+
 The Rust example evaluates unchanged `scripts/ip-flag-node.js` with controlled
 HTTP, request headers, memory-backed storage, locked lodash/YAML/Buffer/Base64
 helpers, promises/timers, and asynchronous Rust-to-JS callback re-entry. It
@@ -131,7 +145,7 @@ remain unverified; passing the contained experiment does not establish them.
 
 `rust-compat-native.yml` runs the probe, runner self-checks, thirteen Node HTTP
 scenarios, one restart, two merged-share, 66 conversion, twelve resource, six
-operation, one migrated-data restart and three configured-CORS scenarios,
+operation, one migrated-data restart, three configured-CORS and eight Gist scenarios,
 plus the frozen unit baseline on native `ubuntu-24.04`,
 `ubuntu-24.04-arm`, and `windows-2025`. Each platform uploads independent logs
 and JSON summaries even on failure. A successful probe is not a full Rust

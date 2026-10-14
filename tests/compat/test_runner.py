@@ -93,6 +93,31 @@ class RunnerTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(AssertionError):
                 runner.check_response({**response, "headers": {"access-control-allow-origin": value}}, expected)
 
+    def test_provider_state_and_base64_payload_mismatch_fail(self):
+        import base64
+        from upstream import ControlledUpstream
+        payload = {"settings": {}, "unknown": {"nil": None, "zero": 0, "flag": False}}
+        stored = {"backup": {"description": "fixture", "files": {"Sub-Store": {"content": base64.b64encode(json.dumps(payload).encode()).decode()}}}}
+        cases = [{"id": "provider-check", "source": "self-check", "upstream_gists": stored, "steps": [
+            {"path": "/unused", "expect": {"status": 200}, "upstream_state": copy.deepcopy(stored),
+             "base64_backup": {"gist": "backup", "file": "Sub-Store", "json": payload}}
+        ]}]
+        for mutation in (None, "wrong-provider-state", "wrong-payload", "invalid-base64"):
+            altered = copy.deepcopy(cases)
+            if mutation == "wrong-provider-state":
+                altered[0]["steps"][0]["upstream_state"]["backup"]["description"] = "wrong"
+            elif mutation == "wrong-payload":
+                altered[0]["steps"][0]["base64_backup"]["json"]["unknown"]["flag"] = 0
+            elif mutation == "invalid-base64":
+                altered[0]["upstream_gists"]["backup"]["files"]["Sub-Store"]["content"] = "not base64!"
+            with self.subTest(mutation=mutation), ControlledUpstream() as upstream:
+                with patch("runner.request", return_value={"status": 200, "headers": {}, "body": "{}"}):
+                    result = runner.run_cases("http://127.0.0.1:1", None, altered, upstream)
+                self.assertEqual(result[0]["status"], "passed" if mutation is None else "failed")
+                if mutation is None:
+                    upstream.gists["backup"]["description"] = "later-change"
+                    self.assertEqual(result[0]["steps"][0]["upstream_state"], stored)
+
     def run_cli(self, fixtures, manifest, url, state_dir):
         fixtures_path = state_dir / "cases.json"
         manifest_path = state_dir / "manifest.json"

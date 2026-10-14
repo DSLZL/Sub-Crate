@@ -135,7 +135,7 @@ def main():
                     ("conversion", "contracts-conversion", {}), ("resources", "contracts-resources", {}),
                     ("operations", "contracts-operations", {}), ("operations-restart", "contracts-operations-restart", {}),
                     ("cors-configured", "contracts-cors-configured", {}), ("cors-wildcard", "contracts-cors-wildcard", {}),
-                    ("cors-branded", "contracts-cors-branded", {})])
+                    ("cors-branded", "contracts-cors-branded", {}), ("gist", "contracts-gist", {})])
             elif args.suite == "operations":
                 phases.append(("operations-restart", "contracts-operations-restart", {}))
             elif args.suite == "merged-share":

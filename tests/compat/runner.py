@@ -1,5 +1,7 @@
 """Explicit-URL contract checks. A scoped Node baseline is never Rust parity."""
 import argparse
+import base64
+import copy
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -135,6 +137,10 @@ def run_cases(base_url, state_dir, cases, upstream=None):
     for case in cases:
         record = {"id": case["id"], "source": case["source"], "status": "passed", "steps": []}
         try:
+            if "upstream_gists" in case:
+                if upstream is None:
+                    raise ValueError("Gist fixture requires a controlled upstream")
+                upstream.gists = copy.deepcopy(substitute(case["upstream_gists"], upstream.url))
             for original in case["steps"]:
                 step = substitute(original, upstream.url) if upstream else original
                 upstream_offset = len(upstream.requests) if upstream else 0
@@ -147,6 +153,16 @@ def run_cases(base_url, state_dir, cases, upstream=None):
                     if state_dir is None:
                         raise ValueError("Persisted state assertion requires --state-dir")
                     observed["state"] = json.loads((state_dir / "sub-store.json").read_text(encoding="utf-8"))
+                if "upstream_state" in step:
+                    if upstream is None:
+                        raise ValueError("Provider state assertion requires a controlled upstream")
+                    observed["upstream_state"] = copy.deepcopy(upstream.gists)
+                if "base64_backup" in step:
+                    if upstream is None:
+                        raise ValueError("Backup assertion requires a controlled upstream")
+                    backup = step["base64_backup"]
+                    content = upstream.gists[backup["gist"]]["files"][backup["file"]]["content"]
+                    observed["base64_backup"] = json.loads(base64.b64decode(content, validate=True))
                 if "capture" in step:
                     captured = capture_values(response, step["capture"])
                     assert not captures.keys() & captured.keys(), "Capture names must be unique"
@@ -156,6 +172,10 @@ def run_cases(base_url, state_dir, cases, upstream=None):
                 check_response(response, step["expect"])
                 if "state" in step:
                     check_json(observed["state"], step["state"], subset=True)
+                if "upstream_state" in step:
+                    check_json(observed["upstream_state"], step["upstream_state"])
+                if "base64_backup" in step:
+                    check_json(observed["base64_backup"], step["base64_backup"]["json"])
                 check_json(outgoing, step.get("upstream", []), subset=True, path="upstream")
         except Exception as error:
             record.update(status="failed", error=f"{type(error).__name__}: {error}")

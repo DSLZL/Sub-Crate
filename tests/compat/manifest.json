@@ -129,6 +129,14 @@
       "E03-cors-configured-whitelist",
       "E04-cors-wildcard",
       "E05-cors-branded-local-and-metadata",
+      "Y03-gist-artifact-create-update-delete",
+      "Y04-gist-restore-and-refresh",
+      "Y05-gist-provider-errors",
+      "D09-gist-download-token-strategies",
+      "D10-gist-plaintext-upload",
+      "D11-gist-base64-upload",
+      "D12-gist-backup-validation",
+      "D13-gist-base64-download",
       "M1-complete-inventory-and-fixtures"
     ],
     "conversion": [
@@ -232,9 +240,19 @@
     ],
     "cors-branded": [
       "E05-cors-branded-local-and-metadata"
+    ],
+    "gist": [
+      "Y03-gist-artifact-create-update-delete",
+      "Y04-gist-restore-and-refresh",
+      "Y05-gist-provider-errors",
+      "D09-gist-download-token-strategies",
+      "D10-gist-plaintext-upload",
+      "D11-gist-base64-upload",
+      "D12-gist-backup-validation",
+      "D13-gist-base64-download"
     ]
   },
-  "coverage_state": "104 scoped scenarios; full suite intentionally fails until M1 inventory and fixtures are complete",
+  "coverage_state": "112 scoped scenarios; full suite intentionally fails until M1 inventory and fixtures are complete",
   "pending_domains": [
     "artifacts",
     "files",
