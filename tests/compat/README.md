@@ -62,6 +62,20 @@ It then starts a third listener in merged mode with `/backend` as the admin
 prefix and runs two `merged-share` scenarios at the public origin. These verify
 token/path binding, GET-only access, count consumption, expiry and share archive
 restore. Admin-prefixed access and public-origin access are asserted separately.
+Finally, a fresh standalone listener runs `conversion`: 66 scenarios and 117
+requests. This includes every one of the 33 output names/aliases through both
+the parser API and a download URL, four rule output targets, existing parser/
+preprocessor samples, ordered built-in and general-JS processors, collection
+preview/download, target/platform/header precedence, missing resources and
+forbidden share overrides. `--suite conversion` runs this slice independently.
+The SS output samples cover alias dispatch, not every protocol/option combination.
+Expected JSON fields and output bytes are fixed fixtures, reviewed against the
+frozen source; acceptance never regenerates expectations from its target.
+
+Frozen negative behavior remains explicit: unsupported rules can produce
+500/null-length errors in QX/Surge/Loon; a failed function script can fall back
+to a shortcut and retain the original nodes, while a top-level throw fails.
+Shortcut filters require an explicit return; omitting it selects no nodes.
 
 The Rust example evaluates unchanged `scripts/ip-flag-node.js` with controlled
 HTTP, request headers, memory-backed storage, locked lodash/YAML/Buffer/Base64
@@ -83,7 +97,7 @@ Production isolation, complete host semantics and per-request resource cleanup
 remain unverified; passing the contained experiment does not establish them.
 
 `rust-compat-native.yml` runs the probe, runner self-checks, thirteen Node HTTP
-scenarios, one restart and two merged-share scenarios, and the frozen unit baseline on native `ubuntu-24.04`,
+scenarios, one restart, two merged-share and 66 conversion scenarios, plus the frozen unit baseline on native `ubuntu-24.04`,
 `ubuntu-24.04-arm`, and `windows-2025`. Each platform uploads independent logs
 and JSON summaries even on failure. A successful probe is not a full Rust
 compatibility pass. Docker and all frontend workflows remain separate gates.
@@ -120,5 +134,6 @@ node tests/compat/inventory.cjs /path/to/pinned-frontend-checkout /path/to/new-i
 ```
 
 The inventory command rejects missing/stale call mappings, backend routes and
-fixture IDs. Its 114 direct URL expressions still require complete builder and
+fixture IDs, and missing parse/download checks for any exported proxy output alias
+or base/unsupported rule producer. Its 114 direct URL expressions still require complete builder and
 parameter analysis; the two mapped builders are only an initial slice.

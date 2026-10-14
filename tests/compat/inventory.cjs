@@ -111,7 +111,21 @@ for (const filename of files(path.join(frontend, 'src'), ['.ts', '.js', '.vue'])
   }
 }
 const mapped = new Set();
-const fixtureIds = new Set(JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/http-cases.json'), 'utf8')).map(item => item.id));
+const fixtures = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/http-cases.json'), 'utf8'));
+const fixtureIds = new Set(fixtures.map(item => item.id));
+for (const format of report.proxy_formats) {
+  const id = `P01-output-${format.alias}`;
+  const fixture = fixtures.find(item => item.id === id);
+  assert.ok(fixture, `Missing proxy output alias fixture: ${format.alias}`);
+  assert.ok(fixture.steps.some(step => step.path === '/api/proxy/parse' && step.body?.client === format.alias && step.expect.status === 200), id);
+  assert.ok(fixture.steps.some(step => step.path.startsWith(`/download/unused/${format.alias}?`) && step.expect.status === 200), id);
+  Object.assign(format, {fixture: id, coverage: 'one SS input through parse and download routes', execution: 'not_evaluated'});
+}
+for (const producer of report.registries['backend/src/core/rule-utils/producers.js']) {
+  const ids = [`R01-output-${producer.key}`, `R02-unsupported-${producer.key}`];
+  for (const id of ids) assert.ok(fixtureIds.has(id), `Missing rule producer fixture: ${id}`);
+  Object.assign(producer, {fixtures: ids, coverage: 'base and unsupported rules', execution: 'not_evaluated'});
+}
 for (const request of report.frontend_requests) {
   const api = request.source.match(/^frontend\/src\/api\/([^/]+)\//)?.[1];
   const key = `${api}.${request.caller}`;

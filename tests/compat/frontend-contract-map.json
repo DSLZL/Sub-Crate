@@ -42,13 +42,13 @@
     "subs.getCollections": {"method": "GET", "paths": ["/api/collections"], "http_cases": [], "ui_cases": [], "owner": "M2"},
     "subs.getOne": {"method": "GET", "paths": ["/api/sub/:name", "/api/collection/:name"], "http_cases": ["C01-subscription-crud", "C02-rename-references"], "ui_cases": [], "owner": "M2"},
     "subs.exportOne": {"method": "GET", "paths": ["/api/sub/:name", "/api/collection/:name"], "http_cases": ["C01-subscription-crud"], "ui_cases": [], "owner": "M4", "query": {"raw": 1}, "remaining": ["Collection raw export"]},
-    "subs.downloadOne": {"method": "GET", "paths": ["/download/:name"], "http_cases": [], "ui_cases": [], "owner": "M3", "remaining": ["noCache refresh and outgoing requests"]},
+    "subs.downloadOne": {"method": "GET", "paths": ["/download/:name"], "http_cases": ["P05-download-collection-and-query-precedence"], "ui_cases": [], "owner": "M3", "remaining": ["noCache refresh and outgoing requests"]},
     "subs.getFlow": {"method": "GET", "paths": ["/api/sub/flow/:name"], "http_cases": ["U01-flow-cache"], "ui_cases": [], "owner": "M4"},
     "subs.getSubInfo": {"method": "POST", "paths": ["/api/utils/node-info"], "http_cases": [], "ui_cases": [], "owner": "M4", "note": "Subscription-node information remains required; this is not a Node.js capability."},
     "subs.createSub": {"method": "POST", "paths": ["/api/subs", "/api/collections"], "http_cases": ["C01-subscription-crud", "C02-rename-references"], "ui_cases": ["FE02-create-subscription"], "owner": "M2"},
     "subs.editSub": {"method": "PATCH", "paths": ["/api/sub/:name", "/api/collection/:name"], "http_cases": ["C02-rename-references"], "ui_cases": ["FE03-reopen-rename-subscription"], "owner": "M2", "remaining": ["Collection patch"]},
-    "subs.deleteSub": {"method": "DELETE", "paths": ["/api/sub/:name", "/api/collection/:name"], "http_cases": ["C02-rename-references"], "ui_cases": [], "owner": "M2", "query_domains": {"mode": ["archive", "permanent", "omitted"]}, "remaining": ["Collection delete, subscription archive"]},
-    "subs.compareSub": {"method": "POST", "paths": ["/api/preview/sub", "/api/preview/collection", "/api/preview/file"], "http_cases": [], "ui_cases": ["FE04-preview-subscription", "FE07-preview-file"], "owner": "M3", "remaining": ["Collection preview and processor/error variants"]},
+    "subs.deleteSub": {"method": "DELETE", "paths": ["/api/sub/:name", "/api/collection/:name"], "http_cases": ["C02-rename-references", "P05-download-collection-and-query-precedence"], "ui_cases": [], "owner": "M2", "query_domains": {"mode": ["archive", "permanent", "omitted"]}, "remaining": ["Subscription/collection archive"]},
+    "subs.compareSub": {"method": "POST", "paths": ["/api/preview/sub", "/api/preview/collection", "/api/preview/file"], "http_cases": ["P03-process-filter-rename-sort", "P03-process-full-script", "P03-process-script-shortcut", "P03-process-script-top-level-error", "P05-download-collection-and-query-precedence"], "ui_cases": ["FE04-preview-subscription", "FE07-preview-file"], "owner": "M3", "remaining": ["File processor/error variants and other built-in processors"]},
     "subs.sortSub": {"method": "PUT", "paths": ["/api/subs", "/api/collections", "/api/artifacts"], "http_cases": [], "ui_cases": [], "owner": "M2", "note": "Legacy version branch remains reachable in frozen frontend; artifacts are owned by M4."},
     "subs.newSortSub": {"method": "POST", "paths": ["/api/sort/subs", "/api/sort/collections", "/api/sort/files", "/api/sort/artifacts"], "http_cases": [], "ui_cases": [], "owner": "M4"}
   },
@@ -61,7 +61,7 @@
     {"callers": ["share.createShare", "share.deleteShare", "share.getShares"], "type_values": ["sub", "col", "file"], "sources": ["src/utils/share.ts:341,456", "src/api/share/index.ts:23,30"], "remaining": ["Sub/collection token resource bindings"]}
   ],
   "direct_builders": [
-    {"source": "src/utils/share.ts:454,469", "paths": ["/share/sub/:name", "/share/col/:name", "/share/file/:name"], "parameters": ["token", "shareBaseUrl", "secretPath"], "http_cases": ["T02-merged-share-count-and-origin", "T03-share-datetime-archive"], "ui_cases": ["FE09-open-public-share"], "remaining": ["Custom share host/prefix, sub and col output"]},
-    {"source": "src/components/SubListItem.vue:974", "paths": ["/download/:name", "/download/collection/:name"], "parameters": ["platform and copied-query options"], "http_cases": [], "remaining": ["All conversion targets and link builders"]}
+    {"source": "src/utils/share.ts:454,469", "paths": ["/share/sub/:name", "/share/col/:name", "/share/file/:name"], "parameters": ["token", "shareBaseUrl", "secretPath"], "http_cases": ["T02-merged-share-count-and-origin", "T03-share-datetime-archive", "P05-download-collection-and-query-precedence"], "ui_cases": ["FE09-open-public-share"], "remaining": ["Custom share host/prefix, merged sub/col token bindings"]},
+    {"source": "src/components/SubListItem.vue:974", "paths": ["/download/:name", "/download/collection/:name"], "parameters": ["platform and copied-query options"], "http_cases": ["P05-download-collection-and-query-precedence"], "remaining": ["Non-SS export protocols/options and UI link builders"]}
   ]
 }

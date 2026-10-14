@@ -196,5 +196,518 @@
       {"method": "DELETE", "path": "/api/token/future?type=file&name=merged-share&mode=permanent", "expect": {"status": 200, "json": {"status": "success"}}},
       {"method": "DELETE", "path": "/api/file/merged-share?mode=permanent", "expect": {"status": 200, "json": {"status": "success"}}, "state": {"files": [], "tokens": [], "archives": []}}
     ]
+  },
+  {
+    "id": "P01-output-qx",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:23",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "qx"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "shadowsocks=127.0.0.1:8388,method=aes-128-gcm,password=pass,udp-relay=true,tag=fixture"}}}},
+      {"path": "/download/unused/qx?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "shadowsocks=127.0.0.1:8388,method=aes-128-gcm,password=pass,udp-relay=true,tag=fixture"}}
+    ]
+  },
+  {
+    "id": "P01-output-QX",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:24",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "QX"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "shadowsocks=127.0.0.1:8388,method=aes-128-gcm,password=pass,udp-relay=true,tag=fixture"}}}},
+      {"path": "/download/unused/QX?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "shadowsocks=127.0.0.1:8388,method=aes-128-gcm,password=pass,udp-relay=true,tag=fixture"}}
+    ]
+  },
+  {
+    "id": "P01-output-QuantumultX",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:25",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "QuantumultX"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "shadowsocks=127.0.0.1:8388,method=aes-128-gcm,password=pass,udp-relay=true,tag=fixture"}}}},
+      {"path": "/download/unused/QuantumultX?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "shadowsocks=127.0.0.1:8388,method=aes-128-gcm,password=pass,udp-relay=true,tag=fixture"}}
+    ]
+  },
+  {
+    "id": "P01-output-surge",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:26",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "surge"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "fixture=ss,127.0.0.1,8388,encrypt-method=aes-128-gcm,password=\"pass\",udp-relay=true"}}}},
+      {"path": "/download/unused/surge?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "fixture=ss,127.0.0.1,8388,encrypt-method=aes-128-gcm,password=\"pass\",udp-relay=true"}}
+    ]
+  },
+  {
+    "id": "P01-output-Surge",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:27",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "Surge"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "fixture=ss,127.0.0.1,8388,encrypt-method=aes-128-gcm,password=\"pass\",udp-relay=true"}}}},
+      {"path": "/download/unused/Surge?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "fixture=ss,127.0.0.1,8388,encrypt-method=aes-128-gcm,password=\"pass\",udp-relay=true"}}
+    ]
+  },
+  {
+    "id": "P01-output-SurgeMac",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:28",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "SurgeMac"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "fixture=ss,127.0.0.1,8388,encrypt-method=aes-128-gcm,password=\"pass\",udp-relay=true"}}}},
+      {"path": "/download/unused/SurgeMac?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "fixture=ss,127.0.0.1,8388,encrypt-method=aes-128-gcm,password=\"pass\",udp-relay=true"}}
+    ]
+  },
+  {
+    "id": "P01-output-Loon",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:29",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "Loon"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "fixture=shadowsocks,127.0.0.1,8388,aes-128-gcm,\"pass\",udp=true"}}}},
+      {"path": "/download/unused/Loon?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "fixture=shadowsocks,127.0.0.1,8388,aes-128-gcm,\"pass\",udp=true"}}
+    ]
+  },
+  {
+    "id": "P01-output-Clash",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:30",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "Clash"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}}},
+      {"path": "/download/unused/Clash?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}
+    ]
+  },
+  {
+    "id": "P01-output-meta",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:31",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "meta"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}}},
+      {"path": "/download/unused/meta?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}
+    ]
+  },
+  {
+    "id": "P01-output-clashmeta",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:32",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "clashmeta"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}}},
+      {"path": "/download/unused/clashmeta?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}
+    ]
+  },
+  {
+    "id": "P01-output-clash.meta",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:33",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "clash.meta"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}}},
+      {"path": "/download/unused/clash.meta?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}
+    ]
+  },
+  {
+    "id": "P01-output-Clash.Meta",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:34",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "Clash.Meta"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}}},
+      {"path": "/download/unused/Clash.Meta?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}
+    ]
+  },
+  {
+    "id": "P01-output-ClashMeta",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:35",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "ClashMeta"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}}},
+      {"path": "/download/unused/ClashMeta?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}
+    ]
+  },
+  {
+    "id": "P01-output-mihomo",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:36",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "mihomo"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}}},
+      {"path": "/download/unused/mihomo?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}
+    ]
+  },
+  {
+    "id": "P01-output-Mihomo",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:37",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "Mihomo"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}}},
+      {"path": "/download/unused/Mihomo?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}
+    ]
+  },
+  {
+    "id": "P01-output-uri",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:38",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "uri"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388?udp=1#fixture"}}}},
+      {"path": "/download/unused/uri?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388?udp=1#fixture"}}
+    ]
+  },
+  {
+    "id": "P01-output-URI",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:39",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "URI"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388?udp=1#fixture"}}}},
+      {"path": "/download/unused/URI?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388?udp=1#fixture"}}
+    ]
+  },
+  {
+    "id": "P01-output-v2",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:40",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "v2"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "c3M6Ly9ZV1Z6TFRFeU9DMW5ZMjA2Y0dGemN3PT1AMTI3LjAuMC4xOjgzODg/dWRwPTEjZml4dHVyZQ=="}}}},
+      {"path": "/download/unused/v2?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "c3M6Ly9ZV1Z6TFRFeU9DMW5ZMjA2Y0dGemN3PT1AMTI3LjAuMC4xOjgzODg/dWRwPTEjZml4dHVyZQ=="}}
+    ]
+  },
+  {
+    "id": "P01-output-v2ray",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:41",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "v2ray"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "c3M6Ly9ZV1Z6TFRFeU9DMW5ZMjA2Y0dGemN3PT1AMTI3LjAuMC4xOjgzODg/dWRwPTEjZml4dHVyZQ=="}}}},
+      {"path": "/download/unused/v2ray?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "c3M6Ly9ZV1Z6TFRFeU9DMW5ZMjA2Y0dGemN3PT1AMTI3LjAuMC4xOjgzODg/dWRwPTEjZml4dHVyZQ=="}}
+    ]
+  },
+  {
+    "id": "P01-output-V2Ray",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:42",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "V2Ray"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "c3M6Ly9ZV1Z6TFRFeU9DMW5ZMjA2Y0dGemN3PT1AMTI3LjAuMC4xOjgzODg/dWRwPTEjZml4dHVyZQ=="}}}},
+      {"path": "/download/unused/V2Ray?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "c3M6Ly9ZV1Z6TFRFeU9DMW5ZMjA2Y0dGemN3PT1AMTI3LjAuMC4xOjgzODg/dWRwPTEjZml4dHVyZQ=="}}
+    ]
+  },
+  {
+    "id": "P01-output-json",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:43",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "json"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "[\n  {\n    \"type\": \"ss\",\n    \"skip-cert-verify\": false,\n    \"udp\": true,\n    \"server\": \"127.0.0.1\",\n    \"port\": 8388,\n    \"cipher\": \"aes-128-gcm\",\n    \"password\": \"pass\",\n    \"name\": \"fixture\"\n  }\n]"}}}},
+      {"path": "/download/unused/json?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "[\n  {\n    \"type\": \"ss\",\n    \"skip-cert-verify\": false,\n    \"udp\": true,\n    \"server\": \"127.0.0.1\",\n    \"port\": 8388,\n    \"cipher\": \"aes-128-gcm\",\n    \"password\": \"pass\",\n    \"name\": \"fixture\",\n    \"_subName\": \"fakeSub\"\n  }\n]"}}
+    ]
+  },
+  {
+    "id": "P01-output-JSON",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:44",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "JSON"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "[\n  {\n    \"type\": \"ss\",\n    \"skip-cert-verify\": false,\n    \"udp\": true,\n    \"server\": \"127.0.0.1\",\n    \"port\": 8388,\n    \"cipher\": \"aes-128-gcm\",\n    \"password\": \"pass\",\n    \"name\": \"fixture\"\n  }\n]"}}}},
+      {"path": "/download/unused/JSON?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "application/json; charset=utf-8"}, "body": "[\n  {\n    \"type\": \"ss\",\n    \"skip-cert-verify\": false,\n    \"udp\": true,\n    \"server\": \"127.0.0.1\",\n    \"port\": 8388,\n    \"cipher\": \"aes-128-gcm\",\n    \"password\": \"pass\",\n    \"name\": \"fixture\",\n    \"_subName\": \"fakeSub\"\n  }\n]"}}
+    ]
+  },
+  {
+    "id": "P01-output-stash",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:45",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "stash"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}}},
+      {"path": "/download/unused/stash?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}
+    ]
+  },
+  {
+    "id": "P01-output-Stash",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:46",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "Stash"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}}},
+      {"path": "/download/unused/Stash?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}
+    ]
+  },
+  {
+    "id": "P01-output-shadowrocket",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:47",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "shadowrocket"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}}},
+      {"path": "/download/unused/shadowrocket?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}
+    ]
+  },
+  {
+    "id": "P01-output-Shadowrocket",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:48",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "Shadowrocket"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}}},
+      {"path": "/download/unused/Shadowrocket?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}
+    ]
+  },
+  {
+    "id": "P01-output-ShadowRocket",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:49",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "ShadowRocket"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}}},
+      {"path": "/download/unused/ShadowRocket?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}
+    ]
+  },
+  {
+    "id": "P01-output-surfboard",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:50",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "surfboard"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "fixture=ss,127.0.0.1,8388,encrypt-method=aes-128-gcm,password=\"pass\",udp-relay=true"}}}},
+      {"path": "/download/unused/surfboard?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "fixture=ss,127.0.0.1,8388,encrypt-method=aes-128-gcm,password=\"pass\",udp-relay=true"}}
+    ]
+  },
+  {
+    "id": "P01-output-Surfboard",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:51",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "Surfboard"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "fixture=ss,127.0.0.1,8388,encrypt-method=aes-128-gcm,password=\"pass\",udp-relay=true"}}}},
+      {"path": "/download/unused/Surfboard?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "fixture=ss,127.0.0.1,8388,encrypt-method=aes-128-gcm,password=\"pass\",udp-relay=true"}}
+    ]
+  },
+  {
+    "id": "P01-output-singbox",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:52",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "singbox"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "{\n  \"outbounds\": [\n    {\n      \"tag\": \"fixture\",\n      \"type\": \"shadowsocks\",\n      \"server\": \"127.0.0.1\",\n      \"server_port\": 8388,\n      \"method\": \"aes-128-gcm\",\n      \"password\": \"pass\"\n    }\n  ],\n  \"endpoints\": []\n}"}}}},
+      {"path": "/download/unused/singbox?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "{\n  \"outbounds\": [\n    {\n      \"tag\": \"fixture\",\n      \"type\": \"shadowsocks\",\n      \"server\": \"127.0.0.1\",\n      \"server_port\": 8388,\n      \"method\": \"aes-128-gcm\",\n      \"password\": \"pass\"\n    }\n  ],\n  \"endpoints\": []\n}"}}
+    ]
+  },
+  {
+    "id": "P01-output-sing-box",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:53",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "sing-box"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "{\n  \"outbounds\": [\n    {\n      \"tag\": \"fixture\",\n      \"type\": \"shadowsocks\",\n      \"server\": \"127.0.0.1\",\n      \"server_port\": 8388,\n      \"method\": \"aes-128-gcm\",\n      \"password\": \"pass\"\n    }\n  ],\n  \"endpoints\": []\n}"}}}},
+      {"path": "/download/unused/sing-box?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "{\n  \"outbounds\": [\n    {\n      \"tag\": \"fixture\",\n      \"type\": \"shadowsocks\",\n      \"server\": \"127.0.0.1\",\n      \"server_port\": 8388,\n      \"method\": \"aes-128-gcm\",\n      \"password\": \"pass\"\n    }\n  ],\n  \"endpoints\": []\n}"}}
+    ]
+  },
+  {
+    "id": "P01-output-egern",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:54",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "egern"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "proxies:\n  - {\"shadowsocks\":{\"name\":\"fixture\",\"method\":\"aes-128-gcm\",\"server\":\"127.0.0.1\",\"port\":8388,\"password\":\"pass\",\"tfo\":false,\"udp_relay\":true}}\n"}}}},
+      {"path": "/download/unused/egern?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "proxies:\n  - {\"shadowsocks\":{\"name\":\"fixture\",\"method\":\"aes-128-gcm\",\"server\":\"127.0.0.1\",\"port\":8388,\"password\":\"pass\",\"tfo\":false,\"udp_relay\":true}}\n"}}
+    ]
+  },
+  {
+    "id": "P01-output-Egern",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:55",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "Egern"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "proxies:\n  - {\"shadowsocks\":{\"name\":\"fixture\",\"method\":\"aes-128-gcm\",\"server\":\"127.0.0.1\",\"port\":8388,\"password\":\"pass\",\"tfo\":false,\"udp_relay\":true}}\n"}}}},
+      {"path": "/download/unused/Egern?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "proxies:\n  - {\"shadowsocks\":{\"name\":\"fixture\",\"method\":\"aes-128-gcm\",\"server\":\"127.0.0.1\",\"port\":8388,\"password\":\"pass\",\"tfo\":false,\"udp_relay\":true}}\n"}}
+    ]
+  },
+  {
+    "id": "R01-output-QX",
+    "source": "backend/src/core/rule-utils/parsers.js:1,20; backend/src/core/rule-utils/producers.js:96; backend/src/restful/parser.js:48",
+    "steps": [
+      {"method": "POST", "path": "/api/rule/parse", "body": {"data": "# ignored comment\nhost,example.com\nDOMAIN-SUFFIX,example.org\nIP-CIDR,10.0.0.0/8,no-resolve\nIP6-CIDR,2001:db8::/32,no-resolve\ninvalid-rule,skip", "client": "QX"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "HOST,example.com,SUB-STORE\nHOST-SUFFIX,example.org,SUB-STORE\nIP-CIDR,10.0.0.0/8,SUB-STORE\nIP6-CIDR,2001:db8::/32,SUB-STORE"}}}}
+    ]
+  },
+  {
+    "id": "R01-output-Surge",
+    "source": "backend/src/core/rule-utils/parsers.js:1,20; backend/src/core/rule-utils/producers.js:96; backend/src/restful/parser.js:48",
+    "steps": [
+      {"method": "POST", "path": "/api/rule/parse", "body": {"data": "# ignored comment\nhost,example.com\nDOMAIN-SUFFIX,example.org\nIP-CIDR,10.0.0.0/8,no-resolve\nIP6-CIDR,2001:db8::/32,no-resolve\ninvalid-rule,skip", "client": "Surge"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "DOMAIN,example.com\nDOMAIN-SUFFIX,example.org\nIP-CIDR,10.0.0.0/8,no-resolve\nIP-CIDR6,2001:db8::/32,no-resolve"}}}}
+    ]
+  },
+  {
+    "id": "R01-output-Loon",
+    "source": "backend/src/core/rule-utils/parsers.js:1,20; backend/src/core/rule-utils/producers.js:96; backend/src/restful/parser.js:48",
+    "steps": [
+      {"method": "POST", "path": "/api/rule/parse", "body": {"data": "# ignored comment\nhost,example.com\nDOMAIN-SUFFIX,example.org\nIP-CIDR,10.0.0.0/8,no-resolve\nIP6-CIDR,2001:db8::/32,no-resolve\ninvalid-rule,skip", "client": "Loon"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "DOMAIN,example.com\nDOMAIN-SUFFIX,example.org\nIP-CIDR,10.0.0.0/8,no-resolve\nIP-CIDR6,2001:db8::/32,no-resolve"}}}}
+    ]
+  },
+  {
+    "id": "R01-output-Clash",
+    "source": "backend/src/core/rule-utils/parsers.js:1,20; backend/src/core/rule-utils/producers.js:96; backend/src/restful/parser.js:48",
+    "steps": [
+      {"method": "POST", "path": "/api/rule/parse", "body": {"data": "# ignored comment\nhost,example.com\nDOMAIN-SUFFIX,example.org\nIP-CIDR,10.0.0.0/8,no-resolve\nIP6-CIDR,2001:db8::/32,no-resolve\ninvalid-rule,skip", "client": "Clash"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "payload:\n  - DOMAIN,example.com\n  - DOMAIN-SUFFIX,example.org\n  - IP-CIDR,10.0.0.0/8,no-resolve\n  - IP-CIDR6,2001:db8::/32,no-resolve\n"}}}}
+    ]
+  },
+  {
+    "id": "R02-unsupported-QX",
+    "source": "backend/src/core/rule-utils/index.js:37,61; backend/src/core/rule-utils/producers.js:3,31,46,63; backend/src/restful/parser.js:48",
+    "steps": [
+      {"method": "POST", "path": "/api/rule/parse", "body": {"content": "# ignored comment\nhost,example.com\nDOMAIN-SUFFIX,example.org\nIP-CIDR,10.0.0.0/8,no-resolve\nIP6-CIDR,2001:db8::/32,no-resolve\nGEOIP,CN,no-resolve\nGEOSITE,cn\nDST-PORT,443\nSRC-IP-CIDR,192.168.0.0/16\nSRC-PORT,1234\ninvalid-rule,skip", "platform": "QX"}, "expect": {"status": 500, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "failed", "error": {"message": "Cannot read properties of null (reading 'length')"}}}}
+    ]
+  },
+  {
+    "id": "R02-unsupported-Surge",
+    "source": "backend/src/core/rule-utils/index.js:37,61; backend/src/core/rule-utils/producers.js:3,31,46,63; backend/src/restful/parser.js:48",
+    "steps": [
+      {"method": "POST", "path": "/api/rule/parse", "body": {"content": "# ignored comment\nhost,example.com\nDOMAIN-SUFFIX,example.org\nIP-CIDR,10.0.0.0/8,no-resolve\nIP6-CIDR,2001:db8::/32,no-resolve\nGEOIP,CN,no-resolve\nGEOSITE,cn\nDST-PORT,443\nSRC-IP-CIDR,192.168.0.0/16\nSRC-PORT,1234\ninvalid-rule,skip", "platform": "Surge"}, "expect": {"status": 500, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "failed", "error": {"message": "Cannot read properties of null (reading 'length')"}}}}
+    ]
+  },
+  {
+    "id": "R02-unsupported-Loon",
+    "source": "backend/src/core/rule-utils/index.js:37,61; backend/src/core/rule-utils/producers.js:3,31,46,63; backend/src/restful/parser.js:48",
+    "steps": [
+      {"method": "POST", "path": "/api/rule/parse", "body": {"content": "# ignored comment\nhost,example.com\nDOMAIN-SUFFIX,example.org\nIP-CIDR,10.0.0.0/8,no-resolve\nIP6-CIDR,2001:db8::/32,no-resolve\nGEOIP,CN,no-resolve\nGEOSITE,cn\nDST-PORT,443\nSRC-IP-CIDR,192.168.0.0/16\nSRC-PORT,1234\ninvalid-rule,skip", "platform": "Loon"}, "expect": {"status": 500, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "failed", "error": {"message": "Cannot read properties of null (reading 'length')"}}}}
+    ]
+  },
+  {
+    "id": "R02-unsupported-Clash",
+    "source": "backend/src/core/rule-utils/index.js:37,61; backend/src/core/rule-utils/producers.js:3,31,46,63; backend/src/restful/parser.js:48",
+    "steps": [
+      {"method": "POST", "path": "/api/rule/parse", "body": {"content": "# ignored comment\nhost,example.com\nDOMAIN-SUFFIX,example.org\nIP-CIDR,10.0.0.0/8,no-resolve\nIP6-CIDR,2001:db8::/32,no-resolve\nGEOIP,CN,no-resolve\nGEOSITE,cn\nDST-PORT,443\nSRC-IP-CIDR,192.168.0.0/16\nSRC-PORT,1234\ninvalid-rule,skip", "platform": "Clash"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "payload:\n  - DOMAIN,example.com\n  - DOMAIN-SUFFIX,example.org\n  - IP-CIDR,10.0.0.0/8,no-resolve\n  - IP-CIDR6,2001:db8::/32,no-resolve\n  - GEOIP,CN,no-resolve\n  - GEOSITE,cn\n  - DST-PORT,443\n  - SRC-IP-CIDR,192.168.0.0/16\n  - SRC-PORT,1234\n"}}}}
+    ]
+  },
+  {
+    "id": "R03-input-provider-and-html",
+    "source": "backend/src/core/rule-utils/preprocessors.js:1,9; backend/src/restful/parser.js:48",
+    "steps": [
+      {"method": "POST", "path": "/api/rule/parse", "body": {"content": "payload:\n  - DOMAIN,example.com\n  - IP-CIDR,10.0.0.0/8,no-resolve\n", "platform": "Surge"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "DOMAIN,example.com\nIP-CIDR,10.0.0.0/8,no-resolve"}}}},
+      {"method": "POST", "path": "/api/rule/parse", "body": {"data": "<!DOCTYPE html><html>blocked</html>", "client": "Clash"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "payload: []\n"}}}}
+    ]
+  },
+  {
+    "id": "P02-input-base64",
+    "source": "backend/src/test/proxy-parsers/pipeline.spec.js:8; backend/src/restful/parser.js:23",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"content": "aHR0cHM6Ly9hbGljZTpwYSUyNCUyNEBodHRwcy5leGFtcGxlLmNvbSNIVFRQUyUyMERlZmF1bHQKc29ja3M6Ly9ZbTlpT25ObFkzSmxkQT09QHNvY2tzLmV4YW1wbGUuY29tOjEwODAjU09DS1M=", "platform": "JSON", "type": "internal"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": [{"name": "HTTPS Default", "type": "http", "tls": true, "server": "https.example.com", "port": 443, "username": "alice", "password": "pa$$", "udp": true, "sni": "https.example.com"}, {"name": "SOCKS", "type": "socks5", "server": "socks.example.com", "port": 1080, "username": "bob", "password": "secret", "udp": true}]}}}}
+    ]
+  },
+  {
+    "id": "P02-input-ssd",
+    "source": "backend/src/test/proxy-parsers/pipeline.spec.js:40; backend/src/restful/parser.js:23",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"content": "ssd://eyJwb3J0IjogODM4OCwgImVuY3J5cHRpb24iOiAiYWVzLTEyOC1nY20iLCAicGFzc3dvcmQiOiAic2hhcmVkLXNlY3JldCIsICJzZXJ2ZXJzIjogW3sic2VydmVyIjogInNzZC5leGFtcGxlLmNvbSIsICJyZW1hcmtzIjogIlNTRCBOb2RlIiwgInBsdWdpbiI6ICJvYmZzLWxvY2FsIiwgInBsdWdpbl9vcHRpb25zIjogIm9iZnM9aHR0cDtvYmZzLWhvc3Q9Y2RuLmV4YW1wbGUuY29tIn1dfQ==", "platform": "JSON", "type": "internal"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": [{"type": "ss", "skip-cert-verify": false, "udp": true, "server": "ssd.example.com", "port": 8388, "cipher": "aes-128-gcm", "password": "shared-secret", "plugin": "obfs", "plugin-opts": {"mode": "http", "host": "cdn.example.com"}, "name": "SSD Node"}]}}}}
+    ]
+  },
+  {
+    "id": "P02-input-proxy-block",
+    "source": "backend/src/test/proxy-parsers/pipeline.spec.js:74; backend/src/restful/parser.js:23",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"content": "[General]\nskip-proxy = 192.168.0.0/16\n\n[Proxy]\nDirect = direct\nHTTP = http,full-config.example.com,8080,username=user,password=pass\n\n[Rule]\nFINAL,DIRECT\n", "platform": "JSON", "type": "internal"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": [{"name": "Direct", "type": "direct", "udp": true}, {"name": "HTTP", "server": "full-config.example.com", "port": 8080, "username": "user", "password": "pass", "type": "http", "udp": true}]}}}}
+    ]
+  },
+  {
+    "id": "P02-input-clash-yaml",
+    "source": "backend/src/test/proxy-parsers/pipeline.spec.js:103; backend/src/restful/parser.js:23",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"content": "proxies:\n  - name: clash-vless\n    type: vless\n    server: clash.example.com\n    port: 443\n    uuid: 11111111-1111-4111-8111-111111111111\n    servername: sni.example.com\n    reality-opts:\n      public-key: pubkey\n      short-id: 08\n  - name: clash-http\n    type: http\n    server: http.clash.example.com\n    port: 8080\n    benchmark-url: https://check.example.com\n    benchmark-timeout: 9\n", "platform": "JSON", "type": "internal"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": [{"name": "clash-vless", "type": "vless", "server": "clash.example.com", "port": 443, "uuid": "11111111-1111-4111-8111-111111111111", "reality-opts": {"public-key": "pubkey", "short-id": "08"}, "sni": "sni.example.com", "udp": true, "network": "tcp"}, {"name": "clash-http", "type": "http", "server": "http.clash.example.com", "port": 8080, "benchmark-url": "https://check.example.com", "benchmark-timeout": 9, "test-url": "https://check.example.com", "test-timeout": 9, "udp": true}]}}}}
+    ]
+  },
+  {
+    "id": "P02-input-hy2-range",
+    "source": "backend/src/test/proxy-parsers/pipeline.spec.js:147; backend/src/restful/parser.js:23",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"content": "{\"name\": \"hy2-range-inline\", \"type\": \"hysteria2\", \"server\": \"hy2.example.com\", \"port\": 443, \"password\": \"secret\", \"hop-interval\": \"15-30\"}", "platform": "JSON", "type": "internal"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": [{"name": "hy2-range-inline", "type": "hysteria2", "server": "hy2.example.com", "port": 443, "password": "secret", "hop-interval": 15, "udp": true, "hop-interval-max": 30, "tls": true, "sni": "hy2.example.com"}]}}}}
+    ]
+  },
+  {
+    "id": "P02-input-vmess-cipher",
+    "source": "backend/src/test/proxy-parsers/pipeline.spec.js:167; backend/src/restful/parser.js:23",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"content": "{\"name\": \"vmess-invalid-cipher\", \"type\": \"vmess\", \"server\": \"vmess.example.com\", \"port\": 443, \"uuid\": \"11111111-1111-4111-8111-111111111111\", \"cipher\": \"aes-128-ctr\"}", "platform": "JSON", "type": "internal"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": [{"name": "vmess-invalid-cipher", "type": "vmess", "server": "vmess.example.com", "port": 443, "uuid": "11111111-1111-4111-8111-111111111111", "cipher": "auto", "udp": true, "network": "tcp", "alterId": 0}]}}}}
+    ]
+  },
+  {
+    "id": "P02-input-ss-obfs",
+    "source": "backend/src/test/proxy-parsers/uri.spec.js:76; backend/src/restful/parser.js:23",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"content": "ss://YWVzLTEyOC1nY206c2VjcmV0@ss.example.com:8388/?plugin=obfs-local%3Bobfs%3Dhttp%3Bobfs-host%3Dobfs.example.com&uot=1&tfo=1#SS%20Obfs", "platform": "JSON", "type": "internal"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": [{"type": "ss", "skip-cert-verify": false, "udp": true, "server": "ss.example.com", "port": 8388, "cipher": "aes-128-gcm", "password": "secret", "plugin": "obfs", "plugin-opts": {"mode": "http", "host": "obfs.example.com"}, "udp-over-tcp": true, "tfo": true, "name": "SS Obfs"}]}}}}
+    ]
+  },
+  {
+    "id": "P02-input-html",
+    "source": "backend/src/test/proxy-preprocessors/preprocessors.spec.js:59; backend/src/restful/parser.js:23",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"content": "<!DOCTYPE html><html><body>blocked</body></html>", "platform": "JSON", "type": "internal"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": []}}}}
+    ]
+  },
+  {
+    "id": "P02-input-invalid",
+    "source": "backend/src/core/proxy-utils/index.js:65,100; backend/src/restful/parser.js:23",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"content": "not-a-proxy\ninvalid://missing\n", "platform": "JSON", "type": "internal"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": []}}}}
+    ]
+  },
+  {
+    "id": "P03-process-filter-rename-sort",
+    "source": "backend/src/restful/preview.js:79,154; backend/src/core/proxy-utils/index.js:138; backend/src/core/proxy-utils/processors/index.js:315,381,424,1431,1456; backend/src/test/proxy-processors/process-context.spec.js:71",
+    "steps": [
+      {"method": "POST", "path": "/api/preview/sub?target=JSON", "body": {"name": "process-fixture", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#B-keep\nss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.2:8389#A-drop\ntrojan://secret@trojan.example.com:443#C-keep", "process": [{"type": "Regex Filter", "args": {"regex": ["keep"], "keep": true}}, {"type": "Regex Rename Operator", "args": [{"expr": "-keep", "now": "🙂"}]}, {"type": "Sort Operator", "args": "desc"}]}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"original": [{"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.1", "port": 8388, "cipher": "aes-128-gcm", "password": "pass", "name": "B-keep", "id": 0, "_subName": "process-fixture"}, {"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.2", "port": 8389, "cipher": "aes-128-gcm", "password": "pass", "name": "A-drop", "id": 1, "_subName": "process-fixture"}, {"type": "trojan", "password": "secret", "server": "trojan.example.com", "port": 443, "name": "C-keep:443", "sni": "trojan.example.com", "udp": true, "network": "tcp", "tls": true, "id": 2, "_subName": "process-fixture"}], "processed": [{"type": "trojan", "password": "secret", "server": "trojan.example.com", "port": 443, "name": "C🙂:443", "sni": "trojan.example.com", "udp": true, "network": "tcp", "tls": true, "id": 2, "_subName": "process-fixture"}, {"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.1", "port": 8388, "cipher": "aes-128-gcm", "password": "pass", "name": "B🙂", "id": 0, "_subName": "process-fixture"}]}}}}
+    ]
+  },
+  {
+    "id": "P03-process-type-keep",
+    "source": "backend/src/restful/preview.js:79,154; backend/src/core/proxy-utils/index.js:138; backend/src/core/proxy-utils/processors/index.js:315,381,424,1431,1456; backend/src/test/proxy-processors/process-context.spec.js:71",
+    "steps": [
+      {"method": "POST", "path": "/api/preview/sub?target=JSON", "body": {"name": "process-fixture", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#B-keep\nss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.2:8389#A-drop\ntrojan://secret@trojan.example.com:443#C-keep", "process": [{"type": "Type Filter", "args": {"value": ["ss"], "keep": true}}]}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"original": [{"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.1", "port": 8388, "cipher": "aes-128-gcm", "password": "pass", "name": "B-keep", "id": 0, "_subName": "process-fixture"}, {"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.2", "port": 8389, "cipher": "aes-128-gcm", "password": "pass", "name": "A-drop", "id": 1, "_subName": "process-fixture"}, {"type": "trojan", "password": "secret", "server": "trojan.example.com", "port": 443, "name": "C-keep:443", "sni": "trojan.example.com", "udp": true, "network": "tcp", "tls": true, "id": 2, "_subName": "process-fixture"}], "processed": [{"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.1", "port": 8388, "cipher": "aes-128-gcm", "password": "pass", "name": "B-keep", "id": 0, "_subName": "process-fixture"}, {"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.2", "port": 8389, "cipher": "aes-128-gcm", "password": "pass", "name": "A-drop", "id": 1, "_subName": "process-fixture"}]}}}}
+    ]
+  },
+  {
+    "id": "P03-process-type-discard",
+    "source": "backend/src/restful/preview.js:79,154; backend/src/core/proxy-utils/index.js:138; backend/src/core/proxy-utils/processors/index.js:315,381,424,1431,1456; backend/src/test/proxy-processors/process-context.spec.js:71",
+    "steps": [
+      {"method": "POST", "path": "/api/preview/sub?target=JSON", "body": {"name": "process-fixture", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#B-keep\nss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.2:8389#A-drop\ntrojan://secret@trojan.example.com:443#C-keep", "process": [{"type": "Type Filter", "args": {"value": ["ss"], "keep": false}}]}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"original": [{"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.1", "port": 8388, "cipher": "aes-128-gcm", "password": "pass", "name": "B-keep", "id": 0, "_subName": "process-fixture"}, {"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.2", "port": 8389, "cipher": "aes-128-gcm", "password": "pass", "name": "A-drop", "id": 1, "_subName": "process-fixture"}, {"type": "trojan", "password": "secret", "server": "trojan.example.com", "port": 443, "name": "C-keep:443", "sni": "trojan.example.com", "udp": true, "network": "tcp", "tls": true, "id": 2, "_subName": "process-fixture"}], "processed": [{"type": "trojan", "password": "secret", "server": "trojan.example.com", "port": 443, "name": "C-keep:443", "sni": "trojan.example.com", "udp": true, "network": "tcp", "tls": true, "id": 2, "_subName": "process-fixture"}]}}}}
+    ]
+  },
+  {
+    "id": "P03-process-disabled-unknown",
+    "source": "backend/src/restful/preview.js:79,154; backend/src/core/proxy-utils/index.js:138; backend/src/core/proxy-utils/processors/index.js:315,381,424,1431,1456; backend/src/test/proxy-processors/process-context.spec.js:71",
+    "steps": [
+      {"method": "POST", "path": "/api/preview/sub?target=JSON", "body": {"name": "process-fixture", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#B-keep\nss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.2:8389#A-drop\ntrojan://secret@trojan.example.com:443#C-keep", "process": [{"type": "Regex Delete Operator", "disabled": true, "args": ["."]}, {"type": "unknown processor", "args": {}}]}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"original": [{"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.1", "port": 8388, "cipher": "aes-128-gcm", "password": "pass", "name": "B-keep", "id": 0, "_subName": "process-fixture"}, {"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.2", "port": 8389, "cipher": "aes-128-gcm", "password": "pass", "name": "A-drop", "id": 1, "_subName": "process-fixture"}, {"type": "trojan", "password": "secret", "server": "trojan.example.com", "port": 443, "name": "C-keep:443", "sni": "trojan.example.com", "udp": true, "network": "tcp", "tls": true, "id": 2, "_subName": "process-fixture"}], "processed": [{"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.1", "port": 8388, "cipher": "aes-128-gcm", "password": "pass", "name": "B-keep", "id": 0, "_subName": "process-fixture"}, {"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.2", "port": 8389, "cipher": "aes-128-gcm", "password": "pass", "name": "A-drop", "id": 1, "_subName": "process-fixture"}, {"type": "trojan", "password": "secret", "server": "trojan.example.com", "port": 443, "name": "C-keep:443", "sni": "trojan.example.com", "udp": true, "network": "tcp", "tls": true, "id": 2, "_subName": "process-fixture"}]}}}}
+    ]
+  },
+  {
+    "id": "P03-process-conditional",
+    "source": "backend/src/restful/preview.js:79,154; backend/src/core/proxy-utils/index.js:138; backend/src/core/proxy-utils/processors/index.js:315,381,424,1431,1456; backend/src/test/proxy-processors/process-context.spec.js:71",
+    "steps": [
+      {"method": "POST", "path": "/api/preview/sub?target=JSON", "body": {"name": "process-fixture", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#B-keep\nss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.2:8389#A-drop\ntrojan://secret@trojan.example.com:443#C-keep", "process": [{"type": "Conditional Filter", "args": {"rule": {"operator": "AND", "child": [{"attr": "type", "proposition": "EQUALS", "value": "ss"}, {"attr": "port", "proposition": "IN", "value": [8388]}]}}}]}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"original": [{"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.1", "port": 8388, "cipher": "aes-128-gcm", "password": "pass", "name": "B-keep", "id": 0, "_subName": "process-fixture"}, {"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.2", "port": 8389, "cipher": "aes-128-gcm", "password": "pass", "name": "A-drop", "id": 1, "_subName": "process-fixture"}, {"type": "trojan", "password": "secret", "server": "trojan.example.com", "port": 443, "name": "C-keep:443", "sni": "trojan.example.com", "udp": true, "network": "tcp", "tls": true, "id": 2, "_subName": "process-fixture"}], "processed": [{"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.1", "port": 8388, "cipher": "aes-128-gcm", "password": "pass", "name": "B-keep", "id": 0, "_subName": "process-fixture"}]}}}}
+    ]
+  },
+  {
+    "id": "P03-process-full-script",
+    "source": "backend/src/restful/preview.js:79,154; backend/src/core/proxy-utils/index.js:138; backend/src/core/proxy-utils/processors/index.js:315,381,424,1431,1456; backend/src/test/proxy-processors/process-context.spec.js:71",
+    "steps": [
+      {"method": "POST", "path": "/api/preview/sub?target=JSON", "body": {"name": "process-fixture", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#B-keep\nss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.2:8389#A-drop\ntrojan://secret@trojan.example.com:443#C-keep", "process": [{"type": "Script Operator", "args": {"mode": "script", "content": "async function operator(proxies, target, context) { context.process = { type: 'disable', customNames: ['skipped'] }; return proxies.map(p => ({...p, name: p.name + '-JS'})); }"}}, {"type": "Regex Delete Operator", "customName": "skipped", "args": ["."]}, {"type": "Script Filter", "args": {"mode": "script", "content": "function filter(proxies) { return proxies.map(p => p.type === 'trojan'); }"}}]}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"original": [{"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.1", "port": 8388, "cipher": "aes-128-gcm", "password": "pass", "name": "B-keep", "id": 0, "_subName": "process-fixture"}, {"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.2", "port": 8389, "cipher": "aes-128-gcm", "password": "pass", "name": "A-drop", "id": 1, "_subName": "process-fixture"}, {"type": "trojan", "password": "secret", "server": "trojan.example.com", "port": 443, "name": "C-keep:443", "sni": "trojan.example.com", "udp": true, "network": "tcp", "tls": true, "id": 2, "_subName": "process-fixture"}], "processed": [{"type": "trojan", "password": "secret", "server": "trojan.example.com", "port": 443, "name": "C-keep:443-JS", "sni": "trojan.example.com", "udp": true, "network": "tcp", "tls": true, "id": 2, "_subName": "process-fixture"}]}}}}
+    ]
+  },
+  {
+    "id": "P03-process-script-error",
+    "source": "backend/src/restful/preview.js:79,154; backend/src/core/proxy-utils/index.js:138; backend/src/core/proxy-utils/processors/index.js:315,381,424,1431,1456; backend/src/test/proxy-processors/process-context.spec.js:71",
+    "steps": [
+      {"method": "POST", "path": "/api/preview/sub?target=JSON", "body": {"name": "process-fixture", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#B-keep\nss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.2:8389#A-drop\ntrojan://secret@trojan.example.com:443#C-keep", "process": [{"type": "Script Operator", "args": {"mode": "script", "content": "function operator() { throw new Error('fixture-script-error'); }"}}]}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"original": [{"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.1", "port": 8388, "cipher": "aes-128-gcm", "password": "pass", "name": "B-keep", "id": 0, "_subName": "process-fixture"}, {"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.2", "port": 8389, "cipher": "aes-128-gcm", "password": "pass", "name": "A-drop", "id": 1, "_subName": "process-fixture"}, {"type": "trojan", "password": "secret", "server": "trojan.example.com", "port": 443, "name": "C-keep:443", "sni": "trojan.example.com", "udp": true, "network": "tcp", "tls": true, "id": 2, "_subName": "process-fixture"}], "processed": [{"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.1", "port": 8388, "cipher": "aes-128-gcm", "password": "pass", "name": "B-keep", "id": 0, "_subName": "process-fixture"}, {"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.2", "port": 8389, "cipher": "aes-128-gcm", "password": "pass", "name": "A-drop", "id": 1, "_subName": "process-fixture"}, {"type": "trojan", "password": "secret", "server": "trojan.example.com", "port": 443, "name": "C-keep:443", "sni": "trojan.example.com", "udp": true, "network": "tcp", "tls": true, "id": 2, "_subName": "process-fixture"}]}}}}
+    ]
+  },
+  {
+    "id": "P03-process-script-shortcut",
+    "source": "backend/src/restful/preview.js:79,154; backend/src/core/proxy-utils/index.js:138; backend/src/core/proxy-utils/processors/index.js:315,381,424,1431,1456; backend/src/test/proxy-processors/process-context.spec.js:71",
+    "steps": [
+      {"method": "POST", "path": "/api/preview/sub?target=JSON", "body": {"name": "process-fixture", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#B-keep\nss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.2:8389#A-drop\ntrojan://secret@trojan.example.com:443#C-keep", "process": [{"type": "Script Operator", "args": {"mode": "script", "content": "$server.name = 'short-' + $server.name;"}}, {"type": "Script Filter", "args": {"mode": "script", "content": "return $server.type === 'ss'"}}]}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"original": [{"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.1", "port": 8388, "cipher": "aes-128-gcm", "password": "pass", "name": "B-keep", "id": 0, "_subName": "process-fixture"}, {"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.2", "port": 8389, "cipher": "aes-128-gcm", "password": "pass", "name": "A-drop", "id": 1, "_subName": "process-fixture"}, {"type": "trojan", "password": "secret", "server": "trojan.example.com", "port": 443, "name": "C-keep:443", "sni": "trojan.example.com", "udp": true, "network": "tcp", "tls": true, "id": 2, "_subName": "process-fixture"}], "processed": [{"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.1", "port": 8388, "cipher": "aes-128-gcm", "password": "pass", "name": "short-B-keep", "id": 0, "_subName": "process-fixture"}, {"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.2", "port": 8389, "cipher": "aes-128-gcm", "password": "pass", "name": "short-A-drop", "id": 1, "_subName": "process-fixture"}]}}}}
+    ]
+  },
+  {
+    "id": "P03-process-shortcut-filter-no-return",
+    "source": "backend/src/restful/preview.js:79,154; backend/src/core/proxy-utils/index.js:138; backend/src/core/proxy-utils/processors/index.js:315,381,424,1431,1456; backend/src/test/proxy-processors/process-context.spec.js:71",
+    "steps": [
+      {"method": "POST", "path": "/api/preview/sub?target=JSON", "body": {"name": "process-fixture", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#B-keep\nss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.2:8389#A-drop\ntrojan://secret@trojan.example.com:443#C-keep", "process": [{"type": "Script Filter", "args": {"mode": "script", "content": "$server.type === 'ss'"}}]}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"original": [{"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.1", "port": 8388, "cipher": "aes-128-gcm", "password": "pass", "name": "B-keep", "id": 0, "_subName": "process-fixture"}, {"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.2", "port": 8389, "cipher": "aes-128-gcm", "password": "pass", "name": "A-drop", "id": 1, "_subName": "process-fixture"}, {"type": "trojan", "password": "secret", "server": "trojan.example.com", "port": 443, "name": "C-keep:443", "sni": "trojan.example.com", "udp": true, "network": "tcp", "tls": true, "id": 2, "_subName": "process-fixture"}], "processed": []}}}}
+    ]
+  },
+  {
+    "id": "P03-process-script-top-level-error",
+    "source": "backend/src/restful/preview.js:79,154; backend/src/core/proxy-utils/index.js:138; backend/src/core/proxy-utils/processors/index.js:315,381,424,1431,1456; backend/src/test/proxy-processors/process-context.spec.js:71",
+    "steps": [
+      {"method": "POST", "path": "/api/preview/sub?target=JSON", "body": {"name": "process-fixture", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#B-keep\nss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.2:8389#A-drop\ntrojan://secret@trojan.example.com:443#C-keep", "process": [{"type": "Script Operator", "args": {"mode": "script", "content": "throw new Error('fixture-top-level-error');"}}]}, "expect": {"status": 500, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "failed", "error": {"code": "INTERNAL_SERVER_ERROR", "type": "InternalServerError", "message": "Failed to preview subscription", "details": "Reason: 脚本操作 执行失败 fixture-top-level-error"}}}}
+    ]
+  },
+  {
+    "id": "P04-invalid-proxy-target",
+    "source": "backend/src/restful/parser.js:23,48; backend/src/restful/response.js:8",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "unsupported"}, "expect": {"status": 500, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "failed", "error": {"message": "Target platform: unsupported is not supported!"}}}}
+    ]
+  },
+  {
+    "id": "P04-invalid-rule-target",
+    "source": "backend/src/restful/parser.js:23,48; backend/src/restful/response.js:8",
+    "steps": [
+      {"method": "POST", "path": "/api/rule/parse", "body": {"data": "# ignored comment\nhost,example.com\nDOMAIN-SUFFIX,example.org\nIP-CIDR,10.0.0.0/8,no-resolve\nIP6-CIDR,2001:db8::/32,no-resolve\nGEOIP,CN,no-resolve\nGEOSITE,cn\nDST-PORT,443\nSRC-IP-CIDR,192.168.0.0/16\nSRC-PORT,1234\ninvalid-rule,skip", "client": "unsupported"}, "expect": {"status": 500, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "failed", "error": {"message": "Target platform: unsupported is not supported!"}}}}
+    ]
+  },
+  {
+    "id": "P04-invalid-proxy-missing-target",
+    "source": "backend/src/restful/parser.js:23,48; backend/src/restful/response.js:8",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture"}, "expect": {"status": 500, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "failed", "error": {"message": "Target platform: undefined is not supported!"}}}}
+    ]
+  },
+  {
+    "id": "P04-invalid-rule-missing-target",
+    "source": "backend/src/restful/parser.js:23,48; backend/src/restful/response.js:8",
+    "steps": [
+      {"method": "POST", "path": "/api/rule/parse", "body": {"data": "# ignored comment\nhost,example.com\nDOMAIN-SUFFIX,example.org\nIP-CIDR,10.0.0.0/8,no-resolve\nIP6-CIDR,2001:db8::/32,no-resolve\nGEOIP,CN,no-resolve\nGEOSITE,cn\nDST-PORT,443\nSRC-IP-CIDR,192.168.0.0/16\nSRC-PORT,1234\ninvalid-rule,skip"}, "expect": {"status": 500, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "failed", "error": {"message": "Target platform: undefined is not supported!"}}}}
+    ]
+  },
+  {
+    "id": "P05-download-collection-and-query-precedence",
+    "source": "backend/src/restful/download.js:45,97,154,479,763; backend/src/restful/preview.js:211",
+    "steps": [
+      {"method": "POST", "path": "/api/subs", "body": {"name": "download-fixture", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "process": [{"type": "Regex Rename Operator", "args": [{"expr": "^", "now": "export-"}]}]}, "expect": {"status": 201, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"name": "download-fixture", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "process": [{"type": "Regex Rename Operator", "args": [{"expr": "^", "now": "export-"}]}]}}}},
+      {"method": "POST", "path": "/api/collections", "body": {"name": "download-collection", "subscriptions": ["download-fixture"]}, "expect": {"status": 201, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"name": "download-collection", "subscriptions": ["download-fixture"]}}}},
+      {"path": "/download/download-fixture?target=URI", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388?udp=1#export-fixture"}},
+      {"path": "/download/download-fixture/URI?target=Clash", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388?udp=1#export-fixture"}},
+      {"path": "/download/download-fixture/URI?platform=JSON", "expect": {"status": 200, "headers": {"content-type": "application/json; charset=utf-8"}, "body": "[\n  {\n    \"type\": \"ss\",\n    \"skip-cert-verify\": false,\n    \"udp\": true,\n    \"server\": \"127.0.0.1\",\n    \"port\": 8388,\n    \"cipher\": \"aes-128-gcm\",\n    \"password\": \"pass\",\n    \"name\": \"export-fixture\",\n    \"_subName\": \"download-fixture\"\n  }\n]"}},
+      {"path": "/download/download-fixture", "headers": {"user-agent": "clash.meta/v1.19.23"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"export-fixture\"}\n"}},
+      {"path": "/share/sub/download-fixture/URI", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388?udp=1#export-fixture"}},
+      {"path": "/download/collection/download-collection/URI", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388?udp=1#export-fixture"}},
+      {"path": "/share/col/download-collection/URI", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388?udp=1#export-fixture"}},
+      {"method": "POST", "path": "/api/preview/collection", "body": {"name": "download-collection", "subscriptions": ["download-fixture"]}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"original": [{"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.1", "port": 8388, "cipher": "aes-128-gcm", "password": "pass", "name": "export-fixture", "_subName": "download-fixture", "_collectionName": "download-collection", "id": 0}], "processed": [{"type": "ss", "skip-cert-verify": false, "udp": true, "server": "127.0.0.1", "port": 8388, "cipher": "aes-128-gcm", "password": "pass", "name": "export-fixture", "_subName": "download-fixture", "_collectionName": "download-collection", "id": 0}]}}}},
+      {"path": "/share/sub/download-fixture?fakeSub=1", "expect": {"status": 400, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "failed", "error": {"code": "UNSUPPORTED_SHARE_FAKE_SUB", "type": "RequestInvalidError", "message": "share/sub 不支持 fakeSub 参数", "details": "详情请查看日志"}}}},
+      {"path": "/share/sub/download-fixture?content=blocked", "expect": {"status": 400, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "failed", "error": {"code": "UNSUPPORTED_SHARE_SUB_SOURCE_OVERRIDE", "type": "RequestInvalidError", "message": "share/sub 不支持 url 或 content 参数", "details": "详情请查看日志"}}}},
+      {"path": "/share/sub/download-fixture?mergeSources=localFirst", "expect": {"status": 400, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "failed", "error": {"code": "UNSUPPORTED_SHARE_SUB_MERGE_SOURCES", "type": "RequestInvalidError", "message": "share/sub 不支持 mergeSources 参数", "details": "详情请查看日志"}}}},
+      {"path": "/download/missing/URI", "expect": {"status": 404, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "failed", "error": {"code": "RESOURCE_NOT_FOUND", "type": "ResourceNotFoundError", "message": "Subscription missing does not exist!"}}}},
+      {"path": "/download/collection/missing/URI", "expect": {"status": 404, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "failed", "error": {"code": "RESOURCE_NOT_FOUND", "type": "ResourceNotFoundError", "message": "Collection missing does not exist!"}}}},
+      {"path": "/download/download-fixture?target=unsupported", "expect": {"status": 500, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "failed", "error": {"code": "INTERNAL_SERVER_ERROR", "type": "InternalServerError", "message": "Failed to download subscription: download-fixture", "details": "Reason: Target platform: unsupported is not supported!"}}}},
+      {"method": "DELETE", "path": "/api/collection/download-collection?mode=permanent", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success"}}},
+      {"method": "DELETE", "path": "/api/sub/download-fixture?mode=permanent", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success"}}}
+    ]
   }
 ]
