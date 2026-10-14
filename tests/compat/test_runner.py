@@ -40,6 +40,16 @@ class RunnerTests(unittest.TestCase):
         wrong_prefix["request"]["url"] = "http://127.0.0.1:1/backend/share/file/browser-file-renamed?token=fixture"
         with self.assertRaises(AssertionError):
             check_network([wrong_prefix], share_case, "http://127.0.0.1:1/backend")
+        archive_requests = [
+            {"request": {"method": "GET", "url": "http://127.0.0.1:1/backend/api/archives"}, "response": {"status": 200}},
+            {"request": {"method": "POST", "url": "http://127.0.0.1:1/backend/api/archives/123-abc/restore"}, "response": {"status": 200}},
+        ]
+        archive_case = [{"id": "FE15-restore-file-archive", "archive_id": "123-abc"}]
+        self.assertEqual(len(check_network(archive_requests, archive_case, "http://127.0.0.1:1/backend")), 2)
+        with self.assertRaises(AssertionError):
+            check_network(archive_requests, [{"id": "FE15-restore-file-archive", "archive_id": "wrong"}], "http://127.0.0.1:1/backend")
+        with self.assertRaises(KeyError):
+            check_network(archive_requests, [{"id": "FE15-restore-file-archive"}], "http://127.0.0.1:1/backend")
         for mutation in ("missing", "error", "wrong-origin", "wrong-method"):
             entries = [copy.deepcopy(entry)]
             if mutation == "missing":

@@ -29,11 +29,14 @@ def check_network(entries, cases, backend_url):
         "FE11-create-collection": [("POST", "/api/collections", 201), ("GET", "/api/collections", 200)],
         "FE12-reopen-rename-collection": [("PATCH", "/api/collection/browser-collection", 200)],
         "FE13-preview-collection": [("POST", "/api/preview/collection", 200)],
+        "FE14-archive-file": [("DELETE", "/api/file/browser-file-renamed", 200)],
+        "FE15-restore-file-archive": [("GET", "/api/archives", 200), ("POST", "/api/archives/{archive_id}/restore", 200)],
     }
     observed = [(entry["request"]["method"], urlsplit(entry["request"]["url"])._replace(query="", fragment="").geturl(), entry["response"]["status"])
                 for entry in entries]
     for case in cases:
         for method, path, status in required[case["id"]]:
+            path = path.format(**case)
             parsed = urlsplit(backend_url)
             base = f"{parsed.scheme}://{parsed.netloc}" if path.startswith("/share/") else backend_url.rstrip("/")
             if (method, base + path, status) not in observed:
@@ -266,11 +269,39 @@ def main():
             report["cases"].append({"id": "FE12-reopen-rename-collection", "source": "src/views/SubEditor.vue:1063,1379", "status": "browser_passed"})
             command("open", report["server_origin"] + "/edit/collections/browser-collection-renamed")
             command("wait", ".compare-btn")
+            command("wait", "--fn", "document.querySelector('.include-subs-trigger input')?.value === 'browser-renamed'")
             command("click", ".compare-btn")
             command("wait", ".compare-page-wrapper .processed-tr")
             preview = evaluate("Array.from(document.querySelectorAll('.compare-page-wrapper .processed-tr'), row => row.innerText)")
             assert len(preview) == 1 and "fixture" in preview[0] and "127.0.0.1:8388" in preview[0], "Collection preview lost its subscription's parsed node"
             report["cases"].append({"id": "FE13-preview-collection", "source": "src/views/SubEditor.vue:569,1215; src/views/CompareTable.vue:124", "status": "browser_passed"})
+            command("open", report["server_origin"] + "/files")
+            command("wait", ".sub-item-actions")
+            command("click", ".sub-item-actions button:last-child")
+            command("wait", "--fn", "(() => { const el = document.querySelector('.nut-swipe'); return el && new DOMMatrix(el.style.transform).m41 < 0 && Math.abs(new DOMMatrix(getComputedStyle(el).transform).m41 - new DOMMatrix(el.style.transform).m41) < 0.1 })()")
+            command("click", ".sub-item-swipe-btn.nut-button--danger")
+            command("wait", ".nut-dialog")
+            assert command("get", "text", ".nut-dialog__footer-cancel")["text"] == "归档", "Archive action missing from the delete dialog"
+            command("click", ".nut-dialog__footer-cancel")
+            command("wait", "--text", "已归档")
+            stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+            assert stored["files"] == [] and len(stored["archives"]) == 1, "UI archive did not move the file into its archive"
+            entry = stored["archives"][0]
+            assert entry["itemType"] == "file" and entry["name"] == "browser-file-renamed" and entry["snapshot"]["content"] == "browser file🙂\n", "UI archive lost its file snapshot"
+            report["cases"].append({"id": "FE14-archive-file", "source": "src/components/FileListItem.vue:559,588; src/store/subs.ts:523", "status": "browser_passed"})
+            command("open", report["server_origin"] + "/archives")
+            command("wait", ".archives-item-wrapper")
+            assert "browser-file-renamed" in evaluate("document.querySelector('.archives-item-wrapper').innerText"), "Archived file missing from the archive UI"
+            command("click", ".archives-item-actions button[title='恢复']")
+            command("wait", "--text", "恢复成功！")
+            stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+            assert stored["archives"] == [] and stored["files"] == [entry["snapshot"]], "UI restore lost the file or retained the archive"
+            command("open", report["server_origin"] + "/edit/files/browser-file-renamed")
+            command("wait", ".editor-section-tab-list")
+            click_name("内容", "tab")
+            command("wait", ".cm-content")
+            assert evaluate("document.querySelector('.cm-content').innerText").rstrip("\n") == "browser file🙂", "Restored file editor lost its content"
+            report["cases"].append({"id": "FE15-restore-file-archive", "source": "src/views/archive/Archive.vue:837; src/store/archive.ts:73", "archive_id": entry["id"], "status": "browser_passed"})
             report["upstream_requests"] = upstream.requests
             command("screenshot", output / "frontend-page.png")
             report["page_errors"] = command("errors")

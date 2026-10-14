@@ -86,7 +86,11 @@ Missing artifact PATCH returns DUPLICATE_KEY; legacy artifact PUT accepts names
 that POST rejects. Invalid archive-sort payload returns the frozen HTML 500 body.
 No-token artifact restore is a separately classified defect: its unawaited promise
 rejection terminates Node 24 without an HTTP response. It is not counted as a
-passing HTTP case; provider restore remains an open gate.
+passing HTTP case. The user approved fixing this defect and native Windows path
+reading in Rust, while retaining the frontend protocol. Rust regression checks
+must verify a structured restore error, unchanged state and a live listener;
+the frozen Node source and failed evidence stay intact. Provider restore remains
+an open gate.
 
 The Rust example evaluates unchanged `scripts/ip-flag-node.js` with controlled
 HTTP, request headers, memory-backed storage, locked lodash/YAML/Buffer/Base64
@@ -128,14 +132,19 @@ records hashes of every built asset, and uses a fresh browser session and
 disposable merged Node listener. The fixture config permits exactly its local
 origin through the existing CORS setting. URL-based backend setup, subscription
 create/reopen/rename/preview, local-file create/reopen/rename/preview, count-share
-creation/public access/reopen/update, and collection create/reopen/rename/preview have
+creation/public access/reopen/update, collection create/reopen/rename/preview,
+and file archive/restore have
 UI/persisted-state/upstream assertions. Each workflow also requires its actual
 successful backend request in the HAR; preview checks inspect the preview window.
 File editor input uses keyboard selection/replacement and the visible content
 tab. Screenshots, command logs, HAR and page errors are preserved on
 failure. No frontend source or application state is injected to perform these
 operations. The collection picker scrolls into view before selecting its visible
-checkbox; the fixed footer otherwise covers the control. This is a thirteen-workflow
+checkbox; the fixed footer otherwise covers the control. Before preview, wait for
+the collection's selected subscription data. Before deletion, wait for the swipe
+menu's actual transform to finish; its archive dialog button is a visible NutUI
+control without an ARIA button role. Restoration checks the captured archive ID
+in HAR, the persisted snapshot and the reopened editor. This is a fifteen-workflow
 slice; all other UI workflows remain pending.
 
 `frontend-contract-map.json` links all 48 API request objects to source-checked
