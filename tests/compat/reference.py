@@ -18,19 +18,26 @@ ROOT = HERE.parent.parent
 BACKEND = ROOT / "backend"
 
 
-def execute(argv, directory, environment, output_dir, name):
+def execute(argv, directory, environment, output_dir, name, timeout=None, direct_reason=None):
     started = datetime.now(timezone.utc).isoformat()
     command = [*map(str, argv)]
-    rtk = shutil.which("rtk", path=environment.get("PATH"))
+    rtk = None if direct_reason else shutil.which("rtk", path=environment.get("PATH"))
     if rtk:
         command = [rtk, "proxy", *command]
-    process = subprocess.run(command, cwd=directory, env=environment,
-                             capture_output=True, text=True, encoding="utf-8", errors="replace")
-    (output_dir / f"{name}.stdout.log").write_text(process.stdout, encoding="utf-8")
-    (output_dir / f"{name}.stderr.log").write_text(process.stderr, encoding="utf-8")
-    result = {"argv": command, "rtk_exception": None if rtk else "RTK unavailable on this runner",
+    timed_out = False
+    try:
+        process = subprocess.run(command, cwd=directory, env=environment, timeout=timeout,
+                                 capture_output=True, text=True, encoding="utf-8", errors="replace")
+    except subprocess.TimeoutExpired as error:
+        timed_out = True
+        stdout = error.stdout.decode("utf-8", errors="replace") if isinstance(error.stdout, bytes) else error.stdout or ""
+        stderr = error.stderr.decode("utf-8", errors="replace") if isinstance(error.stderr, bytes) else error.stderr or ""
+        process = subprocess.CompletedProcess(command, 124, stdout, stderr + f"\nCommand exceeded {timeout}s timeout\n")
+    (output_dir / f"{name}.stdout.log").write_text(process.stdout, encoding="utf-8", newline="")
+    (output_dir / f"{name}.stderr.log").write_text(process.stderr, encoding="utf-8", newline="")
+    result = {"argv": command, "rtk_exception": direct_reason or (None if rtk else "RTK unavailable on this runner"),
               "cwd": str(directory), "started": started,
-              "finished": datetime.now(timezone.utc).isoformat(), "exit_code": process.returncode}
+              "finished": datetime.now(timezone.utc).isoformat(), "exit_code": process.returncode, "timed_out": timed_out}
     (output_dir / f"{name}.command.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     return process
 

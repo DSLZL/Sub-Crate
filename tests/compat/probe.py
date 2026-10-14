@@ -18,15 +18,21 @@ def main():
         environment = dict(os.environ)
         for variable in ("CARGO_BUILD_TARGET", "RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS"):
             environment.pop(variable, None)
-        for relative in ("rust/Cargo.lock", "rust/examples/script_probe.rs", "scripts/ip-flag-node.js",
+        environment["CARGO_TARGET_DIR"] = str(ROOT / "rust/target")
+        executable = ROOT / "rust/target/debug/examples" / ("script_probe.exe" if os.name == "nt" else "script_probe")
+        for relative in ("rust/Cargo.lock", "rust/examples/script_probe.rs", "tests/compat/probe.py", "tests/compat/reference.py", "scripts/ip-flag-node.js",
                          "tests/compat/fixtures/script-host-probe.js", "tests/compat/fixtures/script-assertions.js",
                          "tests/compat/.generated/script-helpers.js"):
             report.setdefault("source_sha256", {})[relative] = hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()
         for name, argv in (("toolchain", ["rustc", "--version", "--verbose"]),
                            ("fmt", ["cargo", "fmt", "--manifest-path", "rust/Cargo.toml", "--", "--check"]),
                            ("clippy", ["cargo", "clippy", "--locked", "--manifest-path", "rust/Cargo.toml", "--all-targets", "--", "-D", "warnings"]),
-                           ("native-probe", ["cargo", "run", "--locked", "--manifest-path", "rust/Cargo.toml", "--example", "script_probe"])):
-            result = execute(argv, ROOT, environment, output, name)
+                           ("probe-build", ["cargo", "build", "--locked", "--manifest-path", "rust/Cargo.toml", "--example", "script_probe"]),
+                           ("native-probe", [executable])):
+            if name == "native-probe":
+                report["binary_sha256"] = hashlib.sha256(executable.read_bytes()).hexdigest()
+            result = execute(argv, ROOT, environment, output, name, timeout=60 if name == "native-probe" else None,
+                direct_reason="Direct Rust binary ownership lets the watchdog terminate CPU-bound execution; terminating an RTK parent can leave the child alive" if name == "native-probe" else None)
             report["checks"].append({"name": name, "exit_code": result.returncode})
             if result.returncode:
                 raise RuntimeError(f"{name} failed; inspect preserved logs")

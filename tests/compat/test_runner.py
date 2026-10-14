@@ -13,11 +13,33 @@ import runner
 
 
 class RunnerTests(unittest.TestCase):
+    def test_native_probe_timeout_fails_and_preserves_partial_output(self):
+        import reference
+        import subprocess
+        with tempfile.TemporaryDirectory() as directory:
+            with patch("reference.shutil.which", return_value="rtk.exe"), patch("reference.subprocess.run", side_effect=subprocess.TimeoutExpired(["probe"], 1, b"partial\r\n", b"blocked")) as process:
+                result = reference.execute(["probe"], directory, {"PATH": "fixture"}, Path(directory), "native-probe", timeout=1, direct_reason="Owned fixture binary watchdog")
+            evidence = json.loads((Path(directory) / "native-probe.command.json").read_text(encoding="utf-8"))
+            self.assertEqual(result.returncode, 124)
+            self.assertTrue(evidence["timed_out"])
+            self.assertEqual(process.call_args.args[0], ["probe"])
+            self.assertEqual(evidence["rtk_exception"], "Owned fixture binary watchdog")
+            self.assertEqual((Path(directory) / "native-probe.stdout.log").read_text(encoding="utf-8"), "partial\n")
+            self.assertEqual((Path(directory) / "native-probe.stdout.log").read_bytes(), b"partial\r\n")
+            self.assertIn("blocked", (Path(directory) / "native-probe.stderr.log").read_text(encoding="utf-8"))
+
     def test_browser_workflow_requires_its_actual_successful_backend_request(self):
         from frontend import check_network
         cases = [{"id": "FE01-url-backend-setup"}]
         entry = {"request": {"method": "GET", "url": "http://127.0.0.1:1/backend/api/utils/env?share=true"}, "response": {"status": 200}}
         self.assertEqual(len(check_network([entry], cases, "http://127.0.0.1:1/backend")), 1)
+        public = {"request": {"method": "GET", "url": "http://127.0.0.1:1/share/file/browser-file-renamed?token=fixture"}, "response": {"status": 200}}
+        share_case = [{"id": "FE09-open-public-share"}]
+        self.assertEqual(len(check_network([public], share_case, "http://127.0.0.1:1/backend")), 1)
+        wrong_prefix = copy.deepcopy(public)
+        wrong_prefix["request"]["url"] = "http://127.0.0.1:1/backend/share/file/browser-file-renamed?token=fixture"
+        with self.assertRaises(AssertionError):
+            check_network([wrong_prefix], share_case, "http://127.0.0.1:1/backend")
         for mutation in ("missing", "error", "wrong-origin", "wrong-method"):
             entries = [copy.deepcopy(entry)]
             if mutation == "missing":

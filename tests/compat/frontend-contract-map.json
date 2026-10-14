@@ -34,9 +34,9 @@
     "settings.syncSettings": {"method": "GET", "paths": ["/api/utils/backup"], "http_cases": [], "ui_cases": [], "owner": "M4", "remaining": ["Gist/GitLab upload, download and restore modes"]},
     "settings.downloadBackup": {"method": "GET", "paths": ["/api/storage"], "http_cases": ["D02-export-preserves-unknown", "D03-excluded-script-import-export"], "ui_cases": [], "owner": "M4"},
     "settings.restoreSettings": {"method": "POST", "paths": ["/api/storage"], "http_cases": ["D01-backup-seed", "D03-excluded-script-import-export"], "ui_cases": [], "owner": "M2"},
-    "share.createShare": {"method": "POST", "paths": ["/api/token"], "http_cases": ["T01-token-metadata-and-validation", "T02-merged-share-count-and-origin", "T03-share-datetime-archive"], "ui_cases": [], "owner": "M4"},
-    "share.deleteShare": {"method": "DELETE", "paths": ["/api/token/:token"], "http_cases": ["T01-token-metadata-and-validation", "T03-share-datetime-archive"], "ui_cases": [], "owner": "M4", "query": ["type", "name", "mode"]},
-    "share.getShares": {"method": "GET", "paths": ["/api/tokens"], "http_cases": ["T01-token-metadata-and-validation", "T03-share-datetime-archive"], "ui_cases": [], "owner": "M4", "query": ["type", "name"]},
+    "share.createShare": {"method": "POST", "paths": ["/api/token"], "http_cases": ["T01-token-metadata-and-validation", "T02-merged-share-count-and-origin", "T03-share-datetime-archive"], "ui_cases": ["FE08-create-count-share", "FE10-reopen-update-count-share"], "owner": "M4"},
+    "share.deleteShare": {"method": "DELETE", "paths": ["/api/token/:token"], "http_cases": ["T01-token-metadata-and-validation", "T03-share-datetime-archive"], "ui_cases": ["FE10-reopen-update-count-share"], "owner": "M4", "query": ["type", "name", "mode"]},
+    "share.getShares": {"method": "GET", "paths": ["/api/tokens"], "http_cases": ["T01-token-metadata-and-validation", "T03-share-datetime-archive"], "ui_cases": ["FE10-reopen-update-count-share"], "owner": "M4", "query": ["type", "name"]},
     "share.sortShares": {"method": "POST", "paths": ["/api/sort/tokens"], "http_cases": [], "ui_cases": [], "owner": "M4"},
     "subs.getSubs": {"method": "GET", "paths": ["/api/subs"], "http_cases": [], "ui_cases": ["FE02-create-subscription", "FE03-reopen-rename-subscription"], "owner": "M2"},
     "subs.getCollections": {"method": "GET", "paths": ["/api/collections"], "http_cases": [], "ui_cases": [], "owner": "M2"},
@@ -61,7 +61,7 @@
     {"callers": ["share.createShare", "share.deleteShare", "share.getShares"], "type_values": ["sub", "col", "file"], "sources": ["src/utils/share.ts:341,456", "src/api/share/index.ts:23,30"], "remaining": ["Sub/collection token resource bindings"]}
   ],
   "direct_builders": [
-    {"source": "src/utils/share.ts:454,469", "paths": ["/share/sub/:name", "/share/col/:name", "/share/file/:name"], "parameters": ["token", "shareBaseUrl", "secretPath"], "http_cases": ["T02-merged-share-count-and-origin", "T03-share-datetime-archive"], "remaining": ["Custom share host/prefix, sub and col output"]},
+    {"source": "src/utils/share.ts:454,469", "paths": ["/share/sub/:name", "/share/col/:name", "/share/file/:name"], "parameters": ["token", "shareBaseUrl", "secretPath"], "http_cases": ["T02-merged-share-count-and-origin", "T03-share-datetime-archive"], "ui_cases": ["FE09-open-public-share"], "remaining": ["Custom share host/prefix, sub and col output"]},
     {"source": "src/components/SubListItem.vue:974", "paths": ["/download/:name", "/download/collection/:name"], "parameters": ["platform and copied-query options"], "http_cases": [], "remaining": ["All conversion targets and link builders"]}
   ]
 }

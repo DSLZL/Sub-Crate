@@ -3,7 +3,13 @@ use rquickjs::{
     AsyncContext, AsyncRuntime, CatchResultExt, Ctx, Exception, Function, Promise,
     prelude::{Async, Func},
 };
-use std::{cell::RefCell, collections::BTreeMap, error::Error, rc::Rc, time::Duration};
+use std::{
+    cell::RefCell,
+    collections::BTreeMap,
+    error::Error,
+    rc::Rc,
+    time::{Duration, Instant},
+};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 async fn wait(milliseconds: u64) {
@@ -53,8 +59,79 @@ async fn nested<'js>(ctx: Ctx<'js>, callback: Function<'js>) -> rquickjs::Result
     Ok(result)
 }
 
+async fn verify_limits() -> Result<serde_json::Value, Box<dyn Error>> {
+    let runtime = AsyncRuntime::new()?;
+    runtime.set_memory_limit(64 * 1024 * 1024).await;
+    runtime.set_max_stack_size(128 * 1024).await;
+    let context = AsyncContext::full(&runtime).await?;
+    let mut cpu = Vec::new();
+    for mode in ["eval", "promise"] {
+        let started = Instant::now();
+        let deadline = started + Duration::from_millis(100);
+        runtime
+            .set_interrupt_handler(Some(Box::new(move || Instant::now() >= deadline)))
+            .await;
+        let execution = if mode == "eval" {
+            context
+                .with(|ctx| ctx.eval::<(), _>("try { while (true) {} } catch (_) {}"))
+                .await
+        } else {
+            context
+                .async_with(async |ctx| {
+                    let promise: Promise =
+                        ctx.eval("Promise.resolve().then(() => { while (true) {} })")?;
+                    promise.into_future::<()>().await
+                })
+                .await
+        };
+        let elapsed = started.elapsed();
+        runtime.set_interrupt_handler(None).await;
+        assert!(matches!(execution, Err(rquickjs::Error::Exception)));
+        let diagnostic = context
+            .with(|ctx| ctx.catch().as_exception().and_then(Exception::message))
+            .await
+            .ok_or("Interrupted execution produced no Error diagnostic")?;
+        assert!(diagnostic.contains("interrupted"), "{diagnostic}");
+        assert!(elapsed >= Duration::from_millis(100) && elapsed < Duration::from_secs(5));
+        assert_eq!(context.with(|ctx| ctx.eval::<i32, _>("21 * 2")).await?, 42);
+        cpu.push(serde_json::json!({"mode": mode, "elapsed_ms": elapsed.as_millis(), "diagnostic": diagnostic, "recovered": true}));
+    }
+    let mut resource_errors = BTreeMap::new();
+    for (name, script, expected) in [
+        (
+            "memory",
+            "new ArrayBuffer(128 * 1024 * 1024)",
+            "out of memory",
+        ),
+        (
+            "stack",
+            "function overflow() { return overflow(); } overflow();",
+            "Maximum call stack size exceeded",
+        ),
+    ] {
+        let diagnostic = context
+            .with(|ctx| {
+                assert!(matches!(
+                    ctx.eval::<(), _>(script),
+                    Err(rquickjs::Error::Exception)
+                ));
+                ctx.catch().as_exception().and_then(Exception::message)
+            })
+            .await
+            .ok_or("Resource limit produced no Error diagnostic")?;
+        assert!(diagnostic.contains(expected), "{diagnostic}");
+        assert_eq!(context.with(|ctx| ctx.eval::<i32, _>("21 * 2")).await?, 42);
+        resource_errors.insert(name, diagnostic);
+    }
+    Ok(
+        serde_json::json!({"cpu": cpu, "memory_limit_bytes": 64 * 1024 * 1024,
+        "stack_limit_bytes": 128 * 1024, "resource_errors": resource_errors}),
+    )
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn Error>> {
+    let limits = verify_limits().await?;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let upstream = format!("http://{}", listener.local_addr()?);
     let server = tokio::spawn(async move {
@@ -88,6 +165,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let runtime = AsyncRuntime::new()?;
     runtime.set_memory_limit(64 * 1024 * 1024).await;
+    let deadline = Instant::now() + Duration::from_secs(15);
+    runtime
+        .set_interrupt_handler(Some(Box::new(move || Instant::now() >= deadline)))
+        .await;
     let context = AsyncContext::full(&runtime).await?;
     let storage = Rc::new(RefCell::new(BTreeMap::<String, String>::new()));
     let helpers_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -146,12 +227,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
     )
     .await??;
     server.await??;
+    let mut result: serde_json::Value = serde_json::from_str(&result)?;
+    result["passed"]
+        .as_array_mut()
+        .ok_or("Script assertion groups were not an array")?
+        .extend([
+            serde_json::json!("CPU interruption and recovery for eval and promise jobs"),
+            serde_json::json!("memory limit and recovery"),
+            serde_json::json!("stack limit and recovery"),
+        ]);
     println!(
         "{}",
         serde_json::json!({
             "scope": "M1 script feasibility probe", "production_ready": false,
             "os": std::env::consts::OS, "arch": std::env::consts::ARCH,
-            "engine": "rquickjs 0.14.0", "result": serde_json::from_str::<serde_json::Value>(&result)?
+            "engine": "rquickjs 0.14.0", "result": result, "limits": limits
         })
     );
     Ok(())

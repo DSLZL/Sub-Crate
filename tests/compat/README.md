@@ -72,9 +72,15 @@ executable is launched by the Rust probe. Helper generation uses Node only at
 development/build time.
 
 `shortcut: the probe uses a partial ProxyUtils/timer/storage/artifact host,
-upgrade to the full shared-behavior fixtures before M3 acceptance.` The async
-deadline does not interrupt CPU-bound JS; production execution limits and
-complete host semantics remain unverified.
+upgrade to the full shared-behavior fixtures before M3 acceptance.` Separate
+negative probes verify 100ms interruption of synchronous and promise-job infinite
+loops, 64MiB memory and 128KiB stack limits, error diagnostics and subsequent
+execution recovery. The main script runtime also installs a 15-second interpreter
+interrupt alongside its async timeout. The harness first builds the example, then
+owns its binary directly so a 60-second watchdog can kill that process and preserve
+partial output with exit 124. RTK still wraps builds and other short commands.
+Production isolation, complete host semantics and per-request resource cleanup
+remain unverified; passing the contained experiment does not establish them.
 
 `rust-compat-native.yml` runs the probe, runner self-checks, thirteen Node HTTP
 scenarios, one restart and two merged-share scenarios, and the frozen unit baseline on native `ubuntu-24.04`,
@@ -95,13 +101,14 @@ Node 24.15.0 and pnpm 11.0.9. The harness verifies the frontend commit/source,
 records hashes of every built asset, and uses a fresh browser session and
 disposable merged Node listener. The fixture config permits exactly its local
 origin through the existing CORS setting. URL-based backend setup, subscription
-create/reopen/rename/preview and local-file create/reopen/rename/preview have
+create/reopen/rename/preview, local-file create/reopen/rename/preview, and count-share
+creation/public access/reopen/update have
 UI/persisted-state/upstream assertions. Each workflow also requires its actual
 successful backend request in the HAR; preview checks inspect the preview window.
 File editor input uses keyboard selection/replacement and the visible content
 tab. Screenshots, command logs, HAR and page errors are preserved on
 failure. No frontend source or application state is injected to perform these
-operations. This is a seven-workflow slice; all other UI workflows remain pending.
+operations. This is a ten-workflow slice; all other UI workflows remain pending.
 
 `frontend-contract-map.json` links all 48 API request objects to source-checked
 backend routes, concrete dynamic type domains, partial HTTP/UI cases and milestone

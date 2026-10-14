@@ -23,16 +23,22 @@ def check_network(entries, cases, backend_url):
         "FE05-create-local-file": [("POST", "/api/files", 201), ("GET", "/api/wholeFiles", 200)],
         "FE06-reopen-rename-file": [("GET", "/api/wholeFiles", 200), ("PATCH", "/api/file/browser-file", 200)],
         "FE07-preview-file": [("POST", "/api/preview/file", 200)],
+        "FE08-create-count-share": [("POST", "/api/token", 200)],
+        "FE09-open-public-share": [("GET", "/share/file/browser-file-renamed", 200)],
+        "FE10-reopen-update-count-share": [("GET", "/api/tokens", 200), ("DELETE", "/api/token/browser-token", 200), ("POST", "/api/token", 200)],
     }
     observed = [(entry["request"]["method"], urlsplit(entry["request"]["url"])._replace(query="", fragment="").geturl(), entry["response"]["status"])
                 for entry in entries]
     for case in cases:
         for method, path, status in required[case["id"]]:
-            if (method, backend_url.rstrip("/") + path, status) not in observed:
+            parsed = urlsplit(backend_url)
+            base = f"{parsed.scheme}://{parsed.netloc}" if path.startswith("/share/") else backend_url.rstrip("/")
+            if (method, base + path, status) not in observed:
                 case.update(status="failed", error=f"Missing successful {method} {path} in HAR")
                 raise AssertionError(f"{case['id']}: {case['error']}")
         case.update(status="passed", network_verified=True)
-    return [{"method": method, "url": url, "status": status} for method, url, status in observed if url.startswith(backend_url.rstrip("/") + "/")]
+    origin = urlsplit(backend_url)._replace(path="", query="", fragment="").geturl()
+    return [{"method": method, "url": url, "status": status} for method, url, status in observed if url.startswith((backend_url.rstrip("/") + "/", origin + "/share/"))]
 
 
 def main():
@@ -192,6 +198,39 @@ def main():
             assert evaluate("Array.from(document.querySelectorAll('.compare-page-wrapper-overlay .cm-content .cm-line'), e => e.textContent).join('\\n')") == "browser file🙂\n", "File preview returned incorrect content"
             command("snapshot", "-i")
             report["cases"].append({"id": "FE07-preview-file", "source": "src/views/FileEditor.vue:490,1066", "status": "browser_passed"})
+            command("open", report["server_origin"] + "/edit/shares/browser-file-renamed?type=file")
+            command("wait", 'input[placeholder="默认后端随机 Token"]')
+            click_name("按次数")
+            command("wait", 'input[placeholder="请输入总次数"]')
+            command("fill", 'input[placeholder="请输入总次数"]', "2")
+            command("fill", 'input[placeholder="默认后端随机 Token"]', "browser-token")
+            command("click", ".submit-btn")
+            command("wait", "--fn", "new URLSearchParams(location.search).get('token') === 'browser-token'")
+            stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+            assert len(stored["tokens"]) == 1 and stored["tokens"][0]["token"] == "browser-token" and stored["tokens"][0]["mode"] == "count" and stored["tokens"][0]["count"] == 2 and stored["tokens"][0]["usedCount"] == 0, "UI share create lost count options"
+            report["cases"].append({"id": "FE08-create-count-share", "source": "src/views/share/ShareEditorPage.vue:94,1465", "status": "browser_passed"})
+            public_url = report["server_origin"] + "/share/file/browser-file-renamed?token=browser-token"
+            share_url = evaluate("document.querySelector('input[placeholder=\"保存后会在这里显示分享链接\"]').value")
+            assert share_url == public_url, "UI share builder used the admin prefix or wrong identity"
+            report["public_share_url"] = share_url
+            command("open", share_url)
+            command("wait", "--text", "browser file🙂")
+            assert evaluate("document.body.textContent") == "browser file🙂\n", "Public share returned incorrect file content"
+            stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+            assert stored["tokens"][0]["usedCount"] == 1, "Public share did not consume exactly one use"
+            report["cases"].append({"id": "FE09-open-public-share", "source": "src/utils/share.ts:454,469", "status": "browser_passed"})
+            command("open", report["server_origin"] + "/edit/shares/browser-file-renamed?type=file&token=browser-token")
+            command("wait", ".editor-section-tab-list")
+            click_name("内容", "tab")
+            command("wait", 'input[placeholder="请输入总次数"]')
+            assert command("get", "value", 'input[placeholder="请输入总次数"]')["value"] == "2", "Share reload lost total count"
+            assert command("get", "value", 'input[placeholder="请输入已用次数"]')["value"] == "1", "Share reload lost used count"
+            command("fill", 'input[placeholder="请输入总次数"]', "3")
+            command("click", ".submit-btn")
+            command("wait", "--text", "分享更新成功")
+            stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+            assert len(stored["tokens"]) == 1 and stored["tokens"][0]["token"] == "browser-token" and stored["tokens"][0]["count"] == 3 and stored["tokens"][0]["usedCount"] == 1, "UI share update lost consumed count or duplicated token"
+            report["cases"].append({"id": "FE10-reopen-update-count-share", "source": "src/views/share/ShareEditorPage.vue:869,1096,1465", "status": "browser_passed"})
             report["upstream_requests"] = upstream.requests
             command("screenshot", output / "frontend-page.png")
             report["page_errors"] = command("errors")
