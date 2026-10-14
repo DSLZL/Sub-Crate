@@ -1,0 +1,62 @@
+[
+  {
+    "id": "E01-env-basic-share-sequence",
+    "source": "backend/src/restful/miscs.js:125; backend/src/utils/env.js; frontend/src/api/env.ts",
+    "steps": [
+      {"path": "/api/utils/env", "expect": {"status": 200, "headers": {"content-type": "application/json; charset=utf-8"}, "json_contains": {"status": "success", "data": {"backend": "Node", "version": "2.42.4", "feature": {"archive": true}, "meta": {"node": {"env": {"SUB_STORE_FRONTEND_BACKEND_PATH": "/"}}}}}}},
+      {"path": "/api/utils/env?share=false", "expect": {"status": 200, "json_contains": {"status": "success", "data": {"feature": {"archive": true, "share": true}}}}},
+      {"path": "/api/utils/env", "expect": {"status": 200, "json_contains": {"status": "success", "data": {"feature": {"archive": true, "share": true}}}}}
+    ]
+  },
+  {
+    "id": "D01-backup-seed",
+    "source": "backend/src/restful/miscs.js:54; backend/src/utils/migration.js:16",
+    "steps": [
+      {"method": "POST", "path": "/api/storage", "body": {"content": "{\"schemaVersion\":\"2.0\",\"settings\":{},\"subs\":[],\"collections\":[],\"artifacts\":[],\"files\":[],\"tokens\":[],\"modules\":[],\"archives\":[],\"unknownFixture\":{\"nil\":null,\"zero\":0,\"flag\":false,\"empty\":\"\"}}"}, "expect": {"status": 200, "json": {"status": "success"}}, "state": {"schemaVersion": "2.0", "unknownFixture": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}
+    ]
+  },
+  {
+    "id": "C01-subscription-crud",
+    "source": "backend/src/restful/subscriptions.js:253,262,395",
+    "steps": [
+      {"method": "POST", "path": "/api/subs", "body": {"name": "fixture", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}, "process": [{"type": "Script Operator", "args": {"content": "require('node:fs')", "mode": "script"}}]}, "expect": {"status": 201, "json_contains": {"status": "success", "data": {"name": "fixture", "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}, "process": [{"type": "Script Operator", "args": {"content": "require('node:fs')", "mode": "script"}}]}}}, "state": {"subs": [{"name": "fixture", "source": "local", "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}]}},
+      {"path": "/api/sub/fixture", "expect": {"status": 200, "json_contains": {"status": "success", "data": {"name": "fixture", "source": "local"}}}},
+      {"path": "/api/sub/fixture?raw=true", "expect": {"status": 200, "header_prefixes": {"content-disposition": "attachment; filename=\"sub-store_subscription_fixture_"}, "json_contains": {"name": "fixture", "process": [{"type": "Script Operator", "args": {"content": "require('node:fs')", "mode": "script"}}]}}}
+    ]
+  },
+  {
+    "id": "C02-rename-references",
+    "source": "backend/src/restful/collections.js:32; backend/src/restful/subscriptions.js:296,421",
+    "steps": [
+      {"method": "POST", "path": "/api/collections", "body": {"name": "collection", "subscriptions": ["fixture"]}, "expect": {"status": 201, "json": {"status": "success", "data": {"name": "collection", "subscriptions": ["fixture"]}}}},
+      {"method": "PATCH", "path": "/api/sub/fixture", "body": {"name": "renamed"}, "expect": {"status": 200, "json_contains": {"status": "success", "data": {"name": "renamed"}}}, "state": {"collections": [{"name": "collection", "subscriptions": ["renamed"]}]}},
+      {"path": "/api/collection/collection", "expect": {"status": 200, "json": {"status": "success", "data": {"name": "collection", "subscriptions": ["renamed"]}}}},
+      {"method": "DELETE", "path": "/api/sub/renamed?mode=permanent", "expect": {"status": 200, "json": {"status": "success"}}, "state": {"subs": [], "collections": [{"name": "collection", "subscriptions": []}]}}
+    ]
+  },
+  {
+    "id": "D02-export-preserves-unknown",
+    "source": "backend/src/restful/miscs.js:38",
+    "steps": [
+      {"path": "/api/storage", "expect": {"status": 200, "header_prefixes": {"content-disposition": "attachment; filename=\"sub-store_data_"}, "json_contains": {"schemaVersion": "2.0", "subs": [], "collections": [{"name": "collection", "subscriptions": []}], "unknownFixture": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}}
+    ]
+  },
+  {
+    "id": "C01-invalid-input",
+    "source": "backend/src/restful/subscriptions.js:403; backend/src/restful/response.js:8",
+    "steps": [
+      {"method": "POST", "path": "/api/subs", "body": {"name": "invalid/name"}, "expect": {"status": 500, "json_contains": {"status": "failed", "error": {"code": "INVALID_NAME", "message": "Subscription invalid/name is invalid"}}}, "state": {"subs": []}},
+      {"method": "PATCH", "path": "/api/sub/missing", "body": {"name": "new"}, "expect": {"status": 404, "json_contains": {"status": "failed", "error": {"code": "RESOURCE_NOT_FOUND", "message": "Subscription missing does not exist!"}}}, "state": {"subs": []}}
+    ]
+  },
+  {
+    "id": "U01-flow-cache",
+    "source": "backend/src/restful/subscriptions.js:173; backend/src/utils/flow.js:105,211,304",
+    "steps": [
+      {"method": "POST", "path": "/api/subs", "body": {"name": "remote-flow", "source": "remote", "url": "$UPSTREAM/subscription"}, "expect": {"status": 201, "json": {"status": "success", "data": {"name": "remote-flow", "source": "remote", "url": "$UPSTREAM/subscription"}}}},
+      {"path": "/api/sub/flow/remote-flow", "expect": {"status": 200, "json": {"status": "success", "data": {"total": 1000, "usage": {"upload": 10, "download": 20}}}}, "upstream": [{"method": "HEAD", "path": "/subscription", "headers": {"user-agent": "clash.meta/v1.19.23"}, "body": ""}]},
+      {"path": "/api/sub/flow/remote-flow", "expect": {"status": 200, "json": {"status": "success", "data": {"total": 1000, "usage": {"upload": 10, "download": 20}}}}, "upstream": []},
+      {"method": "DELETE", "path": "/api/sub/remote-flow?mode=permanent", "expect": {"status": 200, "json": {"status": "success"}}, "state": {"subs": []}}
+    ]
+  }
+]
