@@ -107,6 +107,18 @@
       "P04-invalid-proxy-missing-target",
       "P04-invalid-rule-missing-target",
       "P05-download-collection-and-query-precedence",
+      "K01-key-default",
+      "K01-key-hybrid",
+      "K03-fixed-key-derivation",
+      "K02-key-errors",
+      "O01-sort-resources",
+      "O02-legacy-replace",
+      "Y01-artifact-crud-and-sync",
+      "Y02-artifact-errors",
+      "A03-sort-delete-and-artifact-restore",
+      "A04-archive-errors",
+      "G01-logs-filter-and-clear",
+      "G02-logs-disabled",
       "M1-complete-inventory-and-fixtures"
     ],
     "conversion": [
@@ -176,9 +188,23 @@
       "P04-invalid-proxy-missing-target",
       "P04-invalid-rule-missing-target",
       "P05-download-collection-and-query-precedence"
+    ],
+    "resources": [
+      "K01-key-default",
+      "K01-key-hybrid",
+      "K03-fixed-key-derivation",
+      "K02-key-errors",
+      "O01-sort-resources",
+      "O02-legacy-replace",
+      "Y01-artifact-crud-and-sync",
+      "Y02-artifact-errors",
+      "A03-sort-delete-and-artifact-restore",
+      "A04-archive-errors",
+      "G01-logs-filter-and-clear",
+      "G02-logs-disabled"
     ]
   },
-  "coverage_state": "82 scoped scenarios; full suite intentionally fails until M1 inventory and fixtures are complete",
+  "coverage_state": "94 scoped scenarios; full suite intentionally fails until M1 inventory and fixtures are complete",
   "pending_domains": [
     "artifacts",
     "files",

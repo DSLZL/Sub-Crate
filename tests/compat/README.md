@@ -68,6 +68,12 @@ the parser API and a download URL, four rule output targets, existing parser/
 preprocessor samples, ordered built-in and general-JS processors, collection
 preview/download, target/platform/header precedence, missing resources and
 forbidden share overrides. `--suite conversion` runs this slice independently.
+Another standalone listener runs `resources`: twelve scenarios and 73 requests
+cover age X25519/hybrid key generation and fixed-key derivation, five resource
+sorts and four legacy replacements, artifact CRUD and upload-disabled sync,
+archive sorting/deletion/restore, and enabled/disabled log capture and filtering.
+The key fixtures are disposable test keys. Dynamic keys, log IDs/times and sync
+times have typed captures and checks against subsequent responses and state.
 The SS output samples cover alias dispatch, not every protocol/option combination.
 Expected JSON fields and output bytes are fixed fixtures, reviewed against the
 frozen source; acceptance never regenerates expectations from its target.
@@ -76,6 +82,11 @@ Frozen negative behavior remains explicit: unsupported rules can produce
 500/null-length errors in QX/Surge/Loon; a failed function script can fall back
 to a shortcut and retain the original nodes, while a top-level throw fails.
 Shortcut filters require an explicit return; omitting it selects no nodes.
+Missing artifact PATCH returns DUPLICATE_KEY; legacy artifact PUT accepts names
+that POST rejects. Invalid archive-sort payload returns the frozen HTML 500 body.
+No-token artifact restore is a separately classified defect: its unawaited promise
+rejection terminates Node 24 without an HTTP response. It is not counted as a
+passing HTTP case; provider restore remains an open gate.
 
 The Rust example evaluates unchanged `scripts/ip-flag-node.js` with controlled
 HTTP, request headers, memory-backed storage, locked lodash/YAML/Buffer/Base64
@@ -97,7 +108,8 @@ Production isolation, complete host semantics and per-request resource cleanup
 remain unverified; passing the contained experiment does not establish them.
 
 `rust-compat-native.yml` runs the probe, runner self-checks, thirteen Node HTTP
-scenarios, one restart, two merged-share and 66 conversion scenarios, plus the frozen unit baseline on native `ubuntu-24.04`,
+scenarios, one restart, two merged-share, 66 conversion and twelve resource scenarios,
+plus the frozen unit baseline on native `ubuntu-24.04`,
 `ubuntu-24.04-arm`, and `windows-2025`. Each platform uploads independent logs
 and JSON summaries even on failure. A successful probe is not a full Rust
 compatibility pass. Docker and all frontend workflows remain separate gates.
@@ -115,14 +127,16 @@ Node 24.15.0 and pnpm 11.0.9. The harness verifies the frontend commit/source,
 records hashes of every built asset, and uses a fresh browser session and
 disposable merged Node listener. The fixture config permits exactly its local
 origin through the existing CORS setting. URL-based backend setup, subscription
-create/reopen/rename/preview, local-file create/reopen/rename/preview, and count-share
-creation/public access/reopen/update have
+create/reopen/rename/preview, local-file create/reopen/rename/preview, count-share
+creation/public access/reopen/update, and collection create/reopen/rename/preview have
 UI/persisted-state/upstream assertions. Each workflow also requires its actual
 successful backend request in the HAR; preview checks inspect the preview window.
 File editor input uses keyboard selection/replacement and the visible content
 tab. Screenshots, command logs, HAR and page errors are preserved on
 failure. No frontend source or application state is injected to perform these
-operations. This is a ten-workflow slice; all other UI workflows remain pending.
+operations. The collection picker scrolls into view before selecting its visible
+checkbox; the fixed footer otherwise covers the control. This is a thirteen-workflow
+slice; all other UI workflows remain pending.
 
 `frontend-contract-map.json` links all 48 API request objects to source-checked
 backend routes, concrete dynamic type domains, partial HTTP/UI cases and milestone

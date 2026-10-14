@@ -26,6 +26,9 @@ def check_network(entries, cases, backend_url):
         "FE08-create-count-share": [("POST", "/api/token", 200)],
         "FE09-open-public-share": [("GET", "/share/file/browser-file-renamed", 200)],
         "FE10-reopen-update-count-share": [("GET", "/api/tokens", 200), ("DELETE", "/api/token/browser-token", 200), ("POST", "/api/token", 200)],
+        "FE11-create-collection": [("POST", "/api/collections", 201), ("GET", "/api/collections", 200)],
+        "FE12-reopen-rename-collection": [("PATCH", "/api/collection/browser-collection", 200)],
+        "FE13-preview-collection": [("POST", "/api/preview/collection", 200)],
     }
     observed = [(entry["request"]["method"], urlsplit(entry["request"]["url"])._replace(query="", fragment="").geturl(), entry["response"]["status"])
                 for entry in entries]
@@ -155,7 +158,9 @@ def main():
             command("wait", ".compare-btn")
             command("snapshot", "-i")
             command("click", ".compare-btn")
-            command("wait", "--fn", "document.body.innerText.includes('fixture')")
+            command("wait", ".compare-page-wrapper .processed-tr")
+            preview = evaluate("Array.from(document.querySelectorAll('.compare-page-wrapper .processed-tr'), row => row.innerText)")
+            assert len(preview) == 1 and "fixture" in preview[0] and "127.0.0.1:8388" in preview[0], "Subscription preview did not display the parsed fixture"
             command("snapshot", "-i")
             assert any(item["method"] == "GET" and item["path"] == "/subscription" for item in upstream.requests), "Preview did not load the controlled subscription"
             report["cases"].append({"id": "FE04-preview-subscription", "source": "src/views/SubEditor.vue:569", "status": "browser_passed"})
@@ -231,6 +236,41 @@ def main():
             stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
             assert len(stored["tokens"]) == 1 and stored["tokens"][0]["token"] == "browser-token" and stored["tokens"][0]["count"] == 3 and stored["tokens"][0]["usedCount"] == 1, "UI share update lost consumed count or duplicated token"
             report["cases"].append({"id": "FE10-reopen-update-count-share", "source": "src/views/share/ShareEditorPage.vue:869,1096,1465", "status": "browser_passed"})
+            command("open", report["server_origin"] + "/edit/collections/UNTITLED")
+            command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
+            command("fill", 'input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-collection")
+            command("scroll", "down", "450")
+            if evaluate("getComputedStyle(document.querySelector('.include-subs-wrapper')).display === 'none'"):
+                command("click", ".include-subs-trigger .nut-cell__title")
+            command("wait", ".subs-checkbox-wrapper .subs-checkbox")
+            command("click", ".subs-checkbox-wrapper .subs-checkbox")
+            assert command("get", "value", ".include-subs-trigger input")["value"] == "browser-renamed", "Collection picker did not select the visible subscription"
+            command("snapshot", "-i")
+            command("click", ".submit-btn")
+            command("wait", "--fn", "location.pathname === '/subs'")
+            command("wait", "--text", "browser-collection")
+            stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+            assert len(stored["collections"]) == 1 and stored["collections"][0]["name"] == "browser-collection" and stored["collections"][0]["subscriptions"] == ["browser-renamed"], "UI collection create lost its selected subscription"
+            report["cases"].append({"id": "FE11-create-collection", "source": "src/views/SubEditor.vue:360,390,1369", "status": "browser_passed"})
+            command("open", report["server_origin"] + "/edit/collections/browser-collection")
+            command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
+            assert command("get", "value", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')["value"] == "browser-collection", "Collection editor reload lost the name"
+            command("fill", 'input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-collection-renamed")
+            click_name("内容", "tab")
+            assert command("get", "value", ".include-subs-trigger input")["value"] == "browser-renamed", "Collection reload lost its selected subscription"
+            command("click", ".submit-btn")
+            command("wait", "--fn", "location.pathname === '/subs'")
+            command("wait", "--text", "browser-collection-renamed")
+            stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+            assert len(stored["collections"]) == 1 and stored["collections"][0]["name"] == "browser-collection-renamed" and stored["collections"][0]["subscriptions"] == ["browser-renamed"], "Collection rename lost resource references"
+            report["cases"].append({"id": "FE12-reopen-rename-collection", "source": "src/views/SubEditor.vue:1063,1379", "status": "browser_passed"})
+            command("open", report["server_origin"] + "/edit/collections/browser-collection-renamed")
+            command("wait", ".compare-btn")
+            command("click", ".compare-btn")
+            command("wait", ".compare-page-wrapper .processed-tr")
+            preview = evaluate("Array.from(document.querySelectorAll('.compare-page-wrapper .processed-tr'), row => row.innerText)")
+            assert len(preview) == 1 and "fixture" in preview[0] and "127.0.0.1:8388" in preview[0], "Collection preview lost its subscription's parsed node"
+            report["cases"].append({"id": "FE13-preview-collection", "source": "src/views/SubEditor.vue:569,1215; src/views/CompareTable.vue:124", "status": "browser_passed"})
             report["upstream_requests"] = upstream.requests
             command("screenshot", output / "frontend-page.png")
             report["page_errors"] = command("errors")

@@ -132,7 +132,7 @@ def main():
             if args.suite == "smoke":
                 phases.extend([("restart", "contracts-restart", {}), ("merged-share", "contracts-merged-share",
                     {"SUB_STORE_BACKEND_MERGE": "true", "SUB_STORE_FRONTEND_BACKEND_PATH": "/backend"}),
-                    ("conversion", "contracts-conversion", {})])
+                    ("conversion", "contracts-conversion", {}), ("resources", "contracts-resources", {})])
             elif args.suite == "merged-share":
                 phases[0] = (args.suite, "contracts", {"SUB_STORE_BACKEND_MERGE": "true", "SUB_STORE_FRONTEND_BACKEND_PATH": "/backend"})
             for suite, phase, overrides in phases:
