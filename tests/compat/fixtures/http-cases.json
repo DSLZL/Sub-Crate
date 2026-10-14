@@ -60,6 +60,91 @@
     ]
   },
   {
+    "id": "F01-file-crud-and-runtime",
+    "source": "backend/src/restful/file.js:39,118,419,452,510,537; backend/src/test/restful/file.spec.js:318,366,411",
+    "steps": [
+      {"method": "POST", "path": "/api/files", "body": {"name": "file-fixture", "source": "local", "content": "first\r\n第二🙂\n", "displayName": "配置🙂.txt", "download": true, "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}, "expect": {"status": 201, "json": {"status": "success", "data": {"name": "file-fixture", "source": "local", "content": "first\r\n第二🙂\n", "displayName": "配置🙂.txt", "download": true, "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}}},
+      {"path": "/api/files", "expect": {"status": 200, "json": {"status": "success", "data": [{"name": "file-fixture", "source": "local", "displayName": "配置🙂.txt", "download": true, "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}]}}},
+      {"path": "/api/wholeFiles", "expect": {"status": 200, "json": {"status": "success", "data": [{"name": "file-fixture", "source": "local", "content": "first\r\n第二🙂\n", "displayName": "配置🙂.txt", "download": true, "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}]}}},
+      {"path": "/api/wholeFile/file-fixture?raw=true", "expect": {"status": 200, "header_prefixes": {"content-disposition": "attachment; filename=\"sub-store_file_file-fixture_"}, "json": {"name": "file-fixture", "source": "local", "content": "first\r\n第二🙂\n", "displayName": "配置🙂.txt", "download": true, "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}},
+      {"path": "/api/file/file-fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8", "content-disposition": "attachment; filename*=UTF-8''%E9%85%8D%E7%BD%AE%F0%9F%99%82.txt"}, "body": "first\r\n第二🙂\n"}},
+      {"path": "/api/file/file-fixture?content=runtime-override", "expect": {"status": 200, "body": "runtime-override"}, "state": {"files": [{"name": "file-fixture", "content": "first\r\n第二🙂\n"}]}},
+      {"path": "/api/file/missing?fakeFile=1&content=standalone", "expect": {"status": 200, "body": "standalone"}},
+      {"path": "/api/file/missing?fakeFile=1", "expect": {"status": 400, "json_contains": {"status": "failed", "error": {"code": "INVALID_FAKE_FILE_SOURCE"}}}},
+      {"path": "/share/file/file-fixture?fakeFile=1&content=blocked", "expect": {"status": 400, "json_contains": {"status": "failed", "error": {"code": "UNSUPPORTED_SHARE_FAKE_FILE", "details": "详情请查看日志"}}}},
+      {"path": "/share/file/file-fixture?content=blocked", "expect": {"status": 400, "json_contains": {"status": "failed", "error": {"code": "UNSUPPORTED_SHARE_FILE_SOURCE_OVERRIDE"}}}},
+      {"path": "/share/file/file-fixture?source=local", "expect": {"status": 400, "json_contains": {"status": "failed", "error": {"code": "UNSUPPORTED_SHARE_FILE_RUNTIME_OVERRIDE"}}}},
+      {"path": "/share/file/file-fixture?subInfoUrl=$UPSTREAM/subscription", "expect": {"status": 400, "json_contains": {"status": "failed", "error": {"code": "UNSUPPORTED_SHARE_FILE_SUB_INFO_URL"}}}},
+      {"path": "/share/file/file-fixture?mergeSources=true", "expect": {"status": 400, "json_contains": {"status": "failed", "error": {"code": "UNSUPPORTED_SHARE_FILE_MERGE_SOURCES"}}}},
+      {"method": "POST", "path": "/api/files", "body": {"name": "file-fixture"}, "expect": {"status": 500, "json_contains": {"status": "failed", "error": {"code": "DUPLICATE_KEY"}}}},
+      {"method": "PATCH", "path": "/api/file/file-fixture", "body": {"name": "file-renamed"}, "expect": {"status": 200, "json_contains": {"status": "success", "data": {"name": "file-renamed", "content": "first\r\n第二🙂\n"}}}, "state": {"files": [{"name": "file-renamed", "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}]}},
+      {"path": "/api/file/file-fixture", "expect": {"status": 404, "json_contains": {"status": "failed", "error": {"code": "RESOURCE_NOT_FOUND"}}}},
+      {"path": "/api/wholeFile/file-fixture", "expect": {"status": 500, "json_contains": {"status": "failed", "error": {"code": "FILE_NOT_FOUND"}}}}
+    ]
+  },
+  {
+    "id": "A01-file-archive-restore-conflict",
+    "source": "backend/src/restful/file.js:496; backend/src/restful/archives.js:19,50; backend/src/utils/archive.js:46,146; backend/src/test/restful/archive.spec.js:222",
+    "steps": [
+      {"method": "DELETE", "path": "/api/file/file-renamed?mode=invalid", "expect": {"status": 500, "json_contains": {"status": "failed", "error": {"code": "INVALID_DELETE_MODE"}}}, "state": {"files": [{"name": "file-renamed"}], "archives": []}},
+      {"method": "DELETE", "path": "/api/file/file-renamed?mode=archive", "expect": {"status": 200, "json": {"status": "success"}}, "state": {"files": [], "archives": [{"itemType": "file", "name": "file-renamed", "snapshot": {"name": "file-renamed", "content": "first\r\n第二🙂\n", "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}]}},
+      {"path": "/api/archives", "capture": {"FILE_ARCHIVE_ID": {"pointer": "/data/0/id", "type": "string", "pattern": "[0-9]+-[a-z0-9]+"}, "FILE_ARCHIVED_AT": {"pointer": "/data/0/archivedAt", "type": "integer"}}, "expect": {"status": 200, "json_contains": {"status": "success", "data": [{"id": "{{FILE_ARCHIVE_ID}}", "archivedAt": "{{FILE_ARCHIVED_AT}}", "itemType": "file", "name": "file-renamed", "displayName": "配置🙂.txt", "snapshot": {"name": "file-renamed", "content": "first\r\n第二🙂\n"}}]}}, "state": {"archives": [{"id": "{{FILE_ARCHIVE_ID}}", "archivedAt": "{{FILE_ARCHIVED_AT}}"}]}},
+      {"path": "/api/archives/{{FILE_ARCHIVE_ID}}", "expect": {"status": 200, "json_contains": {"status": "success", "data": {"id": "{{FILE_ARCHIVE_ID}}", "snapshot": {"name": "file-renamed", "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}}}},
+      {"method": "POST", "path": "/api/files", "body": {"name": "file-renamed", "source": "local", "content": "conflicting"}, "expect": {"status": 201, "json_contains": {"status": "success", "data": {"name": "file-renamed"}}}},
+      {"method": "POST", "path": "/api/archives/{{FILE_ARCHIVE_ID}}/restore", "expect": {"status": 400, "json_contains": {"status": "failed", "error": {"code": "DUPLICATE_KEY"}}}, "state": {"files": [{"name": "file-renamed", "content": "conflicting"}], "archives": [{"id": "{{FILE_ARCHIVE_ID}}", "snapshot": {"content": "first\r\n第二🙂\n"}}]}},
+      {"method": "DELETE", "path": "/api/file/file-renamed?mode=permanent", "expect": {"status": 200, "json": {"status": "success"}}},
+      {"method": "POST", "path": "/api/archives/{{FILE_ARCHIVE_ID}}/restore", "expect": {"status": 200, "json": {"status": "success", "data": {"name": "file-renamed", "source": "local", "content": "first\r\n第二🙂\n", "displayName": "配置🙂.txt", "download": true, "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}}, "state": {"archives": [], "files": [{"name": "file-renamed", "content": "first\r\n第二🙂\n"}]}},
+      {"path": "/api/archives/{{FILE_ARCHIVE_ID}}", "expect": {"status": 404, "json_contains": {"status": "failed", "error": {"code": "ARCHIVE_ENTRY_NOT_FOUND"}}}},
+      {"method": "POST", "path": "/api/archives/missing/restore", "expect": {"status": 404, "json_contains": {"status": "failed", "error": {"code": "ARCHIVE_ENTRY_NOT_FOUND"}}}},
+      {"method": "DELETE", "path": "/api/file/file-renamed?mode=permanent", "expect": {"status": 200, "json": {"status": "success"}}, "state": {"files": [], "archives": []}}
+    ]
+  },
+  {
+    "id": "M01-module-crud",
+    "source": "backend/src/restful/module.js:11,23,44,64,91,100",
+    "steps": [
+      {"method": "POST", "path": "/api/modules", "body": {"name": "module-fixture", "content": "// 模块🙂\r\nconst flag = false;\n", "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}, "expect": {"status": 201, "json": {"status": "success", "data": {"name": "module-fixture", "content": "// 模块🙂\r\nconst flag = false;\n", "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}}},
+      {"path": "/api/modules", "expect": {"status": 200, "json": {"status": "success", "data": [{"name": "module-fixture", "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}]}}},
+      {"path": "/api/module/module-fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "// 模块🙂\r\nconst flag = false;\n"}},
+      {"method": "POST", "path": "/api/modules", "body": {"name": "module-fixture"}, "expect": {"status": 500, "json_contains": {"status": "failed", "error": {"code": "DUPLICATE_KEY"}}}},
+      {"method": "PATCH", "path": "/api/module/module-fixture", "body": {"name": "module-renamed", "content": "require('node:fs')\r\n// retained only\n"}, "expect": {"status": 200, "json_contains": {"status": "success", "data": {"name": "module-renamed", "content": "require('node:fs')\r\n// retained only\n", "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}}, "state": {"modules": [{"name": "module-renamed", "content": "require('node:fs')\r\n// retained only\n"}]}},
+      {"path": "/api/module/module-fixture", "expect": {"status": 500, "json_contains": {"status": "failed", "error": {"code": "MODULE_NOT_FOUND"}}}},
+      {"method": "PATCH", "path": "/api/module/missing", "body": {"content": "x"}, "expect": {"status": 404, "json_contains": {"status": "failed", "error": {"code": "RESOURCE_NOT_FOUND"}}}},
+      {"method": "DELETE", "path": "/api/module/module-renamed", "expect": {"status": 200, "json": {"status": "success"}}, "state": {"modules": []}},
+      {"method": "DELETE", "path": "/api/module/missing", "expect": {"status": 200, "json": {"status": "success"}}},
+      {"method": "PUT", "path": "/api/modules", "body": [{"name": "replaced", "content": "replaced"}], "expect": {"status": 200, "json": {"status": "success"}}, "state": {"modules": [{"name": "replaced", "content": "replaced"}]}},
+      {"method": "PUT", "path": "/api/modules", "body": [], "expect": {"status": 200, "json": {"status": "success"}}, "state": {"modules": []}}
+    ]
+  },
+  {
+    "id": "S01-settings-merge-and-validation",
+    "source": "backend/src/restful/settings.js:70,101; backend/src/test/restful/settings.spec.js:219,260,314,336,369",
+    "steps": [
+      {"path": "/api/settings", "expect": {"status": 200, "json": {"status": "success", "data": {}}}},
+      {"method": "PATCH", "path": "/api/settings", "body": {"appearanceSetting": {"theme": "dark", "language": "zh", "flag": false}, "defaultTimeout": "500", "resourceCacheTtl": 2, "logsMaxCount": 0, "backendRequestConcurrency": 3, "backendRequestConcurrencyWaitTime": 0, "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}, "expect": {"status": 200, "json": {"status": "success", "data": {"appearanceSetting": {"theme": "dark", "language": "zh", "flag": false}, "defaultTimeout": "500", "resourceCacheTtl": 2, "logsMaxCount": 0, "backendRequestConcurrency": 3, "backendRequestConcurrencyWaitTime": 0, "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}}},
+      {"method": "PATCH", "path": "/api/settings", "body": {"appearanceSetting": {"theme": "light"}, "defaultTimeout": 0, "backendRequestConcurrency": 1.2, "backendRequestConcurrencyWaitTime": -1, "logsMaxCount": null}, "expect": {"status": 200, "json": {"status": "success", "data": {"appearanceSetting": {"theme": "light", "language": "zh", "flag": false}, "resourceCacheTtl": 2, "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}}, "state": {"settings": {"appearanceSetting": {"theme": "light", "language": "zh", "flag": false}, "resourceCacheTtl": 2, "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}},
+      {"method": "PATCH", "path": "/api/settings", "body": {"gistDownloadTokenStrategy": "invalid"}, "expect": {"status": 500, "json_contains": {"status": "failed", "error": {"code": "INVALID_GIST_DOWNLOAD_TOKEN_STRATEGY"}}}},
+      {"path": "/api/settings", "expect": {"status": 200, "json": {"status": "success", "data": {"appearanceSetting": {"theme": "light", "language": "zh", "flag": false}, "resourceCacheTtl": 2, "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}}}
+    ]
+  },
+  {
+    "id": "T01-token-metadata-and-validation",
+    "source": "backend/src/restful/token.js:18,25,61,228,260; backend/src/test/restful/token.spec.js:352",
+    "steps": [
+      {"method": "POST", "path": "/api/files", "body": {"name": "token-source", "source": "local", "content": "share-body"}, "expect": {"status": 201, "json_contains": {"status": "success", "data": {"name": "token-source"}}}},
+      {"method": "POST", "path": "/api/token", "body": {"payload": {}}, "expect": {"status": 500, "json_contains": {"status": "failed", "error": {"code": "INVALID_PAYLOAD"}}}},
+      {"method": "POST", "path": "/api/token", "body": {"payload": {"type": "file", "name": "missing", "token": "bad"}}, "expect": {"status": 500, "json_contains": {"status": "failed", "error": {"code": "INVALID_FILE"}}}},
+      {"method": "POST", "path": "/api/token", "body": {"payload": {"type": "file", "name": "token-source", "token": "bad-count"}, "options": {"mode": "count", "count": 0}}, "expect": {"status": 500, "json_contains": {"status": "failed", "error": {"code": "INVALID_SHARE_COUNT"}}}, "state": {"tokens": []}},
+      {"method": "POST", "path": "/api/token", "body": {"payload": {"type": "file", "name": "token-source", "token": "fixed-token", "count": 999, "usedCount": 999, "exp": 1, "mode": "datetime", "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}, "options": {"mode": "count", "count": 2}}, "expect": {"status": 200, "json": {"status": "success", "data": {"token": "fixed-token"}}}},
+      {"path": "/api/tokens?type=file&name=token-source", "capture": {"TOKEN_CREATED_AT": {"pointer": "/data/0/createdAt", "type": "integer"}}, "expect": {"status": 200, "json": {"status": "success", "data": [{"type": "file", "name": "token-source", "token": "fixed-token", "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}, "createdAt": "{{TOKEN_CREATED_AT}}", "mode": "count", "count": 2, "usedCount": 0}]}}, "state": {"tokens": [{"createdAt": "{{TOKEN_CREATED_AT}}", "mode": "count", "count": 2, "usedCount": 0}]}},
+      {"method": "POST", "path": "/api/token", "body": {"payload": {"type": "file", "name": "token-source", "token": "fixed-token"}}, "expect": {"status": 500, "json_contains": {"status": "failed", "error": {"code": "DUPLICATE_TOKEN"}}}},
+      {"method": "DELETE", "path": "/api/token/fixed-token", "expect": {"status": 500, "json_contains": {"status": "failed", "error": {"code": "INVALID_PAYLOAD"}}}, "state": {"tokens": [{"token": "fixed-token", "usedCount": 0}]}},
+      {"method": "DELETE", "path": "/api/token/fixed-token?type=file&name=token-source&mode=permanent", "expect": {"status": 200, "json": {"status": "success"}}, "state": {"tokens": []}},
+      {"path": "/api/tokens", "expect": {"status": 200, "json": {"status": "success", "data": []}}},
+      {"method": "DELETE", "path": "/api/file/token-source?mode=permanent", "expect": {"status": 200, "json": {"status": "success"}}, "state": {"files": []}}
+    ]
+  },
+  {
     "id": "D03-excluded-script-import-export",
     "source": "backend/src/restful/miscs.js:38,54; backend/src/utils/migration.js:16; approved Node script exclusion",
     "steps": [
@@ -72,6 +157,44 @@
     "source": "backend/src/utils/migration.js:16; backend/src/restful/miscs.js:38; requires D03 state and a new listener process",
     "steps": [
       {"path": "/api/storage", "expect": {"status": 200, "json_contains": {"schemaVersion": "2.0", "subs": [{"name": "excluded-script", "process": [{"type": "Script Operator", "args": {"mode": "script", "content": "require('node:fs')\r\n// 旧脚本🙂\n"}}]}], "unknownFixture": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}, "state": {"subs": [{"name": "excluded-script", "process": [{"type": "Script Operator", "args": {"mode": "script", "content": "require('node:fs')\r\n// 旧脚本🙂\n"}}]}]}}
+    ]
+  },
+  {
+    "id": "T02-merged-share-count-and-origin",
+    "source": "backend/src/restful/index.js:68,95; backend/src/restful/token.js:423,435,455; requires merged listener with /backend prefix",
+    "steps": [
+      {"path": "/api/utils/env", "expect": {"status": 200, "json_contains": {"status": "success", "data": {"feature": {"share": true}, "meta": {"node": {"env": {"SUB_STORE_FRONTEND_BACKEND_PATH": "/backend"}}}}}}},
+      {"method": "POST", "path": "/api/files", "body": {"name": "merged-share", "source": "local", "content": "share-body"}, "expect": {"status": 201, "json_contains": {"status": "success", "data": {"name": "merged-share"}}}},
+      {"method": "POST", "path": "/api/token", "body": {"payload": {"type": "file", "name": "merged-share", "token": "limited"}, "options": {"mode": "count", "count": 2}}, "expect": {"status": 200, "json": {"status": "success", "data": {"token": "limited"}}}},
+      {"path": "/share/file/merged-share", "origin": true, "expect": {"status": 404, "body": ""}, "state": {"tokens": [{"token": "limited", "usedCount": 0}]}},
+      {"path": "/share/file/merged-share?token=wrong", "origin": true, "expect": {"status": 404, "body": ""}},
+      {"path": "/share/file/wrong-name?token=limited", "origin": true, "expect": {"status": 404, "body": ""}, "state": {"tokens": [{"token": "limited", "usedCount": 0}]}},
+      {"method": "POST", "path": "/share/file/merged-share?token=limited", "origin": true, "expect": {"status": 405, "body": "Method not allowed"}, "state": {"tokens": [{"token": "limited", "usedCount": 0}]}},
+      {"method": "HEAD", "path": "/share/file/merged-share?token=limited", "origin": true, "expect": {"status": 405, "body": ""}, "state": {"tokens": [{"token": "limited", "usedCount": 0}]}},
+      {"path": "/share/file/merged-share?token=limited", "origin": true, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "share-body"}, "state": {"tokens": [{"token": "limited", "count": 2, "usedCount": 1}]}},
+      {"path": "/share/file/merged-share?token=limited&content=blocked", "origin": true, "expect": {"status": 400, "json_contains": {"status": "failed", "error": {"code": "UNSUPPORTED_SHARE_FILE_SOURCE_OVERRIDE", "details": "详情请查看日志"}}}, "state": {"tokens": [{"token": "limited", "usedCount": 2}]}},
+      {"path": "/share/file/merged-share?token=limited", "origin": true, "expect": {"status": 404, "body": ""}, "state": {"tokens": [{"token": "limited", "usedCount": 2}]}},
+      {"path": "/share/file/merged-share?token=limited", "expect": {"status": 200, "body": "share-body"}, "state": {"tokens": [{"token": "limited", "usedCount": 2}]}},
+      {"method": "DELETE", "path": "/api/token/limited?type=file&name=merged-share&mode=permanent", "expect": {"status": 200, "json": {"status": "success"}}, "state": {"tokens": []}}
+    ]
+  },
+  {
+    "id": "T03-share-datetime-archive",
+    "source": "backend/src/restful/token.js:114,260,435; backend/src/restful/archives.js:91; backend/src/test/restful/archive.spec.js:222,451",
+    "steps": [
+      {"method": "POST", "path": "/api/token", "body": {"payload": {"type": "file", "name": "merged-share", "token": "invalid-date"}, "options": {"mode": "datetime", "exp": 1700000000}}, "expect": {"status": 500, "json_contains": {"status": "failed", "error": {"code": "INVALID_EXPIRATION_DATETIME"}}}, "state": {"tokens": []}},
+      {"method": "POST", "path": "/api/token", "body": {"payload": {"type": "file", "name": "merged-share", "token": "expired", "custom": false}, "options": {"mode": "datetime", "exp": 1700000000000}}, "expect": {"status": 200, "json": {"status": "success", "data": {"token": "expired"}}}},
+      {"path": "/api/tokens?type=file&name=merged-share", "capture": {"EXPIRED_CREATED_AT": {"pointer": "/data/0/createdAt", "type": "integer"}}, "expect": {"status": 200, "json": {"status": "success", "data": [{"type": "file", "name": "merged-share", "token": "expired", "custom": false, "createdAt": "{{EXPIRED_CREATED_AT}}", "mode": "datetime", "exp": 1700000000000}]}}},
+      {"path": "/share/file/merged-share?token=expired", "origin": true, "expect": {"status": 404, "body": ""}},
+      {"method": "DELETE", "path": "/api/token/expired?type=file&name=merged-share&mode=archive", "expect": {"status": 200, "json": {"status": "success"}}, "state": {"tokens": [], "archives": [{"itemType": "share", "shareType": "file", "snapshot": {"token": "expired", "createdAt": "{{EXPIRED_CREATED_AT}}", "exp": 1700000000000, "mode": "datetime", "custom": false}}]}},
+      {"path": "/api/archives", "capture": {"SHARE_ARCHIVE_ID": {"pointer": "/data/0/id", "type": "string", "pattern": "[0-9]+-[a-z0-9]+"}}, "expect": {"status": 200, "json_contains": {"status": "success", "data": [{"id": "{{SHARE_ARCHIVE_ID}}", "itemType": "share", "shareType": "file", "snapshot": {"token": "expired", "mode": "datetime", "exp": 1700000000000}}]}}},
+      {"method": "POST", "path": "/api/archives/{{SHARE_ARCHIVE_ID}}/restore", "expect": {"status": 200, "json_contains": {"status": "success", "data": {"type": "file", "name": "merged-share", "token": "expired", "mode": "datetime", "exp": 1700000000000, "custom": false}}}, "state": {"archives": [], "tokens": [{"token": "expired", "mode": "datetime", "exp": 1700000000000, "custom": false}]}},
+      {"path": "/share/file/merged-share?token=expired", "origin": true, "expect": {"status": 404, "body": ""}},
+      {"method": "DELETE", "path": "/api/token/expired?type=file&name=merged-share&mode=permanent", "expect": {"status": 200, "json": {"status": "success"}}},
+      {"method": "POST", "path": "/api/token", "body": {"payload": {"type": "file", "name": "merged-share", "token": "future"}, "options": {"mode": "datetime", "exp": 4102444800000}}, "expect": {"status": 200, "json": {"status": "success", "data": {"token": "future"}}}},
+      {"path": "/share/file/merged-share?token=future", "origin": true, "expect": {"status": 200, "body": "share-body"}, "state": {"tokens": [{"token": "future", "mode": "datetime", "exp": 4102444800000}]}},
+      {"method": "DELETE", "path": "/api/token/future?type=file&name=merged-share&mode=permanent", "expect": {"status": 200, "json": {"status": "success"}}},
+      {"method": "DELETE", "path": "/api/file/merged-share?mode=permanent", "expect": {"status": 200, "json": {"status": "success"}}, "state": {"files": [], "tokens": [], "archives": []}}
     ]
   }
 ]

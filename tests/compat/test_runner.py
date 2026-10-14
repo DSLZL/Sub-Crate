@@ -13,6 +13,24 @@ import runner
 
 
 class RunnerTests(unittest.TestCase):
+    def test_browser_workflow_requires_its_actual_successful_backend_request(self):
+        from frontend import check_network
+        cases = [{"id": "FE01-url-backend-setup"}]
+        entry = {"request": {"method": "GET", "url": "http://127.0.0.1:1/backend/api/utils/env?share=true"}, "response": {"status": 200}}
+        self.assertEqual(len(check_network([entry], cases, "http://127.0.0.1:1/backend")), 1)
+        for mutation in ("missing", "error", "wrong-origin", "wrong-method"):
+            entries = [copy.deepcopy(entry)]
+            if mutation == "missing":
+                entries = []
+            elif mutation == "error":
+                entries[0]["response"]["status"] = 500
+            elif mutation == "wrong-origin":
+                entries[0]["request"]["url"] = "http://127.0.0.1:2/backend/api/utils/env"
+            else:
+                entries[0]["request"]["method"] = "POST"
+            with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
+                check_network(entries, cases, "http://127.0.0.1:1/backend")
+
     def test_command_evidence_with_and_without_rtk(self):
         import reference
         import subprocess
@@ -93,6 +111,7 @@ class RunnerTests(unittest.TestCase):
                         self.assertEqual(code, 0 if kind == "valid" else 1)
                         self.assertFalse(report["rust_parity"])
                         self.assertFalse(report["full_coverage"])
+                        self.assertIn("state", report["cases"][0]["steps"][0])
                         if kind == "state":
                             self.assertEqual(report["cases"][0]["steps"][0]["state"], {"subs": [{}]})
             finally:
@@ -103,6 +122,40 @@ class RunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "M1-complete-inventory"):
             runner.load_cases(runner.HERE / "manifest.json", runner.HERE / "fixtures/http-cases.json", "full")
 
+    def test_dynamic_values_are_validated_and_reused_in_requests_and_state(self):
+        captures = {"ARCHIVE_ID": {"pointer": "/data/0/id", "type": "string", "pattern": r"[0-9]+-[a-z0-9]+"},
+                    "ARCHIVED_AT": {"pointer": "/data/0/archivedAt", "type": "integer"}}
+        entry = {"id": "123-abc", "archivedAt": 123}
+        for mutation in (None, "missing", "bad-id", "boolean-time", "zero-time", "state"):
+            actual = copy.deepcopy(entry)
+            if mutation == "missing":
+                del actual["id"]
+            elif mutation == "bad-id":
+                actual["id"] = ""
+            elif mutation == "boolean-time":
+                actual["archivedAt"] = True
+            elif mutation == "zero-time":
+                actual["archivedAt"] = 0
+            response = {"status": 200, "headers": {}, "body": json.dumps({"data": [actual]})}
+            case = {"id": "capture", "source": "self-check", "steps": [
+                {"path": "/api/archives", "capture": captures, "expect": {"status": 200, "json": {"data": [{"id": "{{ARCHIVE_ID}}", "archivedAt": "{{ARCHIVED_AT}}"}]}},
+                 "state": {"archives": [{"id": "{{ARCHIVE_ID}}", "archivedAt": "{{ARCHIVED_AT}}"}]}},
+                {"path": "/api/archives/{{ARCHIVE_ID}}/restore", "method": "POST", "expect": {"status": 200, "body": "restored"}}]}
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                state_dir = Path(directory)
+                stored = {**entry, "id": "wrong"} if mutation == "state" else entry
+                (state_dir / "sub-store.json").write_text(json.dumps({"archives": [stored]}), encoding="utf-8")
+                with patch("runner.request", side_effect=[response, {"status": 200, "headers": {}, "body": "restored"}]) as request:
+                    result = runner.run_cases("http://127.0.0.1:1/backend", state_dir, [case])[0]
+                self.assertEqual(result["status"], "passed" if mutation is None else "failed")
+                if mutation is None:
+                    self.assertEqual(request.call_args.args[1]["path"], "/api/archives/123-abc/restore")
+                    self.assertEqual(result["steps"][0]["captured"]["ARCHIVED_AT"], 123)
+        escaped = {"body": '{"a/b":{"~key":"123-abc"}}'}
+        self.assertEqual(runner.capture_values(escaped, {"ID": {"pointer": "/a~1b/~0key", "type": "string", "pattern": ".+"}}), {"ID": "123-abc"})
+        with self.assertRaises(KeyError):
+            runner.interpolate("/api/archives/{{MISSING}}", {})
+
     def test_upstream_request_and_cache_assertions(self):
         from upstream import ControlledUpstream, substitute
         with ControlledUpstream() as upstream:
@@ -110,6 +163,8 @@ class RunnerTests(unittest.TestCase):
             response = runner.request(upstream.url, step)
             self.assertEqual(response["status"], 200)
             self.assertEqual(response["headers"]["subscription-userinfo"], "upload=10; download=20; total=1000")
+            self.assertEqual(runner.request(upstream.url + "/backend", {**step, "origin": True})["status"], 200)
+            upstream.requests.pop()
             runner.check_json(upstream.requests, [{"method": "HEAD", "path": "/subscription", "headers": {"user-agent": "fixture-client"}, "body": ""}], subset=True)
             with self.assertRaises(AssertionError):
                 runner.check_json(upstream.requests, [], subset=True)

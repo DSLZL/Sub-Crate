@@ -51,6 +51,8 @@ const output = path.resolve(process.argv[3] || '');
 if (process.argv.length !== 4) throw new Error('Usage: inventory.cjs <pinned-frontend-root> <new-output.json>');
 const frontendCommit = execFileSync('rtk', ['proxy', 'git', '-C', frontend, 'rev-parse', 'HEAD'], {encoding: 'utf8'}).trim();
 assert.equal(frontendCommit, '4bd7b0acbe65466b933ccea14fc61dbebe036ead');
+const frontendMap = JSON.parse(fs.readFileSync(path.join(__dirname, 'frontend-contract-map.json'), 'utf8'));
+assert.equal(frontendMap.frontend_commit, frontendCommit);
 const report = {backend_commit: '9cc6b5fac966993364ae33da8797f446bbf7f571', frontend_commit: frontendCommit,
   complete_behavior_inventory: false, routes: [], proxy_formats: [], registries: {}, frontend_requests: [], frontend_url_literals: [], parse_gaps: [],
   unresolved_behavior: ['Route parameter/query/coercion/error/state branches', 'Dynamic frontend type values and direct URL builders',
@@ -108,6 +110,23 @@ for (const filename of files(path.join(frontend, 'src'), ['.ts', '.js', '.vue'])
     } catch (error) { report.parse_gaps.push({file: path.relative(frontend, filename).replace(/\\/g, '/'), error: error.message}); }
   }
 }
+const mapped = new Set();
+const fixtureIds = new Set(JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/http-cases.json'), 'utf8')).map(item => item.id));
+for (const request of report.frontend_requests) {
+  const api = request.source.match(/^frontend\/src\/api\/([^/]+)\//)?.[1];
+  const key = `${api}.${request.caller}`;
+  const mapping = frontendMap.requests[key];
+  assert.ok(mapping, `Unmapped frontend API request: ${key} (${request.source})`);
+  assert.ok(!mapped.has(key), `Duplicate frontend mapping: ${key}`);
+  mapped.add(key);
+  assert.equal(mapping.method, request.method, key);
+  for (const route of mapping.paths) assert.ok(report.routes.some(item => item.path === route && [request.method, 'ALL'].includes(item.method)), `Missing backend route for ${key}: ${route}`);
+  for (const id of mapping.http_cases) assert.ok(fixtureIds.has(id), `Missing HTTP fixture for ${key}: ${id}`);
+  Object.assign(request, mapping, {mapping_status: 'source_mapped', execution: 'not_evaluated'});
+}
+assert.deepEqual([...mapped].sort(), Object.keys(frontendMap.requests).sort(), 'Stale frontend mapping entries');
+report.frontend_dynamic_domains = frontendMap.dynamic_domains;
+report.frontend_direct_builders = frontendMap.direct_builders;
 fs.mkdirSync(path.dirname(output), {recursive: true});
 fs.writeFileSync(output, JSON.stringify(report, null, 2) + '\n', {flag: 'wx'});
 console.log(JSON.stringify({routes: report.routes.length, proxy_aliases: report.proxy_formats.length,

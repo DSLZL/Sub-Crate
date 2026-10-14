@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
+import re
 import sys
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
@@ -60,6 +61,9 @@ def load_cases(manifest_path, fixtures_path, suite):
 def request(base_url, step):
     data = json.dumps(step["body"], ensure_ascii=False).encode("utf-8") if "body" in step else None
     headers = {"Content-Type": "application/json", **step.get("headers", {})}
+    if step.get("origin"):
+        parsed = urlsplit(base_url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
     req = Request(base_url.rstrip("/") + step["path"], data=data, headers=headers, method=step.get("method", "GET"))
     opener = build_opener(ProxyHandler({}), NoRedirect())
     try:
@@ -85,25 +89,71 @@ def check_response(response, expected):
         assert response["body"] == expected["body"], "raw response body mismatch"
 
 
+def capture_values(response, specifications):
+    body = json.loads(response["body"])
+    values = {}
+    for name, specification in specifications.items():
+        assert re.fullmatch(r"[A-Z][A-Z0-9_]*", name), f"Invalid capture name: {name}"
+        pointer = specification["pointer"]
+        assert pointer.startswith("/"), f"Invalid JSON pointer: {pointer}"
+        value = body
+        for component in pointer[1:].split("/"):
+            key = component.replace("~1", "/").replace("~0", "~")
+            if isinstance(value, list):
+                assert key.isdecimal(), f"Invalid array index: {key}"
+                value = value[int(key)]
+            else:
+                value = value[key]
+        kind = specification["type"]
+        assert type(value) is {"string": str, "integer": int}[kind], f"{name}: expected {kind}"
+        if kind == "integer":
+            assert value > 0, f"{name}: expected positive integer"
+        else:
+            assert re.fullmatch(specification["pattern"], value), f"{name}: invalid captured string"
+        values[name] = value
+    return values
+
+
+def interpolate(value, captures):
+    if isinstance(value, str):
+        exact = re.fullmatch(r"\{\{([A-Z][A-Z0-9_]*)\}\}", value)
+        if exact:
+            return captures[exact[1]]
+        return re.sub(r"\{\{([A-Z][A-Z0-9_]*)\}\}", lambda match: str(captures[match[1]]), value)
+    if isinstance(value, list):
+        return [interpolate(item, captures) for item in value]
+    if isinstance(value, dict):
+        return {key: interpolate(item, captures) for key, item in value.items()}
+    return value
+
+
 def run_cases(base_url, state_dir, cases, upstream=None):
     results = []
+    captures = {}
     for case in cases:
         record = {"id": case["id"], "source": case["source"], "status": "passed", "steps": []}
         try:
             for original in case["steps"]:
                 step = substitute(original, upstream.url) if upstream else original
                 upstream_offset = len(upstream.requests) if upstream else 0
-                response = request(base_url, step)
+                sent = interpolate({key: step[key] for key in ("path", "method", "headers", "body", "origin") if key in step}, captures)
+                response = request(base_url, sent)
                 outgoing = upstream.requests[upstream_offset:] if upstream else []
-                observed = {"method": step.get("method", "GET"), "path": step["path"], "response": response, "upstream_requests": outgoing}
+                observed = {"method": sent.get("method", "GET"), "path": sent["path"], "origin": sent.get("origin", False), "response": response, "upstream_requests": outgoing}
                 record["steps"].append(observed)
-                check_response(response, step["expect"])
                 if "state" in step:
                     if state_dir is None:
                         raise ValueError("Persisted state assertion requires --state-dir")
-                    state = json.loads((state_dir / "sub-store.json").read_text(encoding="utf-8"))
-                    observed["state"] = state
-                    check_json(state, step["state"], subset=True)
+                    observed["state"] = json.loads((state_dir / "sub-store.json").read_text(encoding="utf-8"))
+                if "capture" in step:
+                    captured = capture_values(response, step["capture"])
+                    assert not captures.keys() & captured.keys(), "Capture names must be unique"
+                    captures.update(captured)
+                    observed["captured"] = captured
+                step = interpolate(step, captures)
+                check_response(response, step["expect"])
+                if "state" in step:
+                    check_json(observed["state"], step["state"], subset=True)
                 check_json(outgoing, step.get("upstream", []), subset=True, path="upstream")
         except Exception as error:
             record.update(status="failed", error=f"{type(error).__name__}: {error}")

@@ -8,10 +8,31 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from reference import BACKEND, HERE, ROOT, execute, oracle
 from upstream import ControlledUpstream
+
+
+def check_network(entries, cases, backend_url):
+    required = {
+        "FE01-url-backend-setup": [("GET", "/api/utils/env", 200)],
+        "FE02-create-subscription": [("POST", "/api/subs", 201), ("GET", "/api/subs", 200)],
+        "FE03-reopen-rename-subscription": [("PATCH", "/api/sub/browser-fixture", 200)],
+        "FE04-preview-subscription": [("POST", "/api/preview/sub", 200)],
+        "FE05-create-local-file": [("POST", "/api/files", 201), ("GET", "/api/wholeFiles", 200)],
+        "FE06-reopen-rename-file": [("GET", "/api/wholeFiles", 200), ("PATCH", "/api/file/browser-file", 200)],
+        "FE07-preview-file": [("POST", "/api/preview/file", 200)],
+    }
+    observed = [(entry["request"]["method"], urlsplit(entry["request"]["url"])._replace(query="", fragment="").geturl(), entry["response"]["status"])
+                for entry in entries]
+    for case in cases:
+        for method, path, status in required[case["id"]]:
+            if (method, backend_url.rstrip("/") + path, status) not in observed:
+                case.update(status="failed", error=f"Missing successful {method} {path} in HAR")
+                raise AssertionError(f"{case['id']}: {case['error']}")
+        case.update(status="passed", network_verified=True)
+    return [{"method": method, "url": url, "status": status} for method, url, status in observed if url.startswith(backend_url.rstrip("/") + "/")]
 
 
 def main():
@@ -100,7 +121,7 @@ def main():
             assert any(item["url"] == backend_url and item["name"] == metadata["host"]["current"] for item in metadata["host"]["apis"]), "UI backend setup failed"
             assert metadata["env"]["backend"] == "Node" and metadata["env"]["version"] == "2.42.4", "Metadata mismatch"
             assert metadata["env"]["meta"]["node"]["env"]["SUB_STORE_FRONTEND_BACKEND_PATH"] == "/backend", "Legacy config metadata missing"
-            report["cases"].append({"id": "FE01-url-backend-setup", "source": "src/hooks/useHostAPI.ts:306; src/api/env/index.ts:25", "status": "passed"})
+            report["cases"].append({"id": "FE01-url-backend-setup", "source": "src/hooks/useHostAPI.ts:306; src/api/env/index.ts:25", "status": "browser_passed"})
             click_name("立即添加")
             click_name("单条订阅", "link")
             command("wait", "--fn", "location.pathname === '/edit/subs/UNTITLED'")
@@ -112,7 +133,7 @@ def main():
             command("wait", "--text", "browser-fixture")
             stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
             assert len(stored["subs"]) == 1 and stored["subs"][0]["name"] == "browser-fixture" and stored["subs"][0]["url"] == upstream.url + "/subscription", "UI create did not persist its input"
-            report["cases"].append({"id": "FE02-create-subscription", "source": "src/views/Sub.vue:47; src/views/SubEditor.vue:66", "status": "passed"})
+            report["cases"].append({"id": "FE02-create-subscription", "source": "src/views/Sub.vue:47; src/views/SubEditor.vue:66", "status": "browser_passed"})
             command("open", report["server_origin"] + "/edit/subs/browser-fixture")
             command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
             assert command("get", "value", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')["value"] == "browser-fixture", "Editor reload lost the resource name"
@@ -123,7 +144,7 @@ def main():
             command("wait", "--text", "browser-renamed")
             stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
             assert len(stored["subs"]) == 1 and stored["subs"][0]["name"] == "browser-renamed", "UI rename did not persist"
-            report["cases"].append({"id": "FE03-reopen-rename-subscription", "source": "src/views/SubEditor.vue:66", "status": "passed"})
+            report["cases"].append({"id": "FE03-reopen-rename-subscription", "source": "src/views/SubEditor.vue:66", "status": "browser_passed"})
             command("open", report["server_origin"] + "/edit/subs/browser-renamed")
             command("wait", ".compare-btn")
             command("snapshot", "-i")
@@ -131,9 +152,48 @@ def main():
             command("wait", "--fn", "document.body.innerText.includes('fixture')")
             command("snapshot", "-i")
             assert any(item["method"] == "GET" and item["path"] == "/subscription" for item in upstream.requests), "Preview did not load the controlled subscription"
-            report["cases"].append({"id": "FE04-preview-subscription", "source": "src/views/SubEditor.vue:569", "status": "passed"})
+            report["cases"].append({"id": "FE04-preview-subscription", "source": "src/views/SubEditor.vue:569", "status": "browser_passed"})
+            command("open", report["server_origin"] + "/edit/files/UNTITLED")
+            command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
+            command("fill", 'input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-file")
+            command("wait", ".cm-content[contenteditable='true']")
+            command("click", ".cm-content[contenteditable='true']")
+            command("press", "Control+a")
+            command("press", "Backspace")
+            command("keyboard", "inserttext", "browser file🙂\n")
+            command("snapshot", "-i")
+            command("click", ".submit-btn")
+            command("wait", "--fn", "location.pathname === '/files'")
+            command("wait", "--text", "browser-file")
+            stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+            assert len(stored["files"]) == 1 and stored["files"][0]["name"] == "browser-file" and stored["files"][0]["content"] == "browser file🙂\n", "UI file create did not persist editor content"
+            report["cases"].append({"id": "FE05-create-local-file", "source": "src/views/FileEditor.vue:63,330,1159", "status": "browser_passed"})
+            command("open", report["server_origin"] + "/edit/files/browser-file")
+            command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
+            assert command("get", "value", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')["value"] == "browser-file", "File editor reload lost the name"
+            command("fill", 'input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-file-renamed")
+            click_name("内容", "tab")
+            command("wait", ".cm-content[contenteditable='true']")
+            command("wait", "--fn", "document.querySelector('.cm-content').innerText.includes('browser file🙂')")
+            assert evaluate("Array.from(document.querySelectorAll('.cm-content .cm-line'), e => e.textContent).join('\\n')") == "browser file🙂\n", "File editor reload lost content"
+            command("click", ".submit-btn")
+            command("wait", "--fn", "location.pathname === '/files'")
+            command("wait", "--text", "browser-file-renamed")
+            stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+            assert len(stored["files"]) == 1 and stored["files"][0]["name"] == "browser-file-renamed" and stored["files"][0]["content"] == "browser file🙂\n", "File rename did not persist"
+            report["cases"].append({"id": "FE06-reopen-rename-file", "source": "src/views/FileEditor.vue:916,1164", "status": "browser_passed"})
+            command("open", report["server_origin"] + "/edit/files/browser-file-renamed")
+            command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
+            click_name("内容", "tab")
+            command("wait", ".compare-btn")
+            command("click", ".compare-btn")
+            command("wait", ".compare-page-wrapper-overlay .cm-content")
+            command("wait", "--fn", "document.querySelector('.compare-page-wrapper-overlay .cm-content').innerText.includes('browser file🙂')")
+            assert evaluate("Array.from(document.querySelectorAll('.compare-page-wrapper-overlay .cm-content .cm-line'), e => e.textContent).join('\\n')") == "browser file🙂\n", "File preview returned incorrect content"
+            command("snapshot", "-i")
+            report["cases"].append({"id": "FE07-preview-file", "source": "src/views/FileEditor.vue:490,1066", "status": "browser_passed"})
             report["upstream_requests"] = upstream.requests
-            command("screenshot", output / "subscription-page.png")
+            command("screenshot", output / "frontend-page.png")
             report["page_errors"] = command("errors")
             assert not report["page_errors"]["errors"], "Frontend JavaScript errors"
             report["exit_code"] = 0
@@ -150,6 +210,9 @@ def main():
             for arguments in (("network", "har", "stop", output / "frontend.har"), ("close",)):
                 try:
                     command(*arguments)
+                    if arguments[:3] == ("network", "har", "stop"):
+                        har = json.loads((output / "frontend.har").read_text(encoding="utf-8"))
+                        report["backend_requests"] = check_network(har["log"]["entries"], report["cases"], report["server_url"])
                 except Exception as error:
                     report.setdefault("cleanup_errors", []).append(str(error))
                     report["exit_code"] = 1

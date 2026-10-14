@@ -39,7 +39,7 @@ python tests/compat/runner.py --url http://127.0.0.1:3000 --kind rust-contract \
   --state-dir /path/to/disposable/state --evidence /path/to/new-result.json
 ```
 
-`smoke` is currently eight ordered scenarios. These write/delete fixture data;
+`smoke` is currently thirteen ordered scenarios. These write/delete fixture data;
 use only disposable state. Response status, selected headers, JSON types/raw
 content, persisted side effects, and controlled upstream requests are asserted.
 A cached flow lookup must make zero additional upstream requests. Missing
@@ -48,11 +48,20 @@ result files are never overwritten. `--suite full` intentionally fails while
 the inventory and executable fixture set remain incomplete. A scoped contract
 success is always labeled `full_coverage: false` and `rust_parity: false`.
 
+Generated archive IDs and timestamps have explicit type/pattern checks. Captured
+values must match subsequent detail/restore requests and persisted state. A
+capture does not replace assertions on the snapshot, error or transition. Failed
+responses retain the actual state and upstream requests in their evidence.
+
 The orchestrated `--mode contracts` also stops its first listener, starts a new
 process over the same disposable state, and runs the separate `restart` scenario.
 That stage verifies backup-imported excluded script bytes (Unicode and CRLF/LF)
 and unknown/falsy fields survive export and restart. It has independent listener
 logs and evidence. Running `--suite restart` alone requires the D03 state seed.
+It then starts a third listener in merged mode with `/backend` as the admin
+prefix and runs two `merged-share` scenarios at the public origin. These verify
+token/path binding, GET-only access, count consumption, expiry and share archive
+restore. Admin-prefixed access and public-origin access are asserted separately.
 
 The Rust example evaluates unchanged `scripts/ip-flag-node.js` with controlled
 HTTP, request headers, memory-backed storage, locked lodash/YAML/Buffer/Base64
@@ -67,8 +76,8 @@ upgrade to the full shared-behavior fixtures before M3 acceptance.` The async
 deadline does not interrupt CPU-bound JS; production execution limits and
 complete host semantics remain unverified.
 
-`rust-compat-native.yml` runs the probe, runner self-checks, eight Node HTTP
-scenarios plus a separate restart scenario and frozen unit baseline on native `ubuntu-24.04`,
+`rust-compat-native.yml` runs the probe, runner self-checks, thirteen Node HTTP
+scenarios, one restart and two merged-share scenarios, and the frozen unit baseline on native `ubuntu-24.04`,
 `ubuntu-24.04-arm`, and `windows-2025`. Each platform uploads independent logs
 and JSON summaries even on failure. A successful probe is not a full Rust
 compatibility pass. Docker and all frontend workflows remain separate gates.
@@ -86,7 +95,23 @@ Node 24.15.0 and pnpm 11.0.9. The harness verifies the frontend commit/source,
 records hashes of every built asset, and uses a fresh browser session and
 disposable merged Node listener. The fixture config permits exactly its local
 origin through the existing CORS setting. URL-based backend setup, subscription
-create/reopen/rename and preview currently have UI/persisted-state/upstream
-assertions. Screenshots, command logs, HAR and page errors are preserved on
+create/reopen/rename/preview and local-file create/reopen/rename/preview have
+UI/persisted-state/upstream assertions. Each workflow also requires its actual
+successful backend request in the HAR; preview checks inspect the preview window.
+File editor input uses keyboard selection/replacement and the visible content
+tab. Screenshots, command logs, HAR and page errors are preserved on
 failure. No frontend source or application state is injected to perform these
-operations. This is a four-workflow slice; all other UI workflows remain pending.
+operations. This is a seven-workflow slice; all other UI workflows remain pending.
+
+`frontend-contract-map.json` links all 48 API request objects to source-checked
+backend routes, concrete dynamic type domains, partial HTTP/UI cases and milestone
+owners. It does not assert all query/body/workflow variants are covered. Regenerate
+source discovery into a new output file (previous evidence is immutable):
+
+```sh
+node tests/compat/inventory.cjs /path/to/pinned-frontend-checkout /path/to/new-inventory.json
+```
+
+The inventory command rejects missing/stale call mappings, backend routes and
+fixture IDs. Its 114 direct URL expressions still require complete builder and
+parameter analysis; the two mapped builders are only an initial slice.

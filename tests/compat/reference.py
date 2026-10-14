@@ -121,13 +121,16 @@ def main():
                 raise RuntimeError("Pinned backend bundling failed; inspect preserved logs")
             bundle = BACKEND / "dist/sub-store.bundle.js"
             summary["bundle_sha256"] = hashlib.sha256(bundle.read_bytes()).hexdigest()
-            phases = [(args.suite, "contracts")]
+            phases = [(args.suite, "contracts", {})]
             if args.suite == "smoke":
-                phases.append(("restart", "contracts-restart"))
-            for suite, phase in phases:
+                phases.extend([("restart", "contracts-restart", {}), ("merged-share", "contracts-merged-share",
+                    {"SUB_STORE_BACKEND_MERGE": "true", "SUB_STORE_FRONTEND_BACKEND_PATH": "/backend"})])
+            elif args.suite == "merged-share":
+                phases[0] = (args.suite, "contracts", {"SUB_STORE_BACKEND_MERGE": "true", "SUB_STORE_FRONTEND_BACKEND_PATH": "/backend"})
+            for suite, phase, overrides in phases:
                 listener = {"suite": suite}
                 summary.setdefault("listeners", []).append(listener)
-                with oracle(node, environment, output_dir, listener, log_prefix=phase + "-server") as backend_url:
+                with oracle(node, {**environment, **overrides}, output_dir, listener, log_prefix=phase + "-server") as backend_url:
                     result = execute([sys.executable, HERE / "runner.py", "--url", backend_url, "--kind", "node-baseline", "--suite", suite,
                                       "--state-dir", state_dir, "--evidence", output_dir / f"{phase}.json"], ROOT, environment, output_dir, phase)
                 summary["exit_code"] = result.returncode
