@@ -119,6 +119,16 @@
       "A04-archive-errors",
       "G01-logs-filter-and-clear",
       "G02-logs-disabled",
+      "E02-cors-default-and-preflight",
+      "U02-download-and-flow-cache-refresh",
+      "U03-remote-failure-policies",
+      "D05-base64-and-invalid-backups",
+      "D07-truthy-version-skips-structural-migration",
+      "D06-legacy-schema-migration",
+      "D08-migrated-data-restart",
+      "E03-cors-configured-whitelist",
+      "E04-cors-wildcard",
+      "E05-cors-branded-local-and-metadata",
       "M1-complete-inventory-and-fixtures"
     ],
     "conversion": [
@@ -202,9 +212,29 @@
       "A04-archive-errors",
       "G01-logs-filter-and-clear",
       "G02-logs-disabled"
+    ],
+    "operations": [
+      "E02-cors-default-and-preflight",
+      "U02-download-and-flow-cache-refresh",
+      "U03-remote-failure-policies",
+      "D05-base64-and-invalid-backups",
+      "D07-truthy-version-skips-structural-migration",
+      "D06-legacy-schema-migration"
+    ],
+    "operations-restart": [
+      "D08-migrated-data-restart"
+    ],
+    "cors-configured": [
+      "E03-cors-configured-whitelist"
+    ],
+    "cors-wildcard": [
+      "E04-cors-wildcard"
+    ],
+    "cors-branded": [
+      "E05-cors-branded-local-and-metadata"
     ]
   },
-  "coverage_state": "94 scoped scenarios; full suite intentionally fails until M1 inventory and fixtures are complete",
+  "coverage_state": "104 scoped scenarios; full suite intentionally fails until M1 inventory and fixtures are complete",
   "pending_domains": [
     "artifacts",
     "files",

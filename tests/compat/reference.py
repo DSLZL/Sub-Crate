@@ -132,13 +132,23 @@ def main():
             if args.suite == "smoke":
                 phases.extend([("restart", "contracts-restart", {}), ("merged-share", "contracts-merged-share",
                     {"SUB_STORE_BACKEND_MERGE": "true", "SUB_STORE_FRONTEND_BACKEND_PATH": "/backend"}),
-                    ("conversion", "contracts-conversion", {}), ("resources", "contracts-resources", {})])
+                    ("conversion", "contracts-conversion", {}), ("resources", "contracts-resources", {}),
+                    ("operations", "contracts-operations", {}), ("operations-restart", "contracts-operations-restart", {}),
+                    ("cors-configured", "contracts-cors-configured", {}), ("cors-wildcard", "contracts-cors-wildcard", {}),
+                    ("cors-branded", "contracts-cors-branded", {})])
+            elif args.suite == "operations":
+                phases.append(("operations-restart", "contracts-operations-restart", {}))
             elif args.suite == "merged-share":
                 phases[0] = (args.suite, "contracts", {"SUB_STORE_BACKEND_MERGE": "true", "SUB_STORE_FRONTEND_BACKEND_PATH": "/backend"})
+            configurations = {
+                "cors-configured": {"SUB_STORE_CORS_ALLOWED_ORIGINS": "https://allowed.invalid/path, https://second.invalid", "SUB_STORE_BACKEND_CUSTOM_NAME": "fixture-server"},
+                "cors-wildcard": {"SUB_STORE_CORS_ALLOWED_ORIGINS": "*"},
+                "cors-branded": {"SUB_STORE_BACKEND_CUSTOM_NAME": "fixture-server", "SUB_STORE_BACKEND_CUSTOM_ICON": "https://icon.invalid/test.png", "SUB_STORE_DOCKER": "true", "SUB_STORE_CRON": "0 0 * * *"},
+            }
             for suite, phase, overrides in phases:
                 listener = {"suite": suite}
                 summary.setdefault("listeners", []).append(listener)
-                with oracle(node, {**environment, **overrides}, output_dir, listener, log_prefix=phase + "-server") as backend_url:
+                with oracle(node, {**environment, **configurations.get(suite, {}), **overrides}, output_dir, listener, log_prefix=phase + "-server") as backend_url:
                     result = execute([sys.executable, HERE / "runner.py", "--url", backend_url, "--kind", "node-baseline", "--suite", suite,
                                       "--state-dir", state_dir, "--evidence", output_dir / f"{phase}.json"], ROOT, environment, output_dir, phase)
                 summary["exit_code"] = result.returncode

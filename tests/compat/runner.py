@@ -79,6 +79,8 @@ def check_response(response, expected):
     assert response["status"] == expected["status"], f"HTTP {response['status']} != {expected['status']}"
     for key, value in expected.get("headers", {}).items():
         assert response["headers"].get(key.lower()) == value, f"header {key}: {response['headers'].get(key.lower())!r} != {value!r}"
+    for key in expected.get("absent_headers", []):
+        assert key.lower() not in response["headers"], f"header {key}: must be absent"
     for key, prefix in expected.get("header_prefixes", {}).items():
         assert response["headers"].get(key.lower(), "").startswith(prefix), f"header {key}: expected prefix {prefix!r}"
     if "json" in expected:

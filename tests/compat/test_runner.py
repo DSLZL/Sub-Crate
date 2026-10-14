@@ -85,6 +85,14 @@ class RunnerTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             runner.check_json({"subs": []}, {"subs": [{"name": "must-persist"}]}, subset=True)
 
+    def test_denied_origin_must_not_receive_an_allow_origin_header(self):
+        response = {"status": 403, "headers": {}, "body": "CORS origin not allowed"}
+        expected = {"status": 403, "absent_headers": ["Access-Control-Allow-Origin"]}
+        runner.check_response(response, expected)
+        for value in ("*", "https://denied.invalid", ""):
+            with self.subTest(value=value), self.assertRaises(AssertionError):
+                runner.check_response({**response, "headers": {"access-control-allow-origin": value}}, expected)
+
     def run_cli(self, fixtures, manifest, url, state_dir):
         fixtures_path = state_dir / "cases.json"
         manifest_path = state_dir / "manifest.json"

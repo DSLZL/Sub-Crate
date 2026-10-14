@@ -74,6 +74,14 @@ sorts and four legacy replacements, artifact CRUD and upload-disabled sync,
 archive sorting/deletion/restore, and enabled/disabled log capture and filtering.
 The key fixtures are disposable test keys. Dynamic keys, log IDs/times and sync
 times have typed captures and checks against subsequent responses and state.
+Six `operations` scenarios and a separate migrated-data restart cover default
+CORS/preflight/HEAD/404 behavior, download and flow cache hits/noCache/refresh,
+remote failure policies, Base64/invalid imports and legacy migrations. Three
+additional listeners exercise configured CORS, wildcard CORS and branded local
+origins with frontend-consumed metadata. The orchestrated total is 104 scenarios.
+`--suite operations` includes its restart; selecting `operations-restart` alone
+requires the D06 state seed. `cors-configured`, `cors-wildcard` and `cors-branded`
+automatically set their documented fixture environment in `reference.py`.
 The SS output samples cover alias dispatch, not every protocol/option combination.
 Expected JSON fields and output bytes are fixed fixtures, reviewed against the
 frozen source; acceptance never regenerates expectations from its target.
@@ -91,6 +99,16 @@ reading in Rust, while retaining the frontend protocol. Rust regression checks
 must verify a structured restore error, unchanged state and a live listener;
 the frozen Node source and failed evidence stay intact. Provider restore remains
 an open gate.
+
+Default CORS denies local origins; a custom backend name permits HTTP localhost
+and 127.0.0.1 only under the default policy. An explicit whitelist replaces that
+policy, even for branded backends. Denied requests must omit allow-origin headers
+and leave resource state intact. Downloaded flow headers populate the flow cache;
+refresh invalidates both resource and flow caches. Quiet remote failure still
+fails an empty subscription, while fallbackQuiet returns empty output. Migration
+converts legacy maps only when schemaVersion is falsy: truthy `1.0` updates the
+version marker while retaining the old shape. These frozen behaviors are explicit
+fixtures; they are not additional approved reference fixes.
 
 The Rust example evaluates unchanged `scripts/ip-flag-node.js` with controlled
 HTTP, request headers, memory-backed storage, locked lodash/YAML/Buffer/Base64
@@ -112,7 +130,8 @@ Production isolation, complete host semantics and per-request resource cleanup
 remain unverified; passing the contained experiment does not establish them.
 
 `rust-compat-native.yml` runs the probe, runner self-checks, thirteen Node HTTP
-scenarios, one restart, two merged-share, 66 conversion and twelve resource scenarios,
+scenarios, one restart, two merged-share, 66 conversion, twelve resource, six
+operation, one migrated-data restart and three configured-CORS scenarios,
 plus the frozen unit baseline on native `ubuntu-24.04`,
 `ubuntu-24.04-arm`, and `windows-2025`. Each platform uploads independent logs
 and JSON summaries even on failure. A successful probe is not a full Rust
