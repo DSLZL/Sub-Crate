@@ -1,7 +1,7 @@
 [
   {
     "id": "E01-env-basic-share-sequence",
-    "source": "backend/src/restful/miscs.js:125; backend/src/utils/env.js; frontend/src/api/env.ts",
+    "source": "backend/src/restful/miscs.js:125; backend/src/utils/env.js; frontend/src/api/env/index.ts",
     "steps": [
       {"path": "/api/utils/env", "expect": {"status": 200, "headers": {"content-type": "application/json; charset=utf-8"}, "json_contains": {"status": "success", "data": {"backend": "Node", "version": "2.42.4", "feature": {"archive": true}, "meta": {"node": {"env": {"SUB_STORE_FRONTEND_BACKEND_PATH": "/"}}}}}}},
       {"path": "/api/utils/env?share=false", "expect": {"status": 200, "json_contains": {"status": "success", "data": {"feature": {"archive": true, "share": true}}}}},
@@ -57,6 +57,21 @@
       {"path": "/api/sub/flow/remote-flow", "expect": {"status": 200, "json": {"status": "success", "data": {"total": 1000, "usage": {"upload": 10, "download": 20}}}}, "upstream": [{"method": "HEAD", "path": "/subscription", "headers": {"user-agent": "clash.meta/v1.19.23"}, "body": ""}]},
       {"path": "/api/sub/flow/remote-flow", "expect": {"status": 200, "json": {"status": "success", "data": {"total": 1000, "usage": {"upload": 10, "download": 20}}}}, "upstream": []},
       {"method": "DELETE", "path": "/api/sub/remote-flow?mode=permanent", "expect": {"status": 200, "json": {"status": "success"}}, "state": {"subs": []}}
+    ]
+  },
+  {
+    "id": "D03-excluded-script-import-export",
+    "source": "backend/src/restful/miscs.js:38,54; backend/src/utils/migration.js:16; approved Node script exclusion",
+    "steps": [
+      {"method": "POST", "path": "/api/storage", "body": {"content": "{\"schemaVersion\":\"2.0\",\"settings\":{},\"subs\":[{\"name\":\"excluded-script\",\"source\":\"local\",\"content\":\"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture\",\"process\":[{\"type\":\"Script Operator\",\"args\":{\"mode\":\"script\",\"content\":\"require('node:fs')\\r\\n// 旧脚本🙂\\n\"}}]}],\"collections\":[],\"artifacts\":[],\"files\":[],\"tokens\":[],\"modules\":[],\"archives\":[],\"unknownFixture\":{\"nil\":null,\"zero\":0,\"flag\":false,\"empty\":\"\"}}"}, "expect": {"status": 200, "json": {"status": "success"}}},
+      {"path": "/api/storage", "expect": {"status": 200, "json_contains": {"schemaVersion": "2.0", "subs": [{"name": "excluded-script", "process": [{"type": "Script Operator", "args": {"mode": "script", "content": "require('node:fs')\r\n// 旧脚本🙂\n"}}]}], "unknownFixture": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}, "state": {"subs": [{"name": "excluded-script", "process": [{"type": "Script Operator", "args": {"mode": "script", "content": "require('node:fs')\r\n// 旧脚本🙂\n"}}]}]}}
+    ]
+  },
+  {
+    "id": "D04-excluded-script-restart",
+    "source": "backend/src/utils/migration.js:16; backend/src/restful/miscs.js:38; requires D03 state and a new listener process",
+    "steps": [
+      {"path": "/api/storage", "expect": {"status": 200, "json_contains": {"schemaVersion": "2.0", "subs": [{"name": "excluded-script", "process": [{"type": "Script Operator", "args": {"mode": "script", "content": "require('node:fs')\r\n// 旧脚本🙂\n"}}]}], "unknownFixture": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}, "state": {"subs": [{"name": "excluded-script", "process": [{"type": "Script Operator", "args": {"mode": "script", "content": "require('node:fs')\r\n// 旧脚本🙂\n"}}]}]}}
     ]
   }
 ]

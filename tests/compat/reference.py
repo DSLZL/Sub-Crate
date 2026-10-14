@@ -1,5 +1,6 @@
 """Run the frozen Node oracle with pinned tools and fresh task-owned state."""
 import argparse
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -34,6 +35,47 @@ def execute(argv, directory, environment, output_dir, name):
     return process
 
 
+@contextmanager
+def oracle(node, environment, output_dir, summary, log_prefix="server"):
+    with socket.socket() as reserved:
+        reserved.bind(("127.0.0.1", 0))
+        port = reserved.getsockname()[1]
+    environment = {**environment, "SUB_STORE_BACKEND_API_PORT": str(port)}
+    origin = f"http://127.0.0.1:{port}"
+    if environment.get("SUB_STORE_FRONTEND_PATH"):
+        environment.setdefault("SUB_STORE_CORS_ALLOWED_ORIGINS", origin)
+        summary["fixture_cors_origin"] = environment["SUB_STORE_CORS_ALLOWED_ORIGINS"]
+    backend_url = origin + environment["SUB_STORE_FRONTEND_BACKEND_PATH"].rstrip("/")
+    bundle = BACKEND / "dist/sub-store.bundle.js"
+    from runner import request
+    with (output_dir / f"{log_prefix}.stdout.log").open("w", encoding="utf-8") as stdout, (output_dir / f"{log_prefix}.stderr.log").open("w", encoding="utf-8") as stderr:
+        # RTK's wrapper leaves Node alive on Windows after terminate(); own the child directly.
+        child = subprocess.Popen([str(node), str(bundle)], cwd=BACKEND, env=environment, stdout=stdout, stderr=stderr)
+        summary.update(server_argv=[str(node), str(bundle)], server_pid=child.pid, server_url=backend_url,
+                       server_origin=origin, rtk_exception="Direct listener ownership required for Windows process cleanup; short commands use RTK where available")
+        try:
+            deadline = time.monotonic() + 30
+            while True:
+                if child.poll() is not None:
+                    raise RuntimeError("Node oracle exited before readiness; inspect preserved server logs")
+                try:
+                    if request(backend_url, {"path": "/api/utils/env"})["status"] == 200:
+                        break
+                except OSError:
+                    pass
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("Node oracle readiness timeout")
+                time.sleep(0.1)
+            yield backend_url
+        finally:
+            child.terminate()
+            try:
+                summary["server_exit_code"] = child.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                summary["server_exit_code"] = child.wait(timeout=5)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--node", required=True, type=Path, help="Pinned Node 24.15.0 executable")
@@ -52,7 +94,6 @@ def main():
     summary = {"kind": "node-baseline", "production_ready": False, "rust_parity": False, "full_coverage": False,
                "backend_commit": "9cc6b5fac966993364ae33da8797f446bbf7f571", "mode": args.mode, "exit_code": 1,
                "state_dir": str(state_dir), "lock_sha256": hashlib.sha256((BACKEND / "pnpm-lock.yaml").read_bytes()).hexdigest()}
-    child = None
     try:
         version = execute([node, "--version"], ROOT, environment, output_dir, "toolchain")
         if version.returncode or version.stdout.strip() != "v24.15.0":
@@ -80,46 +121,21 @@ def main():
                 raise RuntimeError("Pinned backend bundling failed; inspect preserved logs")
             bundle = BACKEND / "dist/sub-store.bundle.js"
             summary["bundle_sha256"] = hashlib.sha256(bundle.read_bytes()).hexdigest()
-            with socket.socket() as reserved:
-                reserved.bind(("127.0.0.1", 0))
-                port = reserved.getsockname()[1]
-            environment["SUB_STORE_BACKEND_API_PORT"] = str(port)
-            backend_url = f"http://127.0.0.1:{port}"
-            from runner import request
-            with (output_dir / "server.stdout.log").open("w", encoding="utf-8") as stdout, (output_dir / "server.stderr.log").open("w", encoding="utf-8") as stderr:
-                # Direct child ownership allows cleanup without terminating unrelated Node processes.
-                # RTK's wrapper leaves its Node descendant running on Windows after terminate().
-                # Own the listener directly so the harness can reliably clean up only its child.
-                child = subprocess.Popen([str(node), str(bundle)], cwd=BACKEND, env=environment, stdout=stdout, stderr=stderr)
-                summary["server_argv"] = [str(node), str(bundle)]
-                summary["server_pid"] = child.pid
-                summary["server_url"] = backend_url
-                summary["rtk_exception"] = "Direct listener ownership required for Windows process cleanup; all short commands use RTK"
-                deadline = time.monotonic() + 30
-                while True:
-                    if child.poll() is not None:
-                        raise RuntimeError("Node oracle exited before readiness; inspect preserved server logs")
-                    try:
-                        if request(backend_url, {"path": "/api/utils/env"})["status"] == 200:
-                            break
-                    except OSError:
-                        pass
-                    if time.monotonic() >= deadline:
-                        raise RuntimeError("Node oracle readiness timeout")
-                    time.sleep(0.1)
-                result = execute([sys.executable, HERE / "runner.py", "--url", backend_url, "--kind", "node-baseline", "--suite", args.suite,
-                                  "--state-dir", state_dir, "--evidence", output_dir / "contracts.json"], ROOT, environment, output_dir, "contracts")
+            phases = [(args.suite, "contracts")]
+            if args.suite == "smoke":
+                phases.append(("restart", "contracts-restart"))
+            for suite, phase in phases:
+                listener = {"suite": suite}
+                summary.setdefault("listeners", []).append(listener)
+                with oracle(node, environment, output_dir, listener, log_prefix=phase + "-server") as backend_url:
+                    result = execute([sys.executable, HERE / "runner.py", "--url", backend_url, "--kind", "node-baseline", "--suite", suite,
+                                      "--state-dir", state_dir, "--evidence", output_dir / f"{phase}.json"], ROOT, environment, output_dir, phase)
                 summary["exit_code"] = result.returncode
+                if result.returncode:
+                    break
     except Exception as error:
         summary["error"] = f"{type(error).__name__}: {error}"
     finally:
-        if child is not None:
-            child.terminate()
-            try:
-                summary["server_exit_code"] = child.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                child.kill()
-                summary["server_exit_code"] = child.wait(timeout=5)
         (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(json.dumps({"mode": args.mode, "exit_code": summary["exit_code"], "evidence": str(output_dir), **({"stats": summary["stats"]} if "stats" in summary else {})}, ensure_ascii=False))
     return summary["exit_code"]

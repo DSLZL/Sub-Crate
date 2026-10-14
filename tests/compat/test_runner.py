@@ -93,6 +93,8 @@ class RunnerTests(unittest.TestCase):
                         self.assertEqual(code, 0 if kind == "valid" else 1)
                         self.assertFalse(report["rust_parity"])
                         self.assertFalse(report["full_coverage"])
+                        if kind == "state":
+                            self.assertEqual(report["cases"][0]["steps"][0]["state"], {"subs": [{}]})
             finally:
                 server.shutdown()
                 thread.join(timeout=5)
@@ -114,6 +116,10 @@ class RunnerTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 runner.check_json(upstream.requests, [{"method": "GET"}], subset=True)
             self.assertEqual(substitute({"url": "$UPSTREAM/subscription", "nil": None}, upstream.url), {"url": upstream.url + "/subscription", "nil": None})
+            failed = runner.run_cases(upstream.url, None, [{"id": "failure-evidence", "source": "self-check", "steps": [{**step, "expect": {"status": 500}}]}], upstream)[0]
+            self.assertEqual(failed["status"], "failed")
+            self.assertEqual(failed["steps"][0]["response"]["status"], 200)
+            self.assertEqual(len(failed["steps"][0]["upstream_requests"]), 1)
 
 
 if __name__ == "__main__":

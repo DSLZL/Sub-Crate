@@ -94,16 +94,16 @@ def run_cases(base_url, state_dir, cases, upstream=None):
                 step = substitute(original, upstream.url) if upstream else original
                 upstream_offset = len(upstream.requests) if upstream else 0
                 response = request(base_url, step)
-                observed = {"method": step.get("method", "GET"), "path": step["path"], "response": response}
+                outgoing = upstream.requests[upstream_offset:] if upstream else []
+                observed = {"method": step.get("method", "GET"), "path": step["path"], "response": response, "upstream_requests": outgoing}
                 record["steps"].append(observed)
                 check_response(response, step["expect"])
                 if "state" in step:
                     if state_dir is None:
                         raise ValueError("Persisted state assertion requires --state-dir")
                     state = json.loads((state_dir / "sub-store.json").read_text(encoding="utf-8"))
+                    observed["state"] = state
                     check_json(state, step["state"], subset=True)
-                outgoing = upstream.requests[upstream_offset:] if upstream else []
-                observed["upstream_requests"] = outgoing
                 check_json(outgoing, step.get("upstream", []), subset=True, path="upstream")
         except Exception as error:
             record.update(status="failed", error=f"{type(error).__name__}: {error}")

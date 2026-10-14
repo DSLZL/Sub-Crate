@@ -2,8 +2,9 @@
   "backend_commit": "9cc6b5fac966993364ae33da8797f446bbf7f571",
   "frontend_commit": "4bd7b0acbe65466b933ccea14fc61dbebe036ead",
   "suites": {
-    "smoke": ["E01-env-basic-share-sequence", "D01-backup-seed", "C01-subscription-crud", "C02-rename-references", "D02-export-preserves-unknown", "C01-invalid-input", "U01-flow-cache"],
-    "full": ["E01-env-basic-share-sequence", "D01-backup-seed", "C01-subscription-crud", "C02-rename-references", "D02-export-preserves-unknown", "C01-invalid-input", "U01-flow-cache", "M1-complete-inventory-and-fixtures"]
+    "smoke": ["E01-env-basic-share-sequence", "D01-backup-seed", "C01-subscription-crud", "C02-rename-references", "D02-export-preserves-unknown", "C01-invalid-input", "U01-flow-cache", "D03-excluded-script-import-export"],
+    "restart": ["D04-excluded-script-restart"],
+    "full": ["E01-env-basic-share-sequence", "D01-backup-seed", "C01-subscription-crud", "C02-rename-references", "D02-export-preserves-unknown", "C01-invalid-input", "U01-flow-cache", "D03-excluded-script-import-export", "D04-excluded-script-restart", "M1-complete-inventory-and-fixtures"]
   },
   "coverage_state": "Initial executable slice; full suite intentionally fails until M1 inventory and fixtures are complete",
   "pending_domains": ["artifacts", "files", "tokens", "archives", "modules", "sync", "downloads", "preview", "sorting", "settings", "node-info", "proxy/rule formats and aliases", "logs", "age", "migration/restart", "upstream/cache effects", "frontend browser workflows", "deployment modes"]
