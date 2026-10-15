@@ -161,18 +161,27 @@ def main():
             for label, locale in (("English", "en"), ("简体中文", "zh")):
                 command("click", ".storage-language-switch .language-switch-button")
                 command("wait", ".language-switch-popup")
-                command("wait", "--fn", "(() => { const menus = Array.from(document.querySelectorAll('.language-switch-popup')).filter(el => el.getClientRects().length); return menus.length === 1 && menus[0].getAnimations({subtree:true}).every(animation => animation.playState !== 'running') })()")
+                command("wait", "--fn", """(() => {
+                    const menus = Array.from(document.querySelectorAll('.language-switch-popup')).filter(el => el.getClientRects().length);
+                    if (menus.length !== 1) return false;
+                    const menu = menus[0], r = menu.getBoundingClientRect();
+                    return r.width > 0 && r.height > 0 && r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth
+                        && menu.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2))
+                        && menu.getAnimations({subtree:true}).every(animation => animation.playState !== 'running');
+                })()""")
                 command("wait", "--fn", "document.querySelectorAll('.Toastify__toast').length === 0")
                 targets = evaluate("""(() => {
                     const describe = el => { const r = el.getBoundingClientRect(); return {
                         text:el.innerText, html:el.outerHTML, rect:r.toJSON(),
-                        visible:r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden'} };
+                        visible:r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden',
+                        inViewport:r.width > 0 && r.height > 0 && r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth,
+                        uncovered:el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2))} };
                     const leaf = Array.from(document.querySelectorAll('*')).find(el => el.children.length === 0 && el.textContent.trim() === """ + json.dumps(label) + """);
                     return {label:""" + json.dumps(label) + """, firstTextMatch:leaf ? describe(leaf) : null,
                         rows:Array.from(document.querySelectorAll('.language-switch-popup .nut-cell'), (el,index) => ({index,...describe(el)}))};
                 })()""")
                 report.setdefault("language_targets", []).append(targets)
-                rows = [row for row in targets["rows"] if row["visible"] and row["text"].strip() == label]
+                rows = [row for row in targets["rows"] if row["visible"] and row["inViewport"] and row["uncovered"] and row["text"].strip() == label]
                 assert len(rows) == 1, f"Expected one visible language row for {label!r}"
                 command("find", "nth", rows[0]["index"], ".language-switch-popup .nut-cell", "click")
                 command("wait", "--fn", f"localStorage.getItem('locale') === '{locale}'")
