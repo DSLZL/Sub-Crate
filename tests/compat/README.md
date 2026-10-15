@@ -178,7 +178,7 @@ hyper-rustls/http-body-util crates because reqwest inserts a default Accept head
 even when the caller explicitly omits it. No additional transitive packages were
 added. New source and binary hashes accompany each immutable evidence directory.
 
-The executable additionally runs seventeen shared `PC01`-`PC17` processor groups.
+The executable additionally runs forty shared `PC01`-`PC40` processor/helper groups.
 The Node oracle loads the actual processor module and application OpenAPI from
 `backend/`, matching the unit suite's Babel working directory. The helper builder
 uses the existing Babel parser to extract the frozen wrapper/cache declarations
@@ -196,9 +196,23 @@ This callback takes fixture payloads; it is not the `produceArtifact` API.
 Source cache checks use the same deterministic clock for TTL coercion, defaults,
 settings units, inclusive expiry, prefix cleanup, falsy values and root JSON
 persistence. Actual YAML wrappers cover merges/tags/errors, JSON serialization
-and legacy dump options. Every result/observation, four outgoing requests per
-runtime and complete persisted state must match; two more independent processes
-reload both files and the script cache without any HTTP. Missing or duplicate
+and legacy dump options. Public helper groups reuse the actual IP/UUID/port,
+country flag, JSON5, MD5 and flow implementations. They check Address4/Address6
+constructors, BigInt/subnets, coercion/errors, deterministic random boundaries,
+Unicode names, parser/stringifier options and fixed digest vectors. The fixed
+UTC clock pins reset-day/month/cycle behavior without claiming other deployment
+timezones or locale-dependent expired-date messages.
+
+Flow groups execute the source HTTP/cache/request queue with Rust-owned network
+I/O: HEAD/GET/body fallback, custom headers, noFlow/noCache, inclusive TTL expiry,
+timeouts/late completion, one-slot queue serialization, an async injected script,
+and header-cache persistence/restart. Invalid GET body can fall back to headers;
+non-success GET status throws before those headers are retained and returns
+undefined. Each runtime must issue the expected 19 requests, including exact
+flow User-Agent/token headers. The logger captures probe diagnostics only; it
+does not implement production log formatting/delivery. Every result/observation
+and complete persisted state must match; two more independent processes
+reload both files and both source caches without any HTTP. Missing or duplicate
 case IDs and false/zero output changes are rejected by runner self-checks.
 
 `shortcut: the probe uses a partial ProxyUtils/timer/storage/artifact host,

@@ -15,9 +15,9 @@ import runner
 class RunnerTests(unittest.TestCase):
     def test_shared_processors_reject_missing_cases_and_mutated_outputs(self):
         from probe import PROCESSOR_CASES, check_processors
-        expected = {"passed": PROCESSOR_CASES, "observations": {"flag": False}, "resourceCache": {"value": None}}
+        expected = {"passed": PROCESSOR_CASES, "observations": {"flag": False}, "resourceCache": {"value": None}, "headersCache": {"value": 0}}
         check_processors(expected, expected)
-        for mutation in ("missing-case", "duplicate-case", "typed-output", "missing-cache"):
+        for mutation in ("missing-case", "duplicate-case", "typed-output", "missing-cache", "missing-headers-cache"):
             actual = copy.deepcopy(expected)
             if mutation == "missing-case":
                 actual["passed"].pop()
@@ -25,8 +25,10 @@ class RunnerTests(unittest.TestCase):
                 actual["passed"][-1] = actual["passed"][0]
             elif mutation == "typed-output":
                 actual["observations"]["flag"] = 0
-            else:
+            elif mutation == "missing-cache":
                 del actual["resourceCache"]
+            else:
+                del actual["headersCache"]
             with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
                 check_processors(actual, expected)
 

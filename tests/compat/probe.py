@@ -27,6 +27,18 @@ PROCESSOR_CASES = [
     "PC13-script-cache-defaults-and-ttl-coercion", "PC14-script-cache-expiry-removal-and-prefix",
     "PC15-script-cache-root-persistence-and-aliases", "PC16-project-yaml-parse-merge-tags-and-errors",
     "PC17-project-yaml-dump-options-and-json-boundary",
+    "PC18-ip-validation-and-coercion", "PC19-address4-construction-subnets-and-bigint",
+    "PC20-address6-construction-mapping-and-url", "PC21-uuid-shape-and-types",
+    "PC22-port-selection-boundaries-and-legacy-inputs", "PC23-country-flags-iso-and-unicode-removal",
+    "PC24-json5-parsing-reviver-and-own-properties", "PC25-json5-stringify-options-and-errors",
+    "PC26-md5-fixed-ascii-and-unicode-vectors", "PC27-flow-header-casing-encoding-and-numbers",
+    "PC28-flow-parser-malformed-and-falsy-inputs", "PC29-flow-units-quota-and-expiry-boundary",
+    "PC30-flow-reset-calendar-and-invalid-options", "PC31-flow-normalization-duplicates-and-fallback",
+    "PC32-public-helpers-in-actual-script-operator",
+    "PC33-flow-download-short-circuits", "PC34-flow-head-cache-ttl-and-no-cache",
+    "PC35-flow-head-to-get-fallback", "PC36-flow-url-body-and-encoded-headers",
+    "PC37-flow-body-fallback-and-status-rejection", "PC38-flow-rejection-empty-and-timeout",
+    "PC39-flow-request-queue-and-wait-time", "PC40-flow-http-injected-into-pending-script",
 ]
 
 
@@ -49,8 +61,23 @@ def check_processor_requests(requests):
     ]
     actual = [{"method": item["method"], "path": item["path"], "body_bytes": item["body_bytes"],
                "probe": item["headers"].get("x-probe"), "accept": item["headers"].get("accept")}
-              for item in requests]
+              for item in requests[:4]]
     check_json(actual, expected)
+    expected_flow = [("HEAD", "head", "Flow Helper/1", "direct")] * 3 + [
+        ("HEAD", "get", "Flow Default/1", None), ("GET", "get", "Flow Default/1", None),
+        ("GET", "body", "Flow Fragment/1", "fragment"),
+        ("GET", "fallback", "Flow Explicit/1", "argument"), ("GET", "badstatus", "Flow Explicit/1", "argument"),
+        ("GET", "rejected", "Flow Default/1", None), ("HEAD", "empty", "Flow Default/1", None),
+        ("GET", "empty", "Flow Default/1", None), ("GET", "delay", "Flow Default/1", None),
+        ("HEAD", "queued/first", "Flow Default/1", None), ("HEAD", "queued/second", "Flow Default/1", None),
+        ("HEAD", "head", "Flow Default/1", None),
+    ]
+    actual_flow = [{"method": item["method"], "path": item["path"], "body_bytes": item["body_bytes"],
+                    "user_agent": item["headers"].get("user-agent"), "token": item["headers"].get("x-flow-token"),
+                    "accept": item["headers"].get("accept")} for item in requests[4:]]
+    check_json(actual_flow, [{"method": method, "path": "/host/flow/" + path, "body_bytes": [],
+                              "user_agent": ua, "token": token, "accept": "*/*"}
+                             for method, path, ua, token in expected_flow])
 
 
 def check_host_requests(requests):
@@ -114,7 +141,8 @@ def main():
                          "tests/compat/fixtures/script-assertions.js", "tests/compat/fixtures/script-host.js",
                          "tests/compat/fixtures/script-host-contracts.js", "tests/compat/.generated/script-helpers.js",
                          "tests/compat/build-helpers.cjs", "tests/compat/processor-reference.cjs",
-                         "tests/compat/fixtures/script-processor-clock.js", "tests/compat/fixtures/script-processor-contracts.js"):
+                         "tests/compat/fixtures/script-processor-clock.js", "tests/compat/fixtures/script-processor-contracts.js",
+                         "tests/compat/fixtures/script-helper-contracts.js"):
             report.setdefault("source_sha256", {})[relative] = hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()
         for name, argv in (("toolchain", ["rustc", "--version", "--verbose"]),
                            ("fmt", ["cargo", "fmt", "--manifest-path", "rust/Cargo.toml", "--", "--check"]),
@@ -138,6 +166,8 @@ def main():
                     (state / "root.json").write_text(json.dumps(root_seed) + "\n", encoding="utf-8")
                     child_env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state), "SUB_STORE_COMPAT_STATE_DIR": str(state),
                                  "SUB_STORE_COMPAT_UPSTREAM": upstream.url}
+                    if suite == "processor":
+                        child_env["TZ"] = "UTC"
                     argv = [node, "--require", HERE / "register.cjs", HERE / f"{suite}-reference.cjs"] if kind == "node" else [executable]
                     for resume in (False, True):
                         name = f"{kind}-{suite}" + ("-resume" if resume else "")
@@ -173,6 +203,7 @@ def main():
                             expected = {"storage": observed[kind]["storage"]}
                             if suite == "processor":
                                 expected["resourceCache"] = observed[kind]["resourceCache"]
+                                expected["headersCache"] = observed[kind]["headersCache"]
                             check_json(value, expected)
                             check_json(requests, [])
                         else:

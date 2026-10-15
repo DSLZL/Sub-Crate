@@ -12,6 +12,8 @@ class ControlledUpstream:
         self.requests = []
         self.gists = {}
         self.gist_lock = threading.Lock()
+        self.flow_lock = threading.Lock()
+        self.flow_active = 0
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -80,6 +82,31 @@ class ControlledUpstream:
 
     def host_response(self, method, path, body, headers):
         text = "订阅🙂\r\nsecond\n".encode("utf-8")
+        if path.startswith("/host/flow/"):
+            mode = path.removeprefix("/host/flow/")
+            flow = [("Subscription-Userinfo", "upload=10; download=20; total=1000"),
+                    ("Profile-Web-Page-Url", "https://example.invalid/flow"), ("Plan-Name", "Flow plan")]
+            if mode.startswith("queued/"):
+                with self.flow_lock:
+                    self.flow_active += 1
+                    active = self.flow_active
+                try:
+                    time.sleep(0.03)
+                    return 200, b"", [("Subscription-Userinfo", "download=0; total=1"),
+                                      ("Plan-Name", f"{mode.rsplit('/', 1)[-1]}-active-{active}")]
+                finally:
+                    with self.flow_lock:
+                        self.flow_active -= 1
+            if mode == "delay":
+                time.sleep(0.2)
+                return 200, b"download=1; total=2", []
+            if mode in ("head", "get", "fallback", "badstatus"):
+                return (503 if mode == "badstatus" else 200), b"invalid flow body", ([] if mode == "get" and method == "HEAD" else flow)
+            if mode == "body":
+                return 200, b" upload=30; download=40; total=2000 ", []
+            if mode in ("rejected", "empty"):
+                return (503 if mode == "rejected" else 200), b"no flow", []
+            return 404, b"unexpected flow fixture", []
         if path == "/host/delay":
             time.sleep(0.2)
             return 200, text, []

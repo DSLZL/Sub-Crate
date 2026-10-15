@@ -195,14 +195,17 @@ pub async fn run(
                     ctx.eval::<(), _>(include_str!(
                         "../../../tests/compat/fixtures/script-processor-clock.js"
                     ))?;
+                    ctx.eval::<(), _>(include_str!(
+                        "../../../tests/compat/fixtures/script-helper-contracts.js"
+                    ))?;
                     ctx.eval::<(), _>(
                         "const processorDiagnostics = [];\n\
-                         $substore.error = message => processorDiagnostics.push(String(message));\n\
+                         for (const level of ['log', 'info', 'warn', 'error']) $substore[level] = message => processorDiagnostics.push(String(message));\n\
                          const processorHost = createProbeProcessors($substore, {backend: 'Rust', version: '2.42.4', meta: {}, feature: {}});\n\
                          const probeKind = 'rust'; const probeReenter = __hostReenter;",
                     )?;
                     if resume {
-                        "Promise.resolve({storage: {cache: $substore.cache, root: $substore.root}, resourceCache: processorHost.scriptResourceCache.resourceCache})"
+                        "Promise.resolve({storage: {cache: $substore.cache, root: $substore.root}, resourceCache: processorHost.scriptResourceCache.resourceCache, headersCache: processorHost.headersResourceCache.resourceCache})"
                     } else {
                         include_str!("../../../tests/compat/fixtures/script-processor-contracts.js")
                     }
