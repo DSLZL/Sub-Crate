@@ -32,6 +32,8 @@ approved patch. Reports record the actual checkout revision, frozen base, patch
 hash and (for orchestration) whether backend files differ from HEAD. The runner's
 `backend_base_commit` names fixture provenance, not an independently verified
 target revision. Original failed runs and the frozen Git commit remain intact.
+Unit runs synchronously record each test start/end in `mocha.stderr.log`, so a
+native process crash retains its active test even without Mocha's final JSON.
 
 `reference.py` gives each execution fresh state and starts its own actual Node
 listener. It does not read the user's production state. Short commands use RTK

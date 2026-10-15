@@ -128,10 +128,12 @@ def main():
             summary["loader"] = loader
             summary["loader_adjustment"] = "Same Babel preset, native absolute @/ aliases instead of pinned plugin's broken Windows filename handling; no source edits" if args.mode == "unit-windows" else None
             result = execute([node, BACKEND / "node_modules/mocha/bin/_mocha", "src/test/**/*.spec.js",
-                              "--require", loader, "--recursive", "--reporter", "json"], BACKEND, environment, output_dir, "mocha")
+                              "--require", loader, "--require", HERE / "unit-progress.cjs",
+                              "--recursive", "--reporter", "json"], BACKEND, environment, output_dir, "mocha")
+            summary["unit_exit_code"] = result.returncode
             match = re.search(r'\{\s*"stats"\s*:', result.stdout)
             if not match:
-                raise RuntimeError("Mocha JSON result was not produced; inspect preserved logs")
+                raise RuntimeError(f"Mocha JSON result was not produced (exit {result.returncode}); inspect preserved test progress/logs")
             report, _ = json.JSONDecoder().raw_decode(result.stdout[match.start():])
             summary["stats"] = report["stats"]
             summary["pending"] = [test["fullTitle"] for test in report["pending"]]
