@@ -207,7 +207,7 @@ hyper-rustls/http-body-util crates because reqwest inserts a default Accept head
 even when the caller explicitly omits it. No additional transitive packages were
 added. New source and binary hashes accompany each immutable evidence directory.
 
-The executable additionally runs 88 shared `PC01`-`PC88` processor/helper groups.
+The executable additionally runs 104 shared `PC01`-`PC104` processor/helper groups.
 The Node oracle loads the actual processor module and application OpenAPI from
 `backend/`, matching the unit suite's Babel working directory. The helper builder
 uses the existing Babel parser to extract the frozen wrapper/cache declarations
@@ -222,6 +222,30 @@ return truthiness, user errors/recovery, file-local options, Mihomo patch/main
 branches and the legacy file type. A Rust async callback re-enters pending JS
 processors and HTTP, runs concurrent callbacks and recovers from a rejection.
 This callback takes fixture payloads; it is not the `produceArtifact` API.
+
+`PC89`-`PC104` exercise the actual `ProxyUtils.parse(raw)` and
+`produce(proxies, targetPlatform, type, opts = {})` wrappers with their complete
+frozen preprocessor/parser/producer registries. A test-only app binding forwards
+source diagnostics to the existing Rust host; the production OpenAPI module and
+Node capabilities are not bundled. Assertions cover mixed lines/PEG grammars,
+HTML/Base64/SSD/full-config/Clash preprocessing, URI families, leading-zero
+Reality short IDs, transport/port/password/unknown-field normalization,
+certificate fingerprints, all 33 exact aliases in fourteen producer families,
+internal/external/default output, target filtering/override, mutation/identity,
+empty/error/recovery behavior and actual async Script Operator use while a Rust
+callback is pending. V2Ray emits Base64 text even for `internal`; JSON internal
+retains object identity and producer input mutations. Raw text and typed fields
+are compared without a field-dropping normalizer. `conversionHelper` persists
+exact exported text plus zero/false through independent process reloads.
+
+The source fingerprint helper reuses locked jsrsasign; its missing npm license
+is supplied from the exact upstream version under `fixtures/licenses/`. No new
+dependency is installed. Every required PC group must also have an observation,
+even when both runtimes omit the same result. Required progress markers remain
+ordered; JSON object field order is not an acceptance condition. This is M1
+source-helper feasibility in a Rust process. Native Rust conversion, CA file
+integration, full format/option coverage, download preprocessing and real
+`produceArtifact` subscription/collection/file reentry remain pending.
 Source cache checks use the same deterministic clock for TTL coercion, defaults,
 settings units, inclusive expiry, prefix cleanup, falsy values and root JSON
 persistence. Actual YAML wrappers cover merges/tags/errors, JSON serialization

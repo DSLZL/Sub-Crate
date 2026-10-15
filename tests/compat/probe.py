@@ -68,6 +68,14 @@ PROCESSOR_CASES = [
     "PC83-gist-provider-errors-timeout-and-recovery", "PC84-gist-five-method-queue-and-rejection-recovery",
     "PC85-gitlab-create-update-and-file-limits", "PC86-gitlab-fallback-and-legacy-download-path",
     "PC87-gist-in-async-script-and-persistence", "PC88-gist-http-defaults-shallow-overrides-and-events",
+    "PC89-conversion-mixed-lines-and-parser-reuse", "PC90-conversion-preprocessors-and-short-id",
+    "PC91-conversion-peggy-client-grammars", "PC92-conversion-uri-families-and-transports",
+    "PC93-conversion-normalization-and-unknown-fields", "PC94-conversion-hysteria-and-wireguard-normalization",
+    "PC95-conversion-certificate-fingerprint", "PC96-conversion-all-33-aliases-and-representations",
+    "PC97-conversion-json-identity-and-source-mutations", "PC98-conversion-platform-filtering-and-overrides",
+    "PC99-conversion-empty-formats-and-type-boundaries", "PC100-conversion-options-and-single-proxy-failure",
+    "PC101-conversion-port-hopping-and-surgetitles", "PC102-conversion-share-roundtrip-and-exact-uri",
+    "PC103-conversion-in-pending-script-and-reentry", "PC104-conversion-invalid-inputs-and-recovery",
 ]
 
 
@@ -78,6 +86,7 @@ def check_host(actual, expected):
 
 def check_processors(actual, expected):
     check_json(actual["passed"], PROCESSOR_CASES)
+    check_json(sorted(actual["observations"]), sorted(PROCESSOR_CASES))
     check_json(actual, expected)
 
 
@@ -283,6 +292,8 @@ def main():
                          "tests/compat/fixtures/script-processor-clock.js", "tests/compat/fixtures/script-processor-contracts.js",
                          "tests/compat/fixtures/script-helper-contracts.js", "tests/compat/fixtures/script-dns-contracts.js",
                          "tests/compat/fixtures/script-gist-contracts.js", "tests/compat/gist_fixtures.py",
+                         "tests/compat/fixtures/script-conversion-contracts.js", "tests/compat/fixtures/script-app.js",
+                         "tests/compat/fixtures/licenses/jsrsasign-11.1.3.txt",
                          "tests/compat/age_fixtures.py", "tests/compat/age-reference.cjs", "tests/compat/fixtures/script-age-contracts.js",
                          "tests/compat/download_fixtures.py", "tests/compat/download-reference.cjs",
                          "tests/compat/fixtures/script-download-contracts.js", "tests/compat/fixtures/script-download-resume.js",

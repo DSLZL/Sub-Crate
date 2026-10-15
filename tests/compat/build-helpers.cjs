@@ -35,6 +35,10 @@ const resolvers = declarations('backend/src/core/proxy-utils/processors/index.js
 ]);
 const plainObject = declarations('backend/src/utils/index.js', ['isPlainObject']);
 const isIP = declarations('backend/src/core/proxy-utils/index.js', ['isIP']);
+const conversion = declarations('backend/src/core/proxy-utils/index.js', [
+  'preprocess', 'parse', 'produce', 'hasRootProxyHeaders', 'isRootHeaderSensitiveProxy',
+  'supportsRootProxyHeaders', 'getRootHeaderProxyLabel', 'tryParse', 'safeMatch', 'formatTransportPath', 'lastParse',
+]);
 const flags = declarations('backend/src/utils/geo.js', ['ISOFlags', 'getFlag', 'getISO', 'removeFlag']);
 const mmdb = declarations('backend/src/utils/geo.js', ['MMDB']);
 const gist = declarations('backend/src/utils/gist.js', [
@@ -67,7 +71,13 @@ const build = fromBackend('esbuild').buildSync({
       import * as ageUtils from './src/utils/age';
       import {Buffer} from 'buffer'; import {Base64} from 'js-base64';
       import JSON5 from 'json5'; import dnsPacket from 'dns-packet'; import {hex_md5} from './src/vendor/md5';
-      import {ipAddress, isIPv4, isIPv6, isValidUUID, getRandomPort, getPolicyDescriptor} from './src/utils';
+      import {ipAddress, isIPv4, isIPv6, isValidUUID, isValidPortNumber, isNotBlank, numberToString, getRandomPort, getPolicyDescriptor} from './src/utils';
+      import PROXY_PREPROCESSORS from './src/core/proxy-utils/preprocessors';
+      import PROXY_PARSERS from './src/core/proxy-utils/parsers';
+      import PROXY_PRODUCERS from './src/core/proxy-utils/producers';
+      import SurgeMac_Producer from './src/core/proxy-utils/producers/surgemac';
+      import {isShadowsocksOverTls, normalizeWireGuardInterface} from './src/core/proxy-utils/producers/utils';
+      import rs from './src/utils/rs';
       import YAML from './src/utils/yaml'; import {FULL} from './src/utils/logical';
       import {isMihomoConfigFile} from './src/utils/file-type';
       import {SCRIPT_RESOURCE_CACHE_KEY, DEFAULT_SCRIPT_CACHE_TTL, HEADERS_RESOURCE_CACHE_KEY, DEFAULT_HEADERS_CACHE_TTL, RESOURCE_CACHE_KEY, DEFAULT_CACHE_TTL, SETTINGS_KEY, FILES_KEY, MODULES_KEY} from './src/constants';
@@ -76,6 +86,7 @@ const build = fromBackend('esbuild').buildSync({
       globalThis.createProbeProcessors = function($, env) {
         ${plainObject}
         ${isIP}
+        ${conversion}
         ${flags}
         const SourceMMDB = (() => { ${mmdb} return MMDB; })();
         class MMDB extends SourceMMDB {
@@ -107,7 +118,7 @@ const build = fromBackend('esbuild').buildSync({
         ${gist}
         // shortcut: application helpers need their M3/M4 services; never silently emulate them here.
         const unavailable = name => () => { throw new Error('M1 probe has no application helper: ' + name); };
-        const ProxyUtils = {yaml: YAML, Buffer, Base64, JSON5, hex_md5, ipAddress,
+        const ProxyUtils = {parse, produce, yaml: YAML, Buffer, Base64, JSON5, hex_md5, ipAddress,
           isIPv4, isIPv6, isIP, isValidUUID, getRandomPort, getFlag, getISO, removeFlag, doh, MMDB, Gist,
           age: {encrypt: ageUtils.encryptArmor, decrypt: ageUtils.decryptArmorIfPresent, derivePublicKey: ageUtils.derivePublicKey}};
         // Only the DNS parser needs these URL fields; this is not a global web-URL shim.
@@ -160,7 +171,7 @@ const build = fromBackend('esbuild').buildSync({
     resolveDir: path.join(root, 'backend'),
   },
   bundle: true,
-  alias: {'@': path.join(root, 'backend/src')},
+  alias: {'@/core/app': path.join(__dirname, 'fixtures/script-app.js'), '@': path.join(root, 'backend/src')},
   platform: 'browser',
   format: 'iife',
   outfile: output,
@@ -181,8 +192,11 @@ for (const input of Object.keys(build.metafile.inputs).filter(input => input.inc
   const key = metadata.name + '@' + metadata.version;
   if (notices.has(key)) continue;
   const license = fs.readdirSync(directory).find(name => /^licen[cs]e(?:\.(?:md|txt))?$/i.test(name));
-  if (!license) throw new Error(`Missing license text for ${key}`);
-  notices.set(key, fs.readFileSync(path.join(directory, license), 'utf8'));
+  // The locked jsrsasign npm package omits its upstream license file.
+  const licensePath = license ? path.join(directory, license)
+    : key === 'jsrsasign@11.1.3' ? path.join(__dirname, 'fixtures/licenses/jsrsasign-11.1.3.txt') : null;
+  if (!licensePath) throw new Error(`Missing license text for ${key}`);
+  notices.set(key, fs.readFileSync(licensePath, 'utf8'));
 }
 fs.writeFileSync(path.join(path.dirname(output), 'script-helper-licenses.txt'),
   [...notices].sort(([left], [right]) => left.localeCompare(right)).map(([name, license]) => name + '\n' + license.trim() + '\n').join('\n'));

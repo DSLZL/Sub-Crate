@@ -292,7 +292,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_shared_processors_reject_missing_cases_and_mutated_outputs(self):
         from probe import PROCESSOR_CASES, check_processors
-        expected = {"passed": PROCESSOR_CASES, "observations": {"flag": False}, "resourceCache": {"value": None}, "headersCache": {"value": 0}, "dnsCache": {"value": False}}
+        expected = {"passed": PROCESSOR_CASES, "observations": {case: False for case in PROCESSOR_CASES}, "resourceCache": {"value": None}, "headersCache": {"value": 0}, "dnsCache": {"value": False}}
         check_processors(expected, expected)
         for mutation in ("missing-case", "duplicate-case", "typed-output", "missing-cache", "missing-headers-cache", "missing-dns-cache"):
             actual = copy.deepcopy(expected)
@@ -301,7 +301,7 @@ class RunnerTests(unittest.TestCase):
             elif mutation == "duplicate-case":
                 actual["passed"][-1] = actual["passed"][0]
             elif mutation == "typed-output":
-                actual["observations"]["flag"] = 0
+                actual["observations"][PROCESSOR_CASES[-1]] = 0
             elif mutation == "missing-cache":
                 del actual["resourceCache"]
             elif mutation == "missing-headers-cache":
@@ -310,6 +310,12 @@ class RunnerTests(unittest.TestCase):
                 del actual["dnsCache"]
             with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
                 check_processors(actual, expected)
+
+    def test_shared_processors_require_observations_even_when_both_runtimes_omit_them(self):
+        from probe import PROCESSOR_CASES, check_processors
+        incomplete = {"passed": PROCESSOR_CASES, "observations": {case: False for case in PROCESSOR_CASES[:-1]}}
+        with self.assertRaises(AssertionError):
+            check_processors(incomplete, incomplete)
 
     def test_shared_host_rejects_missing_cases_and_typed_state_mismatches(self):
         from probe import HOST_CASES, check_host
