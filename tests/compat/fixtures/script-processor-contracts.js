@@ -278,6 +278,7 @@
   await runMmdbContracts(check, processorHost, operator, assert, equal);
   await runGistContracts(check, processorHost, operator, assert, equal);
   await runConversionContracts(check, processorHost, operator, assert, equal);
+  await runArtifactContracts(check, processorHost, operator, assert, equal);
   $substore.persistCache();
   return {passed, observations, storage: {cache: $substore.cache, root: $substore.root}, resourceCache: cache.resourceCache,
     headersCache: processorHost.headersResourceCache.resourceCache, dnsCache: processorHost.resourceCache.resourceCache};

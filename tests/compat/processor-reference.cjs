@@ -2,6 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const fixture = name => fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8');
+process.env.SUB_STORE_FRONTEND_BACKEND_PATH = '/';
 eval(fixture('script-processor-clock.js'));
 eval(fixture('script-helper-contracts.js'));
 eval(fixture('script-dns-contracts.js'));
@@ -9,9 +10,11 @@ eval(fixture('script-native-dns-contracts.js'));
 eval(fixture('script-mmdb-contracts.js'));
 eval(fixture('script-gist-contracts.js'));
 eval(fixture('script-conversion-contracts.js'));
+eval(fixture('script-artifact-contracts.js'));
 const moduleSource = require(path.resolve(__dirname, '../../backend/src/core/proxy-utils/processors/index.js'));
 const $substore = require(path.resolve(__dirname, '../../backend/src/core/app.js')).default;
 const processorHost = {
+  produceArtifact: require(path.resolve(__dirname, '../../backend/src/restful/sync.js')).produceArtifact,
   factories: moduleSource.default,
   ApplyProcessor: moduleSource.ApplyProcessor,
   ApplyResponseTransformer: moduleSource.ApplyResponseTransformer,

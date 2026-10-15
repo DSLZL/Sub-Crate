@@ -15,6 +15,7 @@ from mmdb_fixtures import FIXTURES as MMDB_FIXTURES, prepare as prepare_mmdb, ve
 from gist_fixtures import check_gist_requests, check_gist_state
 from age_fixtures import run_age_probe
 from download_fixtures import run_download_probe
+from artifact_fixtures import check_requests as check_artifact_requests, check_state as check_artifact_state
 
 HOST_CASES = [
     "SH01-storage-values-and-aliases", "SH02-root-key-routing", "SH03-storage-undefined-delete-and-errors",
@@ -76,6 +77,16 @@ PROCESSOR_CASES = [
     "PC99-conversion-empty-formats-and-type-boundaries", "PC100-conversion-options-and-single-proxy-failure",
     "PC101-conversion-port-hopping-and-surgetitles", "PC102-conversion-share-roundtrip-and-exact-uri",
     "PC103-conversion-in-pending-script-and-reentry", "PC104-conversion-invalid-inputs-and-recovery",
+    "PC105-artifact-full-registry-and-pipeline", "PC106-artifact-local-subscription-and-raw",
+    "PC107-artifact-script-source-options-and-raw", "PC108-artifact-context-control-and-response-pipeline",
+    "PC109-artifact-internal-script-links-and-arguments", "PC110-artifact-remote-script-loading",
+    "PC111-artifact-subscription-download-preprocess", "PC112-artifact-invalid-subscription-cache-eligibility",
+    "PC113-artifact-subscription-merge-and-overrides", "PC114-artifact-collection-order-tags-and-context",
+    "PC115-artifact-collection-remote-ua-and-order", "PC116-artifact-subscription-fallback-and-notification",
+    "PC117-artifact-collection-failure-policy", "PC118-artifact-file-raw-merge-and-all",
+    "PC119-artifact-remote-file-and-ignore-errors", "PC120-artifact-mihomo-profile-and-add-proxies",
+    "PC121-artifact-nested-native-http-and-script", "PC122-artifact-internal-file-download",
+    "PC123-artifact-errors-and-recovery", "PC124-artifact-pending-reentry-and-persistence",
 ]
 
 
@@ -122,7 +133,8 @@ def check_processor_requests(requests):
                               "user_agent": ua, "token": token, "accept": "*/*"}
                              for method, path, ua, token in expected_flow])
     check_dns_requests(requests[19:42])
-    check_gist_requests(requests[42:])
+    check_gist_requests(requests[42:102])
+    check_artifact_requests(requests[102:])
 
 
 def expected_dns_requests():
@@ -293,6 +305,7 @@ def main():
                          "tests/compat/fixtures/script-helper-contracts.js", "tests/compat/fixtures/script-dns-contracts.js",
                          "tests/compat/fixtures/script-gist-contracts.js", "tests/compat/gist_fixtures.py",
                          "tests/compat/fixtures/script-conversion-contracts.js", "tests/compat/fixtures/script-app.js",
+                         "tests/compat/fixtures/script-artifact-contracts.js", "tests/compat/artifact_fixtures.py",
                          "tests/compat/fixtures/licenses/jsrsasign-11.1.3.txt",
                          "tests/compat/age_fixtures.py", "tests/compat/age-reference.cjs", "tests/compat/fixtures/script-age-contracts.js",
                          "tests/compat/download_fixtures.py", "tests/compat/download-reference.cjs",
@@ -397,6 +410,7 @@ def main():
                         runs[-1]["persisted"] = persisted
                         if suite == "processor":
                             runs[-1]["mmdb_state_sha256"] = check_mmdb_state(state)
+                            check_artifact_state(value, persisted)
                         check_json(value["storage"], persisted)
                         if resume:
                             expected = {"storage": observed[kind]["storage"]}

@@ -317,6 +317,9 @@ pub async fn run(
                     ctx.eval::<(), _>(include_str!(
                         "../../../tests/compat/fixtures/script-conversion-contracts.js"
                     ))?;
+                    ctx.eval::<(), _>(include_str!(
+                        "../../../tests/compat/fixtures/script-artifact-contracts.js"
+                    ))?;
                     ctx.eval::<(), _>(
                         "const processorDiagnostics = [];\n\
                          for (const level of ['log', 'info', 'warn', 'error']) $substore[level] = message => processorDiagnostics.push(String(message));\n\

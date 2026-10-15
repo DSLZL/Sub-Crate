@@ -1,6 +1,7 @@
 """Loopback-only subscription, Gist and node-info fixtures with observable requests."""
 import copy
 import base64
+from artifact_fixtures import response as artifact_response
 from dns_fixtures import response_bytes
 from gist_fixtures import GistFixture
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -120,6 +121,8 @@ class ControlledUpstream:
         return (503 if mode == 'status' else 200), response_bytes(packet, mode), [('Content-Type', 'application/dns-message')]
 
     def host_response(self, method, path, body, headers):
+        if path.startswith('/host/artifact/'):
+            return artifact_response(path)
         text = "订阅🙂\r\nsecond\n".encode("utf-8")
         if path.startswith("/host/flow/"):
             mode = path.removeprefix("/host/flow/")

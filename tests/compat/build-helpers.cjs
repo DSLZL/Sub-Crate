@@ -17,10 +17,18 @@ function declarations(relative, names) {
     return source.slice(matches[0].start, matches[0].end);
   }).join('\n');
 }
-const processors = declarations('backend/src/core/proxy-utils/processors/index.js', [
-  'trimWrap', 'deepMerge', 'ScriptOperator', 'ScriptFilter', 'ResponseTransformer',
-  'ApplyResponseTransformer', 'ApplyFilter', 'ApplyOperator', 'ApplyProcessor', 'clone', 'createDynamicFunction',
-]);
+function moduleDeclarations(relative, defaultName) {
+  const source = fs.readFileSync(path.join(root, relative), 'utf8');
+  return parseSync(source, {babelrc: false, configFile: false, sourceType: 'module'}).program.body.flatMap(node => {
+    if (node.type === 'ImportDeclaration' || (node.type === 'ExportNamedDeclaration' && !node.declaration)) return [];
+    const declaration = node.declaration || node;
+    const text = source.slice(declaration.start, declaration.end);
+    if (node.type !== 'ExportDefaultDeclaration') return [text];
+    if (!defaultName) throw new Error(`Unexpected default export in ${relative}`);
+    return [`const ${defaultName} = ${text};`];
+  }).join('\n');
+}
+const processors = moduleDeclarations('backend/src/core/proxy-utils/processors/index.js', 'PROXY_PROCESSORS');
 const cache = declarations('backend/src/utils/script-resource-cache.js', ['ResourceCache', 'normalizeTTL', 'getTTL']);
 const headersCache = declarations('backend/src/utils/headers-resource-cache.js', ['ResourceCache', 'normalizeTTL', 'getTTL']);
 const resourceCache = declarations('backend/src/utils/resource-cache.js', ['ResourceCache', 'normalizeTTL', 'getTTL']);
@@ -28,23 +36,26 @@ const dns = declarations('backend/src/utils/dns.js', [
   'DNS_DEFAULT_PORT', 'DNS_TLS_DEFAULT_PORT', 'buildDnsQuery', 'doh', 'normalizeDnsTimeout',
   'normalizeDnsHost', 'parseDnsPort', 'assertNoDnsServerUrlExtraParts', 'parseDnsServerUrl', 'parseDnsResolver', 'resolveDns',
 ]);
-const resolvers = declarations('backend/src/core/proxy-utils/processors/index.js', [
-  'DEFAULT_RESOLVE_DOMAIN_CUSTOM_DNS_CONCURRENCY', 'normalizeResolveDomainCustomDnsConcurrency',
-  'parseCustomDnsUrls', 'resolveWithCustomDnsConcurrency', 'annotateCustomDnsResult',
-  'packCustomDnsCachedResult', 'unpackCustomDnsCachedResult', 'DOMAIN_RESOLVERS',
-]);
 const plainObject = declarations('backend/src/utils/index.js', ['isPlainObject']);
-const isIP = declarations('backend/src/core/proxy-utils/index.js', ['isIP']);
 const conversion = declarations('backend/src/core/proxy-utils/index.js', [
   'preprocess', 'parse', 'produce', 'hasRootProxyHeaders', 'isRootHeaderSensitiveProxy',
   'supportsRootProxyHeaders', 'getRootHeaderProxyLabel', 'tryParse', 'safeMatch', 'formatTransportPath', 'lastParse',
+  'shouldSkipByContext', 'processFn', 'processResponseFn', 'loadScriptItem', 'normalizeResponse',
 ]);
+const artifact = declarations('backend/src/restful/sync.js', [
+  'MERGE_SOURCE_MODES', 'MIHOMO_PROFILE_FILE_SOURCE_TYPES', 'MIHOMO_CONFIG_SOURCE_TYPES',
+  'formatAgeSafeUrls', 'isMergeSourceMode', 'normalizeFileSourceType', 'normalizeMihomoConfigSourceType',
+  'normalizeRawFiles', 'joinRawFileContent', 'resolveFileIgnoreFailedRemoteFile', 'downloadFileSources',
+  'resolveFileRawContent', 'prepareMihomoProfileContent', 'produceArtifact',
+]);
+const ignoreFailedSub = moduleDeclarations('backend/src/restful/ignore-failed-remote-sub.js');
 const flags = declarations('backend/src/utils/geo.js', ['ISOFlags', 'getFlag', 'getISO', 'removeFlag']);
 const mmdb = declarations('backend/src/utils/geo.js', ['MMDB']);
 const gist = declarations('backend/src/utils/gist.js', [
   'DEFAULT_GITHUB_API_URL', 'describeGistApiErrorResponse', 'normalizeApiUrl', 'getGithubGistBaseURL', 'Gist',
 ]);
 const download = declarations('backend/src/utils/download.js', [
+  'clashPreprocessor', 'tasks',
   'buildDownloadRegex', 'maybePrefixGithubProxyUrl', 'maskDownloadUrl', 'finalizeDownloadedBody',
   'formatDownloadResult', 'formatPlainDownloadResult', 'download',
 ]);
@@ -75,17 +86,18 @@ const build = fromBackend('esbuild').buildSync({
       import PROXY_PREPROCESSORS from './src/core/proxy-utils/preprocessors';
       import PROXY_PARSERS from './src/core/proxy-utils/parsers';
       import PROXY_PRODUCERS from './src/core/proxy-utils/producers';
+      import {normalizeClashYaml} from './src/core/proxy-utils/preprocessors';
+      import {RuleUtils} from './src/core/rule-utils';
       import SurgeMac_Producer from './src/core/proxy-utils/producers/surgemac';
       import {isShadowsocksOverTls, normalizeWireGuardInterface} from './src/core/proxy-utils/producers/utils';
       import rs from './src/utils/rs';
       import YAML from './src/utils/yaml'; import {FULL} from './src/utils/logical';
-      import {isMihomoConfigFile} from './src/utils/file-type';
-      import {SCRIPT_RESOURCE_CACHE_KEY, DEFAULT_SCRIPT_CACHE_TTL, HEADERS_RESOURCE_CACHE_KEY, DEFAULT_HEADERS_CACHE_TTL, RESOURCE_CACHE_KEY, DEFAULT_CACHE_TTL, SETTINGS_KEY, FILES_KEY, MODULES_KEY} from './src/constants';
+      import {isMihomoConfigFile, normalizeFileConfig} from './src/utils/file-type';
+      import {SCRIPT_RESOURCE_CACHE_KEY, DEFAULT_SCRIPT_CACHE_TTL, HEADERS_RESOURCE_CACHE_KEY, DEFAULT_HEADERS_CACHE_TTL, RESOURCE_CACHE_KEY, DEFAULT_CACHE_TTL, SETTINGS_KEY, FILES_KEY, MODULES_KEY, SUBS_KEY, COLLECTIONS_KEY, RULES_KEY} from './src/constants';
       Object.assign(globalThis, {lodash, yaml, Buffer, b64encode: Base64.encode, b64decode: Base64.decode});
       globalThis.ageProbeUtils = ageUtils;
       globalThis.createProbeProcessors = function($, env) {
         ${plainObject}
-        ${isIP}
         ${conversion}
         ${flags}
         const SourceMMDB = (() => { ${mmdb} return MMDB; })();
@@ -116,9 +128,7 @@ const build = fromBackend('esbuild').buildSync({
         const resourceCache = (() => { ${resourceCache} return new ResourceCache(); })();
         const HTTP = createHostHTTP, ENV = () => $.env;
         ${gist}
-        // shortcut: application helpers need their M3/M4 services; never silently emulate them here.
-        const unavailable = name => () => { throw new Error('M1 probe has no application helper: ' + name); };
-        const ProxyUtils = {parse, produce, yaml: YAML, Buffer, Base64, JSON5, hex_md5, ipAddress,
+        const ProxyUtils = {parse, produce, process: processFn, processResponse: processResponseFn, yaml: YAML, Buffer, Base64, JSON5, hex_md5, ipAddress,
           isIPv4, isIPv6, isIP, isValidUUID, getRandomPort, getFlag, getISO, removeFlag, doh, MMDB, Gist,
           age: {encrypt: ageUtils.encryptArmor, decrypt: ageUtils.decryptArmorIfPresent, derivePublicKey: ageUtils.derivePublicKey}};
         // Only the DNS parser needs these URL fields; this is not a global web-URL shim.
@@ -137,33 +147,28 @@ const build = fromBackend('esbuild').buildSync({
           }
           return sourceResolveDns(options);
         };
-        ${resolvers}
-        const produceArtifact = unavailable('produceArtifact');
+        ${findByName}
+        const getFs = () => ({readFileSync: path => Buffer.from(JSON.parse(__hostReadFile(path))).toString('utf8')});
+        const {maskAgeSecretInUrl} = ageUtils;
+        ${ignoreFailedSub}
+        ${artifact}
         ProxyUtils.download = (() => {
           // Private server selection must not enable the proxy-app permanent task map or public Node APIs.
           const ENV = () => ({isNode: true});
-          const getFs = () => ({readFileSync: path => Buffer.from(JSON.parse(__hostReadFile(path))).toString('utf8')});
           const getPath = () => ({isAbsolute: __hostPathIsAbsolute});
           const {AGE_SECRET_KEY, decryptArmorIfPresent, maskAgeSecretInUrl} = ageUtils;
-          const tasks = new Map();
-          const clashPreprocessor = {test: unavailable('download preprocess')};
-          ${findByName}
           ${download}
-          return (...args) => {
-            // shortcut: real parser/cache eligibility needs the M3 pipeline; reject until it is integrated.
-            if (args[7]) return Promise.reject(new Error('M1 probe has no application helper: download preprocess'));
-            return download(...args);
-          };
+          return download;
         })();
+        const download = (...args) => ProxyUtils.download(...args);
         ProxyUtils.downloadFile = async (url, file) => {
           $.info('Downloading file...\\nURL: ' + url + '\\nFile: ' + file);
           const result = await __hostDownloadFile(url, file);
           $.info('File downloaded from ' + url + ' to ' + file);
           return result;
         };
-        const RESPONSE_TRANSFORMER = 'Response Transformer';
         ${processors}
-        return {factories: {'Script Filter': ScriptFilter, 'Script Operator': ScriptOperator, 'Response Transformer': ResponseTransformer},
+        return {factories: PROXY_PROCESSORS, produceArtifact,
           ApplyProcessor, ApplyResponseTransformer, scriptResourceCache, headersResourceCache, resourceCache, DOMAIN_RESOLVERS, YAML, ProxyUtils,
           parseDnsResolver, resolveDns,
           flowUtils: {getFlowField, getFlowHeaders, parseFlowHeaders, flowTransfer, validCheck, getRmainingDays, normalizeFlowHeader}};

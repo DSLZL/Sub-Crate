@@ -207,7 +207,7 @@ hyper-rustls/http-body-util crates because reqwest inserts a default Accept head
 even when the caller explicitly omits it. No additional transitive packages were
 added. New source and binary hashes accompany each immutable evidence directory.
 
-The executable additionally runs 104 shared `PC01`-`PC104` processor/helper groups.
+The executable additionally runs 124 shared `PC01`-`PC124` processor/helper groups.
 The Node oracle loads the actual processor module and application OpenAPI from
 `backend/`, matching the unit suite's Babel working directory. The helper builder
 uses the existing Babel parser to extract the frozen wrapper/cache declarations
@@ -244,8 +244,32 @@ dependency is installed. Every required PC group must also have an observation,
 even when both runtimes omit the same result. Required progress markers remain
 ordered; JSON object field order is not an acceptance condition. This is M1
 source-helper feasibility in a Rust process. Native Rust conversion, CA file
-integration, full format/option coverage, download preprocessing and real
-`produceArtifact` subscription/collection/file reentry remain pending.
+integration, full format/option coverage and production integration remain pending.
+
+`PC105`-`PC124` execute the actual `produceArtifact` source generator, complete
+17-entry processor registry, process/processResponse wrappers and script loader.
+The Node oracle uses the actual exports and sets the existing script-enabled
+backend-path configuration to `/`. Rust source extraction removes only module
+imports/exports and binds the same dependencies to native HTTP/filesystem/timers.
+Both retain their truthful public script environment; Rust exposes no Node API.
+Assertions cover local/remote subscriptions, raw envelopes, provenance/options,
+context-controlled/disabled operators, module/generated-file/remote script links,
+fragment arguments, Clash preprocessing and cache eligibility, ordered/tagged
+collections, UA propagation, fallback/duplicate notification policy, ordinary/
+legacy Mihomo files and recursive Add Proxies From Subscription. Real nested
+Script Operators await HTTP/timers and generate another artifact; active native
+callback reentry also executes the real generator. `artifactHelper` preserves
+exact CRLF/Unicode text, zero and false through independent process reloads.
+Fourteen independently checked artifact requests increase the processor total
+to 116 per runtime. All 248 ordered progress events, full typed observations,
+source caches, wire and stored state are required. Mutation checks reject wrong
+headers/order/body/method/count, changed text/falsy types and unpersisted caches.
+Notification callbacks are fixture-captured; external delivery remains pending.
+The source rule branch's missing RuleUtils.process still throws native TypeError;
+its engine-specific diagnostic wording is not normalized or treated as success.
+This proves the source helper chain; a production Rust service, native Rust
+pipeline/store, full processor/format options and full application integration
+are separate obligations. Registry presence is not full behavior coverage.
 Source cache checks use the same deterministic clock for TTL coercion, defaults,
 settings units, inclusive expiry, prefix cleanup, falsy values and root JSON
 persistence. Actual YAML wrappers cover merges/tags/errors, JSON serialization
@@ -354,8 +378,9 @@ release; interrupted bodies retain exactly that prefix and reject. Raw wire,
 commands/status, logs, input hashes, persisted state and file bytes are retained
 and rejoined by check_download_artifacts, including Docker's owned containers.
 Source plain-object age errors and post-cache flow failures remain unchanged.
-Preprocess/parser cache eligibility, successful internal file artifacts, full
-proxy/TLS/environment options and production service integration remain open.
+The processor artifact slice now separately covers preprocessing/cache eligibility
+and successful internal files. Full proxy/TLS/environment options and production
+service integration remain open.
 
 `shortcut: the probe uses a partial ProxyUtils/timer/storage/artifact host,
 upgrade to the full shared-behavior fixtures before M3 acceptance.` Separate

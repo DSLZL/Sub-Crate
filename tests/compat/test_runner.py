@@ -13,6 +13,49 @@ import runner
 
 
 class RunnerTests(unittest.TestCase):
+    def test_artifact_wire_rejects_wrong_headers_order_missing_and_extra(self):
+        from artifact_fixtures import expected_requests, check_requests
+        expected = expected_requests()
+        check_requests(expected)
+        paired = copy.deepcopy(expected)
+        paired[6:8] = reversed(paired[6:8])
+        check_requests(paired)
+        for mutation in ('missing', 'extra', 'header', 'body', 'method', 'order'):
+            actual = copy.deepcopy(expected)
+            if mutation == 'missing':
+                actual.pop()
+            elif mutation == 'extra':
+                actual.append(copy.deepcopy(actual[-1]))
+            elif mutation == 'header':
+                actual[0]['headers']['authorization'] = 'unexpected'
+            elif mutation == 'body':
+                actual[0]['body_bytes'] = [0]
+            elif mutation == 'method':
+                actual[0]['method'] = 'POST'
+            else:
+                actual[0], actual[1] = actual[1], actual[0]
+            with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
+                check_requests(actual)
+
+    def test_artifact_persistence_rejects_text_types_and_cache_mismatch(self):
+        from artifact_fixtures import TEXT, check_state
+        persisted = {'cache': {'artifactHelper': {'text': TEXT + '|remote', 'zero': 0, 'flag': False}},
+                     'root': {key: '{}' for key in ('sub-store-cached-script-resource', 'sub-store-cached-headers-resource', 'sub-store-cached-resource')}}
+        result = {'storage': copy.deepcopy(persisted), 'resourceCache': {}, 'headersCache': {}, 'dnsCache': {}}
+        check_state(result, persisted)
+        for mutation in ('text', 'zero', 'false', 'storage', 'cache'):
+            actual, state = copy.deepcopy(result), copy.deepcopy(persisted)
+            if mutation in ('text', 'zero', 'false'):
+                field, value = {'text': ('text', TEXT.replace('\r\n', '\n') + '|remote'), 'zero': ('zero', False), 'false': ('flag', 0)}[mutation]
+                state['cache']['artifactHelper'][field] = value
+                actual['storage'] = copy.deepcopy(state)
+            elif mutation == 'storage':
+                del actual['storage']['cache']['artifactHelper']
+            else:
+                actual['dnsCache']['unpersisted'] = False
+            with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
+                check_state(actual, state)
+
     def test_download_persisted_state_retains_types_and_both_caches(self):
         from download_fixtures import TEXT, check_download_state
         persisted = {'cache': {'downloadHelper': {'text': TEXT, 'zero': 0, 'flag': False}},
