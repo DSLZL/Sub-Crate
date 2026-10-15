@@ -1,0 +1,37 @@
+{
+  "repository": "https://github.com/maxmind/MaxMind-DB",
+  "commit": "c3ce82bec7835e41d91f1757d5ac50815328010c",
+  "license": "MIT",
+  "files": [
+    {
+      "source": "LICENSE-MIT",
+      "file": "LICENSE-MIT",
+      "sha256": "91276db973f25602d1aa43491f59cbc84cb88e6f151e1d0cc82a755563ce0195",
+      "bytes": 1023
+    },
+    {
+      "source": "test-data/GeoIP2-Country-Test.mmdb",
+      "file": "GeoIP2-Country-Test.mmdb",
+      "sha256": "b37601903448683d241af52893c8cbf0fed461e0cdebe0bfaca01891fdeb6db9",
+      "bytes": 19492
+    },
+    {
+      "source": "test-data/GeoLite2-ASN-Test.mmdb",
+      "file": "GeoLite2-ASN-Test.mmdb",
+      "sha256": "75901b98ed6e58d3bd41af9985044b747a7ec0be1369f930c24f5e044427181a",
+      "bytes": 12653
+    },
+    {
+      "source": "source-data/GeoIP2-Country-Test.json",
+      "file": "GeoIP2-Country-Test.json",
+      "sha256": "f38b8210de709ddbb8dae1a8eb41e356ac2a52f20e634d0ae5196b25a3e7ab59",
+      "bytes": 395892
+    },
+    {
+      "source": "source-data/GeoLite2-ASN-Test.json",
+      "file": "GeoLite2-ASN-Test.json",
+      "sha256": "fcfce51301987c778847540ad59ac8a20eb9c50ea5c8d693aecb2d223dad0005",
+      "bytes": 89217
+    }
+  ]
+}

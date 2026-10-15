@@ -6,6 +6,7 @@ eval(fixture('script-processor-clock.js'));
 eval(fixture('script-helper-contracts.js'));
 eval(fixture('script-dns-contracts.js'));
 eval(fixture('script-native-dns-contracts.js'));
+eval(fixture('script-mmdb-contracts.js'));
 const moduleSource = require(path.resolve(__dirname, '../../backend/src/core/proxy-utils/processors/index.js'));
 const $substore = require(path.resolve(__dirname, '../../backend/src/core/app.js')).default;
 const processorHost = {
@@ -24,6 +25,21 @@ const processorHost = {
 const probeUpstream = process.env.SUB_STORE_COMPAT_UPSTREAM;
 const probeDnsServers = JSON.parse(process.env.SUB_STORE_COMPAT_DNS_SERVERS || '{}');
 const probeKind = 'node';
+const probeMmdbRoot = process.env.SUB_STORE_COMPAT_STATE_DIR;
+const probeMmdbVectors = JSON.parse(fs.readFileSync(path.join(probeMmdbRoot, 'mmdb-vectors.json'), 'utf8'));
+const probeMmdbRemoveTransient = () => fs.unlinkSync(path.join(probeMmdbRoot, 'mmdb transient🙂.mmdb'));
+const probeMmdbWithDefaults = (values, callback) => {
+  const keys = {country: 'SUB_STORE_MMDB_COUNTRY_PATH', asn: 'SUB_STORE_MMDB_ASN_PATH'};
+  const saved = Object.fromEntries(Object.values(keys).map(key => [key, process.env[key]]));
+  for (const [key, name] of Object.entries(keys)) {
+    if (values[key] == null) delete process.env[name]; else process.env[name] = values[key];
+  }
+  try { return callback(); } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  }
+};
 const probeReenter = async (payload, callback) => {
   await $substore.wait(1);
   return await callback(payload);

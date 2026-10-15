@@ -11,6 +11,8 @@ use std::{collections::BTreeMap, error::Error, path::Path, time::Duration};
 
 #[path = "dns.rs"]
 mod dns;
+#[path = "mmdb.rs"]
+mod mmdb;
 
 async fn request<'js>(
     ctx: Ctx<'js>,
@@ -150,6 +152,12 @@ pub async fn run(
         Suite::Processors => "sub-store.json",
     });
     let root_path = state.join("root.json");
+    let mmdb_root = state.to_string_lossy().to_string();
+    let transient_mmdb = state.join("mmdb transient🙂.mmdb");
+    let mmdb_vectors = match suite {
+        Suite::Processors => std::fs::read_to_string(state.join("mmdb-vectors.json"))?,
+        Suite::Host => "{}".to_owned(),
+    };
     let cache = std::fs::read_to_string(&cache_path)?;
     let root = std::fs::read_to_string(&root_path)?;
     let state = json!({"cache": serde_json::from_str::<Value>(&cache)?, "root": serde_json::from_str::<Value>(&root)?}).to_string();
@@ -159,6 +167,12 @@ pub async fn run(
             let globals = ctx.globals();
             globals.set("probeUpstream", upstream)?;
             globals.set("probeDnsServers", ctx.json_parse(std::env::var("SUB_STORE_COMPAT_DNS_SERVERS").unwrap_or_else(|_| "{}".to_owned()))?)?;
+            globals.set("probeMmdbRoot", mmdb_root)?;
+            globals.set("probeMmdbVectors", ctx.json_parse(mmdb_vectors)?)?;
+            globals.set("__hostMmdbDefaults", ctx.json_parse(json!({
+                "country": std::env::var("SUB_STORE_MMDB_COUNTRY_PATH").ok(),
+                "asn": std::env::var("SUB_STORE_MMDB_ASN_PATH").ok()
+            }).to_string())?)?;
             globals.set("__loadHostState", Func::from(move || state.clone()))?;
             globals.set(
                 "__persistHostState",
@@ -181,6 +195,10 @@ pub async fn run(
             globals.set("__hostRequest", Func::from(Async(request)))?;
             globals.set("__hostDnsUrl", Func::from(dns::parse_url))?;
             globals.set("__hostDnsQuery", Func::from(Async(dns::query)))?;
+            globals.set("__hostMmdbOpen", Func::from(mmdb::open))?;
+            globals.set("probeMmdbRemoveTransient", Func::from(move |ctx: Ctx<'_>| {
+                std::fs::remove_file(&transient_mmdb).map_err(|error| Exception::throw_message(&ctx, &error.to_string()))
+            }))?;
             globals.set("__hostReenter", Func::from(Async(reenter)))?;
             ctx.eval::<(), _>(helpers)
                 .catch(&ctx)
@@ -210,11 +228,16 @@ pub async fn run(
                     ctx.eval::<(), _>(include_str!(
                         "../../../tests/compat/fixtures/script-native-dns-contracts.js"
                     ))?;
+                    ctx.eval::<(), _>(include_str!(
+                        "../../../tests/compat/fixtures/script-mmdb-contracts.js"
+                    ))?;
                     ctx.eval::<(), _>(
                         "const processorDiagnostics = [];\n\
                          for (const level of ['log', 'info', 'warn', 'error']) $substore[level] = message => processorDiagnostics.push(String(message));\n\
                          const processorHost = createProbeProcessors($substore, {backend: 'Rust', version: '2.42.4', meta: {}, feature: {}});\n\
-                         const probeKind = 'rust'; const probeReenter = __hostReenter;",
+                         const probeKind = 'rust'; const probeReenter = __hostReenter;\n\
+                         const probeMmdbWithDefaults = (values, callback) => { const saved = __hostMmdbDefaults; __hostMmdbDefaults = values;\n\
+                           try { return callback(); } finally { __hostMmdbDefaults = saved; } };",
                     )?;
                     if resume {
                         "Promise.resolve({storage: {cache: $substore.cache, root: $substore.root}, resourceCache: processorHost.scriptResourceCache.resourceCache, headersCache: processorHost.headersResourceCache.resourceCache, dnsCache: processorHost.resourceCache.resourceCache})"

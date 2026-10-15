@@ -36,6 +36,7 @@ const resolvers = declarations('backend/src/core/proxy-utils/processors/index.js
 const plainObject = declarations('backend/src/utils/index.js', ['isPlainObject']);
 const isIP = declarations('backend/src/core/proxy-utils/index.js', ['isIP']);
 const flags = declarations('backend/src/utils/geo.js', ['ISOFlags', 'getFlag', 'getISO', 'removeFlag']);
+const mmdb = declarations('backend/src/utils/geo.js', ['MMDB']);
 const flow = declarations('backend/src/utils/flow.js', [
   'getFlowField', 'getFlowHeaders', 'parseFlowHeaders', 'flowTransfer', 'validCheck', 'getRmainingDays', 'normalizeFlowHeader',
 ]);
@@ -63,6 +64,26 @@ fromBackend('esbuild').buildSync({
         ${plainObject}
         ${isIP}
         ${flags}
+        const SourceMMDB = (() => { ${mmdb} return MMDB; })();
+        class MMDB extends SourceMMDB {
+          constructor({country, asn} = {}) {
+            super();
+            country = country || __hostMmdbDefaults.country;
+            asn = asn || __hostMmdbDefaults.asn;
+            if (country) {
+              const lookup = __hostMmdbOpen(country, 'Country');
+              // shortcut: complete public ReaderModel objects belong to M3; this proves the source projections.
+              this.countryReader = {country: ip => { const data = JSON.parse(lookup(ip));
+                return {country: data.country && {isoCode: data.country.iso_code}}; }};
+            }
+            if (asn) {
+              const lookup = __hostMmdbOpen(asn, 'ASN');
+              this.asnReader = {asn: ip => { const data = JSON.parse(lookup(ip));
+                return {autonomousSystemNumber: data.autonomous_system_number,
+                  autonomousSystemOrganization: data.autonomous_system_organization}; }};
+            }
+          }
+        }
         ${concurrency}
         ${flow}
         ${cache}
@@ -73,7 +94,7 @@ fromBackend('esbuild').buildSync({
         // shortcut: application helpers need their M3/M4 services; never silently emulate them here.
         const unavailable = name => () => { throw new Error('M1 probe has no application helper: ' + name); };
         const ProxyUtils = {yaml: YAML, Buffer, Base64, JSON5, hex_md5, ipAddress,
-          isIPv4, isIPv6, isIP, isValidUUID, getRandomPort, getFlag, getISO, removeFlag, doh};
+          isIPv4, isIPv6, isIP, isValidUUID, getRandomPort, getFlag, getISO, removeFlag, doh, MMDB};
         // Only the DNS parser needs these URL fields; this is not a global web-URL shim.
         const URL = function(raw) { Object.assign(this, JSON.parse(__hostDnsUrl(raw))); };
         ${dns}

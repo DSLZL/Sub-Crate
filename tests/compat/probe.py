@@ -11,6 +11,7 @@ from reference import execute, HERE, ROOT, source_provenance
 from runner import check_json
 from upstream import ControlledUpstream
 from dns_fixtures import ControlledDns, query_path, query_bytes, response_bytes
+from mmdb_fixtures import FIXTURES as MMDB_FIXTURES, prepare as prepare_mmdb, verify_fixtures as verify_mmdb_fixtures, check_state as check_mmdb_state
 
 HOST_CASES = [
     "SH01-storage-values-and-aliases", "SH02-root-key-routing", "SH03-storage-undefined-delete-and-errors",
@@ -52,6 +53,12 @@ PROCESSOR_CASES = [
     "PC59-dot-default-verification-and-explicit-boolean", "PC60-dot-ip-without-sni",
     "PC61-dot-fragments-eof-and-timeout", "PC62-custom-mixed-native-fallback-and-cache",
     "PC63-custom-dot-certificate-cache-partition", "PC64-native-dns-in-async-script",
+    "PC65-mmdb-process-defaults-and-sync-results", "PC66-mmdb-optional-readers-and-falsy-paths",
+    "PC67-mmdb-explicit-and-falsy-default-precedence", "PC68-mmdb-country-v4-v6-and-absent-field",
+    "PC69-mmdb-asn-v4-v6-number-and-absent-organization", "PC70-mmdb-invalid-ip-errors-and-recovery",
+    "PC71-mmdb-unmapped-address-errors", "PC72-mmdb-database-kind-and-validation-order",
+    "PC73-mmdb-missing-files-and-constructor-order", "PC74-mmdb-corrupt-buffer-errors",
+    "PC75-mmdb-eager-read-instance-isolation-and-source-methods", "PC76-mmdb-in-async-script-and-persistence",
 ]
 
 
@@ -207,7 +214,12 @@ def run_container(image, state, upstream, mode, environment, output, name):
             "--mount", f"type=bind,source={state},target=/state",
             "--env", "SUB_STORE_COMPAT_STATE_DIR=/state", "--env", "SUB_STORE_DATA_BASE_PATH=/state",
             "--env", "SUB_STORE_COMPAT_DNS_SERVERS=" + environment.get("SUB_STORE_COMPAT_DNS_SERVERS", "{}"),
-            "--env", f"SUB_STORE_COMPAT_UPSTREAM={upstream}", "--env", "TZ=UTC", image, *mode]
+            "--env", f"SUB_STORE_COMPAT_UPSTREAM={upstream}", "--env", "TZ=UTC"]
+    for kind in ("COUNTRY", "ASN"):
+        key = f"SUB_STORE_MMDB_{kind}_PATH"
+        if key in environment:
+            argv.extend(["--env", key + "=/state/" + Path(environment[key]).name])
+    argv.extend([image, *mode])
     try:
         return execute(argv, ROOT, environment, output, name, timeout=60)
     finally:
@@ -243,7 +255,10 @@ def main():
         if args.docker and platform.system() != "Linux":
             raise RuntimeError("Container acceptance requires a native Linux runner")
         executable = ROOT / "rust/target/debug/examples" / ("script_probe.exe" if os.name == "nt" else "script_probe")
-        for relative in ("rust/Cargo.toml", "rust/Cargo.lock", "rust/examples/script_probe.rs", "rust/examples/support/script_host.rs", "rust/examples/support/dns.rs",
+        mmdb_manifest = verify_mmdb_fixtures()
+        report["mmdb_fixture_commit"] = mmdb_manifest["commit"]
+        mmdb_files = [str((MMDB_FIXTURES / item["file"]).relative_to(ROOT)).replace("\\", "/") for item in mmdb_manifest["files"]]
+        for relative in ("rust/Cargo.toml", "rust/Cargo.lock", "rust/examples/script_probe.rs", "rust/examples/support/script_host.rs", "rust/examples/support/dns.rs", "rust/examples/support/mmdb.rs",
                          "tests/compat/probe.py", "tests/compat/reference.py", "tests/compat/upstream.py", "tests/compat/register.cjs",
                          "tests/compat/host-reference.cjs", "scripts/ip-flag-node.js", "tests/compat/fixtures/script-host-probe.js",
                          "tests/compat/fixtures/script-assertions.js", "tests/compat/fixtures/script-host.js",
@@ -252,8 +267,9 @@ def main():
                          "tests/compat/fixtures/script-processor-clock.js", "tests/compat/fixtures/script-processor-contracts.js",
                          "tests/compat/fixtures/script-helper-contracts.js", "tests/compat/fixtures/script-dns-contracts.js",
                          "tests/compat/fixtures/script-native-dns-contracts.js", "tests/compat/fixtures/dns-cert.pem", "tests/compat/fixtures/dns-key.pem",
-                         "tests/compat/dns_fixtures.py", "tests/compat/Probe.Dockerfile",
-                         "tests/compat/Probe.Dockerfile.dockerignore"):
+                         "tests/compat/dns_fixtures.py", "tests/compat/mmdb_fixtures.py", "tests/compat/fixtures/script-mmdb-contracts.js",
+                         "tests/compat/fixtures/mmdb/provenance.json", "tests/compat/Probe.Dockerfile",
+                         "tests/compat/Probe.Dockerfile.dockerignore", *mmdb_files):
             report.setdefault("source_sha256", {})[relative] = hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()
         native_checks = (("toolchain", ["rustc", "--version", "--verbose"]),
                          ("fmt", ["cargo", "fmt", "--manifest-path", "rust/Cargo.toml", "--", "--check"]),
@@ -293,6 +309,7 @@ def main():
                     child_env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state), "SUB_STORE_COMPAT_STATE_DIR": str(state),
                                  "SUB_STORE_COMPAT_UPSTREAM": upstream.url, "SUB_STORE_COMPAT_DNS_SERVERS": json.dumps(dns.urls)}
                     if suite == "processor":
+                        child_env.update(prepare_mmdb(state))
                         child_env["TZ"] = "UTC"
                         if kind == "node":
                             child_env["NODE_DEBUG"] = "tls"
@@ -333,6 +350,8 @@ def main():
                         persisted = {key: json.loads((state / file).read_text(encoding="utf-8"))
                                      for key, file in (("cache", filename), ("root", "root.json"))}
                         runs[-1]["persisted"] = persisted
+                        if suite == "processor":
+                            runs[-1]["mmdb_state_sha256"] = check_mmdb_state(state)
                         check_json(value["storage"], persisted)
                         if resume:
                             expected = {"storage": observed[kind]["storage"]}

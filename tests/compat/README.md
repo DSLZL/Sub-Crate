@@ -178,7 +178,7 @@ hyper-rustls/http-body-util crates because reqwest inserts a default Accept head
 even when the caller explicitly omits it. No additional transitive packages were
 added. New source and binary hashes accompany each immutable evidence directory.
 
-The executable additionally runs 64 shared `PC01`-`PC64` processor/helper groups.
+The executable additionally runs 76 shared `PC01`-`PC76` processor/helper groups.
 The Node oracle loads the actual processor module and application OpenAPI from
 `backend/`, matching the unit suite's Babel working directory. The helper builder
 uses the existing Babel parser to extract the frozen wrapper/cache declarations
@@ -242,10 +242,29 @@ remain verified. The checked-in dns-key.pem is a public test key used only by
 the loopback fixture, and never loaded by the Rust client or production service.
 The native bridge reuses locked tokio-rustls/platform-verifier crates without
 new transitive packages. DNS-only URL fields use Rust's URL parser; no complete
-global web URL API is claimed. Nineteen runner self-checks include packet/frame,
+global web URL API is claimed. Twenty-one runner self-checks include packet/frame,
 SNI/certificate, missing/extra request, fragment timing and leaked-connection
 mutations. TLS trust-store success, proxy and fixed public-provider integration
 remain open, as does integration with a production Rust DNS/cache service.
+
+`PC65`-`PC76` add a synchronous Rust MMDB reader (`maxminddb` 0.32.0, ISC)
+while inheriting the actual source `geoip`/`ipaso`/`ipasn` projections. Official
+public Country/ASN test databases and independent source JSON are pinned in
+`fixtures/mmdb/provenance.json` with their MIT license, sizes and SHA256 hashes.
+Directory attributes preserve these upstream bytes on Windows checkouts.
+The harness copies them into disposable Unicode paths and supplies the actual
+`SUB_STORE_MMDB_COUNTRY_PATH` / `SUB_STORE_MMDB_ASN_PATH` process defaults;
+Docker remaps both paths into its owned `/state` mount. Both runtimes check
+optional readers, explicit/falsy default precedence, IPv4/IPv6 values, numeric
+ASN, absent fields, invalid inputs, wrong database kinds, missing addresses/files,
+constructor ordering, eager reads after deletion, instance isolation and async
+script persistence. Each process/reload records intact input hashes and the
+removed transient file. No Node module capability is exposed to Rust scripts.
+PC74 asserts `InvalidDbBufferError` and each parser's exact current diagnostic;
+its shared result compares the error class and successful diagnostic check.
+The malformed-buffer texts differ and full error-text parity remains open.
+Complete underlying public ReaderModel objects, custom input objects/path forms,
+and production Rust service/host integration also remain open.
 
 `shortcut: the probe uses a partial ProxyUtils/timer/storage/artifact host,
 upgrade to the full shared-behavior fixtures before M3 acceptance.` Separate

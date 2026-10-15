@@ -13,6 +13,55 @@ import runner
 
 
 class RunnerTests(unittest.TestCase):
+    def test_mmdb_inputs_reject_corruption_omission_and_changed_provenance(self):
+        import shutil
+        from mmdb_fixtures import DATABASES, FIXTURES, verify_fixtures
+        for mutation in ("bytes", "missing-file", "missing-entry", "duplicate-entry", "commit"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                target = Path(directory) / "mmdb"
+                shutil.copytree(FIXTURES, target)
+                manifest = verify_fixtures(target)
+                if mutation == "bytes":
+                    file = target / DATABASES["country"]
+                    data = bytearray(file.read_bytes())
+                    data[0] ^= 1
+                    file.write_bytes(data)
+                elif mutation == "missing-file":
+                    (target / DATABASES["asn"]).unlink()
+                else:
+                    if mutation == "missing-entry": manifest["files"].pop()
+                    elif mutation == "duplicate-entry": manifest["files"].append(manifest["files"][0])
+                    else: manifest["commit"] = "wrong"
+                    (target / "provenance.json").write_text(json.dumps(manifest), encoding="utf-8")
+                with self.assertRaises((AssertionError, FileNotFoundError)):
+                    verify_fixtures(target)
+
+    def test_mmdb_source_vectors_and_owned_state_copies(self):
+        from mmdb_fixtures import DATABASES, FIXTURES, check_state, prepare, vectors
+        expected = vectors()
+        self.assertEqual([row["record"].get("country", {}).get("iso_code") for row in expected["country"]], ["GB", "CN", "JP", None])
+        self.assertEqual([row["record"]["autonomous_system_number"] for row in expected["asn"]], [15169, 1221, 6730, 7018])
+        self.assertTrue(all(type(row["record"]["autonomous_system_number"]) is int for row in expected["asn"]))
+        self.assertNotIn("autonomous_system_organization", expected["asn"][-1]["record"])
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)
+            environment = prepare(state)
+            for kind, name in DATABASES.items():
+                self.assertEqual(Path(environment[f"SUB_STORE_MMDB_{kind.upper()}_PATH"]).read_bytes(), (FIXTURES / name).read_bytes())
+            self.assertEqual(json.loads((state / "mmdb-vectors.json").read_text(encoding="utf-8")), expected)
+            self.assertEqual((state / "mmdb transient🙂.mmdb").read_bytes(), (FIXTURES / DATABASES["country"]).read_bytes())
+            with self.assertRaisesRegex(AssertionError, "not removed"):
+                check_state(state)
+            (state / "mmdb transient🙂.mmdb").unlink()
+            hashes = check_state(state)
+            self.assertEqual(len(hashes), 4)
+            file = state / "mmdb-vectors.json"
+            changed = copy.deepcopy(expected)
+            changed["asn"][0]["record"]["autonomous_system_number"] = False
+            file.write_text(json.dumps(changed), encoding="utf-8")
+            with self.assertRaises(AssertionError):
+                check_state(state)
+
     def test_native_dns_rejects_packet_frame_sni_verification_leaks_and_missing_requests(self):
         from probe import check_native_dns, expected_native_dns_requests, expected_dns_connections
         from dns_fixtures import response_bytes
@@ -74,13 +123,18 @@ class RunnerTests(unittest.TestCase):
                 with patch("probe.os.getuid", return_value=1000, create=True), patch("probe.os.getgid", return_value=1000, create=True), patch(
                     "probe.execute", side_effect=[result, subprocess.CompletedProcess([], 0, "removed", "")]
                 ) as execute:
-                    self.assertIs(probe.run_container("owned-image", Path(directory), "http://127.0.0.1:1234", [], {}, Path(directory), "rust-host"), result)
+                    environment = {"SUB_STORE_MMDB_COUNTRY_PATH": str(Path(directory) / "mmdb country🙂.mmdb"),
+                                   "SUB_STORE_MMDB_ASN_PATH": str(Path(directory) / "mmdb asn🙂.mmdb")}
+                    self.assertIs(probe.run_container("owned-image", Path(directory), "http://127.0.0.1:1234", [], environment, Path(directory), "rust-host"), result)
                 run, cleanup = execute.call_args_list
                 container = run.args[0][run.args[0].index("--name") + 1]
                 self.assertEqual(cleanup.args[0], ["docker", "rm", "--force", container])
                 self.assertEqual(run.kwargs["timeout"], 60)
                 self.assertEqual(cleanup.kwargs["timeout"], 30)
                 self.assertIn(f"type=bind,source={directory},target=/state", run.args[0])
+                for kind in ("COUNTRY", "ASN"):
+                    self.assertIn(f"SUB_STORE_MMDB_{kind}_PATH=/state/mmdb {kind.lower()}🙂.mmdb", run.args[0])
+                self.assertLess(run.args[0].index("SUB_STORE_MMDB_COUNTRY_PATH=/state/mmdb country🙂.mmdb"), run.args[0].index("owned-image"))
         with tempfile.TemporaryDirectory() as directory:
             with patch("probe.os.getuid", return_value=1000, create=True), patch("probe.os.getgid", return_value=1000, create=True), patch(
                 "probe.execute", side_effect=[OSError("fixture launch failure"), subprocess.CompletedProcess([], 0, "removed", "")]
