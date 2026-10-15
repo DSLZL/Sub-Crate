@@ -169,7 +169,7 @@ pub enum Suite {
     Download,
 }
 
-fn random_values(ctx: Ctx<'_>, length: usize) -> rquickjs::Result<String> {
+pub(crate) fn random_values(ctx: Ctx<'_>, length: usize) -> rquickjs::Result<String> {
     if length > 65536 {
         return Err(Exception::throw_message(
             &ctx,

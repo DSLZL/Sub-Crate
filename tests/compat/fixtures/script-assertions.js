@@ -5,6 +5,8 @@
   assert(typeof module === 'undefined', 'module must be absent');
   assert($substore.env.isNode === false && context.env.backend === 'Rust', 'truthful script environment');
   assert(typeof $substore.node === 'undefined', 'Node host must be absent');
+  const entropy = crypto.getRandomValues(new Uint8Array(32));
+  assert(entropy.length === 32 && entropy.some(byte => byte !== 0), 'native entropy is registered before helper initialization');
   try { require('node:fs'); throw new Error('Node access unexpectedly worked'); }
   catch (error) { assert(error instanceof ReferenceError && /require/.test(error.message), 'missing Node API diagnostic'); }
   const value = { unknown: { nil: null, zero: 0, flag: false, empty: '' }, script: "require('node:fs')" };

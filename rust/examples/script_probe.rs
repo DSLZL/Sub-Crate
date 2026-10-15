@@ -238,6 +238,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Duration::from_secs(15),
         context.async_with(async |ctx| {
             let globals = ctx.globals();
+            globals.set("__hostRandomValues", Func::from(script_host::random_values))?;
             globals.set("probeUpstream", upstream)?;
             globals.set("__wait", Func::from(Async(wait)))?;
             globals.set("__httpGet", Func::from(Async(http_get)))?;
