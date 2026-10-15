@@ -8,6 +8,7 @@ async function runMmdbContracts(check, host, operator, assert, equal) {
     let caught;
     try { callback(); } catch (error) { caught = error; }
     assert(caught && caught.name === name, `expected ${name}, got ${caught?.name}: ${caught?.message}`);
+    assert(caught instanceof Error && (name !== 'TypeError' || caught instanceof TypeError), 'MMDB native Error identity');
     if (message !== undefined) equal(caught.message, message, 'MMDB diagnostic');
     return {name: caught.name, message: caught.message};
   }

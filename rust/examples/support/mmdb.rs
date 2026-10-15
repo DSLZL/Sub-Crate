@@ -51,7 +51,7 @@ pub fn open<'js>(ctx: Ctx<'js>, path: String, kind: String) -> rquickjs::Result<
             );
         }
         if array_type {
-            return reject(&ctx, "TypeError", "input.split is not a function");
+            return Err(Exception::throw_type(&ctx, "input.split is not a function"));
         }
         let record = reader
             .lookup(ip)
