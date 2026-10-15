@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {createRequire} = require('node:module');
 const {execFileSync} = require('node:child_process');
+const {createHash} = require('node:crypto');
 const root = path.resolve(__dirname, '../..');
 const fromBackend = createRequire(path.join(root, 'backend/package.json'));
 const {parseSync, traverse} = fromBackend('@babel/core');
@@ -84,14 +85,19 @@ if (process.argv.length !== 4) throw new Error('Usage: inventory.cjs <pinned-fro
 const frontendCommit = execFileSync('rtk', ['proxy', 'git', '-C', frontend, 'rev-parse', 'HEAD'], {encoding: 'utf8'}).trim();
 assert.equal(frontendCommit, '4bd7b0acbe65466b933ccea14fc61dbebe036ead');
 execFileSync('rtk', ['proxy', 'git', '-C', frontend, 'diff', '--exit-code', 'HEAD'], {stdio: 'pipe'});
-execFileSync('rtk', ['proxy', 'git', '-C', root, 'diff', '--exit-code', '9cc6b5fac966993364ae33da8797f446bbf7f571', '--',
-  'backend/src', 'backend/package.json', 'backend/pnpm-lock.yaml'], {stdio: 'pipe'});
+const backendBaseCommit = '9cc6b5fac966993364ae33da8797f446bbf7f571';
+const backendPatch = execFileSync('rtk', ['proxy', 'git', '-C', root, 'diff', '--no-ext-diff', '--binary', '--no-color', '--unified=0', backendBaseCommit, '--',
+  'backend', 'scripts/ip-flag-node.js'], {encoding: 'utf8'});
+assert.equal(backendPatch, fs.readFileSync(path.join(__dirname, 'approved-reference-fixes.patch'), 'utf8').replace(/\r\n/g, '\n'),
+  'Backend source differs from the frozen base plus approved RF01/RF02 patch');
+const backendCommit = execFileSync('rtk', ['proxy', 'git', '-C', root, 'rev-parse', 'HEAD'], {encoding: 'utf8'}).trim();
 const frontendMap = JSON.parse(fs.readFileSync(path.join(__dirname, 'frontend-contract-map.json'), 'utf8'));
 assert.equal(frontendMap.frontend_commit, frontendCommit);
 const frontendCases = new Set([...fs.readFileSync(path.join(__dirname, 'frontend.py'), 'utf8')
   .matchAll(/"id": "(FE\d+-[^"]+)"/g)].map(match => match[1]));
 assert.ok(frontendCases.size, 'No executable frontend workflow IDs found');
-const report = {backend_commit: '9cc6b5fac966993364ae33da8797f446bbf7f571', frontend_commit: frontendCommit,
+const report = {backend_commit: backendCommit, backend_base_commit: backendBaseCommit, frontend_commit: frontendCommit,
+  approved_reference_patch_sha256: createHash('sha256').update(backendPatch).digest('hex'),
   complete_behavior_inventory: false, routes: [], proxy_formats: [], registries: {}, frontend_requests: [], frontend_url_literals: [],
   executable_frontend_workflow_ids: [...frontendCases], parse_gaps: [],
   unresolved_behavior: ['Route parameter/query/coercion/error/state branches', 'Dynamic frontend type values and direct URL builders',

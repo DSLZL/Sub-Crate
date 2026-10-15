@@ -206,7 +206,7 @@ def main(argv=None):
         if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
             raise ValueError("--url must be an explicit HTTP(S) backend base URL without credentials/query/fragment")
         manifest, cases = load_cases(args.manifest, args.fixtures, args.suite)
-        report.update(backend_commit=manifest["backend_commit"], frontend_commit=manifest["frontend_commit"],
+        report.update(backend_base_commit=manifest["backend_commit"], frontend_commit=manifest["frontend_commit"],
                       fixture_sha256=hashlib.sha256(args.fixtures.read_bytes()).hexdigest(),
                       manifest_sha256=hashlib.sha256(args.manifest.read_bytes()).hexdigest())
         with ControlledUpstream(args.upstream_port) as upstream:

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: [codex/rust-server-parity]
-    paths: [rust/**, tests/compat/**, .github/workflows/rust-compat-native.yml]
+    paths: [backend/**, scripts/ip-flag-node.js, rust/**, tests/compat/**, .github/workflows/rust-compat-native.yml]
 
 permissions:
   contents: read
@@ -35,8 +35,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Verify frozen oracle source
-        run: git diff --exit-code 9cc6b5fac966993364ae33da8797f446bbf7f571 -- backend scripts/ip-flag-node.js
+      - name: Verify approved reference fixes
+        run: |
+          git diff --no-ext-diff --binary --no-color --unified=0 9cc6b5fac966993364ae33da8797f446bbf7f571 -- backend scripts/ip-flag-node.js > "$RUNNER_TEMP/reference-fixes.patch"
+          diff --strip-trailing-cr -u tests/compat/approved-reference-fixes.patch "$RUNNER_TEMP/reference-fixes.patch"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24.15.0
@@ -59,7 +61,7 @@ jobs:
       - name: Node HTTP contract slice
         if: ${{ !cancelled() }}
         run: python tests/compat/reference.py --node "$(node -p 'process.execPath')" --mode contracts
-      - name: Frozen Node unit baseline
+      - name: Node unit suite including reference regressions
         if: ${{ !cancelled() }}
         run: python tests/compat/reference.py --node "$(node -p 'process.execPath')" --mode ${{ matrix.unit-mode }}
       - name: Preserve platform evidence, including failures

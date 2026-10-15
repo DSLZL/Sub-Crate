@@ -804,6 +804,17 @@
     ]
   },
   {
+    "id": "Y03-restore-without-token-stays-alive",
+    "source": "RF02; backend/src/restful/artifacts.js:64-134",
+    "steps": [
+      {"path": "/api/storage", "method": "POST", "body": {"content": "{\"schemaVersion\":\"2.0\",\"settings\":{\"logsMaxCount\":0,\"githubApiUrl\":\"$UPSTREAM/api\"},\"subs\":[],\"collections\":[],\"artifacts\":[{\"name\":\"keep-artifact\",\"unknown\":false}],\"files\":[{\"name\":\"keep-file\",\"source\":\"local\",\"content\":\"保留🙂\\r\\n\"}],\"tokens\":[],\"modules\":[],\"archives\":[],\"unknown\":{\"nil\":null,\"zero\":0}}"}, "expect": {"status": 200, "json": {"status": "success"}}},
+      {"path": "/api/storage", "expect": {"status": 200, "json": {"schemaVersion": "2.0", "settings": {"logsMaxCount": 0, "githubApiUrl": "$UPSTREAM/api"}, "subs": [], "collections": [], "artifacts": [{"name": "keep-artifact", "unknown": false}], "files": [{"name": "keep-file", "source": "local", "content": "保留🙂\r\n"}], "tokens": [], "modules": [], "archives": [], "unknown": {"nil": null, "zero": 0}}}},
+      {"path": "/api/artifacts/restore", "state": {"settings": {"logsMaxCount": 0, "githubApiUrl": "$UPSTREAM/api"}, "artifacts": [{"name": "keep-artifact", "unknown": false}], "files": [{"name": "keep-file", "source": "local", "content": "保留🙂\r\n"}], "unknown": {"nil": null, "zero": 0}}, "expect": {"status": 500, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "failed", "error": {"code": "FAILED_TO_RESTORE_ARTIFACTS", "type": "InternalServerError", "message": "Failed to restore artifacts", "details": "Reason: 未设置 GitHub Token！"}}}},
+      {"path": "/api/utils/env", "expect": {"status": 200, "json_contains": {"status": "success"}}},
+      {"path": "/api/storage", "expect": {"status": 200, "json": {"schemaVersion": "2.0", "settings": {"logsMaxCount": 0, "githubApiUrl": "$UPSTREAM/api"}, "subs": [], "collections": [], "artifacts": [{"name": "keep-artifact", "unknown": false}], "files": [{"name": "keep-file", "source": "local", "content": "保留🙂\r\n"}], "tokens": [], "modules": [], "archives": [], "unknown": {"nil": null, "zero": 0}}}}
+    ]
+  },
+  {
     "id": "A03-sort-delete-and-artifact-restore",
     "source": "backend/src/restful/archives.js:29,41,50,109; backend/src/utils/archive.js:87",
     "steps": [

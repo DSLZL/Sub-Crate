@@ -1,4 +1,4 @@
-"""Run the frozen Node oracle with pinned tools and fresh task-owned state."""
+"""Run the Node compatibility reference with approved fixes and disposable state."""
 import argparse
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -16,6 +16,7 @@ import time
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 BACKEND = ROOT / "backend"
+BACKEND_BASE_COMMIT = "9cc6b5fac966993364ae33da8797f446bbf7f571"
 
 
 def execute(argv, directory, environment, output_dir, name, timeout=None, direct_reason=None):
@@ -40,6 +41,22 @@ def execute(argv, directory, environment, output_dir, name, timeout=None, direct
               "finished": datetime.now(timezone.utc).isoformat(), "exit_code": process.returncode, "timed_out": timed_out}
     (output_dir / f"{name}.command.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     return process
+
+
+def source_provenance(environment, output_dir):
+    revision = execute(["git", "rev-parse", "HEAD"], ROOT, environment, output_dir, "backend-revision")
+    patch = execute(["git", "diff", "--no-ext-diff", "--binary", "--no-color", "--unified=0", BACKEND_BASE_COMMIT,
+                     "--", "backend", "scripts/ip-flag-node.js"], ROOT, environment, output_dir, "backend-source")
+    expected = (HERE / "approved-reference-fixes.patch").read_text(encoding="utf-8")
+    if revision.returncode or patch.returncode or patch.stdout != expected:
+        raise RuntimeError("Backend source differs from the frozen base plus approved RF01/RF02 patch")
+    dirty = execute(["git", "diff", "--quiet", "HEAD", "--", "backend", "scripts/ip-flag-node.js"],
+                    ROOT, environment, output_dir, "backend-worktree")
+    if dirty.returncode not in (0, 1):
+        raise RuntimeError("Could not inspect backend worktree state")
+    return {"backend_commit": revision.stdout.strip(), "backend_base_commit": BACKEND_BASE_COMMIT,
+            "backend_worktree_changed": bool(dirty.returncode),
+            "approved_reference_patch_sha256": hashlib.sha256(expected.encode("utf-8")).hexdigest()}
 
 
 @contextmanager
@@ -99,9 +116,10 @@ def main():
     environment["PATH"] = str(node.parent) + os.pathsep + environment.get("PATH", "")
     environment.update(SUB_STORE_DATA_BASE_PATH=str(state_dir), SUB_STORE_FRONTEND_BACKEND_PATH="/", SUB_STORE_BACKEND_API_HOST="127.0.0.1")
     summary = {"kind": "node-baseline", "production_ready": False, "rust_parity": False, "full_coverage": False,
-               "backend_commit": "9cc6b5fac966993364ae33da8797f446bbf7f571", "mode": args.mode, "exit_code": 1,
+               "mode": args.mode, "exit_code": 1,
                "state_dir": str(state_dir), "lock_sha256": hashlib.sha256((BACKEND / "pnpm-lock.yaml").read_bytes()).hexdigest()}
     try:
+        summary.update(source_provenance(environment, output_dir))
         version = execute([node, "--version"], ROOT, environment, output_dir, "toolchain")
         if version.returncode or version.stdout.strip() != "v24.15.0":
             raise RuntimeError(f"Expected Node v24.15.0; observed {version.stdout.strip()!r}")

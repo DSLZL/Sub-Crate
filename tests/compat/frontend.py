@@ -1,4 +1,4 @@
-"""Exercise the unchanged built frontend against a disposable frozen Node listener."""
+"""Exercise the unchanged built frontend against a disposable Node reference."""
 import argparse
 import base64
 from datetime import datetime, timezone
@@ -10,7 +10,7 @@ import shutil
 import subprocess
 from urllib.parse import parse_qs, quote, urlsplit
 
-from reference import BACKEND, HERE, ROOT, execute, oracle
+from reference import BACKEND, HERE, ROOT, execute, oracle, source_provenance
 from runner import check_json
 from upstream import ControlledUpstream
 
@@ -79,7 +79,7 @@ def main():
                        SUB_STORE_FRONTEND_PATH=str(frontend / "dist"), AGENT_BROWSER_DEFAULT_TIMEOUT="15000")
     session = "sub-store-rust-" + run_id.lower().replace(".", "-")
     report = {"kind": "node-frontend-baseline", "frontend_commit": "4bd7b0acbe65466b933ccea14fc61dbebe036ead",
-              "backend_commit": "9cc6b5fac966993364ae33da8797f446bbf7f571", "full_coverage": False,
+              "full_coverage": False,
               "rust_parity": False, "session": session, "exit_code": 1, "cases": []}
     command_index = 0
 
@@ -118,6 +118,7 @@ def main():
             command("find", "text", name, "click")
 
     try:
+        report.update(source_provenance(environment, output))
         version = execute([node, "--version"], ROOT, environment, output, "node")
         assert version.returncode == 0 and version.stdout.strip() == "v24.15.0", "Pinned Node required"
         revision = execute(["git", "rev-parse", "HEAD"], frontend, environment, output, "frontend-commit")

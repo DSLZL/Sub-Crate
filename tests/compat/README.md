@@ -1,10 +1,10 @@
 # Rust rewrite compatibility baseline (M1, in progress)
 
-This directory tests the frozen backend, builds development-only JS helpers,
+This directory tests the Node reference with approved RF01/RF02 fixes, builds development-only JS helpers,
 and captures native rquickjs feasibility evidence. It does **not** contain a
 replacement Rust server or demonstrate complete frontend/backend parity.
 
-- Backend: `9cc6b5fac966993364ae33da8797f446bbf7f571` (2.42.4).
+- Backend base: `9cc6b5fac966993364ae33da8797f446bbf7f571` (2.42.4), plus the exact `approved-reference-fixes.patch`.
 - Unchanged frontend: `4bd7b0acbe65466b933ccea14fc61dbebe036ead` (2.34.0).
 - Development oracle: Node 24.15.0, pnpm 11.0.9, locked backend dependencies.
 - Contained Rust experiment: Rust 1.98.0, rquickjs 0.14.0, locked Cargo dependencies.
@@ -25,7 +25,13 @@ The pinned backend's Babel alias plugin cannot load Windows filenames. Use
 `--mode unit-windows` for a separately labeled run with a development-only
 loader that retains the Babel preset and resolves aliases as native paths.
 The original loader failure remains evidence; neither loader changes backend
-source. Windows local-file and symlink failures still fail the run.
+source. The working backend now recognizes native absolute paths; runtime-manifest
+fixtures use Windows directory junctions without requiring symlink privilege.
+CI, inventory and orchestration reject any backend delta outside the checked-in
+approved patch. Reports record the actual checkout revision, frozen base, patch
+hash and (for orchestration) whether backend files differ from HEAD. The runner's
+`backend_base_commit` names fixture provenance, not an independently verified
+target revision. Original failed runs and the frozen Git commit remain intact.
 
 `reference.py` gives each execution fresh state and starts its own actual Node
 listener. It does not read the user's production state. Short commands use RTK
@@ -68,7 +74,7 @@ the parser API and a download URL, four rule output targets, existing parser/
 preprocessor samples, ordered built-in and general-JS processors, collection
 preview/download, target/platform/header precedence, missing resources and
 forbidden share overrides. `--suite conversion` runs this slice independently.
-Another standalone listener runs `resources`: twelve scenarios and 73 requests
+Another standalone listener runs `resources`: thirteen scenarios and 78 requests
 cover age X25519/hybrid key generation and fixed-key derivation, five resource
 sorts and four legacy replacements, artifact CRUD and upload-disabled sync,
 archive sorting/deletion/restore, and enabled/disabled log capture and filtering.
@@ -84,7 +90,7 @@ provider errors, plaintext/Base64 backup payloads, token strategies and no-chang
 upload reuse. Five `node-info` scenarios cover successful URI/lookup generation,
 URI-generation failure, IPv6 normalization, provider errors, HTTP-status/body
 precedence and missing input with listener recovery. The orchestrated total is
-117 scenarios.
+118 scenarios (392 requests).
 `--suite operations` includes its restart; selecting `operations-restart` alone
 requires the D06 state seed. `cors-configured`, `cors-wildcard` and `cors-branded`
 automatically set their documented fixture environment in `reference.py`.
@@ -98,13 +104,14 @@ to a shortcut and retain the original nodes, while a top-level throw fails.
 Shortcut filters require an explicit return; omitting it selects no nodes.
 Missing artifact PATCH returns DUPLICATE_KEY; legacy artifact PUT accepts names
 that POST rejects. Invalid archive-sort payload returns the frozen HTML 500 body.
-No-token artifact restore is a separately classified defect: its unawaited promise
-rejection terminates Node 24 without an HTTP response. It is not counted as a
-passing HTTP case. The user approved fixing this defect and native Windows path
-reading in Rust, while retaining the frontend protocol. Rust regression checks
-must verify a structured restore error, unchanged state and a live listener;
-the frozen Node source and failed evidence stay intact. Live-provider restore remains
-an open gate.
+The original no-token artifact restore defect terminated Node 24 without an HTTP
+response. The user explicitly requested repairing it and native Windows path
+reading in the working backend. RF02 now throws into the existing handler catch:
+Y03 requires 500/FAILED_TO_RESTORE_ARTIFACTS, no provider request, unchanged complete
+exported data and a successful follow-up on the same listener. RF01 native-file
+unit tests require exact Unicode/CRLF content, both Windows path separators,
+returnRaw and missing-file errors without HTTP fallback. Later Rust acceptance
+must pass the same corrections. Live-provider restore remains an open gate.
 
 Default CORS denies local origins; a custom backend name permits HTTP localhost
 and 127.0.0.1 only under the default policy. An explicit whitelist replaces that
@@ -158,10 +165,10 @@ Production isolation, complete host semantics and per-request resource cleanup
 remain unverified; passing the contained experiment does not establish them.
 
 `rust-compat-native.yml` runs the probe, runner self-checks, thirteen Node HTTP
-scenarios, one restart, two merged-share, 66 conversion, twelve resource, six
+scenarios, one restart, two merged-share, 66 conversion, thirteen resource, six
 operation, one migrated-data restart, three configured-CORS, eight Gist and five
 node-info scenarios,
-plus the frozen unit baseline on native `ubuntu-24.04`,
+plus the complete repaired Node unit suite on native `ubuntu-24.04`,
 `ubuntu-24.04-arm`, and `windows-2025`. Each platform uploads independent logs
 and JSON summaries even on failure. A successful probe is not a full Rust
 compatibility pass. Docker and all frontend workflows remain separate gates.
@@ -217,7 +224,8 @@ The inventory command rejects missing/stale call mappings, backend routes,
 HTTP fixture IDs and UI workflow references, and missing parse/download checks for any exported proxy output alias
 or base/unsupported rule producer. Its 114 direct URL expressions still require complete builder and
 parameter analysis; the two mapped builders are only an initial slice.
-The inventory checks the frontend source diff and frozen backend source/lockfile.
+The inventory checks the unchanged frontend and exact approved backend patch,
+including backend source and lockfile.
 Computed processor names resolve through top-level string constants; parser and
 preprocessor factory names remain explicit. Unresolved registry entries are parse
 gaps, and the inline checks cover computed names, inner-scope shadowing, factories

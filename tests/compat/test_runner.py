@@ -13,6 +13,17 @@ import runner
 
 
 class RunnerTests(unittest.TestCase):
+    def test_reference_rejects_an_unapproved_backend_patch(self):
+        import reference
+        import subprocess
+        with tempfile.TemporaryDirectory() as directory:
+            with patch("reference.execute", side_effect=[
+                subprocess.CompletedProcess([], 0, "fixture-revision\n", ""),
+                subprocess.CompletedProcess([], 0, "unapproved backend change\n", ""),
+            ]):
+                with self.assertRaisesRegex(RuntimeError, "approved RF01/RF02 patch"):
+                    reference.source_provenance({}, Path(directory))
+
     def test_controlled_node_info_proxy_replies_locally_and_rejects_other_hosts(self):
         from http.client import HTTPConnection
         from upstream import ControlledUpstream
