@@ -178,7 +178,7 @@ hyper-rustls/http-body-util crates because reqwest inserts a default Accept head
 even when the caller explicitly omits it. No additional transitive packages were
 added. New source and binary hashes accompany each immutable evidence directory.
 
-The executable additionally runs 52 shared `PC01`-`PC52` processor/helper groups.
+The executable additionally runs 64 shared `PC01`-`PC64` processor/helper groups.
 The Node oracle loads the actual processor module and application OpenAPI from
 `backend/`, matching the unit suite's Babel working directory. The helper builder
 uses the existing Babel parser to extract the frozen wrapper/cache declarations
@@ -226,9 +226,26 @@ assert that no queued third resolver is contacted. The race loser cannot respond
 until the script acknowledges its observed fast winner; only those two concurrent
 wire records may reorder. Exhaustion retains each source error. A real async
 script uses both injected APIs, and fresh processes reload the complete DNS
-resource cache. Total processor/helper requests are 42 per runtime. This proves
-the HTTP DNS slice; UDP/TCP/DoT, TLS/proxy and fixed public-provider integration
-remain open. The source helpers do not implement a production Rust DNS service.
+resource cache. Total processor/helper HTTP requests are 42 per runtime.
+
+`PC53`-`PC64` additionally use real Rust UDP/TCP/DoT transports with the same
+dns-packet encoding/decoding and Custom resolver source. Each runtime must issue
+all twenty exact raw DNS packets and seventeen TCP/TLS connections. Check IPv4
+and IPv6 loopback, hostname resolution, EDNS, fragmented length/body reads and
+first-frame selection, premature EOF, malformed packets, timeouts, peer closure,
+mixed-protocol fallback, cache partition and actual async script injection.
+Fragmented replies take over 280 ms with a 200 ms inactivity timeout; an absolute
+deadline would fail. TLS hostname calls must send SNI; IP calls must omit it.
+The disposable self-signed certificate must fail by default and with a truthy
+number; only explicit boolean skipCertVerify permits it. Handshake signatures
+remain verified. The checked-in dns-key.pem is a public test key used only by
+the loopback fixture, and never loaded by the Rust client or production service.
+The native bridge reuses locked tokio-rustls/platform-verifier crates without
+new transitive packages. DNS-only URL fields use Rust's URL parser; no complete
+global web URL API is claimed. Nineteen runner self-checks include packet/frame,
+SNI/certificate, missing/extra request, fragment timing and leaked-connection
+mutations. TLS trust-store success, proxy and fixed public-provider integration
+remain open, as does integration with a production Rust DNS/cache service.
 
 `shortcut: the probe uses a partial ProxyUtils/timer/storage/artifact host,
 upgrade to the full shared-behavior fixtures before M3 acceptance.` Separate
@@ -241,8 +258,8 @@ partial output with exit 124. RTK still wraps builds and other short commands.
 Production isolation, complete host semantics and per-request resource cleanup
 remain unverified; passing the contained experiment does not establish them.
 In particular, the new adapter's direct JSON writes are limited to disposable
-probe files; atomic production persistence belongs to M2. Proxy/TLS/compression,
-native DNS transports, logging/notification delivery, full callback lifecycle, Rust resource-cache
+probe files; atomic production persistence belongs to M2. HTTP proxy/TLS/compression,
+full DNS application integration, logging/notification delivery, full callback lifecycle, Rust resource-cache
 services and actual application conversion/artifact calls still need their own shared
 contracts before M3/M4 production acceptance.
 

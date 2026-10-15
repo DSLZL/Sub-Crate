@@ -9,6 +9,9 @@ use rquickjs::{
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, error::Error, path::Path, time::Duration};
 
+#[path = "dns.rs"]
+mod dns;
+
 async fn request<'js>(
     ctx: Ctx<'js>,
     method: String,
@@ -155,6 +158,7 @@ pub async fn run(
         context.async_with(async |ctx| {
             let globals = ctx.globals();
             globals.set("probeUpstream", upstream)?;
+            globals.set("probeDnsServers", ctx.json_parse(std::env::var("SUB_STORE_COMPAT_DNS_SERVERS").unwrap_or_else(|_| "{}".to_owned()))?)?;
             globals.set("__loadHostState", Func::from(move || state.clone()))?;
             globals.set(
                 "__persistHostState",
@@ -175,6 +179,8 @@ pub async fn run(
             )?;
             globals.set("__hostWait", Func::from(Async(crate::wait)))?;
             globals.set("__hostRequest", Func::from(Async(request)))?;
+            globals.set("__hostDnsUrl", Func::from(dns::parse_url))?;
+            globals.set("__hostDnsQuery", Func::from(Async(dns::query)))?;
             globals.set("__hostReenter", Func::from(Async(reenter)))?;
             ctx.eval::<(), _>(helpers)
                 .catch(&ctx)
@@ -200,6 +206,9 @@ pub async fn run(
                     ))?;
                     ctx.eval::<(), _>(include_str!(
                         "../../../tests/compat/fixtures/script-dns-contracts.js"
+                    ))?;
+                    ctx.eval::<(), _>(include_str!(
+                        "../../../tests/compat/fixtures/script-native-dns-contracts.js"
                     ))?;
                     ctx.eval::<(), _>(
                         "const processorDiagnostics = [];\n\

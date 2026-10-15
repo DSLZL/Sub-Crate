@@ -10,7 +10,7 @@ import platform
 from reference import execute, HERE, ROOT, source_provenance
 from runner import check_json
 from upstream import ControlledUpstream
-from dns_fixtures import query_path
+from dns_fixtures import ControlledDns, query_path, query_bytes, response_bytes
 
 HOST_CASES = [
     "SH01-storage-values-and-aliases", "SH02-root-key-routing", "SH03-storage-undefined-delete-and-errors",
@@ -46,6 +46,12 @@ PROCESSOR_CASES = [
     "PC47-custom-dns-empty-wrong-and-nxdomain", "PC48-custom-dns-sequential-fallback",
     "PC49-custom-dns-bounded-race-and-winner-cache", "PC50-custom-dns-exhaustion-retains-errors",
     "PC51-custom-dns-invalid-inputs-before-network", "PC52-doh-and-resolver-in-pending-script",
+    "PC53-native-dns-address-validation", "PC54-udp-ipv4-ipv6-and-edns",
+    "PC55-tcp-fragments-inactivity-and-first-frame", "PC56-tcp-premature-header-and-body-eof",
+    "PC57-udp-and-tcp-malformed-packet", "PC58-udp-and-tcp-timeout-no-late-cache",
+    "PC59-dot-default-verification-and-explicit-boolean", "PC60-dot-ip-without-sni",
+    "PC61-dot-fragments-eof-and-timeout", "PC62-custom-mixed-native-fallback-and-cache",
+    "PC63-custom-dot-certificate-cache-partition", "PC64-native-dns-in-async-script",
 ]
 
 
@@ -116,6 +122,50 @@ def check_dns_requests(requests):
     check_json([item.get("dns_overlap") for item in requests[16:18]], [True, True])
 
 
+def expected_native_dns_requests():
+    queries = [
+        ("udp", "udp-a.fixture", 1, "203.0.113.99"), ("udp", "udp-hostname.fixture"),
+        ("udp6", "udp6-aaaa.fixture", 28, "2001:db8:1234:5678::99"),
+        ("tcp", "fragment-tcp.fixture"), ("tcp6", "extra-tcp6.fixture", 28),
+        ("tcp", "end-header-tcp.fixture"), ("tcp", "end-body-tcp.fixture"),
+        ("udp", "malformed-udp.fixture"), ("tcp", "malformed-tcp.fixture"),
+        ("udp", "timeout-udp.fixture"), ("tcp", "timeout-tcp.fixture"),
+        ("tls", "tls-hostname.fixture"), ("tls", "tls-ip.fixture", 28),
+        ("tls", "fragment-tls.fixture"), ("tls", "end-body-tls.fixture"), ("tls", "timeout-tls.fixture"),
+        ("udp", "fallback.fixture"), ("tcp", "fallback.fixture"),
+        ("tls", "tls-cache.fixture"), ("tcp", "injected-native.fixture"),
+    ]
+    expected = []
+    for transport, domain, *options in queries:
+        packet = query_bytes(domain, *options)
+        expected.append({"transport": transport, "domain": domain, "packet": list(packet),
+                         "frame": [] if transport.startswith("udp") else list(len(packet).to_bytes(2, "big"))})
+    return expected
+
+
+def expected_dns_connections():
+    return [{"transport": transport, "handshake": handshake, "server_name": server_name} for transport, handshake, server_name in [
+        ("tcp", None, None), ("tcp6", None, None), *[("tcp", None, None)] * 4,
+        ("tls", False, "localhost"), ("tls", False, "localhost"), ("tls", True, "localhost"),
+        ("tls", True, None), *[("tls", True, "localhost")] * 3, ("tcp", None, None),
+        ("tls", True, "localhost"), ("tls", False, "localhost"), ("tcp", None, None),
+    ]]
+
+
+def check_native_dns(requests, connections, errors):
+    check_json(errors, [])
+    expected = expected_native_dns_requests()
+    check_json([{key: item[key] for key in ("transport", "domain", "packet", "frame")} for item in requests], expected)
+    check_json([{key: item[key] for key in ("transport", "handshake", "server_name")} for item in connections], expected_dns_connections())
+    check_json([item["closed"] for item in connections if item["handshake"] is not False], [True] * 14)
+    for item in requests:
+        if item["domain"].startswith("fragment-"):
+            size = len(response_bytes(bytes(item["packet"]), "good")) + 2
+            check_json(item["response_chunks"], [1, 1, 3, 3, 3, size - 11])
+            if type(item["response_elapsed"]) not in (float, int) or item["response_elapsed"] < 0.28:
+                raise AssertionError("Fragment fixture must outlast the 200 ms inactivity timeout")
+
+
 def check_host_requests(requests):
     text = list("订阅🙂\r\nsecond\n".encode("utf-8"))
     expected = []
@@ -156,6 +206,7 @@ def run_container(image, state, upstream, mode, environment, output, name):
             "--user", f"{os.getuid()}:{os.getgid()}",
             "--mount", f"type=bind,source={state},target=/state",
             "--env", "SUB_STORE_COMPAT_STATE_DIR=/state", "--env", "SUB_STORE_DATA_BASE_PATH=/state",
+            "--env", "SUB_STORE_COMPAT_DNS_SERVERS=" + environment.get("SUB_STORE_COMPAT_DNS_SERVERS", "{}"),
             "--env", f"SUB_STORE_COMPAT_UPSTREAM={upstream}", "--env", "TZ=UTC", image, *mode]
     try:
         return execute(argv, ROOT, environment, output, name, timeout=60)
@@ -192,7 +243,7 @@ def main():
         if args.docker and platform.system() != "Linux":
             raise RuntimeError("Container acceptance requires a native Linux runner")
         executable = ROOT / "rust/target/debug/examples" / ("script_probe.exe" if os.name == "nt" else "script_probe")
-        for relative in ("rust/Cargo.toml", "rust/Cargo.lock", "rust/examples/script_probe.rs", "rust/examples/support/script_host.rs",
+        for relative in ("rust/Cargo.toml", "rust/Cargo.lock", "rust/examples/script_probe.rs", "rust/examples/support/script_host.rs", "rust/examples/support/dns.rs",
                          "tests/compat/probe.py", "tests/compat/reference.py", "tests/compat/upstream.py", "tests/compat/register.cjs",
                          "tests/compat/host-reference.cjs", "scripts/ip-flag-node.js", "tests/compat/fixtures/script-host-probe.js",
                          "tests/compat/fixtures/script-assertions.js", "tests/compat/fixtures/script-host.js",
@@ -200,6 +251,7 @@ def main():
                          "tests/compat/build-helpers.cjs", "tests/compat/processor-reference.cjs",
                          "tests/compat/fixtures/script-processor-clock.js", "tests/compat/fixtures/script-processor-contracts.js",
                          "tests/compat/fixtures/script-helper-contracts.js", "tests/compat/fixtures/script-dns-contracts.js",
+                         "tests/compat/fixtures/script-native-dns-contracts.js", "tests/compat/fixtures/dns-cert.pem", "tests/compat/fixtures/dns-key.pem",
                          "tests/compat/dns_fixtures.py", "tests/compat/Probe.Dockerfile",
                          "tests/compat/Probe.Dockerfile.dockerignore"):
             report.setdefault("source_sha256", {})[relative] = hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()
@@ -226,7 +278,7 @@ def main():
             check_json(report["container_image"]["Architecture"], {"x86_64": "amd64", "aarch64": "arm64"}[platform.machine().lower()])
         else:
             report["binary_sha256"] = hashlib.sha256(executable.read_bytes()).hexdigest()
-        with ControlledUpstream() as upstream:
+        with ControlledUpstream() as upstream, ControlledDns() as dns:
             for suite in ("host", "processor"):
                 observed = {}
                 filename = "sub-store-probe.json" if suite == "host" else "sub-store.json"
@@ -238,7 +290,7 @@ def main():
                     (state / filename).write_text('{"settings":{"logsMaxCount":0}}\n', encoding="utf-8")
                     (state / "root.json").write_text(json.dumps(root_seed) + "\n", encoding="utf-8")
                     child_env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state), "SUB_STORE_COMPAT_STATE_DIR": str(state),
-                                 "SUB_STORE_COMPAT_UPSTREAM": upstream.url}
+                                 "SUB_STORE_COMPAT_UPSTREAM": upstream.url, "SUB_STORE_COMPAT_DNS_SERVERS": json.dumps(dns.urls)}
                     if suite == "processor":
                         child_env["TZ"] = "UTC"
                     argv = [node, "--require", HERE / "register.cjs", HERE / f"{suite}-reference.cjs"] if kind == "node" else [executable]
@@ -248,16 +300,20 @@ def main():
                             (["--host-resume"] if resume else []) if suite == "host" else
                             ["--processors-resume" if resume else "--processors"])
                         offset = len(upstream.requests)
+                        dns_offset, connection_offset, error_offset = len(dns.requests), len(dns.connections), len(dns.errors)
                         # Babel's default dependency exclusion is relative to cwd, as in the real unit suite.
                         cwd = ROOT / "backend" if kind == "node" and suite == "processor" else ROOT
                         if kind == "rust" and args.docker:
-                            result = run_container(image, state, upstream.url, mode, environment, output, name)
+                            result = run_container(image, state, upstream.url, mode, child_env, output, name)
                         else:
                             result = execute([*argv, *mode], cwd, child_env, output, name, timeout=60,
                                 direct_reason="Direct native process ownership allows the watchdog to kill the evaluated host on Windows")
+                        dns.wait_for_idle()
                         requests = upstream.requests[offset:]
                         runs = report.setdefault(f"{suite}_runs", [])
-                        runs.append({"name": name, "exit_code": result.returncode, "upstream_requests": requests})
+                        runs.append({"name": name, "exit_code": result.returncode, "upstream_requests": requests,
+                                     "dns_requests": dns.requests[dns_offset:], "dns_connections": dns.connections[connection_offset:],
+                                     "dns_errors": dns.errors[error_offset:]})
                         if result.returncode:
                             raise RuntimeError(f"{name} failed; inspect preserved logs")
                         lines = result.stdout.splitlines()
@@ -283,10 +339,17 @@ def main():
                                 expected["dnsCache"] = observed[kind]["dnsCache"]
                             check_json(value, expected)
                             check_json(requests, [])
+                            for key in ("dns_requests", "dns_connections", "dns_errors"):
+                                check_json(runs[-1][key], [])
                         else:
                             observed[kind] = value
                             (check_host if suite == "host" else check_processors)(value, observed["node"])
                             (check_host_requests if suite == "host" else check_processor_requests)(requests)
+                            if suite == "processor":
+                                check_native_dns(runs[-1]["dns_requests"], runs[-1]["dns_connections"], runs[-1]["dns_errors"])
+                            else:
+                                for key in ("dns_requests", "dns_connections", "dns_errors"):
+                                    check_json(runs[-1][key], [])
         report["exit_code"] = 0
     except Exception as error:
         report["error"] = f"{type(error).__name__}: {error}"

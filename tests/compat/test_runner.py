@@ -13,6 +13,33 @@ import runner
 
 
 class RunnerTests(unittest.TestCase):
+    def test_native_dns_rejects_packet_frame_sni_verification_leaks_and_missing_requests(self):
+        from probe import check_native_dns, expected_native_dns_requests, expected_dns_connections
+        from dns_fixtures import response_bytes
+        requests = expected_native_dns_requests()
+        for item in requests:
+            if item["domain"].startswith("fragment-"):
+                size = len(response_bytes(bytes(item["packet"]), "good")) + 2
+                item.update(response_chunks=[1, 1, 3, 3, 3, size - 11], response_elapsed=0.3)
+        connections = [{**item, "closed": item["handshake"] is not False} for item in expected_dns_connections()]
+        check_native_dns(requests, connections, [])
+        for mutation in ("packet", "frame", "missing", "extra", "transport", "sni", "certificate", "open", "fragment", "deadline", "typed-deadline", "error"):
+            actual, peers, errors = copy.deepcopy(requests), copy.deepcopy(connections), []
+            if mutation == "packet": actual[0]["packet"][2] = 0
+            elif mutation == "frame": actual[3]["frame"][1] += 1
+            elif mutation == "missing": actual.pop()
+            elif mutation == "extra": actual.append(actual[-1])
+            elif mutation == "transport": actual[0]["transport"] = "tcp"
+            elif mutation == "sni": peers[8]["server_name"] = None
+            elif mutation == "certificate": peers[6]["handshake"] = True
+            elif mutation == "open": peers[0]["closed"] = False
+            elif mutation == "fragment": actual[3]["response_chunks"] = [999]
+            elif mutation == "deadline": actual[3]["response_elapsed"] = 0.1
+            elif mutation == "typed-deadline": actual[3]["response_elapsed"] = True
+            else: errors.append("fixture failure")
+            with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
+                check_native_dns(actual, peers, errors)
+
     def test_dns_wire_rejects_changed_packet_headers_missing_or_extra_requests(self):
         from probe import check_dns_requests, expected_dns_requests
         requests = [{"method": item["method"], "path": item["path"], "body_bytes": item["body_bytes"],

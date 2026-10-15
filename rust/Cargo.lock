@@ -1094,8 +1094,10 @@ dependencies = [
  "hyper-util",
  "reqwest",
  "rquickjs",
+ "rustls-platform-verifier",
  "serde_json",
  "tokio",
+ "tokio-rustls",
 ]
 
 [[package]]

@@ -5,6 +5,7 @@ const fixture = name => fs.readFileSync(path.join(__dirname, 'fixtures', name), 
 eval(fixture('script-processor-clock.js'));
 eval(fixture('script-helper-contracts.js'));
 eval(fixture('script-dns-contracts.js'));
+eval(fixture('script-native-dns-contracts.js'));
 const moduleSource = require(path.resolve(__dirname, '../../backend/src/core/proxy-utils/processors/index.js'));
 const $substore = require(path.resolve(__dirname, '../../backend/src/core/app.js')).default;
 const processorHost = {
@@ -18,8 +19,10 @@ const processorHost = {
   YAML: require(path.resolve(__dirname, '../../backend/src/utils/yaml.js')).default,
   ProxyUtils: require(path.resolve(__dirname, '../../backend/src/core/proxy-utils/index.js')).ProxyUtils,
   flowUtils: require(path.resolve(__dirname, '../../backend/src/utils/flow.js')),
+  ...require(path.resolve(__dirname, '../../backend/src/utils/dns.js')),
 };
 const probeUpstream = process.env.SUB_STORE_COMPAT_UPSTREAM;
+const probeDnsServers = JSON.parse(process.env.SUB_STORE_COMPAT_DNS_SERVERS || '{}');
 const probeKind = 'node';
 const probeReenter = async (payload, callback) => {
   await $substore.wait(1);

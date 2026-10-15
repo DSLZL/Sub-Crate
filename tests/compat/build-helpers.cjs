@@ -24,7 +24,10 @@ const processors = declarations('backend/src/core/proxy-utils/processors/index.j
 const cache = declarations('backend/src/utils/script-resource-cache.js', ['ResourceCache', 'normalizeTTL', 'getTTL']);
 const headersCache = declarations('backend/src/utils/headers-resource-cache.js', ['ResourceCache', 'normalizeTTL', 'getTTL']);
 const resourceCache = declarations('backend/src/utils/resource-cache.js', ['ResourceCache', 'normalizeTTL', 'getTTL']);
-const dns = declarations('backend/src/utils/dns.js', ['buildDnsQuery', 'doh', 'parseDnsResolver', 'resolveDns']);
+const dns = declarations('backend/src/utils/dns.js', [
+  'DNS_DEFAULT_PORT', 'DNS_TLS_DEFAULT_PORT', 'buildDnsQuery', 'doh', 'normalizeDnsTimeout',
+  'normalizeDnsHost', 'parseDnsPort', 'assertNoDnsServerUrlExtraParts', 'parseDnsServerUrl', 'parseDnsResolver', 'resolveDns',
+]);
 const resolvers = declarations('backend/src/core/proxy-utils/processors/index.js', [
   'DEFAULT_RESOLVE_DOMAIN_CUSTOM_DNS_CONCURRENCY', 'normalizeResolveDomainCustomDnsConcurrency',
   'parseCustomDnsUrls', 'resolveWithCustomDnsConcurrency', 'annotateCustomDnsResult',
@@ -71,14 +74,29 @@ fromBackend('esbuild').buildSync({
         const unavailable = name => () => { throw new Error('M1 probe has no application helper: ' + name); };
         const ProxyUtils = {yaml: YAML, Buffer, Base64, JSON5, hex_md5, ipAddress,
           isIPv4, isIPv6, isIP, isValidUUID, getRandomPort, getFlag, getISO, removeFlag, doh};
-        // shortcut: only HTTP DNS is exercised here; native UDP/TCP/DoT integration belongs to M3.
+        // Only the DNS parser needs these URL fields; this is not a global web-URL shim.
+        const URL = function(raw) { Object.assign(this, JSON.parse(__hostDnsUrl(raw))); };
         ${dns}
+        const sourceResolveDns = resolveDns;
+        resolveDns = async function(options) {
+          const raw = String(options.url || '').trim();
+          const protocol = raw.match(/^([a-z][a-z\\d+.-]*):\\/\\//i)?.[1].toLowerCase();
+          if (raw && !['auto', 'system'].includes(raw.toLowerCase()) && (!protocol || ['udp', 'tcp', 'tls'].includes(protocol))) {
+            const server = parseDnsResolver(raw);
+            const packet = buildDnsQuery(options);
+            const response = await __hostDnsQuery(JSON.stringify(server), JSON.stringify(Array.from(packet)),
+              normalizeDnsTimeout(options.timeout), options.skipCertVerify === true);
+            return dnsPacket.decode(Buffer.from(JSON.parse(response)));
+          }
+          return sourceResolveDns(options);
+        };
         ${resolvers}
         const produceArtifact = unavailable('produceArtifact');
         const RESPONSE_TRANSFORMER = 'Response Transformer';
         ${processors}
         return {factories: {'Script Filter': ScriptFilter, 'Script Operator': ScriptOperator, 'Response Transformer': ResponseTransformer},
           ApplyProcessor, ApplyResponseTransformer, scriptResourceCache, headersResourceCache, resourceCache, DOMAIN_RESOLVERS, YAML, ProxyUtils,
+          parseDnsResolver, resolveDns,
           flowUtils: {getFlowField, getFlowHeaders, parseFlowHeaders, flowTransfer, validCheck, getRmainingDays, normalizeFlowHeader}};
       };`,
     resolveDir: path.join(root, 'backend'),
