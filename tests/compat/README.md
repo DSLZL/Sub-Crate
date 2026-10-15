@@ -282,6 +282,8 @@ the real language control so every host exercises selection. It waits for menu
 animations and notifications before clicks, including the closing backdrop that
 can outlive the language popup. Opening requires the whole menu inside the viewport
 with an unobstructed center; an empty animation list can precede animation startup.
+The add-subscription popup uses the same readiness check. Named clicks first wait
+for their rendered text, since navigation can finish before Vue renders controls.
 Text controls use exact labels;
 duplicated language menus require the unique visible row, not the first global
 text match. Candidate DOM/visibility/coordinates are preserved in the report.

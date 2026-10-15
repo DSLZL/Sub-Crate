@@ -114,7 +114,18 @@ def main():
         command("wait", "--fn", f"document.querySelector({json.dumps(selector)})?.value === {json.dumps(expected)}")
         assert command("get", "value", selector)["value"] == expected, message
 
+    def wait_popup(selector):
+        command("wait", "--fn", """(() => {
+            const popups = Array.from(document.querySelectorAll(""" + json.dumps(selector) + """)).filter(el => el.getClientRects().length);
+            if (popups.length !== 1) return false;
+            const popup = popups[0], r = popup.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 && r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth
+                && popup.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2))
+                && popup.getAnimations({subtree:true}).every(animation => animation.playState !== 'running');
+        })()""")
+
     def click_name(name, role=None):
+        command("wait", "--text", name)
         snapshot = command("snapshot", "-i")
         if role:
             matches = [key for key, value in snapshot["refs"].items() if value["name"] == name and value["role"] == role]
@@ -161,14 +172,7 @@ def main():
             for label, locale in (("English", "en"), ("简体中文", "zh")):
                 command("click", ".storage-language-switch .language-switch-button")
                 command("wait", ".language-switch-popup")
-                command("wait", "--fn", """(() => {
-                    const menus = Array.from(document.querySelectorAll('.language-switch-popup')).filter(el => el.getClientRects().length);
-                    if (menus.length !== 1) return false;
-                    const menu = menus[0], r = menu.getBoundingClientRect();
-                    return r.width > 0 && r.height > 0 && r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth
-                        && menu.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2))
-                        && menu.getAnimations({subtree:true}).every(animation => animation.playState !== 'running');
-                })()""")
+                wait_popup(".language-switch-popup")
                 command("wait", "--fn", "document.querySelectorAll('.Toastify__toast').length === 0")
                 targets = evaluate("""(() => {
                     const describe = el => { const r = el.getBoundingClientRect(); return {
@@ -190,10 +194,12 @@ def main():
             command("open", report["server_origin"] + "/subs")
             report["cases"].append({"id": "FE01-url-backend-setup", "source": "src/hooks/useHostAPI.ts:306; src/api/env/index.ts:25", "status": "browser_passed"})
             click_name("立即添加")
-            command("wait", "--fn", "(() => { const el = document.querySelector('.add-sub-popup'); return el && el.getAnimations({subtree:true}).every(animation => animation.playState !== 'running') })()")
+            wait_popup(".add-sub-popup")
             click_name("单条订阅", "link")
             command("wait", "--fn", "location.pathname === '/edit/subs/UNTITLED'")
+            command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
             command("fill", 'input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-fixture")
+            command("wait", 'textarea[placeholder="支持多行和参数, 请点击左侧的使用说明查看用法"]')
             command("fill", 'textarea[placeholder="支持多行和参数, 请点击左侧的使用说明查看用法"]', upstream.url + "/subscription")
             command("snapshot", "-i")
             command("click", ".submit-btn")
@@ -399,6 +405,7 @@ def main():
             command("open", report["server_origin"] + "/my")
             command("wait", ".config-card")
             click_name("手动管理")
+            command("wait", ".profile-block .download-btn")
             stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
             command("click", ".profile-block .download-btn")
             command("wait", "--text", "下载成功")
