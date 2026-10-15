@@ -135,7 +135,8 @@ def main():
                     ("conversion", "contracts-conversion", {}), ("resources", "contracts-resources", {}),
                     ("operations", "contracts-operations", {}), ("operations-restart", "contracts-operations-restart", {}),
                     ("cors-configured", "contracts-cors-configured", {}), ("cors-wildcard", "contracts-cors-wildcard", {}),
-                    ("cors-branded", "contracts-cors-branded", {}), ("gist", "contracts-gist", {})])
+                    ("cors-branded", "contracts-cors-branded", {}), ("gist", "contracts-gist", {}),
+                    ("node-info", "contracts-node-info", {})])
             elif args.suite == "operations":
                 phases.append(("operations-restart", "contracts-operations-restart", {}))
             elif args.suite == "merged-share":
@@ -148,9 +149,21 @@ def main():
             for suite, phase, overrides in phases:
                 listener = {"suite": suite}
                 summary.setdefault("listeners", []).append(listener)
-                with oracle(node, {**environment, **configurations.get(suite, {}), **overrides}, output_dir, listener, log_prefix=phase + "-server") as backend_url:
-                    result = execute([sys.executable, HERE / "runner.py", "--url", backend_url, "--kind", "node-baseline", "--suite", suite,
-                                      "--state-dir", state_dir, "--evidence", output_dir / f"{phase}.json"], ROOT, environment, output_dir, phase)
+                with socket.socket() as reserved:
+                    upstream_arguments = []
+                    if suite == "node-info":
+                        reserved.bind(("127.0.0.1", 0))
+                        upstream_port = reserved.getsockname()[1]
+                        proxy = f"http://127.0.0.1:{upstream_port}"
+                        overrides = {**overrides, "HTTP_PROXY": proxy, "http_proxy": proxy,
+                                     "HTTPS_PROXY": proxy, "https_proxy": proxy, "ALL_PROXY": "", "all_proxy": "",
+                                     "NO_PROXY": "127.0.0.1,localhost", "no_proxy": "127.0.0.1,localhost"}
+                        listener["fixture_proxy"] = proxy
+                        upstream_arguments = ["--upstream-port", str(upstream_port)]
+                    with oracle(node, {**environment, **configurations.get(suite, {}), **overrides}, output_dir, listener, log_prefix=phase + "-server") as backend_url:
+                        reserved.close()
+                        result = execute([sys.executable, HERE / "runner.py", "--url", backend_url, "--kind", "node-baseline", "--suite", suite,
+                                          "--state-dir", state_dir, "--evidence", output_dir / f"{phase}.json", *upstream_arguments], ROOT, environment, output_dir, phase)
                 summary["exit_code"] = result.returncode
                 if result.returncode:
                     break

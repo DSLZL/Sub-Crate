@@ -13,6 +13,25 @@ import runner
 
 
 class RunnerTests(unittest.TestCase):
+    def test_controlled_node_info_proxy_replies_locally_and_rejects_other_hosts(self):
+        from http.client import HTTPConnection
+        from upstream import ControlledUpstream
+        with ControlledUpstream() as upstream:
+            connection = HTTPConnection("127.0.0.1", upstream.server.server_port, timeout=2)
+            connection.request("GET", "http://ip-api.com/json/2001%3Adb8%3A%3A1?lang=zh-CN")
+            response = connection.getresponse()
+            self.assertEqual(response.status, 200)
+            self.assertEqual(json.loads(response.read()), {"status": "success", "query": "2001:db8::1", "countryCode": "US", "city": "fixture-city", "lat": 0, "mobile": False})
+            connection.close()
+            connection = HTTPConnection("127.0.0.1", upstream.server.server_port, timeout=2)
+            connection.request("GET", "http://other.invalid/")
+            response = connection.getresponse()
+            self.assertEqual(response.status, 502)
+            self.assertEqual(json.loads(response.read()), {"message": "Fixture proxy forbids this authority"})
+            connection.close()
+            self.assertEqual([(item["method"], item["path"]) for item in upstream.requests], [
+                ("GET", "http://ip-api.com/json/2001%3Adb8%3A%3A1?lang=zh-CN"), ("GET", "http://other.invalid/")])
+
     def test_native_probe_timeout_fails_and_preserves_partial_output(self):
         import reference
         import subprocess

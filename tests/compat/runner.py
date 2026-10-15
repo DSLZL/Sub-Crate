@@ -194,6 +194,7 @@ def main(argv=None):
     parser.add_argument("--kind", choices=("node-baseline", "rust-contract"), required=True)
     parser.add_argument("--suite", default="smoke")
     parser.add_argument("--state-dir", type=Path)
+    parser.add_argument("--upstream-port", type=int, default=0, help="Loopback fixture port; match the backend's HTTP proxy for node-info")
     parser.add_argument("--manifest", type=Path, default=HERE / "manifest.json")
     parser.add_argument("--fixtures", type=Path, default=HERE / "fixtures/http-cases.json")
     parser.add_argument("--evidence", type=Path, required=True)
@@ -208,7 +209,7 @@ def main(argv=None):
         report.update(backend_commit=manifest["backend_commit"], frontend_commit=manifest["frontend_commit"],
                       fixture_sha256=hashlib.sha256(args.fixtures.read_bytes()).hexdigest(),
                       manifest_sha256=hashlib.sha256(args.manifest.read_bytes()).hexdigest())
-        with ControlledUpstream() as upstream:
+        with ControlledUpstream(args.upstream_port) as upstream:
             report["cases"] = run_cases(args.url, args.state_dir, cases, upstream)
         report["exit_code"] = 0 if all(case["status"] == "passed" for case in report["cases"]) else 1
     except Exception as error:

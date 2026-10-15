@@ -1,4 +1,4 @@
-"""Loopback-only subscription and Gist fixtures with observable requests."""
+"""Loopback-only subscription, Gist and node-info fixtures with observable requests."""
 import copy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -7,7 +7,7 @@ from urllib.parse import quote, unquote, urlsplit
 
 
 class ControlledUpstream:
-    def __init__(self):
+    def __init__(self, port=0):
         self.requests = []
         self.gists = {}
         self.gist_lock = threading.Lock()
@@ -19,7 +19,16 @@ class ControlledUpstream:
                 body = self.rfile.read(length).decode("utf-8")
                 owner.requests.append({"method": self.command, "path": self.path,
                                        "headers": {key.lower(): value for key, value in self.headers.items()}, "body": body})
-                if self.path.startswith(("/gists", "/gist-raw/")):
+                target = urlsplit(self.path)
+                if target.netloc and (target.scheme != "http" or target.netloc not in ("ip-api.com", "ip-api.com:80") or self.command != "GET"):
+                    status, value = 502, {"message": "Fixture proxy forbids this authority"}
+                    content = json.dumps(value).encode("utf-8")
+                    content_type = "application/json"
+                elif target.path.startswith("/json/"):
+                    status, value = owner.node_info_response(self.path)
+                    content = json.dumps(value, ensure_ascii=False).encode("utf-8")
+                    content_type = "application/json"
+                elif self.path.startswith(("/gists", "/gist-raw/")):
                     with owner.gist_lock:
                         status, value, raw = owner.gist_response(self.command, self.path, body, self.headers.get("Authorization"))
                     content = value.encode("utf-8") if raw else json.dumps(value, ensure_ascii=False).encode("utf-8")
@@ -44,9 +53,19 @@ class ControlledUpstream:
             def log_message(self, *args):
                 pass
 
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
         self.url = f"http://127.0.0.1:{self.server.server_port}"
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+
+    def node_info_response(self, path):
+        address = unquote(urlsplit(path).path.removeprefix("/json/"))
+        if address == "rejected.invalid":
+            return 200, {"status": "fail", "message": "fixture lookup rejected"}
+        if address == "http-error.invalid":
+            return 503, {"status": "success", "query": address, "countryCode": "ZZ"}
+        if address not in ("1.2.3.4", "2001:db8::1"):
+            return 404, {"status": "fail", "message": "fixture address missing"}
+        return 200, {"status": "success", "query": address, "countryCode": "US", "city": "fixture-city", "lat": 0, "mobile": False}
 
     def gist_response(self, method, path, body, authorization):
         if authorization == "token rejected-fixture-token":

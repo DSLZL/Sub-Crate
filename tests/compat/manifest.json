@@ -137,6 +137,11 @@
       "D11-gist-base64-upload",
       "D12-gist-backup-validation",
       "D13-gist-base64-download",
+      "N01-node-info-uri-and-generation-error",
+      "N02-node-info-ipv6-normalization",
+      "N03-node-info-provider-rejection",
+      "N04-node-info-http-status-body-precedence",
+      "N05-node-info-missing-server-and-recovery",
       "M1-complete-inventory-and-fixtures"
     ],
     "conversion": [
@@ -250,9 +255,16 @@
       "D11-gist-base64-upload",
       "D12-gist-backup-validation",
       "D13-gist-base64-download"
+    ],
+    "node-info": [
+      "N01-node-info-uri-and-generation-error",
+      "N02-node-info-ipv6-normalization",
+      "N03-node-info-provider-rejection",
+      "N04-node-info-http-status-body-precedence",
+      "N05-node-info-missing-server-and-recovery"
     ]
   },
-  "coverage_state": "112 scoped scenarios; full suite intentionally fails until M1 inventory and fixtures are complete",
+  "coverage_state": "117 scoped scenarios; full suite intentionally fails until M1 inventory and fixtures are complete",
   "pending_domains": [
     "artifacts",
     "files",

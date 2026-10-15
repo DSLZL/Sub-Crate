@@ -81,7 +81,10 @@ additional listeners exercise configured CORS, wildcard CORS and branded local
 origins with frontend-consumed metadata. Eight `gist` scenarios use a local
 controlled provider to verify create/update/delete/restore, placeholder retention,
 provider errors, plaintext/Base64 backup payloads, token strategies and no-change
-upload reuse. The orchestrated total is 112 scenarios.
+upload reuse. Five `node-info` scenarios cover successful URI/lookup generation,
+URI-generation failure, IPv6 normalization, provider errors, HTTP-status/body
+precedence and missing input with listener recovery. The orchestrated total is
+117 scenarios.
 `--suite operations` includes its restart; selecting `operations-restart` alone
 requires the D06 state seed. `cors-configured`, `cors-wildcard` and `cors-branded`
 automatically set their documented fixture environment in `reference.py`.
@@ -100,7 +103,7 @@ rejection terminates Node 24 without an HTTP response. It is not counted as a
 passing HTTP case. The user approved fixing this defect and native Windows path
 reading in Rust, while retaining the frontend protocol. Rust regression checks
 must verify a structured restore error, unchanged state and a live listener;
-the frozen Node source and failed evidence stay intact. Provider restore remains
+the frozen Node source and failed evidence stay intact. Live-provider restore remains
 an open gate.
 
 Default CORS denies local origins; a custom backend name permits HTTP localhost
@@ -124,6 +127,17 @@ artifactStore is absent. An unchanged upload must make no write request. These
 are controlled-provider contracts; live-provider acceptance, GitLab, encryption,
 write-error recovery and scheduling remain separate checks.
 
+The `node-info` listener uses a disposable HTTP proxy because its reference
+lookup URL is fixed at ip-api.com. `reference.py` configures only that child
+process, and the runner binds the selected loopback `--upstream-port`. The fixture
+answers only the fixed lookup responses and rejects other absolute proxy hosts;
+it never forwards requests. Actual absolute-form GET URLs, language queries and
+User-Agent are asserted. The old handler discards lookup `status`, omits shareUrl
+when URI generation throws, retains an empty URL for unsupported types, and uses
+the JSON body's success even under HTTP 503. These are frozen reference behaviors.
+An explicit Rust listener must use the same local HTTP proxy and runner port to
+execute this suite; a live public IP service is not its acceptance oracle.
+
 The Rust example evaluates unchanged `scripts/ip-flag-node.js` with controlled
 HTTP, request headers, memory-backed storage, locked lodash/YAML/Buffer/Base64
 helpers, promises/timers, and asynchronous Rust-to-JS callback re-entry. It
@@ -145,7 +159,8 @@ remain unverified; passing the contained experiment does not establish them.
 
 `rust-compat-native.yml` runs the probe, runner self-checks, thirteen Node HTTP
 scenarios, one restart, two merged-share, 66 conversion, twelve resource, six
-operation, one migrated-data restart, three configured-CORS and eight Gist scenarios,
+operation, one migrated-data restart, three configured-CORS, eight Gist and five
+node-info scenarios,
 plus the frozen unit baseline on native `ubuntu-24.04`,
 `ubuntu-24.04-arm`, and `windows-2025`. Each platform uploads independent logs
 and JSON summaries even on failure. A successful probe is not a full Rust
