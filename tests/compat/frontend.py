@@ -176,7 +176,7 @@ def main():
                 assert len(rows) == 1, f"Expected one visible language row for {label!r}"
                 command("find", "nth", rows[0]["index"], ".language-switch-popup .nut-cell", "click")
                 command("wait", "--fn", f"localStorage.getItem('locale') === '{locale}'")
-                command("wait", "--fn", "Array.from(document.querySelectorAll('.language-switch-popup')).every(el => getComputedStyle(el).display === 'none')")
+                command("wait", "--fn", "Array.from(document.querySelectorAll('.language-switch-popup,.nut-overlay')).every(el => el.getClientRects().length === 0)")
             report["ui_locale"] = "zh"
             command("open", report["server_origin"] + "/subs")
             report["cases"].append({"id": "FE01-url-backend-setup", "source": "src/hooks/useHostAPI.ts:306; src/api/env/index.ts:25", "status": "browser_passed"})

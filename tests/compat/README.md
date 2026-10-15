@@ -279,7 +279,8 @@ out the frontend at the pinned commit, runs its existing type check/build withou
 patches and executes the same harness. The harness verifies the CLI version,
 records actual browser/host metadata and switches English then Chinese through
 the real language control so every host exercises selection. It waits for menu
-animations and notifications before clicks. Text controls use exact labels;
+animations and notifications before clicks, including the closing backdrop that
+can outlive the language popup. Text controls use exact labels;
 duplicated language menus require the unique visible row, not the first global
 text match. Candidate DOM/visibility/coordinates are preserved in the report.
 The harness verifies the frontend commit/source, records hashes of every built
