@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import shutil
 import subprocess
 from urllib.parse import parse_qs, quote, urlsplit
@@ -80,7 +81,8 @@ def main():
     session = "sub-store-rust-" + run_id.lower().replace(".", "-")
     report = {"kind": "node-frontend-baseline", "frontend_commit": "4bd7b0acbe65466b933ccea14fc61dbebe036ead",
               "full_coverage": False,
-              "rust_parity": False, "session": session, "exit_code": 1, "cases": []}
+              "rust_parity": False, "session": session, "os": platform.system(), "machine": platform.machine(),
+              "exit_code": 1, "cases": []}
     command_index = 0
 
     def command(*arguments):
@@ -121,6 +123,9 @@ def main():
         report.update(source_provenance(environment, output))
         version = execute([node, "--version"], ROOT, environment, output, "node")
         assert version.returncode == 0 and version.stdout.strip() == "v24.15.0", "Pinned Node required"
+        browser_version = execute([browser, "--version"], ROOT, environment, output, "browser-version")
+        assert browser_version.returncode == 0 and browser_version.stdout.strip() == "agent-browser 0.27.3", "Pinned agent-browser required"
+        report["browser_version"] = browser_version.stdout.strip()
         revision = execute(["git", "rev-parse", "HEAD"], frontend, environment, output, "frontend-commit")
         assert revision.returncode == 0 and revision.stdout.strip() == report["frontend_commit"], "Frontend revision mismatch"
         clean = execute(["git", "diff", "--exit-code", "HEAD"], frontend, environment, output, "frontend-source")
@@ -135,6 +140,7 @@ def main():
         assert bundle.returncode == 0, "Backend bundle failed"
         with ControlledUpstream() as upstream, oracle(node, environment, output, report) as backend_url:
             command("open", "about:blank")
+            report["browser_runtime"] = evaluate("({userAgent:navigator.userAgent,language:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,viewport:{width:innerWidth,height:innerHeight}})")
             command("network", "har", "start")
             command("open", report["server_origin"] + "/subs?api=" + quote(backend_url, safe=""))
             command("snapshot", "-i")
@@ -145,8 +151,19 @@ def main():
             assert any(item["url"] == backend_url and item["name"] == metadata["host"]["current"] for item in metadata["host"]["apis"]), "UI backend setup failed"
             assert metadata["env"]["backend"] == "Node" and metadata["env"]["version"] == "2.42.4", "Metadata mismatch"
             assert metadata["env"]["meta"]["node"]["env"]["SUB_STORE_FRONTEND_BACKEND_PATH"] == "/backend", "Legacy config metadata missing"
+            # CI's browser language differs from the Windows baseline; use the real language control.
+            command("open", report["server_origin"] + "/my")
+            command("wait", ".storage-language-switch .language-switch-button")
+            command("click", ".storage-language-switch .language-switch-button")
+            command("wait", ".language-switch-popup")
+            command("wait", "--fn", "document.querySelectorAll('.Toastify__toast').length === 0")
+            click_name("简体中文")
+            command("wait", "--fn", "localStorage.getItem('locale') === 'zh'")
+            report["ui_locale"] = "zh"
+            command("open", report["server_origin"] + "/subs")
             report["cases"].append({"id": "FE01-url-backend-setup", "source": "src/hooks/useHostAPI.ts:306; src/api/env/index.ts:25", "status": "browser_passed"})
             click_name("立即添加")
+            command("wait", "--fn", "(() => { const el = document.querySelector('.add-sub-popup'); return el && el.getAnimations({subtree:true}).every(animation => animation.playState !== 'running') })()")
             click_name("单条订阅", "link")
             command("wait", "--fn", "location.pathname === '/edit/subs/UNTITLED'")
             command("fill", 'input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-fixture")

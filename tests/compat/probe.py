@@ -114,15 +114,34 @@ def check_host_requests(requests):
     check_json(actual, expected)
 
 
+def run_container(image, state, upstream, mode, environment, output, name):
+    container = f"sub-store-{output.name}-{name}".lower()
+    argv = ["docker", "run", "--name", container, "--network", "host", "--read-only",
+            "--user", f"{os.getuid()}:{os.getgid()}",
+            "--mount", f"type=bind,source={state},target=/state",
+            "--env", "SUB_STORE_COMPAT_STATE_DIR=/state", "--env", "SUB_STORE_DATA_BASE_PATH=/state",
+            "--env", f"SUB_STORE_COMPAT_UPSTREAM={upstream}", "--env", "TZ=UTC", image, *mode]
+    try:
+        return execute(argv, ROOT, environment, output, name, timeout=60)
+    finally:
+        # Killing the Docker CLI alone leaves an evaluated container running.
+        removed = execute(["docker", "rm", "--force", container], ROOT, environment, output, name + "-cleanup", timeout=30)
+        if removed.returncode:
+            raise RuntimeError(f"{name}: could not remove owned container; inspect preserved logs")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--node", type=Path, required=True, help="Pinned development-only Node 24.15.0 oracle")
+    parser.add_argument("--docker", action="store_true", help="Build and run the release probe in native Linux Docker containers")
     args = parser.parse_args()
     node = args.node.resolve(strict=True)
-    output = HERE / "evidence" / ("rust-probe-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ"))
+    output = HERE / "evidence" / (("docker-probe-" if args.docker else "rust-probe-") + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ"))
     output.mkdir(parents=True)
     report = {"scope": "M1 script feasibility experiment", "production_ready": False, "full_host_parity": False,
-              "os": platform.system(), "machine": platform.machine(), "exit_code": 1, "checks": []}
+              "os": platform.system(), "machine": platform.machine(), "execution": "docker" if args.docker else "native",
+              "exit_code": 1, "checks": []}
+    image = None
     try:
         environment = {key: value for key, value in os.environ.items()
                        if not key.startswith("SUB_STORE_") and key.lower() not in ("http_proxy", "https_proxy", "all_proxy", "no_proxy")}
@@ -134,6 +153,8 @@ def main():
         version = execute([node, "--version"], ROOT, environment, output, "node-toolchain")
         if version.returncode or version.stdout.strip() != "v24.15.0":
             raise RuntimeError("The shared host oracle requires Node v24.15.0")
+        if args.docker and platform.system() != "Linux":
+            raise RuntimeError("Container acceptance requires a native Linux runner")
         executable = ROOT / "rust/target/debug/examples" / ("script_probe.exe" if os.name == "nt" else "script_probe")
         for relative in ("rust/Cargo.toml", "rust/Cargo.lock", "rust/examples/script_probe.rs", "rust/examples/support/script_host.rs",
                          "tests/compat/probe.py", "tests/compat/reference.py", "tests/compat/upstream.py", "tests/compat/register.cjs",
@@ -142,17 +163,32 @@ def main():
                          "tests/compat/fixtures/script-host-contracts.js", "tests/compat/.generated/script-helpers.js",
                          "tests/compat/build-helpers.cjs", "tests/compat/processor-reference.cjs",
                          "tests/compat/fixtures/script-processor-clock.js", "tests/compat/fixtures/script-processor-contracts.js",
-                         "tests/compat/fixtures/script-helper-contracts.js"):
+                         "tests/compat/fixtures/script-helper-contracts.js", "tests/compat/Probe.Dockerfile",
+                         "tests/compat/Probe.Dockerfile.dockerignore"):
             report.setdefault("source_sha256", {})[relative] = hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()
-        for name, argv in (("toolchain", ["rustc", "--version", "--verbose"]),
-                           ("fmt", ["cargo", "fmt", "--manifest-path", "rust/Cargo.toml", "--", "--check"]),
-                           ("clippy", ["cargo", "clippy", "--locked", "--manifest-path", "rust/Cargo.toml", "--all-targets", "--", "-D", "warnings"]),
-                           ("probe-build", ["cargo", "build", "--locked", "--manifest-path", "rust/Cargo.toml", "--example", "script_probe"])):
+        native_checks = (("toolchain", ["rustc", "--version", "--verbose"]),
+                         ("fmt", ["cargo", "fmt", "--manifest-path", "rust/Cargo.toml", "--", "--check"]),
+                         ("clippy", ["cargo", "clippy", "--locked", "--manifest-path", "rust/Cargo.toml", "--all-targets", "--", "-D", "warnings"]),
+                         ("probe-build", ["cargo", "build", "--locked", "--manifest-path", "rust/Cargo.toml", "--example", "script_probe"]))
+        container_tag = "sub-store-compat:" + output.name.lower()
+        container_checks = (("docker-version", ["docker", "version"]),
+                            ("container-build", ["docker", "build", "--progress=plain", "--file", "tests/compat/Probe.Dockerfile",
+                                                 "--tag", container_tag, "."]))
+        for name, argv in container_checks if args.docker else native_checks:
             result = execute(argv, ROOT, environment, output, name)
             report["checks"].append({"name": name, "exit_code": result.returncode})
             if result.returncode:
                 raise RuntimeError(f"{name} failed; inspect preserved logs")
-        report["binary_sha256"] = hashlib.sha256(executable.read_bytes()).hexdigest()
+        if args.docker:
+            image = container_tag
+            inspected = execute(["docker", "image", "inspect", image], ROOT, environment, output, "container-image")
+            if inspected.returncode:
+                raise RuntimeError("Could not inspect the built image")
+            report["container_image"] = json.loads(inspected.stdout)[0]
+            check_json(report["container_image"]["Os"], "linux")
+            check_json(report["container_image"]["Architecture"], {"x86_64": "amd64", "aarch64": "arm64"}[platform.machine().lower()])
+        else:
+            report["binary_sha256"] = hashlib.sha256(executable.read_bytes()).hexdigest()
         with ControlledUpstream() as upstream:
             for suite in ("host", "processor"):
                 observed = {}
@@ -177,8 +213,11 @@ def main():
                         offset = len(upstream.requests)
                         # Babel's default dependency exclusion is relative to cwd, as in the real unit suite.
                         cwd = ROOT / "backend" if kind == "node" and suite == "processor" else ROOT
-                        result = execute([*argv, *mode], cwd, child_env, output, name, timeout=60,
-                            direct_reason="Direct native process ownership allows the watchdog to kill the evaluated host on Windows")
+                        if kind == "rust" and args.docker:
+                            result = run_container(image, state, upstream.url, mode, environment, output, name)
+                        else:
+                            result = execute([*argv, *mode], cwd, child_env, output, name, timeout=60,
+                                direct_reason="Direct native process ownership allows the watchdog to kill the evaluated host on Windows")
                         requests = upstream.requests[offset:]
                         runs = report.setdefault(f"{suite}_runs", [])
                         runs.append({"name": name, "exit_code": result.returncode, "upstream_requests": requests})
@@ -213,10 +252,20 @@ def main():
         report["exit_code"] = 0
     except Exception as error:
         report["error"] = f"{type(error).__name__}: {error}"
+    finally:
+        if image:
+            try:
+                removed = execute(["docker", "image", "rm", image], ROOT, environment, output, "container-image-cleanup", timeout=30)
+                if removed.returncode:
+                    raise RuntimeError("Could not remove the owned image; inspect preserved logs")
+            except Exception as error:
+                report.update(exit_code=1, cleanup_error=f"{type(error).__name__}: {error}")
     (output / "summary.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"scope": report["scope"], "exit_code": report["exit_code"], "os": report["os"], "machine": report["machine"], "evidence": str(output)}))
     return report["exit_code"]
 
 
 if __name__ == "__main__":
+    if not __debug__:
+        raise SystemExit("Script feasibility checks require enabled assertions")
     raise SystemExit(main())

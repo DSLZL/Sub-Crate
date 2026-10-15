@@ -238,7 +238,30 @@ node-info scenarios,
 plus the complete repaired Node unit suite on native `ubuntu-24.04`,
 `ubuntu-24.04-arm`, and `windows-2025`. Each platform uploads independent logs
 and JSON summaries even on failure. A successful probe is not a full Rust
-compatibility pass. Docker and all frontend workflows remain separate gates.
+compatibility pass. The same workflow also runs the twenty-flow browser slice in
+headless Chrome on Linux x64, and the contained release probe in native Linux
+x64/arm64 Docker containers. Complete UI and production container acceptance
+remain separate gates.
+
+Container acceptance reuses every shared host/processor assertion and the Node
+oracle, with no Node installation in the Rust runtime image:
+
+```sh
+python tests/compat/probe.py --node /absolute/path/to/node --docker
+```
+
+Run this on native Linux with Docker and the generated helpers available. The
+Dockerfile pins multi-architecture Rust/Debian image digests, builds the locked
+release example inside Docker, and copies only the binary, helper bundle and CA
+certificates into the runtime. Its build asserts Node/npm are absent. The runner
+checks image and executed binary architecture against the host, uses a separate
+writable state bind mount and read-only container root, and connects to the
+controlled loopback upstream with Linux host networking. Fresh containers reload
+both persisted files and source caches without HTTP. Each owned container is
+forcibly removed even on watchdog timeout; the unique test image is removed at
+the end. Build/runtime/image metadata, failures and exact requests are uploaded.
+This packages the M1 experiment, not the future Rust HTTP service. The external
+Node oracle and frontend build tooling remain development-only.
 
 The installed agent-browser native CLI can exercise the unchanged frontend:
 
@@ -249,7 +272,13 @@ python tests/compat/frontend.py --node /absolute/path/to/node \
 ```
 
 Build that checkout first with its frozen pnpm lockfile and `pnpm build`, using
-Node 24.15.0 and pnpm 11.0.9. The harness verifies the frontend commit/source,
+Node 24.15.0 and pnpm 11.0.9. Install agent-browser 0.27.3 and its Chrome with
+`agent-browser install --with-deps` on Linux (`install` on Windows). The default
+browser is headless; an interactive desktop is not required in Actions. CI checks
+out the frontend at the pinned commit, runs its existing type check/build without
+patches and executes the same harness. The harness verifies the CLI version,
+records actual browser/host metadata and selects Chinese through the real language
+control so English CI hosts use the same assertions. It verifies the frontend commit/source,
 records hashes of every built asset, and uses a fresh browser session and
 disposable merged Node listener. The fixture config permits exactly its local
 origin through the existing CORS setting. URL-based backend setup, subscription

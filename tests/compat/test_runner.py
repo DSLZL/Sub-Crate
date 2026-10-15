@@ -13,6 +13,30 @@ import runner
 
 
 class RunnerTests(unittest.TestCase):
+    def test_container_watchdog_removes_only_its_owned_container(self):
+        import probe
+        import subprocess
+        for exit_code in (0, 124):
+            with self.subTest(exit_code=exit_code), tempfile.TemporaryDirectory() as directory:
+                result = subprocess.CompletedProcess([], exit_code, "partial\r\n", "")
+                with patch("probe.os.getuid", return_value=1000, create=True), patch("probe.os.getgid", return_value=1000, create=True), patch(
+                    "probe.execute", side_effect=[result, subprocess.CompletedProcess([], 0, "removed", "")]
+                ) as execute:
+                    self.assertIs(probe.run_container("owned-image", Path(directory), "http://127.0.0.1:1234", [], {}, Path(directory), "rust-host"), result)
+                run, cleanup = execute.call_args_list
+                container = run.args[0][run.args[0].index("--name") + 1]
+                self.assertEqual(cleanup.args[0], ["docker", "rm", "--force", container])
+                self.assertEqual(run.kwargs["timeout"], 60)
+                self.assertEqual(cleanup.kwargs["timeout"], 30)
+                self.assertIn(f"type=bind,source={directory},target=/state", run.args[0])
+        with tempfile.TemporaryDirectory() as directory:
+            with patch("probe.os.getuid", return_value=1000, create=True), patch("probe.os.getgid", return_value=1000, create=True), patch(
+                "probe.execute", side_effect=[OSError("fixture launch failure"), subprocess.CompletedProcess([], 0, "removed", "")]
+            ) as execute:
+                with self.assertRaisesRegex(OSError, "fixture launch failure"):
+                    probe.run_container("owned-image", Path(directory), "http://127.0.0.1:1234", [], {}, Path(directory), "rust-host")
+                self.assertEqual(execute.call_count, 2)
+
     def test_shared_processors_reject_missing_cases_and_mutated_outputs(self):
         from probe import PROCESSOR_CASES, check_processors
         expected = {"passed": PROCESSOR_CASES, "observations": {"flag": False}, "resourceCache": {"value": None}, "headersCache": {"value": 0}}
