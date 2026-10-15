@@ -293,6 +293,8 @@ def main():
                                  "SUB_STORE_COMPAT_UPSTREAM": upstream.url, "SUB_STORE_COMPAT_DNS_SERVERS": json.dumps(dns.urls)}
                     if suite == "processor":
                         child_env["TZ"] = "UTC"
+                        if kind == "node":
+                            child_env["NODE_DEBUG"] = "tls"
                     argv = [node, "--require", HERE / "register.cjs", HERE / f"{suite}-reference.cjs"] if kind == "node" else [executable]
                     for resume in (False, True):
                         name = f"{kind}-{suite}" + ("-resume" if resume else "")

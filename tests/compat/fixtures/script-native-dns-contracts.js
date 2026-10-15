@@ -75,9 +75,10 @@ globalThis.runNativeDnsContracts = async function(check, host, operator, assert,
   });
 
   await check('PC59-dot-default-verification-and-explicit-boolean', async () => {
-    await certificateRejects(() => query('not-sent.fixture','tlsName'));
-    await certificateRejects(() => query('not-sent.fixture','tlsName',{skipCertVerify:1}));
-    const result = await query('tls-hostname.fixture','tlsName',{skipCertVerify:true});
+    // Use the source default budget for the first platform TLS handshake; tight idle tests stay explicit.
+    await certificateRejects(() => query('not-sent.fixture','tlsName',{timeout:8000}));
+    await certificateRejects(() => query('not-sent.fixture','tlsName',{timeout:8000,skipCertVerify:1}));
+    const result = await query('tls-hostname.fixture','tlsName',{timeout:8000,skipCertVerify:true});
     assert(result.answers.length === 3, 'explicit boolean permits fixture certificate');
     return {defaultRejected:true,numberTrueRejected:true,result};
   });

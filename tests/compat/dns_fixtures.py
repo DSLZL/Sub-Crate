@@ -105,9 +105,10 @@ class ControlledDns:
                     if stream:
                         connection = {"transport": transport, "handshake": None, "server_name": None, "closed": False}
                         owner.connections.append(connection)
-                        sock.settimeout(3)
+                        sock.settimeout(10)
                         if transport == "tls":
                             sock = context.wrap_socket(sock, server_side=True, do_handshake_on_connect=False)
+                            handshake_start = time.monotonic()
                             try:
                                 sock.do_handshake()
                                 connection["handshake"] = True
@@ -116,6 +117,9 @@ class ControlledDns:
                                 return
                             finally:
                                 connection["server_name"] = getattr(sock, "fixture_server_name", None)
+                                connection["handshake_elapsed"] = time.monotonic() - handshake_start
+                                connection["tls_version"] = sock.version()
+                                connection["cipher"] = sock.cipher()
                         length = receive(sock, 2)
                         packet = receive(sock, int.from_bytes(length, "big"))
                     else:
