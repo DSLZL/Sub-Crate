@@ -29,7 +29,7 @@ class ControlledUpstream:
                     content_type = "application/json"
                 elif target.path.startswith("/host/"):
                     request["body_bytes"] = list(raw_body)
-                    status, content, headers = owner.host_response(self.command, self.path, raw_body, self.headers)
+                    status, content, headers = owner.host_response(self.command, target.path, raw_body, self.headers)
                     self.send_response(status)
                     for key, value in headers:
                         self.send_header(key, value)

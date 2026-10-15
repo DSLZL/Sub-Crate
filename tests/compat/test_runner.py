@@ -13,6 +13,23 @@ import runner
 
 
 class RunnerTests(unittest.TestCase):
+    def test_shared_processors_reject_missing_cases_and_mutated_outputs(self):
+        from probe import PROCESSOR_CASES, check_processors
+        expected = {"passed": PROCESSOR_CASES, "observations": {"flag": False}, "resourceCache": {"value": None}}
+        check_processors(expected, expected)
+        for mutation in ("missing-case", "duplicate-case", "typed-output", "missing-cache"):
+            actual = copy.deepcopy(expected)
+            if mutation == "missing-case":
+                actual["passed"].pop()
+            elif mutation == "duplicate-case":
+                actual["passed"][-1] = actual["passed"][0]
+            elif mutation == "typed-output":
+                actual["observations"]["flag"] = 0
+            else:
+                del actual["resourceCache"]
+            with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
+                check_processors(actual, expected)
+
     def test_shared_host_rejects_missing_cases_and_typed_state_mismatches(self):
         from probe import HOST_CASES, check_host
         expected = {"passed": HOST_CASES, "storage": {"cache": {"unknown": False}, "root": {}}}

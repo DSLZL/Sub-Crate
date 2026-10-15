@@ -3,7 +3,7 @@ use http_body_util::{BodyExt, Full};
 use hyper::{Request, body::Bytes};
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use rquickjs::{
-    AsyncContext, AsyncRuntime, CatchResultExt, Ctx, Exception, Promise,
+    AsyncContext, AsyncRuntime, CatchResultExt, Ctx, Exception, Function, Promise,
     prelude::{Async, Func},
 };
 use serde_json::{Value, json};
@@ -112,7 +112,24 @@ async fn request<'js>(
     .map_err(|error| Exception::throw_message(&ctx, &error.to_string()))
 }
 
-pub async fn run(upstream: &str, state: &Path, resume: bool) -> Result<Value, Box<dyn Error>> {
+pub enum Suite {
+    Host,
+    Processors,
+}
+
+async fn reenter<'js>(payload: String, callback: Function<'js>) -> rquickjs::Result<String> {
+    // Use the callback's active context while its outer JS promise is pending.
+    crate::wait(1).await;
+    let promise: Promise = callback.call((payload,))?;
+    promise.into_future::<String>().await
+}
+
+pub async fn run(
+    upstream: &str,
+    state: &Path,
+    suite: Suite,
+    resume: bool,
+) -> Result<Value, Box<dyn Error>> {
     let runtime = AsyncRuntime::new()?;
     runtime.set_memory_limit(64 * 1024 * 1024).await;
     let deadline = std::time::Instant::now() + Duration::from_secs(15);
@@ -125,7 +142,10 @@ pub async fn run(upstream: &str, state: &Path, resume: bool) -> Result<Value, Bo
     let helpers = std::fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/compat/.generated/script-helpers.js"),
     )?;
-    let cache_path = state.join("sub-store-probe.json");
+    let cache_path = state.join(match suite {
+        Suite::Host => "sub-store-probe.json",
+        Suite::Processors => "sub-store.json",
+    });
     let root_path = state.join("root.json");
     let cache = std::fs::read_to_string(&cache_path)?;
     let root = std::fs::read_to_string(&root_path)?;
@@ -155,6 +175,7 @@ pub async fn run(upstream: &str, state: &Path, resume: bool) -> Result<Value, Bo
             )?;
             globals.set("__hostWait", Func::from(Async(crate::wait)))?;
             globals.set("__hostRequest", Func::from(Async(request)))?;
+            globals.set("__hostReenter", Func::from(Async(reenter)))?;
             ctx.eval::<(), _>(helpers)
                 .catch(&ctx)
                 .map_err(|error| format!("host helpers: {error:?}"))?;
@@ -163,10 +184,29 @@ pub async fn run(upstream: &str, state: &Path, resume: bool) -> Result<Value, Bo
             ))
             .catch(&ctx)
             .map_err(|error| format!("host setup: {error:?}"))?;
-            let script = if resume {
-                "Promise.resolve({storage: {cache: $substore.cache, root: $substore.root}})"
-            } else {
-                include_str!("../../../tests/compat/fixtures/script-host-contracts.js")
+            let script = match suite {
+                Suite::Host if resume => {
+                    "Promise.resolve({storage: {cache: $substore.cache, root: $substore.root}})"
+                }
+                Suite::Host => {
+                    include_str!("../../../tests/compat/fixtures/script-host-contracts.js")
+                }
+                Suite::Processors => {
+                    ctx.eval::<(), _>(include_str!(
+                        "../../../tests/compat/fixtures/script-processor-clock.js"
+                    ))?;
+                    ctx.eval::<(), _>(
+                        "const processorDiagnostics = [];\n\
+                         $substore.error = message => processorDiagnostics.push(String(message));\n\
+                         const processorHost = createProbeProcessors($substore, {backend: 'Rust', version: '2.42.4', meta: {}, feature: {}});\n\
+                         const probeKind = 'rust'; const probeReenter = __hostReenter;",
+                    )?;
+                    if resume {
+                        "Promise.resolve({storage: {cache: $substore.cache, root: $substore.root}, resourceCache: processorHost.scriptResourceCache.resourceCache})"
+                    } else {
+                        include_str!("../../../tests/compat/fixtures/script-processor-contracts.js")
+                    }
+                }
             };
             let promise: Promise = ctx
                 .eval(format!("Promise.resolve({script}).then(JSON.stringify)"))

@@ -138,7 +138,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if std::env::args().any(|arg| arg == "--host-resume") {
         println!(
             "{}",
-            script_host::run(&host_upstream, std::path::Path::new(&host_state), true).await?
+            script_host::run(
+                &host_upstream,
+                std::path::Path::new(&host_state),
+                script_host::Suite::Host,
+                true
+            )
+            .await?
+        );
+        return Ok(());
+    }
+    if std::env::args().any(|arg| arg == "--processors" || arg == "--processors-resume") {
+        println!(
+            "{}",
+            script_host::run(
+                &host_upstream,
+                std::path::Path::new(&host_state),
+                script_host::Suite::Processors,
+                std::env::args().any(|arg| arg == "--processors-resume")
+            )
+            .await?
         );
         return Ok(());
     }
@@ -239,7 +258,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     .await??;
     server.await??;
     let mut result: serde_json::Value = serde_json::from_str(&result)?;
-    let host = script_host::run(&host_upstream, std::path::Path::new(&host_state), false).await?;
+    let host = script_host::run(
+        &host_upstream,
+        std::path::Path::new(&host_state),
+        script_host::Suite::Host,
+        false,
+    )
+    .await?;
     result["passed"]
         .as_array_mut()
         .ok_or("Script assertion groups were not an array")?

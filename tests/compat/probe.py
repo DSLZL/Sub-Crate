@@ -17,10 +17,39 @@ HOST_CASES = [
     "SH07-request-and-async-response-events", "SH08-timeout-hooks-and-late-response",
     "SH09-setup-errors-and-non-success-status", "SH10-redirect-limit", "SH11-timer-interval-arguments-and-cancellation",
 ]
+PROCESSOR_CASES = [
+    "PC01-full-operator-injection-and-cloning", "PC02-shortcut-operator-pending-http",
+    "PC03-full-and-shortcut-filter-truthiness", "PC04-operator-fallback-retains-mutation",
+    "PC05-operator-return-truthiness", "PC06-user-errors-and-recovery",
+    "PC07-full-response-transform-and-aliases", "PC08-shortcut-response-pending-http",
+    "PC09-file-shortcut-and-local-options", "PC10-mihomo-yaml-patch-branches",
+    "PC11-mihomo-async-main-and-legacy-type", "PC12-nested-rust-reentry-pending-processor",
+    "PC13-script-cache-defaults-and-ttl-coercion", "PC14-script-cache-expiry-removal-and-prefix",
+    "PC15-script-cache-root-persistence-and-aliases", "PC16-project-yaml-parse-merge-tags-and-errors",
+    "PC17-project-yaml-dump-options-and-json-boundary",
+]
 
 
 def check_host(actual, expected):
     check_json(actual["passed"], HOST_CASES)
+    check_json(actual, expected)
+
+
+def check_processors(actual, expected):
+    check_json(actual["passed"], PROCESSOR_CASES)
+    check_json(actual, expected)
+
+
+def check_processor_requests(requests):
+    expected = [
+        {"method": "GET", "path": "/host/echo?name=zero", "body_bytes": [], "probe": "processor-shortcut", "accept": "*/*"},
+        {"method": "GET", "path": "/host/echo?name=false", "body_bytes": [], "probe": "processor-shortcut", "accept": "*/*"},
+        {"method": "POST", "path": "/host/echo", "body_bytes": list("订阅🙂\r\n".encode()), "probe": "processor-response", "accept": "*/*"},
+        {"method": "POST", "path": "/host/echo", "body_bytes": list("嵌套🙂\r\n".encode()), "probe": "processor-nested", "accept": "*/*"},
+    ]
+    actual = [{"method": item["method"], "path": item["path"], "body_bytes": item["body_bytes"],
+               "probe": item["headers"].get("x-probe"), "accept": item["headers"].get("accept")}
+              for item in requests]
     check_json(actual, expected)
 
 
@@ -83,7 +112,9 @@ def main():
                          "tests/compat/probe.py", "tests/compat/reference.py", "tests/compat/upstream.py", "tests/compat/register.cjs",
                          "tests/compat/host-reference.cjs", "scripts/ip-flag-node.js", "tests/compat/fixtures/script-host-probe.js",
                          "tests/compat/fixtures/script-assertions.js", "tests/compat/fixtures/script-host.js",
-                         "tests/compat/fixtures/script-host-contracts.js", "tests/compat/.generated/script-helpers.js"):
+                         "tests/compat/fixtures/script-host-contracts.js", "tests/compat/.generated/script-helpers.js",
+                         "tests/compat/build-helpers.cjs", "tests/compat/processor-reference.cjs",
+                         "tests/compat/fixtures/script-processor-clock.js", "tests/compat/fixtures/script-processor-contracts.js"):
             report.setdefault("source_sha256", {})[relative] = hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()
         for name, argv in (("toolchain", ["rustc", "--version", "--verbose"]),
                            ("fmt", ["cargo", "fmt", "--manifest-path", "rust/Cargo.toml", "--", "--check"]),
@@ -95,47 +126,59 @@ def main():
                 raise RuntimeError(f"{name} failed; inspect preserved logs")
         report["binary_sha256"] = hashlib.sha256(executable.read_bytes()).hexdigest()
         with ControlledUpstream() as upstream:
-            observed = {}
-            for kind in ("node", "rust"):
-                state = output / (kind + "-state")
-                state.mkdir()
-                (state / "sub-store-probe.json").write_text('{"settings":{"logsMaxCount":0}}\n', encoding="utf-8")
-                (state / "root.json").write_text('{}\n', encoding="utf-8")
-                child_env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state), "SUB_STORE_COMPAT_STATE_DIR": str(state),
-                             "SUB_STORE_COMPAT_UPSTREAM": upstream.url}
-                argv = [node, "--require", HERE / "register.cjs", HERE / "host-reference.cjs"] if kind == "node" else [executable]
-                for resume in (False, True):
-                    name = f"{kind}-host" + ("-resume" if resume else "")
-                    offset = len(upstream.requests)
-                    result = execute([*argv, *(["--resume" if kind == "node" else "--host-resume"] if resume else [])],
-                        ROOT, child_env, output, name, timeout=60,
-                        direct_reason="Direct native process ownership allows the watchdog to kill the evaluated host on Windows")
-                    requests = upstream.requests[offset:]
-                    report.setdefault("host_runs", []).append({"name": name, "exit_code": result.returncode,
-                                                               "upstream_requests": requests})
-                    if result.returncode:
-                        raise RuntimeError(f"{name} failed; inspect preserved logs")
-                    lines = result.stdout.splitlines()
-                    value = json.loads(next(line.removeprefix("COMPAT_HOST_RESULT ") for line in lines if line.startswith("COMPAT_HOST_RESULT "))
-                                       if kind == "node" else lines[-1])
-                    if kind == "rust" and not resume:
-                        report["probe"] = value
-                        expected_arch = {"amd64": "x86_64", "x86_64": "x86_64", "aarch64": "aarch64", "arm64": "aarch64"}.get(platform.machine().lower())
-                        if value["os"] != platform.system().lower() or value["arch"] != expected_arch:
-                            raise RuntimeError("Probe binary does not match the native runner's OS/architecture")
-                        value = value["host"]
-                    report["host_runs"][-1]["result"] = value
-                    persisted = {key: json.loads((state / filename).read_text(encoding="utf-8"))
-                                 for key, filename in (("cache", "sub-store-probe.json"), ("root", "root.json"))}
-                    report["host_runs"][-1]["persisted"] = persisted
-                    check_json(value["storage"], persisted)
-                    if resume:
-                        check_json(value, {"storage": observed[kind]["storage"]})
-                        check_json(requests, [])
-                    else:
-                        observed[kind] = value
-                        check_host(value, observed["node"])
-                        check_host_requests(requests)
+            for suite in ("host", "processor"):
+                observed = {}
+                filename = "sub-store-probe.json" if suite == "host" else "sub-store.json"
+                root_seed = {} if suite == "host" else {key: "{}" for key in (
+                    "sub-store-cached-resource", "sub-store-cached-headers-resource", "sub-store-cached-script-resource")}
+                for kind in ("node", "rust"):
+                    state = output / (f"{kind}-state" if suite == "host" else f"{kind}-processor-state")
+                    state.mkdir()
+                    (state / filename).write_text('{"settings":{"logsMaxCount":0}}\n', encoding="utf-8")
+                    (state / "root.json").write_text(json.dumps(root_seed) + "\n", encoding="utf-8")
+                    child_env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state), "SUB_STORE_COMPAT_STATE_DIR": str(state),
+                                 "SUB_STORE_COMPAT_UPSTREAM": upstream.url}
+                    argv = [node, "--require", HERE / "register.cjs", HERE / f"{suite}-reference.cjs"] if kind == "node" else [executable]
+                    for resume in (False, True):
+                        name = f"{kind}-{suite}" + ("-resume" if resume else "")
+                        mode = (["--resume"] if resume else []) if kind == "node" else (
+                            (["--host-resume"] if resume else []) if suite == "host" else
+                            ["--processors-resume" if resume else "--processors"])
+                        offset = len(upstream.requests)
+                        # Babel's default dependency exclusion is relative to cwd, as in the real unit suite.
+                        cwd = ROOT / "backend" if kind == "node" and suite == "processor" else ROOT
+                        result = execute([*argv, *mode], cwd, child_env, output, name, timeout=60,
+                            direct_reason="Direct native process ownership allows the watchdog to kill the evaluated host on Windows")
+                        requests = upstream.requests[offset:]
+                        runs = report.setdefault(f"{suite}_runs", [])
+                        runs.append({"name": name, "exit_code": result.returncode, "upstream_requests": requests})
+                        if result.returncode:
+                            raise RuntimeError(f"{name} failed; inspect preserved logs")
+                        lines = result.stdout.splitlines()
+                        prefix = f"COMPAT_{suite.upper()}_RESULT "
+                        value = json.loads(next(line.removeprefix(prefix) for line in lines if line.startswith(prefix))
+                                           if kind == "node" else lines[-1])
+                        if kind == "rust" and suite == "host" and not resume:
+                            report["probe"] = value
+                            expected_arch = {"amd64": "x86_64", "x86_64": "x86_64", "aarch64": "aarch64", "arm64": "aarch64"}.get(platform.machine().lower())
+                            if value["os"] != platform.system().lower() or value["arch"] != expected_arch:
+                                raise RuntimeError("Probe binary does not match the native runner's OS/architecture")
+                            value = value["host"]
+                        runs[-1]["result"] = value
+                        persisted = {key: json.loads((state / file).read_text(encoding="utf-8"))
+                                     for key, file in (("cache", filename), ("root", "root.json"))}
+                        runs[-1]["persisted"] = persisted
+                        check_json(value["storage"], persisted)
+                        if resume:
+                            expected = {"storage": observed[kind]["storage"]}
+                            if suite == "processor":
+                                expected["resourceCache"] = observed[kind]["resourceCache"]
+                            check_json(value, expected)
+                            check_json(requests, [])
+                        else:
+                            observed[kind] = value
+                            (check_host if suite == "host" else check_processors)(value, observed["node"])
+                            (check_host_requests if suite == "host" else check_processor_requests)(requests)
         report["exit_code"] = 0
     except Exception as error:
         report["error"] = f"{type(error).__name__}: {error}"

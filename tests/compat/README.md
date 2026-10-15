@@ -178,6 +178,29 @@ hyper-rustls/http-body-util crates because reqwest inserts a default Accept head
 even when the caller explicitly omits it. No additional transitive packages were
 added. New source and binary hashes accompany each immutable evidence directory.
 
+The executable additionally runs seventeen shared `PC01`-`PC17` processor groups.
+The Node oracle loads the actual processor module and application OpenAPI from
+`backend/`, matching the unit suite's Babel working directory. The helper builder
+uses the existing Babel parser to extract the frozen wrapper/cache declarations
+verbatim for QuickJS, plus the actual project YAML module. Missing/ambiguous
+declarations fail the build. This demonstrates interpreter compatibility of those
+JavaScript functions; it does not implement a Rust conversion pipeline or cache.
+
+Both runtimes execute `fixtures/script-processor-contracts.js` unchanged. Checks
+cover full/shortcut filter/operator/response wrappers, injected parameters and
+truthful per-runtime environments, cloning versus aliases, fallback mutations,
+return truthiness, user errors/recovery, file-local options, Mihomo patch/main
+branches and the legacy file type. A Rust async callback re-enters pending JS
+processors and HTTP, runs concurrent callbacks and recovers from a rejection.
+This callback takes fixture payloads; it is not the `produceArtifact` API.
+Source cache checks use the same deterministic clock for TTL coercion, defaults,
+settings units, inclusive expiry, prefix cleanup, falsy values and root JSON
+persistence. Actual YAML wrappers cover merges/tags/errors, JSON serialization
+and legacy dump options. Every result/observation, four outgoing requests per
+runtime and complete persisted state must match; two more independent processes
+reload both files and the script cache without any HTTP. Missing or duplicate
+case IDs and false/zero output changes are rejected by runner self-checks.
+
 `shortcut: the probe uses a partial ProxyUtils/timer/storage/artifact host,
 upgrade to the full shared-behavior fixtures before M3 acceptance.` Separate
 negative probes verify 100ms interruption of synchronous and promise-job infinite
@@ -190,8 +213,8 @@ Production isolation, complete host semantics and per-request resource cleanup
 remain unverified; passing the contained experiment does not establish them.
 In particular, the new adapter's direct JSON writes are limited to disposable
 probe files; atomic production persistence belongs to M2. Proxy/TLS/compression,
-DNS, logging/notification delivery, callback error handling, resource-cache helpers
-and actual application conversion/artifact calls still need their own shared
+DNS, logging/notification delivery, full callback lifecycle, Rust resource-cache
+services and actual application conversion/artifact calls still need their own shared
 contracts before M3/M4 production acceptance.
 
 `rust-compat-native.yml` runs the probe, runner self-checks, thirteen Node HTTP
