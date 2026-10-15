@@ -1,4 +1,6 @@
 //! M1 feasibility experiment, not the production script host.
+#[path = "support/script_host.rs"]
+mod script_host;
 use rquickjs::{
     AsyncContext, AsyncRuntime, CatchResultExt, Ctx, Exception, Function, Promise,
     prelude::{Async, Func},
@@ -131,6 +133,15 @@ async fn verify_limits() -> Result<serde_json::Value, Box<dyn Error>> {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn Error>> {
+    let host_upstream = std::env::var("SUB_STORE_COMPAT_UPSTREAM")?;
+    let host_state = std::env::var("SUB_STORE_COMPAT_STATE_DIR")?;
+    if std::env::args().any(|arg| arg == "--host-resume") {
+        println!(
+            "{}",
+            script_host::run(&host_upstream, std::path::Path::new(&host_state), true).await?
+        );
+        return Ok(());
+    }
     let limits = verify_limits().await?;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let upstream = format!("http://{}", listener.local_addr()?);
@@ -228,6 +239,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     .await??;
     server.await??;
     let mut result: serde_json::Value = serde_json::from_str(&result)?;
+    let host = script_host::run(&host_upstream, std::path::Path::new(&host_state), false).await?;
     result["passed"]
         .as_array_mut()
         .ok_or("Script assertion groups were not an array")?
@@ -241,7 +253,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         serde_json::json!({
             "scope": "M1 script feasibility probe", "production_ready": false,
             "os": std::env::consts::OS, "arch": std::env::consts::ARCH,
-            "engine": "rquickjs 0.14.0", "result": result, "limits": limits
+            "engine": "rquickjs 0.14.0", "result": result, "limits": limits, "host": host
         })
     );
     Ok(())

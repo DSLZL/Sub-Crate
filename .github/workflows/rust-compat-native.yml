@@ -57,7 +57,7 @@ jobs:
         run: python tests/compat/reference.py --node "$(node -p 'process.execPath')" --mode helpers
       - name: Native Rust JS probe
         if: ${{ !cancelled() }}
-        run: python tests/compat/probe.py
+        run: python tests/compat/probe.py --node "$(node -p 'process.execPath')"
       - name: Node HTTP contract slice
         if: ${{ !cancelled() }}
         run: python tests/compat/reference.py --node "$(node -p 'process.execPath')" --mode contracts

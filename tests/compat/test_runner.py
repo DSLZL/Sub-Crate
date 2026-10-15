@@ -13,6 +13,23 @@ import runner
 
 
 class RunnerTests(unittest.TestCase):
+    def test_shared_host_rejects_missing_cases_and_typed_state_mismatches(self):
+        from probe import HOST_CASES, check_host
+        expected = {"passed": HOST_CASES, "storage": {"cache": {"unknown": False}, "root": {}}}
+        check_host(expected, expected)
+        for mutation in ("missing-case", "duplicate-case", "typed-state", "missing-root"):
+            actual = copy.deepcopy(expected)
+            if mutation == "missing-case":
+                actual["passed"].pop()
+            elif mutation == "duplicate-case":
+                actual["passed"][-1] = actual["passed"][0]
+            elif mutation == "typed-state":
+                actual["storage"]["cache"]["unknown"] = 0
+            else:
+                del actual["storage"]["root"]
+            with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
+                check_host(actual, expected)
+
     def test_reference_rejects_an_unapproved_backend_patch(self):
         import reference
         import subprocess

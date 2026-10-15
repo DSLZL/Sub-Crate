@@ -18,7 +18,7 @@ python -m unittest discover -s tests/compat -p test_runner.py
 python tests/compat/reference.py --node /absolute/path/to/node --mode unit
 python tests/compat/reference.py --node /absolute/path/to/node --mode contracts
 python tests/compat/reference.py --node /absolute/path/to/node --mode helpers
-python tests/compat/probe.py
+python tests/compat/probe.py --node /absolute/path/to/node
 ```
 
 The pinned backend's Babel alias plugin cannot load Windows filenames. Use
@@ -155,6 +155,29 @@ and cancellation, absent Node APIs, and excluded script text in storage. No Node
 executable is launched by the Rust probe. Helper generation uses Node only at
 development/build time.
 
+The same executable also runs eleven shared `SH01`-`SH11` host-contract groups.
+`probe.py --node ...` executes the actual reference `OpenAPI` through the existing
+development Babel loader, followed by the Rust host, against the same loopback
+upstream and independent disposable JSON state. Both execute the unchanged
+`fixtures/script-host-contracts.js`. Each side must pass every required group,
+match typed results/persisted state, and send the expected 28 requests with exact
+methods, paths, selected headers and body bytes. Separate Node and Rust processes
+then reload both files and must retain the complete values without network I/O.
+The Node executable is an external development oracle; the Rust binary does not
+launch Node or load Node modules.
+
+These groups pin synchronous read/write/delete/persist return values, object
+identity, historical root-key slicing, missing/undefined/circular values, all
+seven HTTP helpers plus request(), binary views/responses, Unicode/CRLF text,
+cookies, explicit Accept omission, decoded URL credentials, async event hooks,
+timeout and late-completion behavior, setup/status errors, redirects, intervals
+and timer cross-cancellation. The pinned Undici adapter rejects the third followed
+response even when it is a final 200; the shared fixture retains that behavior.
+The contained Rust transport reuses the already locked Hyper/hyper-util/
+hyper-rustls/http-body-util crates because reqwest inserts a default Accept header
+even when the caller explicitly omits it. No additional transitive packages were
+added. New source and binary hashes accompany each immutable evidence directory.
+
 `shortcut: the probe uses a partial ProxyUtils/timer/storage/artifact host,
 upgrade to the full shared-behavior fixtures before M3 acceptance.` Separate
 negative probes verify 100ms interruption of synchronous and promise-job infinite
@@ -165,6 +188,11 @@ owns its binary directly so a 60-second watchdog can kill that process and prese
 partial output with exit 124. RTK still wraps builds and other short commands.
 Production isolation, complete host semantics and per-request resource cleanup
 remain unverified; passing the contained experiment does not establish them.
+In particular, the new adapter's direct JSON writes are limited to disposable
+probe files; atomic production persistence belongs to M2. Proxy/TLS/compression,
+DNS, logging/notification delivery, callback error handling, resource-cache helpers
+and actual application conversion/artifact calls still need their own shared
+contracts before M3/M4 production acceptance.
 
 `rust-compat-native.yml` runs the probe, runner self-checks, thirteen Node HTTP
 scenarios, one restart, two merged-share, 66 conversion, thirteen resource, six

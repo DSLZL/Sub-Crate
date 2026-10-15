@@ -3,6 +3,7 @@ import copy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import threading
+import time
 from urllib.parse import quote, unquote, urlsplit
 
 
@@ -16,14 +17,31 @@ class ControlledUpstream:
         class Handler(BaseHTTPRequestHandler):
             def handle_request(self):
                 length = int(self.headers.get("Content-Length", "0"))
-                body = self.rfile.read(length).decode("utf-8")
-                owner.requests.append({"method": self.command, "path": self.path,
-                                       "headers": {key.lower(): value for key, value in self.headers.items()}, "body": body})
+                raw_body = self.rfile.read(length)
+                body = raw_body.decode("utf-8", errors="replace" if self.path.startswith("/host/") else "strict")
+                request = {"method": self.command, "path": self.path,
+                           "headers": {key.lower(): value for key, value in self.headers.items()}, "body": body}
+                owner.requests.append(request)
                 target = urlsplit(self.path)
                 if target.netloc and (target.scheme != "http" or target.netloc not in ("ip-api.com", "ip-api.com:80") or self.command != "GET"):
                     status, value = 502, {"message": "Fixture proxy forbids this authority"}
                     content = json.dumps(value).encode("utf-8")
                     content_type = "application/json"
+                elif target.path.startswith("/host/"):
+                    request["body_bytes"] = list(raw_body)
+                    status, content, headers = owner.host_response(self.command, self.path, raw_body, self.headers)
+                    self.send_response(status)
+                    for key, value in headers:
+                        self.send_header(key, value)
+                    self.send_header("Content-Length", str(len(content)))
+                    self.send_header("X-Fixture", "host-contract")
+                    self.end_headers()
+                    if self.command != "HEAD":
+                        try:
+                            self.wfile.write(content)
+                        except (BrokenPipeError, ConnectionResetError):
+                            pass  # A timed-out probe may close the owned connection.
+                    return
                 elif target.path.startswith("/json/"):
                     status, value = owner.node_info_response(self.path)
                     content = json.dumps(value, ensure_ascii=False).encode("utf-8")
@@ -49,6 +67,9 @@ class ControlledUpstream:
             do_GET = handle_request
             do_POST = handle_request
             do_PATCH = handle_request
+            do_PUT = handle_request
+            do_DELETE = handle_request
+            do_OPTIONS = handle_request
 
             def log_message(self, *args):
                 pass
@@ -56,6 +77,26 @@ class ControlledUpstream:
         self.server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
         self.url = f"http://127.0.0.1:{self.server.server_port}"
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+
+    def host_response(self, method, path, body, headers):
+        text = "订阅🙂\r\nsecond\n".encode("utf-8")
+        if path == "/host/delay":
+            time.sleep(0.2)
+            return 200, text, []
+        if path == "/host/text":
+            return 200, text, [("Content-Type", "text/plain; charset=utf-8")]
+        if path == "/host/echo":
+            value = {"method": method, "body": list(body), "accept": headers.get("Accept"),
+                     "probe": headers.get("X-Probe"), "authorization": headers.get("Authorization")}
+            return 200, json.dumps(value, ensure_ascii=False).encode("utf-8"), [("Content-Type", "application/json")]
+        if path == "/host/binary":
+            return 200, bytes([0, 255, 195, 40, 13, 10]), [("Set-Cookie", "first=1"), ("Set-Cookie", "second=2")]
+        if path == "/host/status":
+            return 503, b"provider rejected", []
+        if path.startswith("/host/redirect/"):
+            remaining = int(path.rsplit("/", 1)[-1])
+            return 302, b"", [("Location", f"/host/redirect/{remaining - 1}" if remaining > 1 else "/host/text")]
+        return 404, b"unexpected host request", []
 
     def node_info_response(self, path):
         address = unquote(urlsplit(path).path.removeprefix("/json/"))
