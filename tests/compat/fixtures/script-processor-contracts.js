@@ -6,9 +6,11 @@
     assert(JSON.stringify(actual) === JSON.stringify(expected), `${message}: ${JSON.stringify(actual)}`);
   }
   async function check(id, callback) {
+    probeCaseProgress(id, 'start');
     try { observations[id] = await callback(); }
     catch (error) { throw new Error(`${id}: ${error.message}`); }
     passed.push(id);
+    probeCaseProgress(id, 'end');
   }
   const copy = value => JSON.parse(JSON.stringify(value));
   const inputs = [{name: 'zero', value: 0, unknown: {flag: false, nil: null}}, {name: 'false', value: false}];

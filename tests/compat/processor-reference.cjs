@@ -25,6 +25,7 @@ const processorHost = {
 const probeUpstream = process.env.SUB_STORE_COMPAT_UPSTREAM;
 const probeDnsServers = JSON.parse(process.env.SUB_STORE_COMPAT_DNS_SERVERS || '{}');
 const probeKind = 'node';
+const probeCaseProgress = (id, event) => fs.writeSync(2, `COMPAT_PROCESSOR ${JSON.stringify({id, event})}\n`);
 const probeMmdbRoot = process.env.SUB_STORE_COMPAT_STATE_DIR;
 const probeMmdbVectors = JSON.parse(fs.readFileSync(path.join(probeMmdbRoot, 'mmdb-vectors.json'), 'utf8'));
 const probeMmdbRemoveTransient = () => fs.unlinkSync(path.join(probeMmdbRoot, 'mmdb transient🙂.mmdb'));

@@ -242,7 +242,7 @@ remain verified. The checked-in dns-key.pem is a public test key used only by
 the loopback fixture, and never loaded by the Rust client or production service.
 The native bridge reuses locked tokio-rustls/platform-verifier crates without
 new transitive packages. DNS-only URL fields use Rust's URL parser; no complete
-global web URL API is claimed. Twenty-one runner self-checks include packet/frame,
+global web URL API is claimed. Twenty-two runner self-checks include packet/frame,
 SNI/certificate, missing/extra request, fragment timing and leaked-connection
 mutations. TLS trust-store success, proxy and fixed public-provider integration
 remain open, as does integration with a production Rust DNS/cache service.
@@ -274,6 +274,10 @@ execution recovery. The main script runtime also installs a 15-second interprete
 interrupt alongside its async timeout. The harness first builds the example, then
 owns its binary directly so a 60-second watchdog can kill that process and preserve
 partial output with exit 124. RTK still wraps builds and other short commands.
+Every processor case synchronously writes its start/end ID to stderr before a
+final JSON result is needed. The probe preserves partial traces on native exits
+and requires all ordered pairs on success (none on reload). These records
+diagnose a crash; a later pass does not establish or repair its native cause.
 Production isolation, complete host semantics and per-request resource cleanup
 remain unverified; passing the contained experiment does not establish them.
 In particular, the new adapter's direct JSON writes are limited to disposable

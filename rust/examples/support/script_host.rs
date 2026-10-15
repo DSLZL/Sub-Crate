@@ -166,6 +166,9 @@ pub async fn run(
         context.async_with(async |ctx| {
             let globals = ctx.globals();
             globals.set("probeUpstream", upstream)?;
+            globals.set("probeCaseProgress", Func::from(|id: String, event: String| {
+                eprintln!("COMPAT_PROCESSOR {}", json!({"id": id, "event": event}));
+            }))?;
             globals.set("probeDnsServers", ctx.json_parse(std::env::var("SUB_STORE_COMPAT_DNS_SERVERS").unwrap_or_else(|_| "{}".to_owned()))?)?;
             globals.set("probeMmdbRoot", mmdb_root)?;
             globals.set("probeMmdbVectors", ctx.json_parse(mmdb_vectors)?)?;

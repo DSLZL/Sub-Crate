@@ -72,6 +72,11 @@ def check_processors(actual, expected):
     check_json(actual, expected)
 
 
+def check_processor_progress(events, resume=False):
+    check_json(events, [] if resume else [{"id": case, "event": event}
+               for case in PROCESSOR_CASES for event in ("start", "end")])
+
+
 def check_processor_requests(requests):
     expected = [
         {"method": "GET", "path": "/host/echo?name=zero", "body_bytes": [], "probe": "processor-shortcut", "accept": "*/*"},
@@ -334,8 +339,13 @@ def main():
                         runs.append({"name": name, "exit_code": result.returncode, "upstream_requests": requests,
                                      "dns_requests": dns.requests[dns_offset:], "dns_connections": dns.connections[connection_offset:],
                                      "dns_errors": dns.errors[error_offset:]})
+                        if suite == "processor":
+                            runs[-1]["progress"] = [json.loads(line.removeprefix("COMPAT_PROCESSOR "))
+                                for line in result.stderr.splitlines() if line.startswith("COMPAT_PROCESSOR ")]
                         if result.returncode:
                             raise RuntimeError(f"{name} failed; inspect preserved logs")
+                        if suite == "processor":
+                            check_processor_progress(runs[-1]["progress"], resume)
                         lines = result.stdout.splitlines()
                         prefix = f"COMPAT_{suite.upper()}_RESULT "
                         value = json.loads(next(line.removeprefix(prefix) for line in lines if line.startswith(prefix))

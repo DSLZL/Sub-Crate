@@ -13,6 +13,22 @@ import runner
 
 
 class RunnerTests(unittest.TestCase):
+    def test_processor_trace_rejects_incomplete_reordered_and_mutated_events(self):
+        from probe import PROCESSOR_CASES, check_processor_progress
+        events = [{"id": case, "event": event} for case in PROCESSOR_CASES for event in ("start", "end")]
+        check_processor_progress(events)
+        check_processor_progress([], resume=True)
+        for mutation in ("missing", "duplicate", "id", "event", "order", "extra-field", "resume"):
+            actual = copy.deepcopy(events)
+            if mutation == "missing": actual.pop()
+            elif mutation == "duplicate": actual.append(actual[-1])
+            elif mutation == "id": actual[-1]["id"] = "unknown"
+            elif mutation == "event": actual[-1]["event"] = False
+            elif mutation == "order": actual[:2] = reversed(actual[:2])
+            elif mutation == "extra-field": actual[-1]["ignored"] = True
+            with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
+                check_processor_progress(actual, resume=mutation == "resume")
+
     def test_mmdb_inputs_reject_corruption_omission_and_changed_provenance(self):
         import shutil
         from mmdb_fixtures import DATABASES, FIXTURES, verify_fixtures
