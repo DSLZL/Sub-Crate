@@ -29,6 +29,20 @@ function setInterval(callback, delay, ...args) {
 function clearInterval(id) { clearTimeout(id); }
 
 let hostRequestId = 0;
+function createHostHTTP(defaultOptions = {baseURL: ''}) {
+  // Preserve the source client's shallow merge and legacy absolute-URL test.
+  const absolute = /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_+.~#?&//=]*)/;
+  const send = (method, input) => {
+    const options = typeof input === 'string' ? {url: input} : input;
+    if (defaultOptions.baseURL && !absolute.test(options.url || '')) options.url = defaultOptions.baseURL + options.url;
+    return hostSend(method, {...defaultOptions, ...options});
+  };
+  const http = {request: options => send(options.method || 'GET', options)};
+  for (const method of ['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'OPTIONS', 'PATCH']) {
+    http[method.toLowerCase()] = options => send(method, options);
+  }
+  return http;
+}
 async function hostSend(method, input) {
   const options = typeof input === 'string' ? {url: input} : input;
   const requestId = options.requestId || `${Date.now()}-${++hostRequestId}`;
@@ -103,10 +117,7 @@ const $substore = {
     this.persistCache();
   },
   wait(delay) { return new Promise(resolve => setTimeout(resolve, delay)); },
-  http: {request: options => hostSend(options.method || 'GET', options)},
+  http: createHostHTTP(),
 };
-for (const method of ['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'OPTIONS', 'PATCH']) {
-  $substore.http[method.toLowerCase()] = options => hostSend(method, options);
-}
 // shortcut: proxy/TLS/compression/DNS/notifications, callback error handling and
 // application artifact calls need shared contracts before M3 production use.

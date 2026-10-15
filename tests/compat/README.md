@@ -178,7 +178,7 @@ hyper-rustls/http-body-util crates because reqwest inserts a default Accept head
 even when the caller explicitly omits it. No additional transitive packages were
 added. New source and binary hashes accompany each immutable evidence directory.
 
-The executable additionally runs 76 shared `PC01`-`PC76` processor/helper groups.
+The executable additionally runs 88 shared `PC01`-`PC88` processor/helper groups.
 The Node oracle loads the actual processor module and application OpenAPI from
 `backend/`, matching the unit suite's Babel working directory. The helper builder
 uses the existing Babel parser to extract the frozen wrapper/cache declarations
@@ -226,7 +226,7 @@ assert that no queued third resolver is contacted. The race loser cannot respond
 until the script acknowledges its observed fast winner; only those two concurrent
 wire records may reorder. Exhaustion retains each source error. A real async
 script uses both injected APIs, and fresh processes reload the complete DNS
-resource cache. Total processor/helper HTTP requests are 42 per runtime.
+resource cache. These pre-Gist contracts make 42 HTTP requests per runtime.
 
 `PC53`-`PC64` additionally use real Rust UDP/TCP/DoT transports with the same
 dns-packet encoding/decoding and Custom resolver source. Each runtime must issue
@@ -265,6 +265,26 @@ its shared result compares the error class and successful diagnostic check.
 The malformed-buffer texts differ and full error-text parity remains open.
 Complete underlying public ReaderModel objects, custom input objects/path forms,
 and production Rust service/host integration also remain open.
+
+`PC77`-`PC88` run the verbatim public Gist source with the Rust HTTP adapter:
+constructor credentials/methods, missing lookup, Unicode/raw downloads, upload
+filtering and caller mutations, placeholder create/retain/remove metadata,
+validation without writes, structured/raw provider errors, timeout recovery,
+all five serialized methods, GitLab file actions/limits and legacy download
+failure, actual async-script injection and persisted typed results. The HTTP
+adapter now retains client baseURL and shallow default/override semantics.
+Sixty additional outgoing requests are checked independently, bringing the
+processor total to 102 per runtime. Each processor run/reload also captures and
+checks the full controlled provider state. Two harness mutation tests reject
+wire/auth/order/body changes and missing/changed/extra provider files.
+
+GitHub uses the actual custom API URL setting. A test-only wrapper redirects
+GitLab's fixed public origin before the original queued HTTP methods; it retains
+paths/auth/body/queue. This does not establish real GitLab TLS/proxy/origin
+behavior. Source oddities are preserved: initial creation ignores the empty-file
+fallback, and GitLab download still requests `/gists/:id` and fails. Default proxy
+environment fallback, complete HTTP options and production backup/artifact
+integration remain HG09/HG16/M4 work. No new dependency was added.
 
 `shortcut: the probe uses a partial ProxyUtils/timer/storage/artifact host,
 upgrade to the full shared-behavior fixtures before M3 acceptance.` Separate

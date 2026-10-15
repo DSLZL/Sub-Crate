@@ -7,6 +7,7 @@ eval(fixture('script-helper-contracts.js'));
 eval(fixture('script-dns-contracts.js'));
 eval(fixture('script-native-dns-contracts.js'));
 eval(fixture('script-mmdb-contracts.js'));
+eval(fixture('script-gist-contracts.js'));
 const moduleSource = require(path.resolve(__dirname, '../../backend/src/core/proxy-utils/processors/index.js'));
 const $substore = require(path.resolve(__dirname, '../../backend/src/core/app.js')).default;
 const processorHost = {

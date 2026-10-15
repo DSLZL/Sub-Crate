@@ -37,6 +37,9 @@ const plainObject = declarations('backend/src/utils/index.js', ['isPlainObject']
 const isIP = declarations('backend/src/core/proxy-utils/index.js', ['isIP']);
 const flags = declarations('backend/src/utils/geo.js', ['ISOFlags', 'getFlag', 'getISO', 'removeFlag']);
 const mmdb = declarations('backend/src/utils/geo.js', ['MMDB']);
+const gist = declarations('backend/src/utils/gist.js', [
+  'DEFAULT_GITHUB_API_URL', 'describeGistApiErrorResponse', 'normalizeApiUrl', 'getGithubGistBaseURL', 'Gist',
+]);
 const flow = declarations('backend/src/utils/flow.js', [
   'getFlowField', 'getFlowHeaders', 'parseFlowHeaders', 'flowTransfer', 'validCheck', 'getRmainingDays', 'normalizeFlowHeader',
 ]);
@@ -90,11 +93,12 @@ fromBackend('esbuild').buildSync({
         const scriptResourceCache = new ResourceCache();
         const headersResourceCache = (() => { ${headersCache} return new ResourceCache(); })();
         const resourceCache = (() => { ${resourceCache} return new ResourceCache(); })();
-        const HTTP = () => $.http, ENV = () => $.env;
+        const HTTP = createHostHTTP, ENV = () => $.env;
+        ${gist}
         // shortcut: application helpers need their M3/M4 services; never silently emulate them here.
         const unavailable = name => () => { throw new Error('M1 probe has no application helper: ' + name); };
         const ProxyUtils = {yaml: YAML, Buffer, Base64, JSON5, hex_md5, ipAddress,
-          isIPv4, isIPv6, isIP, isValidUUID, getRandomPort, getFlag, getISO, removeFlag, doh, MMDB};
+          isIPv4, isIPv6, isIP, isValidUUID, getRandomPort, getFlag, getISO, removeFlag, doh, MMDB, Gist};
         // Only the DNS parser needs these URL fields; this is not a global web-URL shim.
         const URL = function(raw) { Object.assign(this, JSON.parse(__hostDnsUrl(raw))); };
         ${dns}

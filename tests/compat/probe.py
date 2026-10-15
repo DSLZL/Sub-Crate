@@ -12,6 +12,7 @@ from runner import check_json
 from upstream import ControlledUpstream
 from dns_fixtures import ControlledDns, query_path, query_bytes, response_bytes
 from mmdb_fixtures import FIXTURES as MMDB_FIXTURES, prepare as prepare_mmdb, verify_fixtures as verify_mmdb_fixtures, check_state as check_mmdb_state
+from gist_fixtures import check_gist_requests, check_gist_state
 
 HOST_CASES = [
     "SH01-storage-values-and-aliases", "SH02-root-key-routing", "SH03-storage-undefined-delete-and-errors",
@@ -59,6 +60,12 @@ PROCESSOR_CASES = [
     "PC71-mmdb-unmapped-address-errors", "PC72-mmdb-database-kind-and-validation-order",
     "PC73-mmdb-missing-files-and-constructor-order", "PC74-mmdb-corrupt-buffer-errors",
     "PC75-mmdb-eager-read-instance-isolation-and-source-methods", "PC76-mmdb-in-async-script-and-persistence",
+    "PC77-gist-constructor-auth-and-methods", "PC78-gist-missing-locate-and-empty-input",
+    "PC79-gist-create-filter-and-unicode-download", "PC80-gist-update-delete-and-input-mutation",
+    "PC81-gist-empty-file-fallback-lifecycle", "PC82-gist-validation-before-provider-write",
+    "PC83-gist-provider-errors-timeout-and-recovery", "PC84-gist-five-method-queue-and-rejection-recovery",
+    "PC85-gitlab-create-update-and-file-limits", "PC86-gitlab-fallback-and-legacy-download-path",
+    "PC87-gist-in-async-script-and-persistence", "PC88-gist-http-defaults-shallow-overrides-and-events",
 ]
 
 
@@ -103,7 +110,8 @@ def check_processor_requests(requests):
     check_json(actual_flow, [{"method": method, "path": "/host/flow/" + path, "body_bytes": [],
                               "user_agent": ua, "token": token, "accept": "*/*"}
                              for method, path, ua, token in expected_flow])
-    check_dns_requests(requests[19:])
+    check_dns_requests(requests[19:42])
+    check_gist_requests(requests[42:])
 
 
 def expected_dns_requests():
@@ -271,6 +279,7 @@ def main():
                          "tests/compat/build-helpers.cjs", "tests/compat/processor-reference.cjs",
                          "tests/compat/fixtures/script-processor-clock.js", "tests/compat/fixtures/script-processor-contracts.js",
                          "tests/compat/fixtures/script-helper-contracts.js", "tests/compat/fixtures/script-dns-contracts.js",
+                         "tests/compat/fixtures/script-gist-contracts.js", "tests/compat/gist_fixtures.py",
                          "tests/compat/fixtures/script-native-dns-contracts.js", "tests/compat/fixtures/dns-cert.pem", "tests/compat/fixtures/dns-key.pem",
                          "tests/compat/dns_fixtures.py", "tests/compat/mmdb_fixtures.py", "tests/compat/fixtures/script-mmdb-contracts.js",
                          "tests/compat/fixtures/mmdb/provenance.json", "tests/compat/Probe.Dockerfile",
@@ -342,10 +351,12 @@ def main():
                         if suite == "processor":
                             runs[-1]["progress"] = [json.loads(line.removeprefix("COMPAT_PROCESSOR "))
                                 for line in result.stderr.splitlines() if line.startswith("COMPAT_PROCESSOR ")]
+                            runs[-1]["gist_provider_state"] = upstream.script_gist.snapshot()
                         if result.returncode:
                             raise RuntimeError(f"{name} failed; inspect preserved logs")
                         if suite == "processor":
                             check_processor_progress(runs[-1]["progress"], resume)
+                            check_gist_state(runs[-1]["gist_provider_state"])
                         lines = result.stdout.splitlines()
                         prefix = f"COMPAT_{suite.upper()}_RESULT "
                         value = json.loads(next(line.removeprefix(prefix) for line in lines if line.startswith(prefix))

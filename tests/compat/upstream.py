@@ -2,6 +2,7 @@
 import copy
 import base64
 from dns_fixtures import response_bytes
+from gist_fixtures import GistFixture
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import threading
@@ -13,6 +14,7 @@ class ControlledUpstream:
     def __init__(self, port=0):
         self.requests = []
         self.gists = {}
+        self.script_gist = GistFixture()
         self.gist_lock = threading.Lock()
         self.flow_lock = threading.Lock()
         self.flow_active = 0
@@ -37,7 +39,9 @@ class ControlledUpstream:
                     content_type = "application/json"
                 elif target.path.startswith("/host/"):
                     request["body_bytes"] = list(raw_body)
-                    if target.path.startswith('/host/dns/'):
+                    if target.path.startswith('/host/gist/'):
+                        status, content, headers = owner.script_gist.response(self.command, self.path, body, self.headers, owner.url)
+                    elif target.path.startswith('/host/dns/'):
                         status, content, headers = owner.dns_response(target, request)
                     else:
                         status, content, headers = owner.host_response(self.command, target.path, raw_body, self.headers)

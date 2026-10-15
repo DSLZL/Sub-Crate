@@ -13,6 +13,40 @@ import runner
 
 
 class RunnerTests(unittest.TestCase):
+    def test_gist_wire_rejects_changed_auth_bytes_order_and_missing_requests(self):
+        from gist_fixtures import expected_gist_requests, check_gist_requests
+        expected = expected_gist_requests()
+        check_gist_requests(expected)
+        for mutation in ('method', 'path', 'body', 'auth', 'other-provider-auth', 'ua', 'missing', 'order', 'duplicate'):
+            actual = copy.deepcopy(expected)
+            if mutation == 'method': actual[1]['method'] = 'POST'
+            elif mutation == 'path': actual[1]['path'] += '&extra=1'
+            elif mutation == 'body': actual[4]['body_bytes'].append(10)
+            elif mutation == 'auth': actual[1]['headers']['authorization'] = 'token wrong'
+            elif mutation == 'other-provider-auth': actual[1]['headers']['private-token'] = 'helper-token'
+            elif mutation == 'ua': actual[1]['headers'].pop('user-agent')
+            elif mutation == 'missing': actual.pop()
+            elif mutation == 'order': actual[:2] = reversed(actual[:2])
+            elif mutation == 'duplicate': actual.append(copy.deepcopy(actual[-1]))
+            with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
+                check_gist_requests(actual)
+
+    def test_gist_provider_state_rejects_missing_files_and_failed_operation_writes(self):
+        from gist_fixtures import check_gist_state
+        state = {'github': {'g1': {'description': 'other', 'public': False, 'files': {'other': {'content': 'other'}}},
+                            'g2': {'description': 'helper', 'public': False, 'files': {'real': {'content': 'restored'}}}},
+                 'gitlab': {'s1': {'title': 'snippet', 'visibility': 'private', 'files': {'real': {'content': 'restored'}}}}}
+        check_gist_state(state)
+        for mutation in ('missing', 'changed', 'extra', 'visibility', 'type'):
+            actual = copy.deepcopy(state)
+            if mutation == 'missing': actual['github']['g2']['files'].pop('real')
+            elif mutation == 'changed': actual['gitlab']['s1']['files']['real']['content'] = 'failed write'
+            elif mutation == 'extra': actual['github']['g2']['files']['keep'] = {'content': 'placeholder'}
+            elif mutation == 'visibility': actual['github']['g2']['public'] = True
+            elif mutation == 'type': actual['github']['g2']['public'] = 0
+            with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
+                check_gist_state(actual)
+
     def test_processor_trace_rejects_incomplete_reordered_and_mutated_events(self):
         from probe import PROCESSOR_CASES, check_processor_progress
         events = [{"id": case, "event": event} for case in PROCESSOR_CASES for event in ("start", "end")]
