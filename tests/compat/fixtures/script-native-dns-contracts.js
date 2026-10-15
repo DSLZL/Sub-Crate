@@ -90,9 +90,10 @@ globalThis.runNativeDnsContracts = async function(check, host, operator, assert,
   });
 
   await check('PC61-dot-fragments-eof-and-timeout', async () => {
-    const result = await query('fragment-tls.fixture','tlsName',{timeout:200,skipCertVerify:true});
-    await rejects(() => query('end-body-tls.fixture','tlsName',{skipCertVerify:true}), 'DNS TLS connection ended before response');
-    await rejects(() => custom('timeout-tls.fixture',dns.tlsName,true,50), 'DNS TLS query timeout');
+    // Short idle budgets use a literal endpoint, independent of hostname address selection.
+    const result = await query('fragment-tls.fixture','tls',{timeout:200,skipCertVerify:true});
+    await rejects(() => query('end-body-tls.fixture','tls',{skipCertVerify:true}), 'DNS TLS connection ended before response');
+    await rejects(() => custom('timeout-tls.fixture',dns.tls,true,50), 'DNS TLS query timeout');
     await $substore.wait(220);
     return {result,prematureRejected:true,timeoutRejected:true};
   });
@@ -107,11 +108,11 @@ globalThis.runNativeDnsContracts = async function(check, host, operator, assert,
   });
 
   await check('PC63-custom-dot-certificate-cache-partition', async () => {
-    const result = await custom('tls-cache.fixture',dns.tlsName,true);
+    const result = await custom('tls-cache.fixture',dns.tlsName,true,8000);
     equal(result, ipv4, 'insecure DoT cache result');
-    assert(await custom('tls-cache.fixture',dns.tlsName,true) === result, 'insecure live cache retains alias');
+    assert(await custom('tls-cache.fixture',dns.tlsName,true,8000) === result, 'insecure live cache retains alias');
     const before = JSON.stringify(cache.resourceCache);
-    await certificateRejects(() => custom('tls-cache.fixture',dns.tlsName,false));
+    await certificateRejects(() => custom('tls-cache.fixture',dns.tlsName,false,8000));
     assert(JSON.stringify(cache.resourceCache) === before, 'verified query cannot use insecure cache or change it on failure');
     return {result,secureRejected:true,cacheUnchanged:true};
   });

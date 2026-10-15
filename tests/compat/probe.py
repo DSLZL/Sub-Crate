@@ -147,7 +147,7 @@ def expected_dns_connections():
     return [{"transport": transport, "handshake": handshake, "server_name": server_name} for transport, handshake, server_name in [
         ("tcp", None, None), ("tcp6", None, None), *[("tcp", None, None)] * 4,
         ("tls", False, "localhost"), ("tls", False, "localhost"), ("tls", True, "localhost"),
-        ("tls", True, None), *[("tls", True, "localhost")] * 3, ("tcp", None, None),
+        *[("tls", True, None)] * 4, ("tcp", None, None),
         ("tls", True, "localhost"), ("tls", False, "localhost"), ("tcp", None, None),
     ]]
 
@@ -279,6 +279,7 @@ def main():
         else:
             report["binary_sha256"] = hashlib.sha256(executable.read_bytes()).hexdigest()
         with ControlledUpstream() as upstream, ControlledDns() as dns:
+            report["dns_fixture_urls"] = dns.urls
             for suite in ("host", "processor"):
                 observed = {}
                 filename = "sub-store-probe.json" if suite == "host" else "sub-store.json"
