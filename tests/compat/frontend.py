@@ -124,6 +124,17 @@ def main():
                 && popup.getAnimations({subtree:true}).every(animation => animation.playState !== 'running');
         })()""")
 
+    def click_in_view(selector):
+        command("wait", selector)
+        # The CLI's scrollintoview inherits smooth scrolling and returns before it settles.
+        evaluate("(() => { document.querySelector(" + json.dumps(selector) + ").scrollIntoView({block:'center',inline:'center',behavior:'instant'}); return true })()")
+        command("wait", "--fn", """(() => {
+            const el = document.querySelector(""" + json.dumps(selector) + """), r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 && r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth
+                && el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+        })()""")
+        command("click", selector)
+
     def click_name(name, role=None):
         command("wait", "--text", name)
         snapshot = command("snapshot", "-i")
@@ -306,11 +317,9 @@ def main():
             command("open", report["server_origin"] + "/edit/collections/UNTITLED")
             command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
             command("fill", 'input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-collection")
-            command("scroll", "down", "450")
             if evaluate("getComputedStyle(document.querySelector('.include-subs-wrapper')).display === 'none'"):
-                command("click", ".include-subs-trigger .nut-cell__title")
-            command("wait", ".subs-checkbox-wrapper .subs-checkbox")
-            command("click", ".subs-checkbox-wrapper .subs-checkbox")
+                click_in_view(".include-subs-trigger .nut-cell__title")
+            click_in_view(".subs-checkbox-wrapper .subs-checkbox")
             expect_value(".include-subs-trigger input", "browser-renamed", "Collection picker did not select the visible subscription")
             command("snapshot", "-i")
             command("click", ".submit-btn")

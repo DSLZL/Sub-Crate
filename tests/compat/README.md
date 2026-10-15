@@ -300,8 +300,12 @@ successful backend request in the HAR; preview checks inspect the preview window
 File editor input uses keyboard selection/replacement and the visible content
 tab. Screenshots, command logs, HAR and page errors are preserved on
 failure. No frontend source or application state is injected to perform these
-operations. The collection picker scrolls into view before selecting its visible
-checkbox; the fixed footer otherwise covers the control. On editor reload, wait
+operations. The collection picker and checkbox scroll instantly to the viewport
+center and require an unobstructed hit before an actual CLI mouse click. Fixed
+pixel scrolling can return before smooth movement ends, leaving the click under
+the fixed footer. Native scrollintoview also inherits smooth behavior, so this
+viewport-only action uses scrollIntoView with behavior:instant; no application
+state or click handler is invoked through JavaScript. On editor reload, wait
 for actual field/selection values and restored content before asserting or saving;
 rendered controls can precede asynchronous resource data. Before deletion, wait
 for the swipe menu's actual transform to finish; its archive dialog button is a
