@@ -11,6 +11,7 @@ import subprocess
 from urllib.parse import parse_qs, quote, urlsplit
 
 from reference import BACKEND, HERE, ROOT, execute, oracle
+from runner import check_json
 from upstream import ControlledUpstream
 
 
@@ -34,6 +35,8 @@ def check_network(entries, cases, backend_url):
         "FE16-save-log-settings": [("PATCH", "/api/settings", 200)],
         "FE17-read-filter-logs": [("PATCH", "/api/file/browser-file-renamed", 200), ("GET", "/api/logs", 200)],
         "FE18-clear-logs": [("DELETE", "/api/logs", 200)],
+        "FE19-download-manual-backup": [("GET", "/api/storage", 200)],
+        "FE20-restore-manual-backup": [("POST", "/api/storage", 200), ("GET", "/api/utils/refresh", 200)],
     }
     observed = [(entry["request"]["method"], urlsplit(entry["request"]["url"])._replace(query="", fragment="").geturl(), entry["response"]["status"])
                 for entry in entries]
@@ -345,6 +348,34 @@ def main():
             root = json.loads((state / "root.json").read_text(encoding="utf-8"))
             assert json.loads(root["sub-store-logs"]) == [], "UI clear did not persist empty backend logs"
             report["cases"].append({"id": "FE18-clear-logs", "source": "src/components/LogsPanel.vue:639,652", "status": "browser_passed"})
+            command("open", report["server_origin"] + "/my")
+            command("wait", ".config-card")
+            click_name("手动管理")
+            stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+            command("click", ".profile-block .download-btn")
+            command("wait", "--text", "下载成功")
+            assert json.loads((state / "sub-store.json").read_text(encoding="utf-8")) == stored, "Manual download changed backend state"
+            report["backup_download_requests"] = command("network", "requests", "--filter", "/api/storage", "--method", "GET")
+            report["backup_download_response"] = command("network", "request", report["backup_download_requests"]["requests"][0]["requestId"])
+            exported = report["backup_download_response"]
+            assert exported["url"] == backend_url + "/api/storage" and exported["status"] == 200, "Backup response came from another endpoint"
+            check_json(json.loads(exported["responseBody"]), stored)
+            report["cases"].append({"id": "FE19-download-manual-backup", "source": "src/views/My.vue:1234; src/api/settings/index.ts", "status": "browser_passed"})
+            backup_file = HERE / "fixtures/frontend-backup.json"
+            report["backup_fixture_sha256"] = hashlib.sha256(backup_file.read_bytes()).hexdigest()
+            backup = json.loads(backup_file.read_text(encoding="utf-8"))
+            navigation = evaluate("performance.timeOrigin")
+            command("upload", 'input[type="file"]', backup_file)
+            command("wait", "--text", "恢复成功")
+            command("wait", "--fn", f"performance.timeOrigin > {navigation}")
+            command("wait", ".config-card")
+            check_json(json.loads((state / "sub-store.json").read_text(encoding="utf-8")), backup, subset=True)
+            command("open", report["server_origin"] + "/files")
+            command("wait", "--text", "ui-restored-file")
+            command("open", report["server_origin"] + "/subs")
+            command("wait", "--text", "ui-restored-sub")
+            command("wait", "--text", "ui-restored-col")
+            report["cases"].append({"id": "FE20-restore-manual-backup", "source": "src/views/My.vue:1253,1262; src/utils/initApp.ts:36,76", "status": "browser_passed"})
             report["upstream_requests"] = upstream.requests
             command("screenshot", output / "frontend-page.png")
             report["page_errors"] = command("errors")

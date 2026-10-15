@@ -181,7 +181,8 @@ disposable merged Node listener. The fixture config permits exactly its local
 origin through the existing CORS setting. URL-based backend setup, subscription
 create/reopen/rename/preview, local-file create/reopen/rename/preview, count-share
 creation/public access/reopen/update, collection create/reopen/rename/preview,
-file archive/restore, log-retention settings, log search and log clearing have
+file archive/restore, log-retention settings, log search/clearing and manual
+backup download/restore have
 UI/persisted-state/upstream assertions. Each workflow also requires its actual
 successful backend request in the HAR; preview checks inspect the preview window.
 File editor input uses keyboard selection/replacement and the visible content
@@ -196,8 +197,12 @@ in HAR, the persisted snapshot and the reopened editor. Log settings retain the
 form's string value and keep editing after saving. Log search checks the selected
 keyword in both the rendered results and the actual request query; clearing
 requires UI confirmation and empty persisted logs. The file editor selects the
-visible display tab when its previous content tab remains active. This is an
-eighteen-workflow slice; all other UI workflows remain pending.
+visible display tab when its previous content tab remains active. A manual backup
+must deliver exactly the persisted JSON in its captured network response and
+leave state intact. The file input restores a fixed backup with Unicode/CRLF,
+unknown/falsy fields and excluded script text; after the automatic reload both
+stored values and resource lists must match. The fixture hash is recorded.
+This is a twenty-workflow slice; all other UI workflows remain pending.
 
 `frontend-contract-map.json` links all 48 API request objects to source-checked
 backend routes, concrete dynamic type domains, partial HTTP/UI cases and milestone
