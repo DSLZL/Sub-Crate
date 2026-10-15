@@ -110,6 +110,10 @@ def main():
     def evaluate(script):
         return command("eval", "-b", base64.b64encode(script.encode("utf-8")).decode("ascii"))["result"]
 
+    def expect_value(selector, expected, message):
+        command("wait", "--fn", f"document.querySelector({json.dumps(selector)})?.value === {json.dumps(expected)}")
+        assert command("get", "value", selector)["value"] == expected, message
+
     def click_name(name, role=None):
         snapshot = command("snapshot", "-i")
         if role:
@@ -157,11 +161,22 @@ def main():
             for label, locale in (("English", "en"), ("简体中文", "zh")):
                 command("click", ".storage-language-switch .language-switch-button")
                 command("wait", ".language-switch-popup")
-                command("wait", "--fn", "document.querySelector('.language-switch-popup').getAnimations({subtree:true}).every(animation => animation.playState !== 'running')")
+                command("wait", "--fn", "(() => { const menus = Array.from(document.querySelectorAll('.language-switch-popup')).filter(el => el.getClientRects().length); return menus.length === 1 && menus[0].getAnimations({subtree:true}).every(animation => animation.playState !== 'running') })()")
                 command("wait", "--fn", "document.querySelectorAll('.Toastify__toast').length === 0")
-                click_name(label)
+                targets = evaluate("""(() => {
+                    const describe = el => { const r = el.getBoundingClientRect(); return {
+                        text:el.innerText, html:el.outerHTML, rect:r.toJSON(),
+                        visible:r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden'} };
+                    const leaf = Array.from(document.querySelectorAll('*')).find(el => el.children.length === 0 && el.textContent.trim() === """ + json.dumps(label) + """);
+                    return {label:""" + json.dumps(label) + """, firstTextMatch:leaf ? describe(leaf) : null,
+                        rows:Array.from(document.querySelectorAll('.language-switch-popup .nut-cell'), (el,index) => ({index,...describe(el)}))};
+                })()""")
+                report.setdefault("language_targets", []).append(targets)
+                rows = [row for row in targets["rows"] if row["visible"] and row["text"].strip() == label]
+                assert len(rows) == 1, f"Expected one visible language row for {label!r}"
+                command("find", "nth", rows[0]["index"], ".language-switch-popup .nut-cell", "click")
                 command("wait", "--fn", f"localStorage.getItem('locale') === '{locale}'")
-                command("wait", "--fn", "!document.querySelector('.language-switch-popup') || getComputedStyle(document.querySelector('.language-switch-popup')).display === 'none'")
+                command("wait", "--fn", "Array.from(document.querySelectorAll('.language-switch-popup')).every(el => getComputedStyle(el).display === 'none')")
             report["ui_locale"] = "zh"
             command("open", report["server_origin"] + "/subs")
             report["cases"].append({"id": "FE01-url-backend-setup", "source": "src/hooks/useHostAPI.ts:306; src/api/env/index.ts:25", "status": "browser_passed"})
@@ -180,7 +195,7 @@ def main():
             report["cases"].append({"id": "FE02-create-subscription", "source": "src/views/Sub.vue:47; src/views/SubEditor.vue:66", "status": "browser_passed"})
             command("open", report["server_origin"] + "/edit/subs/browser-fixture")
             command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
-            assert command("get", "value", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')["value"] == "browser-fixture", "Editor reload lost the resource name"
+            expect_value('input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-fixture", "Editor reload lost the resource name")
             command("fill", 'input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-renamed")
             command("snapshot", "-i")
             command("click", ".submit-btn")
@@ -191,6 +206,7 @@ def main():
             report["cases"].append({"id": "FE03-reopen-rename-subscription", "source": "src/views/SubEditor.vue:66", "status": "browser_passed"})
             command("open", report["server_origin"] + "/edit/subs/browser-renamed")
             command("wait", ".compare-btn")
+            expect_value('input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-renamed", "Preview editor did not load the subscription")
             command("snapshot", "-i")
             command("click", ".compare-btn")
             command("wait", ".compare-page-wrapper .processed-tr")
@@ -216,7 +232,7 @@ def main():
             report["cases"].append({"id": "FE05-create-local-file", "source": "src/views/FileEditor.vue:63,330,1159", "status": "browser_passed"})
             command("open", report["server_origin"] + "/edit/files/browser-file")
             command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
-            assert command("get", "value", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')["value"] == "browser-file", "File editor reload lost the name"
+            expect_value('input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-file", "File editor reload lost the name")
             command("fill", 'input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-file-renamed")
             click_name("内容", "tab")
             command("wait", ".cm-content[contenteditable='true']")
@@ -230,6 +246,7 @@ def main():
             report["cases"].append({"id": "FE06-reopen-rename-file", "source": "src/views/FileEditor.vue:916,1164", "status": "browser_passed"})
             command("open", report["server_origin"] + "/edit/files/browser-file-renamed")
             command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
+            expect_value('input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-file-renamed", "Preview editor did not load the file")
             click_name("内容", "tab")
             command("wait", ".compare-btn")
             command("click", ".compare-btn")
@@ -263,8 +280,8 @@ def main():
             command("wait", ".editor-section-tab-list")
             click_name("内容", "tab")
             command("wait", 'input[placeholder="请输入总次数"]')
-            assert command("get", "value", 'input[placeholder="请输入总次数"]')["value"] == "2", "Share reload lost total count"
-            assert command("get", "value", 'input[placeholder="请输入已用次数"]')["value"] == "1", "Share reload lost used count"
+            expect_value('input[placeholder="请输入总次数"]', "2", "Share reload lost total count")
+            expect_value('input[placeholder="请输入已用次数"]', "1", "Share reload lost used count")
             command("fill", 'input[placeholder="请输入总次数"]', "3")
             command("click", ".submit-btn")
             command("wait", "--text", "分享更新成功")
@@ -279,7 +296,7 @@ def main():
                 command("click", ".include-subs-trigger .nut-cell__title")
             command("wait", ".subs-checkbox-wrapper .subs-checkbox")
             command("click", ".subs-checkbox-wrapper .subs-checkbox")
-            assert command("get", "value", ".include-subs-trigger input")["value"] == "browser-renamed", "Collection picker did not select the visible subscription"
+            expect_value(".include-subs-trigger input", "browser-renamed", "Collection picker did not select the visible subscription")
             command("snapshot", "-i")
             command("click", ".submit-btn")
             command("wait", "--fn", "location.pathname === '/subs'")
@@ -289,10 +306,10 @@ def main():
             report["cases"].append({"id": "FE11-create-collection", "source": "src/views/SubEditor.vue:360,390,1369", "status": "browser_passed"})
             command("open", report["server_origin"] + "/edit/collections/browser-collection")
             command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
-            assert command("get", "value", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')["value"] == "browser-collection", "Collection editor reload lost the name"
+            expect_value('input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-collection", "Collection editor reload lost the name")
             command("fill", 'input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-collection-renamed")
             click_name("内容", "tab")
-            assert command("get", "value", ".include-subs-trigger input")["value"] == "browser-renamed", "Collection reload lost its selected subscription"
+            expect_value(".include-subs-trigger input", "browser-renamed", "Collection reload lost its selected subscription")
             command("click", ".submit-btn")
             command("wait", "--fn", "location.pathname === '/subs'")
             command("wait", "--text", "browser-collection-renamed")
@@ -301,7 +318,7 @@ def main():
             report["cases"].append({"id": "FE12-reopen-rename-collection", "source": "src/views/SubEditor.vue:1063,1379", "status": "browser_passed"})
             command("open", report["server_origin"] + "/edit/collections/browser-collection-renamed")
             command("wait", ".compare-btn")
-            command("wait", "--fn", "document.querySelector('.include-subs-trigger input')?.value === 'browser-renamed'")
+            expect_value(".include-subs-trigger input", "browser-renamed", "Collection preview did not load its selected subscription")
             command("click", ".compare-btn")
             command("wait", ".compare-page-wrapper .processed-tr")
             preview = evaluate("Array.from(document.querySelectorAll('.compare-page-wrapper .processed-tr'), row => row.innerText)")
@@ -332,6 +349,7 @@ def main():
             command("wait", ".editor-section-tab-list")
             click_name("内容", "tab")
             command("wait", ".cm-content")
+            command("wait", "--fn", "document.querySelector('.cm-content').innerText.includes('browser file🙂')")
             assert evaluate("document.querySelector('.cm-content').innerText").rstrip("\n") == "browser file🙂", "Restored file editor lost its content"
             report["cases"].append({"id": "FE15-restore-file-archive", "source": "src/views/archive/Archive.vue:837; src/store/archive.ts:73", "archive_id": entry["id"], "status": "browser_passed"})
             command("open", report["server_origin"] + "/my")
@@ -341,7 +359,7 @@ def main():
             command("fill", 'input[placeholder="最大保存日志条数(默认: 0=关闭)"]', "100")
             command("click", ".config-card .save-btn")
             command("wait", "--text", "保存成功")
-            assert command("get", "value", 'input[placeholder="最大保存日志条数(默认: 0=关闭)"]')["value"] == "100", "Saved log retention disappeared from the editor"
+            expect_value('input[placeholder="最大保存日志条数(默认: 0=关闭)"]', "100", "Saved log retention disappeared from the editor")
             stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
             assert stored["settings"]["logsMaxCount"] == "100", "UI settings did not preserve the form's string log retention"
             report["cases"].append({"id": "FE16-save-log-settings", "source": "src/views/My.vue:989,1002; src/store/settings.ts", "status": "browser_passed"})
@@ -349,7 +367,7 @@ def main():
             command("wait", ".editor-section-tab-list")
             click_name("显示", "tab")
             command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
-            command("wait", "--fn", "document.querySelector('input[placeholder=\"唯一的标识名称(请勿包含 / )\"]').value === 'browser-file-renamed'")
+            expect_value('input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-file-renamed", "Restored file did not load before saving")
             command("click", ".submit-btn")
             command("wait", "--fn", "location.pathname === '/files'")
             stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
