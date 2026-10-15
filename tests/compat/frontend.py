@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-from urllib.parse import quote, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 from reference import BACKEND, HERE, ROOT, execute, oracle
 from upstream import ControlledUpstream
@@ -31,6 +31,9 @@ def check_network(entries, cases, backend_url):
         "FE13-preview-collection": [("POST", "/api/preview/collection", 200)],
         "FE14-archive-file": [("DELETE", "/api/file/browser-file-renamed", 200)],
         "FE15-restore-file-archive": [("GET", "/api/archives", 200), ("POST", "/api/archives/{archive_id}/restore", 200)],
+        "FE16-save-log-settings": [("PATCH", "/api/settings", 200)],
+        "FE17-read-filter-logs": [("PATCH", "/api/file/browser-file-renamed", 200), ("GET", "/api/logs", 200)],
+        "FE18-clear-logs": [("DELETE", "/api/logs", 200)],
     }
     observed = [(entry["request"]["method"], urlsplit(entry["request"]["url"])._replace(query="", fragment="").geturl(), entry["response"]["status"])
                 for entry in entries]
@@ -42,6 +45,11 @@ def check_network(entries, cases, backend_url):
             if (method, base + path, status) not in observed:
                 case.update(status="failed", error=f"Missing successful {method} {path} in HAR")
                 raise AssertionError(f"{case['id']}: {case['error']}")
+        if case["id"] == "FE17-read-filter-logs":
+            assert any(entry["request"]["method"] == "GET" and entry["response"]["status"] == 200
+                       and urlsplit(entry["request"]["url"])._replace(query="", fragment="").geturl() == backend_url.rstrip("/") + "/api/logs"
+                       and parse_qs(urlsplit(entry["request"]["url"]).query).get("keyword") == [case["keyword"]]
+                       for entry in entries), "Missing successful log search with the selected keyword in HAR"
         case.update(status="passed", network_verified=True)
     origin = urlsplit(backend_url)._replace(path="", query="", fragment="").geturl()
     return [{"method": method, "url": url, "status": status} for method, url, status in observed if url.startswith((backend_url.rstrip("/") + "/", origin + "/share/"))]
@@ -302,6 +310,41 @@ def main():
             command("wait", ".cm-content")
             assert evaluate("document.querySelector('.cm-content').innerText").rstrip("\n") == "browser file🙂", "Restored file editor lost its content"
             report["cases"].append({"id": "FE15-restore-file-archive", "source": "src/views/archive/Archive.vue:837; src/store/archive.ts:73", "archive_id": entry["id"], "status": "browser_passed"})
+            command("open", report["server_origin"] + "/my")
+            command("wait", ".config-card")
+            click_name("缓存配置")
+            command("wait", 'input[placeholder="最大保存日志条数(默认: 0=关闭)"]')
+            command("fill", 'input[placeholder="最大保存日志条数(默认: 0=关闭)"]', "100")
+            command("click", ".config-card .save-btn")
+            command("wait", "--text", "保存成功")
+            assert command("get", "value", 'input[placeholder="最大保存日志条数(默认: 0=关闭)"]')["value"] == "100", "Saved log retention disappeared from the editor"
+            stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+            assert stored["settings"]["logsMaxCount"] == "100", "UI settings did not preserve the form's string log retention"
+            report["cases"].append({"id": "FE16-save-log-settings", "source": "src/views/My.vue:989,1002; src/store/settings.ts", "status": "browser_passed"})
+            command("open", report["server_origin"] + "/edit/files/browser-file-renamed")
+            command("wait", ".editor-section-tab-list")
+            click_name("显示", "tab")
+            command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
+            command("wait", "--fn", "document.querySelector('input[placeholder=\"唯一的标识名称(请勿包含 / )\"]').value === 'browser-file-renamed'")
+            command("click", ".submit-btn")
+            command("wait", "--fn", "location.pathname === '/files'")
+            stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+            assert stored["files"][0]["content"] == "browser file🙂\n", "Saving restored file for log generation lost its content"
+            command("open", report["server_origin"] + "/logs")
+            command("wait", ".log-item")
+            command("fill", ".logs-keyword-input input", "browser-file-renamed")
+            command("press", "Enter")
+            command("wait", "--fn", "document.querySelectorAll('.log-item').length > 0 && Array.from(document.querySelectorAll('.log-item')).every(el => el.innerText.includes('browser-file-renamed'))")
+            report["cases"].append({"id": "FE17-read-filter-logs", "source": "src/components/LogsPanel.vue:549,566,613; src/views/FileEditor.vue:1164", "keyword": "browser-file-renamed", "status": "browser_passed"})
+            command("click", ".logs-clear-toggle")
+            command("wait", ".nut-dialog")
+            assert command("get", "text", ".nut-dialog__footer-ok")["text"] == "清空", "Log clear confirmation missing"
+            command("click", ".nut-dialog__footer-ok")
+            command("wait", "--text", "日志已清空")
+            assert evaluate("document.querySelectorAll('.log-item').length") == 0, "Cleared logs remained in the UI"
+            root = json.loads((state / "root.json").read_text(encoding="utf-8"))
+            assert json.loads(root["sub-store-logs"]) == [], "UI clear did not persist empty backend logs"
+            report["cases"].append({"id": "FE18-clear-logs", "source": "src/components/LogsPanel.vue:639,652", "status": "browser_passed"})
             report["upstream_requests"] = upstream.requests
             command("screenshot", output / "frontend-page.png")
             report["page_errors"] = command("errors")

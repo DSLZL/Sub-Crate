@@ -166,7 +166,7 @@ disposable merged Node listener. The fixture config permits exactly its local
 origin through the existing CORS setting. URL-based backend setup, subscription
 create/reopen/rename/preview, local-file create/reopen/rename/preview, count-share
 creation/public access/reopen/update, collection create/reopen/rename/preview,
-and file archive/restore have
+file archive/restore, log-retention settings, log search and log clearing have
 UI/persisted-state/upstream assertions. Each workflow also requires its actual
 successful backend request in the HAR; preview checks inspect the preview window.
 File editor input uses keyboard selection/replacement and the visible content
@@ -177,8 +177,12 @@ checkbox; the fixed footer otherwise covers the control. Before preview, wait fo
 the collection's selected subscription data. Before deletion, wait for the swipe
 menu's actual transform to finish; its archive dialog button is a visible NutUI
 control without an ARIA button role. Restoration checks the captured archive ID
-in HAR, the persisted snapshot and the reopened editor. This is a fifteen-workflow
-slice; all other UI workflows remain pending.
+in HAR, the persisted snapshot and the reopened editor. Log settings retain the
+form's string value and keep editing after saving. Log search checks the selected
+keyword in both the rendered results and the actual request query; clearing
+requires UI confirmation and empty persisted logs. The file editor selects the
+visible display tab when its previous content tab remains active. This is an
+eighteen-workflow slice; all other UI workflows remain pending.
 
 `frontend-contract-map.json` links all 48 API request objects to source-checked
 backend routes, concrete dynamic type domains, partial HTTP/UI cases and milestone

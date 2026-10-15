@@ -50,6 +50,13 @@ class RunnerTests(unittest.TestCase):
             check_network(archive_requests, [{"id": "FE15-restore-file-archive", "archive_id": "wrong"}], "http://127.0.0.1:1/backend")
         with self.assertRaises(KeyError):
             check_network(archive_requests, [{"id": "FE15-restore-file-archive"}], "http://127.0.0.1:1/backend")
+        log_requests = [
+            {"request": {"method": "PATCH", "url": "http://127.0.0.1:1/backend/api/file/browser-file-renamed"}, "response": {"status": 200}},
+            {"request": {"method": "GET", "url": "http://127.0.0.1:1/backend/api/logs?keyword=selected&limit=20"}, "response": {"status": 200}},
+        ]
+        self.assertEqual(len(check_network(log_requests, [{"id": "FE17-read-filter-logs", "keyword": "selected"}], "http://127.0.0.1:1/backend")), 2)
+        with self.assertRaises(AssertionError):
+            check_network(log_requests, [{"id": "FE17-read-filter-logs", "keyword": "wrong"}], "http://127.0.0.1:1/backend")
         for mutation in ("missing", "error", "wrong-origin", "wrong-method"):
             entries = [copy.deepcopy(entry)]
             if mutation == "missing":
