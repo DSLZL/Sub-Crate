@@ -280,6 +280,7 @@ patches and executes the same harness. The harness verifies the CLI version,
 records actual browser/host metadata and switches English then Chinese through
 the real language control so every host exercises selection. It waits for menu
 animations and notifications before clicks. It verifies the frontend commit/source,
+and text controls use exact label matching rather than a containing panel's text.
 records hashes of every built asset, and uses a fresh browser session and
 disposable merged Node listener. The fixture config permits exactly its local
 origin through the existing CORS setting. URL-based backend setup, subscription

@@ -117,7 +117,7 @@ def main():
             assert len(matches) == 1, f"Expected one {role} named {name!r}; got {matches}"
             command("click", "@" + matches[0])
         else:
-            command("find", "text", name, "click")
+            command("find", "text", name, "click", "--exact")
 
     try:
         report.update(source_provenance(environment, output))
