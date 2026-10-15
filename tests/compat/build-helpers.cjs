@@ -23,6 +23,13 @@ const processors = declarations('backend/src/core/proxy-utils/processors/index.j
 ]);
 const cache = declarations('backend/src/utils/script-resource-cache.js', ['ResourceCache', 'normalizeTTL', 'getTTL']);
 const headersCache = declarations('backend/src/utils/headers-resource-cache.js', ['ResourceCache', 'normalizeTTL', 'getTTL']);
+const resourceCache = declarations('backend/src/utils/resource-cache.js', ['ResourceCache', 'normalizeTTL', 'getTTL']);
+const dns = declarations('backend/src/utils/dns.js', ['buildDnsQuery', 'doh', 'parseDnsResolver', 'resolveDns']);
+const resolvers = declarations('backend/src/core/proxy-utils/processors/index.js', [
+  'DEFAULT_RESOLVE_DOMAIN_CUSTOM_DNS_CONCURRENCY', 'normalizeResolveDomainCustomDnsConcurrency',
+  'parseCustomDnsUrls', 'resolveWithCustomDnsConcurrency', 'annotateCustomDnsResult',
+  'packCustomDnsCachedResult', 'unpackCustomDnsCachedResult', 'DOMAIN_RESOLVERS',
+]);
 const plainObject = declarations('backend/src/utils/index.js', ['isPlainObject']);
 const isIP = declarations('backend/src/core/proxy-utils/index.js', ['isIP']);
 const flags = declarations('backend/src/utils/geo.js', ['ISOFlags', 'getFlag', 'getISO', 'removeFlag']);
@@ -43,11 +50,11 @@ fromBackend('esbuild').buildSync({
   stdin: {
     contents: `import lodash from 'lodash'; import * as yaml from 'yaml';
       import {Buffer} from 'buffer'; import {Base64} from 'js-base64';
-      import JSON5 from 'json5'; import {hex_md5} from './src/vendor/md5';
+      import JSON5 from 'json5'; import dnsPacket from 'dns-packet'; import {hex_md5} from './src/vendor/md5';
       import {ipAddress, isIPv4, isIPv6, isValidUUID, getRandomPort, getPolicyDescriptor} from './src/utils';
       import YAML from './src/utils/yaml'; import {FULL} from './src/utils/logical';
       import {isMihomoConfigFile} from './src/utils/file-type';
-      import {SCRIPT_RESOURCE_CACHE_KEY, DEFAULT_SCRIPT_CACHE_TTL, HEADERS_RESOURCE_CACHE_KEY, DEFAULT_HEADERS_CACHE_TTL, SETTINGS_KEY} from './src/constants';
+      import {SCRIPT_RESOURCE_CACHE_KEY, DEFAULT_SCRIPT_CACHE_TTL, HEADERS_RESOURCE_CACHE_KEY, DEFAULT_HEADERS_CACHE_TTL, RESOURCE_CACHE_KEY, DEFAULT_CACHE_TTL, SETTINGS_KEY} from './src/constants';
       Object.assign(globalThis, {lodash, yaml, Buffer, b64encode: Base64.encode, b64decode: Base64.decode});
       globalThis.createProbeProcessors = function($, env) {
         ${plainObject}
@@ -58,17 +65,20 @@ fromBackend('esbuild').buildSync({
         ${cache}
         const scriptResourceCache = new ResourceCache();
         const headersResourceCache = (() => { ${headersCache} return new ResourceCache(); })();
+        const resourceCache = (() => { ${resourceCache} return new ResourceCache(); })();
         const HTTP = () => $.http, ENV = () => $.env;
         // shortcut: application helpers need their M3/M4 services; never silently emulate them here.
         const unavailable = name => () => { throw new Error('M1 probe has no application helper: ' + name); };
         const ProxyUtils = {yaml: YAML, Buffer, Base64, JSON5, hex_md5, ipAddress,
-          isIPv4, isIPv6, isIP, isValidUUID, getRandomPort, getFlag, getISO, removeFlag};
-        const DOMAIN_RESOLVERS = {};
+          isIPv4, isIPv6, isIP, isValidUUID, getRandomPort, getFlag, getISO, removeFlag, doh};
+        // shortcut: only HTTP DNS is exercised here; native UDP/TCP/DoT integration belongs to M3.
+        ${dns}
+        ${resolvers}
         const produceArtifact = unavailable('produceArtifact');
         const RESPONSE_TRANSFORMER = 'Response Transformer';
         ${processors}
         return {factories: {'Script Filter': ScriptFilter, 'Script Operator': ScriptOperator, 'Response Transformer': ResponseTransformer},
-          ApplyProcessor, ApplyResponseTransformer, scriptResourceCache, headersResourceCache, YAML, ProxyUtils,
+          ApplyProcessor, ApplyResponseTransformer, scriptResourceCache, headersResourceCache, resourceCache, DOMAIN_RESOLVERS, YAML, ProxyUtils,
           flowUtils: {getFlowField, getFlowHeaders, parseFlowHeaders, flowTransfer, validCheck, getRmainingDays, normalizeFlowHeader}};
       };`,
     resolveDir: path.join(root, 'backend'),

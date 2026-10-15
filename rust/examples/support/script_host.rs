@@ -198,6 +198,9 @@ pub async fn run(
                     ctx.eval::<(), _>(include_str!(
                         "../../../tests/compat/fixtures/script-helper-contracts.js"
                     ))?;
+                    ctx.eval::<(), _>(include_str!(
+                        "../../../tests/compat/fixtures/script-dns-contracts.js"
+                    ))?;
                     ctx.eval::<(), _>(
                         "const processorDiagnostics = [];\n\
                          for (const level of ['log', 'info', 'warn', 'error']) $substore[level] = message => processorDiagnostics.push(String(message));\n\
@@ -205,7 +208,7 @@ pub async fn run(
                          const probeKind = 'rust'; const probeReenter = __hostReenter;",
                     )?;
                     if resume {
-                        "Promise.resolve({storage: {cache: $substore.cache, root: $substore.root}, resourceCache: processorHost.scriptResourceCache.resourceCache, headersCache: processorHost.headersResourceCache.resourceCache})"
+                        "Promise.resolve({storage: {cache: $substore.cache, root: $substore.root}, resourceCache: processorHost.scriptResourceCache.resourceCache, headersCache: processorHost.headersResourceCache.resourceCache, dnsCache: processorHost.resourceCache.resourceCache})"
                     } else {
                         include_str!("../../../tests/compat/fixtures/script-processor-contracts.js")
                     }

@@ -10,6 +10,7 @@ import platform
 from reference import execute, HERE, ROOT, source_provenance
 from runner import check_json
 from upstream import ControlledUpstream
+from dns_fixtures import query_path
 
 HOST_CASES = [
     "SH01-storage-values-and-aliases", "SH02-root-key-routing", "SH03-storage-undefined-delete-and-errors",
@@ -39,6 +40,12 @@ PROCESSOR_CASES = [
     "PC35-flow-head-to-get-fallback", "PC36-flow-url-body-and-encoded-headers",
     "PC37-flow-body-fallback-and-status-rejection", "PC38-flow-rejection-empty-and-timeout",
     "PC39-flow-request-queue-and-wait-time", "PC40-flow-http-injected-into-pending-script",
+    "PC41-doh-a-packet-edns-and-cname", "PC42-doh-aaaa-and-ipv6-edns",
+    "PC43-doh-defaults-status-and-rcode", "PC44-doh-malformed-and-custom-timeout",
+    "PC45-custom-dns-cache-alias-ttl-and-key", "PC46-custom-dns-aaaa-filter",
+    "PC47-custom-dns-empty-wrong-and-nxdomain", "PC48-custom-dns-sequential-fallback",
+    "PC49-custom-dns-bounded-race-and-winner-cache", "PC50-custom-dns-exhaustion-retains-errors",
+    "PC51-custom-dns-invalid-inputs-before-network", "PC52-doh-and-resolver-in-pending-script",
 ]
 
 
@@ -74,10 +81,39 @@ def check_processor_requests(requests):
     ]
     actual_flow = [{"method": item["method"], "path": item["path"], "body_bytes": item["body_bytes"],
                     "user_agent": item["headers"].get("user-agent"), "token": item["headers"].get("x-flow-token"),
-                    "accept": item["headers"].get("accept")} for item in requests[4:]]
+                    "accept": item["headers"].get("accept")} for item in requests[4:19]]
     check_json(actual_flow, [{"method": method, "path": "/host/flow/" + path, "body_bytes": [],
                               "user_agent": ua, "token": token, "accept": "*/*"}
                              for method, path, ua, token in expected_flow])
+    check_dns_requests(requests[19:])
+
+
+def expected_dns_requests():
+    queries = [
+        ("good", "packet.fixture", 1, "203.0.113.99"), ("good", "ipv6.fixture", 28, "2001:db8:1234:5678::99"),
+        ("status", "status.fixture"), ("rcode", "rcode.fixture"),
+        ("malformed", "malformed.fixture"), ("delay", "timeout.fixture"),
+        ("good", "cache.fixture", 1, "203.0.113.99"), *[("good", "cache.fixture")] * 3,
+        ("good", "custom6.fixture", 28, "2001:db8:1234:5678::99"),
+        ("empty", "empty.fixture"), ("wrong", "wrong.fixture"), ("nxdomain", "nxdomain.fixture"),
+        ("serial-empty", "serial.fixture"), ("serial-good", "serial.fixture"),
+        ("race-slow", "race.fixture"), ("race-fast", "race.fixture"),
+        ("release", "release.fixture"),
+        ("empty", "exhausted.fixture"), ("wrong", "exhausted.fixture"),
+        ("good", "injected.fixture"), ("good", "injected-cache.fixture"),
+    ]
+    return [{"method": "GET", "path": query_path(*query), "body_bytes": [], "accept": "application/dns-message"} for query in queries]
+
+
+def check_dns_requests(requests):
+    expected = expected_dns_requests()
+    actual = [{"method": item["method"], "path": item["path"], "body_bytes": item["body_bytes"],
+               "accept": item["headers"].get("accept")} for item in requests]
+    # Only the two deliberately concurrent requests can arrive in either order.
+    actual[16:18] = sorted(actual[16:18], key=lambda item: item["path"])
+    expected[16:18] = sorted(expected[16:18], key=lambda item: item["path"])
+    check_json(actual, expected)
+    check_json([item.get("dns_overlap") for item in requests[16:18]], [True, True])
 
 
 def check_host_requests(requests):
@@ -163,7 +199,8 @@ def main():
                          "tests/compat/fixtures/script-host-contracts.js", "tests/compat/.generated/script-helpers.js",
                          "tests/compat/build-helpers.cjs", "tests/compat/processor-reference.cjs",
                          "tests/compat/fixtures/script-processor-clock.js", "tests/compat/fixtures/script-processor-contracts.js",
-                         "tests/compat/fixtures/script-helper-contracts.js", "tests/compat/Probe.Dockerfile",
+                         "tests/compat/fixtures/script-helper-contracts.js", "tests/compat/fixtures/script-dns-contracts.js",
+                         "tests/compat/dns_fixtures.py", "tests/compat/Probe.Dockerfile",
                          "tests/compat/Probe.Dockerfile.dockerignore"):
             report.setdefault("source_sha256", {})[relative] = hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()
         native_checks = (("toolchain", ["rustc", "--version", "--verbose"]),
@@ -243,6 +280,7 @@ def main():
                             if suite == "processor":
                                 expected["resourceCache"] = observed[kind]["resourceCache"]
                                 expected["headersCache"] = observed[kind]["headersCache"]
+                                expected["dnsCache"] = observed[kind]["dnsCache"]
                             check_json(value, expected)
                             check_json(requests, [])
                         else:

@@ -271,7 +271,8 @@
   });
 
   await runHelperContracts(check, processorHost, operator, assert, equal);
+  await runDnsContracts(check, processorHost, operator, assert, equal);
   $substore.persistCache();
   return {passed, observations, storage: {cache: $substore.cache, root: $substore.root}, resourceCache: cache.resourceCache,
-    headersCache: processorHost.headersResourceCache.resourceCache};
+    headersCache: processorHost.headersResourceCache.resourceCache, dnsCache: processorHost.resourceCache.resourceCache};
 })()

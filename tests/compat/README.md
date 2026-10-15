@@ -178,7 +178,7 @@ hyper-rustls/http-body-util crates because reqwest inserts a default Accept head
 even when the caller explicitly omits it. No additional transitive packages were
 added. New source and binary hashes accompany each immutable evidence directory.
 
-The executable additionally runs forty shared `PC01`-`PC40` processor/helper groups.
+The executable additionally runs 52 shared `PC01`-`PC52` processor/helper groups.
 The Node oracle loads the actual processor module and application OpenAPI from
 `backend/`, matching the unit suite's Babel working directory. The helper builder
 uses the existing Babel parser to extract the frozen wrapper/cache declarations
@@ -208,12 +208,27 @@ I/O: HEAD/GET/body fallback, custom headers, noFlow/noCache, inclusive TTL expir
 timeouts/late completion, one-slot queue serialization, an async injected script,
 and header-cache persistence/restart. Invalid GET body can fall back to headers;
 non-success GET status throws before those headers are retained and returns
-undefined. Each runtime must issue the expected 19 requests, including exact
+undefined. Flow and earlier processor groups issue 19 requests, including exact
 flow User-Agent/token headers. The logger captures probe diagnostics only; it
 does not implement production log formatting/delivery. Every result/observation
 and complete persisted state must match; two more independent processes
-reload both files and both source caches without any HTTP. Missing or duplicate
+reload both files and all three source caches without any HTTP. Missing or duplicate
 case IDs and false/zero output changes are rejected by runner self-checks.
+
+`PC41`-`PC52` exercise actual DoH/Custom resolver declarations and the locked
+dns-packet encoder/decoder over Rust HTTP. The independent Python wire fixture
+requires all 23 DNS requests: A/AAAA, no EDNS or IPv4 /24/IPv6 /56 subnet packets,
+Base64url query, binary responses, CNAME filtering, HTTP-status/rcode precedence,
+malformed responses and timeout without late cache writes. Cache checks retain
+aliases, normalized URL lists, non-enumerable winning-URL metadata, inclusive TTL,
+noCache and separate insecure keys. Sequential fallback and a two-request race
+assert that no queued third resolver is contacted. The race loser cannot respond
+until the script acknowledges its observed fast winner; only those two concurrent
+wire records may reorder. Exhaustion retains each source error. A real async
+script uses both injected APIs, and fresh processes reload the complete DNS
+resource cache. Total processor/helper requests are 42 per runtime. This proves
+the HTTP DNS slice; UDP/TCP/DoT, TLS/proxy and fixed public-provider integration
+remain open. The source helpers do not implement a production Rust DNS service.
 
 `shortcut: the probe uses a partial ProxyUtils/timer/storage/artifact host,
 upgrade to the full shared-behavior fixtures before M3 acceptance.` Separate
@@ -227,7 +242,7 @@ Production isolation, complete host semantics and per-request resource cleanup
 remain unverified; passing the contained experiment does not establish them.
 In particular, the new adapter's direct JSON writes are limited to disposable
 probe files; atomic production persistence belongs to M2. Proxy/TLS/compression,
-DNS, logging/notification delivery, full callback lifecycle, Rust resource-cache
+native DNS transports, logging/notification delivery, full callback lifecycle, Rust resource-cache
 services and actual application conversion/artifact calls still need their own shared
 contracts before M3/M4 production acceptance.
 

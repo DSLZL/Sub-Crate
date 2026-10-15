@@ -13,6 +13,31 @@ import runner
 
 
 class RunnerTests(unittest.TestCase):
+    def test_dns_wire_rejects_changed_packet_headers_missing_or_extra_requests(self):
+        from probe import check_dns_requests, expected_dns_requests
+        requests = [{"method": item["method"], "path": item["path"], "body_bytes": item["body_bytes"],
+                     "headers": {"accept": item["accept"]}, "dns_overlap": True} for item in expected_dns_requests()]
+        check_dns_requests(requests)
+        reordered = copy.deepcopy(requests)
+        reordered[16:18] = reversed(reordered[16:18])
+        check_dns_requests(reordered)
+        for mutation in ("packet", "accept", "missing", "extra", "overlap", "serial-order"):
+            actual = copy.deepcopy(requests)
+            if mutation == "packet":
+                actual[0]["path"] = actual[0]["path"].replace("?dns=", "?dns=A")
+            elif mutation == "accept":
+                actual[0]["headers"]["accept"] = "*/*"
+            elif mutation == "missing":
+                actual.pop()
+            elif mutation == "extra":
+                actual.append(actual[-1])
+            elif mutation == "overlap":
+                actual[16]["dns_overlap"] = False
+            else:
+                actual[14:16] = reversed(actual[14:16])
+            with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
+                check_dns_requests(actual)
+
     def test_container_watchdog_removes_only_its_owned_container(self):
         import probe
         import subprocess
@@ -39,9 +64,9 @@ class RunnerTests(unittest.TestCase):
 
     def test_shared_processors_reject_missing_cases_and_mutated_outputs(self):
         from probe import PROCESSOR_CASES, check_processors
-        expected = {"passed": PROCESSOR_CASES, "observations": {"flag": False}, "resourceCache": {"value": None}, "headersCache": {"value": 0}}
+        expected = {"passed": PROCESSOR_CASES, "observations": {"flag": False}, "resourceCache": {"value": None}, "headersCache": {"value": 0}, "dnsCache": {"value": False}}
         check_processors(expected, expected)
-        for mutation in ("missing-case", "duplicate-case", "typed-output", "missing-cache", "missing-headers-cache"):
+        for mutation in ("missing-case", "duplicate-case", "typed-output", "missing-cache", "missing-headers-cache", "missing-dns-cache"):
             actual = copy.deepcopy(expected)
             if mutation == "missing-case":
                 actual["passed"].pop()
@@ -51,8 +76,10 @@ class RunnerTests(unittest.TestCase):
                 actual["observations"]["flag"] = 0
             elif mutation == "missing-cache":
                 del actual["resourceCache"]
-            else:
+            elif mutation == "missing-headers-cache":
                 del actual["headersCache"]
+            else:
+                del actual["dnsCache"]
             with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
                 check_processors(actual, expected)
 

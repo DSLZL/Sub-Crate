@@ -1,10 +1,12 @@
 """Loopback-only subscription, Gist and node-info fixtures with observable requests."""
 import copy
+import base64
+from dns_fixtures import response_bytes
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import threading
 import time
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 
 class ControlledUpstream:
@@ -14,6 +16,10 @@ class ControlledUpstream:
         self.gist_lock = threading.Lock()
         self.flow_lock = threading.Lock()
         self.flow_active = 0
+        self.dns_condition = threading.Condition()
+        self.dns_active = 0
+        self.dns_pair_started = False
+        self.dns_release = threading.Event()
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -31,7 +37,10 @@ class ControlledUpstream:
                     content_type = "application/json"
                 elif target.path.startswith("/host/"):
                     request["body_bytes"] = list(raw_body)
-                    status, content, headers = owner.host_response(self.command, target.path, raw_body, self.headers)
+                    if target.path.startswith('/host/dns/'):
+                        status, content, headers = owner.dns_response(target, request)
+                    else:
+                        status, content, headers = owner.host_response(self.command, target.path, raw_body, self.headers)
                     self.send_response(status)
                     for key, value in headers:
                         self.send_header(key, value)
@@ -79,6 +88,32 @@ class ControlledUpstream:
         self.server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
         self.url = f"http://127.0.0.1:{self.server.server_port}"
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+
+    def dns_response(self, target, request):
+        mode = target.path.removeprefix('/host/dns/')
+        encoded = parse_qs(target.query)['dns'][0]
+        packet = base64.urlsafe_b64decode(encoded + '=' * (-len(encoded) % 4))
+        if mode == 'delay':
+            time.sleep(0.2)
+        if mode == 'release':
+            self.dns_release.set()
+        if mode in ('race-fast', 'race-slow'):
+            with self.dns_condition:
+                if self.dns_active == 0:
+                    self.dns_pair_started = False
+                    self.dns_release.clear()
+                self.dns_active += 1
+                if self.dns_active == 2:
+                    self.dns_pair_started = True
+                self.dns_condition.notify_all()
+                # Both real HTTP requests must overlap before either can answer.
+                request['dns_overlap'] = self.dns_condition.wait_for(lambda: self.dns_pair_started, timeout=2)
+            if mode == 'race-slow':
+                # The caller releases the loser only after observing the fast winner.
+                self.dns_release.wait(timeout=3)
+            with self.dns_condition:
+                self.dns_active -= 1
+        return (503 if mode == 'status' else 200), response_bytes(packet, mode), [('Content-Type', 'application/dns-message')]
 
     def host_response(self, method, path, body, headers):
         text = "订阅🙂\r\nsecond\n".encode("utf-8")
