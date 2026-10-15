@@ -277,8 +277,9 @@ Node 24.15.0 and pnpm 11.0.9. Install agent-browser 0.27.3 and its Chrome with
 browser is headless; an interactive desktop is not required in Actions. CI checks
 out the frontend at the pinned commit, runs its existing type check/build without
 patches and executes the same harness. The harness verifies the CLI version,
-records actual browser/host metadata and selects Chinese through the real language
-control so English CI hosts use the same assertions. It verifies the frontend commit/source,
+records actual browser/host metadata and switches English then Chinese through
+the real language control so every host exercises selection. It waits for menu
+animations and notifications before clicks. It verifies the frontend commit/source,
 records hashes of every built asset, and uses a fresh browser session and
 disposable merged Node listener. The fixture config permits exactly its local
 origin through the existing CORS setting. URL-based backend setup, subscription

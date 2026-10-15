@@ -154,11 +154,14 @@ def main():
             # CI's browser language differs from the Windows baseline; use the real language control.
             command("open", report["server_origin"] + "/my")
             command("wait", ".storage-language-switch .language-switch-button")
-            command("click", ".storage-language-switch .language-switch-button")
-            command("wait", ".language-switch-popup")
-            command("wait", "--fn", "document.querySelectorAll('.Toastify__toast').length === 0")
-            click_name("简体中文")
-            command("wait", "--fn", "localStorage.getItem('locale') === 'zh'")
+            for label, locale in (("English", "en"), ("简体中文", "zh")):
+                command("click", ".storage-language-switch .language-switch-button")
+                command("wait", ".language-switch-popup")
+                command("wait", "--fn", "document.querySelector('.language-switch-popup').getAnimations({subtree:true}).every(animation => animation.playState !== 'running')")
+                command("wait", "--fn", "document.querySelectorAll('.Toastify__toast').length === 0")
+                click_name(label)
+                command("wait", "--fn", f"localStorage.getItem('locale') === '{locale}'")
+                command("wait", "--fn", "!document.querySelector('.language-switch-popup') || getComputedStyle(document.querySelector('.language-switch-popup')).display === 'none'")
             report["ui_locale"] = "zh"
             command("open", report["server_origin"] + "/subs")
             report["cases"].append({"id": "FE01-url-backend-setup", "source": "src/hooks/useHostAPI.ts:306; src/api/env/index.ts:25", "status": "browser_passed"})

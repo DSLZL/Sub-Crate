@@ -9,9 +9,10 @@ RUN cargo build --manifest-path rust/Cargo.toml --locked --release --example scr
 
 # shortcut: this packages the M1 experiment; replace it with the service image at M5.
 FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
-WORKDIR /work
+WORKDIR /work/rust
 COPY --from=build /work/rust/target/release/examples/script_probe /usr/local/bin/script_probe
 COPY --from=build /work/tests/compat/.generated/script-helpers.js /work/tests/compat/.generated/script-helpers.js
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-RUN ! command -v node && ! command -v nodejs && ! command -v npm
+RUN test -r /work/rust/../tests/compat/.generated/script-helpers.js \
+    && ! command -v node && ! command -v nodejs && ! command -v npm
 ENTRYPOINT ["/usr/local/bin/script_probe"]
