@@ -40,6 +40,11 @@ const mmdb = declarations('backend/src/utils/geo.js', ['MMDB']);
 const gist = declarations('backend/src/utils/gist.js', [
   'DEFAULT_GITHUB_API_URL', 'describeGistApiErrorResponse', 'normalizeApiUrl', 'getGithubGistBaseURL', 'Gist',
 ]);
+const download = declarations('backend/src/utils/download.js', [
+  'buildDownloadRegex', 'maybePrefixGithubProxyUrl', 'maskDownloadUrl', 'finalizeDownloadedBody',
+  'formatDownloadResult', 'formatPlainDownloadResult', 'download',
+]);
+const findByName = declarations('backend/src/utils/database.js', ['findByName']);
 const flow = declarations('backend/src/utils/flow.js', [
   'getFlowField', 'getFlowHeaders', 'parseFlowHeaders', 'flowTransfer', 'validCheck', 'getRmainingDays', 'normalizeFlowHeader',
 ]);
@@ -65,7 +70,7 @@ const build = fromBackend('esbuild').buildSync({
       import {ipAddress, isIPv4, isIPv6, isValidUUID, getRandomPort, getPolicyDescriptor} from './src/utils';
       import YAML from './src/utils/yaml'; import {FULL} from './src/utils/logical';
       import {isMihomoConfigFile} from './src/utils/file-type';
-      import {SCRIPT_RESOURCE_CACHE_KEY, DEFAULT_SCRIPT_CACHE_TTL, HEADERS_RESOURCE_CACHE_KEY, DEFAULT_HEADERS_CACHE_TTL, RESOURCE_CACHE_KEY, DEFAULT_CACHE_TTL, SETTINGS_KEY} from './src/constants';
+      import {SCRIPT_RESOURCE_CACHE_KEY, DEFAULT_SCRIPT_CACHE_TTL, HEADERS_RESOURCE_CACHE_KEY, DEFAULT_HEADERS_CACHE_TTL, RESOURCE_CACHE_KEY, DEFAULT_CACHE_TTL, SETTINGS_KEY, FILES_KEY, MODULES_KEY} from './src/constants';
       Object.assign(globalThis, {lodash, yaml, Buffer, b64encode: Base64.encode, b64decode: Base64.decode});
       globalThis.ageProbeUtils = ageUtils;
       globalThis.createProbeProcessors = function($, env) {
@@ -123,6 +128,28 @@ const build = fromBackend('esbuild').buildSync({
         };
         ${resolvers}
         const produceArtifact = unavailable('produceArtifact');
+        ProxyUtils.download = (() => {
+          // Private server selection must not enable the proxy-app permanent task map or public Node APIs.
+          const ENV = () => ({isNode: true});
+          const getFs = () => ({readFileSync: path => Buffer.from(JSON.parse(__hostReadFile(path))).toString('utf8')});
+          const getPath = () => ({isAbsolute: __hostPathIsAbsolute});
+          const {AGE_SECRET_KEY, decryptArmorIfPresent, maskAgeSecretInUrl} = ageUtils;
+          const tasks = new Map();
+          const clashPreprocessor = {test: unavailable('download preprocess')};
+          ${findByName}
+          ${download}
+          return (...args) => {
+            // shortcut: real parser/cache eligibility needs the M3 pipeline; reject until it is integrated.
+            if (args[7]) return Promise.reject(new Error('M1 probe has no application helper: download preprocess'));
+            return download(...args);
+          };
+        })();
+        ProxyUtils.downloadFile = async (url, file) => {
+          $.info('Downloading file...\\nURL: ' + url + '\\nFile: ' + file);
+          const result = await __hostDownloadFile(url, file);
+          $.info('File downloaded from ' + url + ' to ' + file);
+          return result;
+        };
         const RESPONSE_TRANSFORMER = 'Response Transformer';
         ${processors}
         return {factories: {'Script Filter': ScriptFilter, 'Script Operator': ScriptOperator, 'Response Transformer': ResponseTransformer},

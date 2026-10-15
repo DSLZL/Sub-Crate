@@ -13,6 +13,65 @@ import runner
 
 
 class RunnerTests(unittest.TestCase):
+    def test_download_persisted_state_retains_types_and_both_caches(self):
+        from download_fixtures import TEXT, check_download_state
+        persisted = {'cache': {'downloadHelper': {'text': TEXT, 'zero': 0, 'flag': False}},
+                     'root': {'sub-store-cached-resource': '{"a":{"data":"text","time":2000000001000}}',
+                              'sub-store-cached-headers-resource': '{}'}}
+        result = {'storage': copy.deepcopy(persisted), 'resourceCache': json.loads(persisted['root']['sub-store-cached-resource']), 'headersCache': {}}
+        check_download_state(result, persisted)
+        for mutation in ('zero', 'false', 'extra', 'resource', 'headers', 'storage'):
+            actual, state = copy.deepcopy(result), copy.deepcopy(persisted)
+            if mutation == 'zero': state['cache']['downloadHelper']['zero'] = False
+            elif mutation == 'false': state['cache']['downloadHelper']['flag'] = 0
+            elif mutation == 'extra': state['cache']['downloadHelper']['unknown'] = None
+            elif mutation == 'resource': actual['resourceCache']['a']['data'] = 'changed'
+            elif mutation == 'headers': actual['headersCache']['unexpected'] = 'changed'
+            elif mutation == 'storage': actual['storage']['root'].pop('sub-store-cached-resource')
+            with self.assertRaises(AssertionError, msg=mutation):
+                check_download_state(actual, state)
+
+    def test_download_trace_and_exact_wire_reject_mutations(self):
+        from download_fixtures import DOWNLOAD_CASES, check_download_run, expected_wire, check_download_wire
+        result = {'passed': DOWNLOAD_CASES[:], 'observations': dict.fromkeys(DOWNLOAD_CASES)}
+        progress = [{'id': case, 'event': event} for case in DOWNLOAD_CASES for event in ('start', 'end')]
+        check_download_run(result, progress)
+        base = 'http://127.0.0.1:1234'
+        wire = [{**item, 'headers': {**item['headers'], 'host': '127.0.0.1:1234'}} for item in expected_wire(base)]
+        check_download_wire(wire, base)
+        for mutation in ('missing', 'order', 'event', 'group', 'observations', 'header', 'path', 'body', 'extra'):
+            actual, events, requests = copy.deepcopy(result), copy.deepcopy(progress), copy.deepcopy(wire)
+            if mutation == 'missing': events.pop()
+            elif mutation == 'order': events[:2] = reversed(events[:2])
+            elif mutation == 'event': events[0]['event'] = 'pass'
+            elif mutation == 'group': actual['passed'][0] = 'unknown'
+            elif mutation == 'observations': actual['observations'].pop(DOWNLOAD_CASES[0])
+            elif mutation == 'header': requests[0]['headers']['user-agent'] = 'changed'
+            elif mutation == 'path': requests[0]['path'] += '?changed'
+            elif mutation == 'body': requests[0]['body_bytes'] = [1]
+            elif mutation == 'extra': requests.append(requests[0])
+            with self.assertRaises(AssertionError, msg=mutation):
+                check_download_run(actual, events)
+                check_download_wire(requests, base)
+
+    def test_download_file_snapshot_rejects_changed_missing_and_extra_files(self):
+        from download_fixtures import EXPECTED_FILES, file_snapshot
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)
+            for name, content in EXPECTED_FILES.items():
+                (state / name).write_bytes(content)
+            for name in ('sub-store.json', 'sub-store-probe.json', 'root.json', 'download-input.json'):
+                (state / name).write_text('{}\n', encoding='utf-8')
+            file_snapshot(state)
+            for mutation in ('changed', 'missing', 'extra'):
+                target = state / 'binary🙂.bin'
+                if mutation == 'changed': target.write_bytes(b'changed')
+                elif mutation == 'missing': target.unlink()
+                else: (state / 'unexpected').write_bytes(b'')
+                with self.assertRaises(AssertionError, msg=mutation):
+                    file_snapshot(state)
+                target.write_bytes(EXPECTED_FILES['binary🙂.bin'])
+
     def test_age_trace_rejects_missing_reordered_and_extra_groups(self):
         from age_fixtures import AGE_CASES, check_age_run
         result = {'passed': AGE_CASES[:], 'observations': dict.fromkeys(AGE_CASES), 'verified': []}

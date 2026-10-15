@@ -315,6 +315,24 @@ fallback, and GitLab download still requests `/gists/:id` and fails. Default pro
 environment fallback, complete HTTP options and production backup/artifact
 integration remain HG09/HG16/M4 work. No new dependency was added.
 
+The HG10 download slice runs DL01-DL15 against actual Node exports and the
+contained Rust host in four fresh processes, including two independent reloads.
+It checks defaults/custom headers/fragments/GitHub prefixing, native local UTF-8
+and malformed bytes, typed module content, cache TTL/threshold/bypass/optimistic
+refresh/fallback, flow validation order/noFlow, both age types with cached armor
+and structured errors, actual async script injection and binary filesystem,
+status/redirect/error behavior. The text helper is frozen source; Rust owns its
+HTTP/local I/O and implements downloadFile with streaming writes. Script-visible
+Node APIs remain absent. Forty-eight exact requests per runtime, sixty raw case
+markers, full typed state/two caches and nine files are independently checked.
+The 262147-byte stream must expose its 16384-byte prefix before a separate HTTP
+release; interrupted bodies retain exactly that prefix and reject. Raw wire,
+commands/status, logs, input hashes, persisted state and file bytes are retained
+and rejoined by check_download_artifacts, including Docker's owned containers.
+Source plain-object age errors and post-cache flow failures remain unchanged.
+Preprocess/parser cache eligibility, successful internal file artifacts, full
+proxy/TLS/environment options and production service integration remain open.
+
 `shortcut: the probe uses a partial ProxyUtils/timer/storage/artifact host,
 upgrade to the full shared-behavior fixtures before M3 acceptance.` Separate
 negative probes verify 100ms interruption of synchronous and promise-job infinite

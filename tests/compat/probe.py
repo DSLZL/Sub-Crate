@@ -14,6 +14,7 @@ from dns_fixtures import ControlledDns, query_path, query_bytes, response_bytes
 from mmdb_fixtures import FIXTURES as MMDB_FIXTURES, prepare as prepare_mmdb, verify_fixtures as verify_mmdb_fixtures, check_state as check_mmdb_state
 from gist_fixtures import check_gist_requests, check_gist_state
 from age_fixtures import run_age_probe
+from download_fixtures import run_download_probe
 
 HOST_CASES = [
     "SH01-storage-values-and-aliases", "SH02-root-key-routing", "SH03-storage-undefined-delete-and-errors",
@@ -283,6 +284,8 @@ def main():
                          "tests/compat/fixtures/script-helper-contracts.js", "tests/compat/fixtures/script-dns-contracts.js",
                          "tests/compat/fixtures/script-gist-contracts.js", "tests/compat/gist_fixtures.py",
                          "tests/compat/age_fixtures.py", "tests/compat/age-reference.cjs", "tests/compat/fixtures/script-age-contracts.js",
+                         "tests/compat/download_fixtures.py", "tests/compat/download-reference.cjs",
+                         "tests/compat/fixtures/script-download-contracts.js", "tests/compat/fixtures/script-download-resume.js",
                          "tests/compat/fixtures/web-apis.js", "tests/compat/package.json", "tests/compat/pnpm-lock.yaml",
                          "tests/compat/fixtures/script-native-dns-contracts.js", "tests/compat/fixtures/dns-cert.pem", "tests/compat/fixtures/dns-key.pem",
                          "tests/compat/dns_fixtures.py", "tests/compat/mmdb_fixtures.py", "tests/compat/fixtures/script-mmdb-contracts.js",
@@ -315,6 +318,9 @@ def main():
         run_age_probe(node, executable, environment, output, report,
                       (lambda state, mode, child_env, name: run_container(image, state, 'http://127.0.0.1:1',
                           mode, child_env, output, name)) if args.docker else None)
+        run_download_probe(node, executable, environment, output, report,
+            (lambda state, upstream, mode, child_env, name: run_container(image, state, upstream,
+                mode, child_env, output, name)) if args.docker else None)
         with ControlledUpstream() as upstream, ControlledDns() as dns:
             report["dns_fixture_urls"] = dns.urls
             for suite in ("host", "processor"):
