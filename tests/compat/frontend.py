@@ -378,9 +378,12 @@ def main():
             report["cases"].append({"id": "FE15-restore-file-archive", "source": "src/views/archive/Archive.vue:837; src/store/archive.ts:73", "archive_id": entry["id"], "status": "browser_passed"})
             command("open", report["server_origin"] + "/my")
             command("wait", ".config-card")
+            # Initial store loading can reset the form after its controls appear.
+            command("wait", "--load", "networkidle")
             click_name("缓存配置")
             command("wait", 'input[placeholder="最大保存日志条数(默认: 0=关闭)"]')
             command("fill", 'input[placeholder="最大保存日志条数(默认: 0=关闭)"]', "100")
+            expect_value('input[placeholder="最大保存日志条数(默认: 0=关闭)"]', "100", "Log retention did not reach the form before saving")
             command("click", ".config-card .save-btn")
             command("wait", "--text", "保存成功")
             expect_value('input[placeholder="最大保存日志条数(默认: 0=关闭)"]', "100", "Saved log retention disappeared from the editor")

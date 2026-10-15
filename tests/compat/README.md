@@ -342,8 +342,10 @@ for actual field/selection values and restored content before asserting or savin
 rendered controls can precede asynchronous resource data. Before deletion, wait
 for the swipe menu's actual transform to finish; its archive dialog button is a
 visible NutUI control without an ARIA button role. Restoration checks the captured archive ID
-in HAR, the persisted snapshot and the reopened editor. Log settings retain the
-form's string value and keep editing after saving. Log search checks the selected
+in HAR, the persisted snapshot and the reopened editor. Log settings wait for
+initial network activity to settle before editing, then check the input before
+saving: the initial store load can overwrite an already rendered form. They retain
+the form's string value and keep editing after saving. Log search checks the selected
 keyword in both the rendered results and the actual request query; clearing
 requires UI confirmation and empty persisted logs. The file editor selects the
 visible display tab when its previous content tab remains active. A manual backup
