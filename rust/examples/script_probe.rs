@@ -135,6 +135,19 @@ async fn verify_limits() -> Result<serde_json::Value, Box<dyn Error>> {
 async fn main() -> Result<(), Box<dyn Error>> {
     let host_upstream = std::env::var("SUB_STORE_COMPAT_UPSTREAM")?;
     let host_state = std::env::var("SUB_STORE_COMPAT_STATE_DIR")?;
+    if std::env::args().any(|arg| arg == "--age") {
+        println!(
+            "{}",
+            script_host::run(
+                &host_upstream,
+                std::path::Path::new(&host_state),
+                script_host::Suite::Age,
+                false
+            )
+            .await?
+        );
+        return Ok(());
+    }
     if std::env::args().any(|arg| arg == "--host-resume") {
         println!(
             "{}",

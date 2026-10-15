@@ -9,7 +9,8 @@ replacement Rust server or demonstrate complete frontend/backend parity.
 - Development oracle: Node 24.15.0, pnpm 11.0.9, locked backend dependencies.
 - Contained Rust experiment: Rust 1.98.0, rquickjs 0.14.0, locked Cargo dependencies.
 
-Run from the repository root, after `pnpm --dir backend install --frozen-lockfile`.
+Run from the repository root, after `pnpm --dir backend install --frozen-lockfile`
+and `pnpm --dir tests/compat install --frozen-lockfile`.
 Replace `/absolute/path/to/node` with the pinned Node executable; the harness
 checks its exact version. On Windows use native paths and Python 3.
 
@@ -20,6 +21,34 @@ python tests/compat/reference.py --node /absolute/path/to/node --mode contracts
 python tests/compat/reference.py --node /absolute/path/to/node --mode helpers
 python tests/compat/probe.py --node /absolute/path/to/node
 ```
+
+The contained host bundles the frozen age-encryption 0.3.0 implementation and
+actual age.js wrappers. Test-only dependencies web-streams-polyfill 4.3.0 and
+@kayahr/text-encoding 2.2.0 supply streams and UTF-8 encoding; Rust getrandom
+0.4.3 supplies OS-backed crypto.getRandomValues with a native 65536-byte quota.
+The source's explicit unsupported-X25519 fallback selects the existing noble
+implementation; this does not supply general crypto.subtle. Response currently
+implements only the body consumption used by age. Full Fetch/encoding/Web API
+conformance remains HG17, and application age routes still need Rust integration.
+
+AG01-AG11 compare actual Node exports with the contained host: encoding view
+offsets/fatal/stream/BOM, stream backpressure/cancel/errors, one-shot body reads,
+random integer views/quota, both X25519 and MLKEM768-X25519 generation/derivation,
+Unicode/binary/empty/chunk-boundary armor, validation/authentication/recovery,
+redaction and actual Script Operator injection. Four fresh processes exchange
+32 ciphertexts/plaintexts in both directions, including Node encrypting to
+Rust-generated keys. Each validates exact plaintext and independent byte
+length/hash. Raw traces, fixture identities/recipients, ciphertexts, input/output
+SHA256 and command deadlines are retained and cross-checked; disposable private
+keys stay in owned age-*-state files and must never appear in console logs.
+They are test keys, never production credentials. Random outputs are verified
+by decryption rather than normalized into an equality check.
+
+The debug profile optimizes only rquickjs-sys at level 3 so the interpreter can
+run the complete crypto slice under the unchanged 15-second/64-MiB host limit.
+The unoptimized-engine timeout remains failed evidence. Docker uses its release
+build. Helper bundling also collects exact direct/transitive license texts into
+script-helper-licenses.txt, copies them into Docker, and records their hash.
 
 The pinned backend's Babel alias plugin cannot load Windows filenames. Use
 `--mode unit-windows` for a separately labeled run with a development-only
@@ -327,7 +356,7 @@ python tests/compat/probe.py --node /absolute/path/to/node --docker
 
 Run this on native Linux with Docker and the generated helpers available. The
 Dockerfile pins multi-architecture Rust/Debian image digests, builds the locked
-release example inside Docker, and copies only the binary, helper bundle and CA
+release example inside Docker, and copies the binary, helper bundle, licenses and CA
 certificates into the runtime. Its build asserts Node/npm are absent. The runner
 checks image and executed binary architecture against the host, uses a separate
 writable state bind mount and read-only container root, and connects to the

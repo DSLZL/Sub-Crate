@@ -117,9 +117,24 @@ async fn request<'js>(
     .map_err(|error| Exception::throw_message(&ctx, &error.to_string()))
 }
 
+#[derive(Clone, Copy)]
 pub enum Suite {
     Host,
     Processors,
+    Age,
+}
+
+fn random_values(ctx: Ctx<'_>, length: usize) -> rquickjs::Result<String> {
+    if length > 65536 {
+        return Err(Exception::throw_message(
+            &ctx,
+            "Random values exceed 65536 bytes",
+        ));
+    }
+    let mut bytes = vec![0; length];
+    getrandom::fill(&mut bytes)
+        .map_err(|error| Exception::throw_message(&ctx, &error.to_string()))?;
+    Ok(serde_json::to_string(&bytes).expect("Bytes serialize as JSON"))
 }
 
 async fn reenter<'js>(payload: String, callback: Function<'js>) -> rquickjs::Result<String> {
@@ -148,15 +163,21 @@ pub async fn run(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/compat/.generated/script-helpers.js"),
     )?;
     let cache_path = state.join(match suite {
-        Suite::Host => "sub-store-probe.json",
+        Suite::Host | Suite::Age => "sub-store-probe.json",
         Suite::Processors => "sub-store.json",
     });
     let root_path = state.join("root.json");
+    let age_output = state.join("age-output.json");
+    let age_input = if matches!(suite, Suite::Age) {
+        std::fs::read_to_string(state.join("age-input.json"))?
+    } else {
+        "{}".to_owned()
+    };
     let mmdb_root = state.to_string_lossy().to_string();
     let transient_mmdb = state.join("mmdb transient🙂.mmdb");
     let mmdb_vectors = match suite {
         Suite::Processors => std::fs::read_to_string(state.join("mmdb-vectors.json"))?,
-        Suite::Host => "{}".to_owned(),
+        Suite::Host | Suite::Age => "{}".to_owned(),
     };
     let cache = std::fs::read_to_string(&cache_path)?;
     let root = std::fs::read_to_string(&root_path)?;
@@ -166,6 +187,11 @@ pub async fn run(
         context.async_with(async |ctx| {
             let globals = ctx.globals();
             globals.set("probeUpstream", upstream)?;
+            globals.set("ageInput", ctx.json_parse(age_input)?)?;
+            globals.set("__hostRandomValues", Func::from(random_values))?;
+            globals.set("probeAgeProgress", Func::from(|id: String, event: String| {
+                eprintln!("COMPAT_AGE {}", json!({"id": id, "event": event}));
+            }))?;
             globals.set("probeCaseProgress", Func::from(|id: String, event: String| {
                 eprintln!("COMPAT_PROCESSOR {}", json!({"id": id, "event": event}));
             }))?;
@@ -218,7 +244,7 @@ pub async fn run(
                 Suite::Host => {
                     include_str!("../../../tests/compat/fixtures/script-host-contracts.js")
                 }
-                Suite::Processors => {
+                Suite::Processors | Suite::Age => {
                     ctx.eval::<(), _>(include_str!(
                         "../../../tests/compat/fixtures/script-processor-clock.js"
                     ))?;
@@ -245,7 +271,9 @@ pub async fn run(
                          const probeMmdbWithDefaults = (values, callback) => { const saved = __hostMmdbDefaults; __hostMmdbDefaults = values;\n\
                            try { return callback(); } finally { __hostMmdbDefaults = saved; } };",
                     )?;
-                    if resume {
+                    if matches!(suite, Suite::Age) {
+                        include_str!("../../../tests/compat/fixtures/script-age-contracts.js")
+                    } else if resume {
                         "Promise.resolve({storage: {cache: $substore.cache, root: $substore.root}, resourceCache: processorHost.scriptResourceCache.resourceCache, headersCache: processorHost.headersResourceCache.resourceCache, dnsCache: processorHost.resourceCache.resourceCache})"
                     } else {
                         include_str!("../../../tests/compat/fixtures/script-processor-contracts.js")
@@ -261,7 +289,13 @@ pub async fn run(
                 .await
                 .catch(&ctx)
                 .map_err(|error| format!("host execution: {error:?}"))?;
-            Ok::<_, Box<dyn Error>>(serde_json::from_str(&result)?)
+            let mut result: Value = serde_json::from_str(&result)?;
+            if matches!(suite, Suite::Age) {
+                let exchange = result.as_object_mut().ok_or("Age result must be an object")?
+                    .remove("exchange").ok_or("Age result must include exchange")?;
+                std::fs::write(&age_output, serde_json::to_vec(&exchange)?)?;
+            }
+            Ok::<_, Box<dyn Error>>(result)
         }),
     )
     .await?

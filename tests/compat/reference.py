@@ -142,6 +142,11 @@ def main():
         elif args.mode == "helpers":
             result = execute([node, HERE / "build-helpers.cjs"], ROOT, environment, output_dir, "helpers")
             summary["exit_code"] = result.returncode
+            if result.returncode == 0:
+                notices = HERE / '.generated/script-helper-licenses.txt'
+                shutil.copyfile(notices, output_dir / notices.name)
+                summary['helper_licenses_sha256'] = hashlib.sha256(notices.read_bytes()).hexdigest()
+                summary['compat_lock_sha256'] = hashlib.sha256((HERE / 'pnpm-lock.yaml').read_bytes()).hexdigest()
         else:
             result = execute([node, "bundle-esbuild.js"], BACKEND, environment, output_dir, "bundle")
             if result.returncode:

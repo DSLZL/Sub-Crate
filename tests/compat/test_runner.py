@@ -13,6 +13,44 @@ import runner
 
 
 class RunnerTests(unittest.TestCase):
+    def test_age_trace_rejects_missing_reordered_and_extra_groups(self):
+        from age_fixtures import AGE_CASES, check_age_run
+        result = {'passed': AGE_CASES[:], 'observations': dict.fromkeys(AGE_CASES), 'verified': []}
+        progress = [{'id': case, 'event': event} for case in AGE_CASES for event in ('start', 'end')]
+        check_age_run(result, progress, full=True, directions=[])
+        for mutation in ('missing', 'reordered', 'unknown', 'event', 'extra', 'observations'):
+            actual, events = copy.deepcopy(result), copy.deepcopy(progress)
+            if mutation == 'missing': events.pop()
+            elif mutation == 'reordered': events[:2] = reversed(events[:2])
+            elif mutation == 'unknown': actual['passed'][0] = 'unknown'
+            elif mutation == 'event': events[0]['event'] = 'pass'
+            elif mutation == 'extra': events.append(events[0])
+            elif mutation == 'observations': actual['observations'].pop(AGE_CASES[0])
+            with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
+                check_age_run(actual, events, full=True, directions=[])
+
+    def test_age_interop_rejects_missing_wrong_direction_and_changed_plaintext(self):
+        import hashlib
+        from age_fixtures import check_age_run, TYPES, PAYLOADS
+        result = {'passed': [], 'observations': {}, 'verified': [
+            {'direction': 'node-to-rust-key', 'type': kind, 'id': name,
+             'utf8Length': len(text.encode()), 'md5': hashlib.md5(text.encode()).hexdigest()}
+            for kind in TYPES for name, text in PAYLOADS]}
+        check_age_run(result, [], full=False, directions=['node-to-rust-key'])
+        for mutation in ('missing', 'direction', 'type', 'id', 'length', 'hash', 'progress', 'extra'):
+            actual = copy.deepcopy(result)
+            progress = []
+            if mutation == 'missing': actual['verified'].pop()
+            elif mutation == 'direction': actual['verified'][0]['direction'] = 'self-roundtrip'
+            elif mutation == 'type': actual['verified'][4]['type'] = 'tagpq'
+            elif mutation == 'id': actual['verified'][0]['id'] = 'wrong'
+            elif mutation == 'length': actual['verified'][3]['utf8Length'] -= 1
+            elif mutation == 'hash': actual['verified'][1]['md5'] = '0' * 32
+            elif mutation == 'progress': progress = [{'id': 'AG01', 'event': 'start'}]
+            elif mutation == 'extra': actual['verified'].append(actual['verified'][0])
+            with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
+                check_age_run(actual, progress, full=False, directions=['node-to-rust-key'])
+
     def test_gist_wire_rejects_changed_auth_bytes_order_and_missing_requests(self):
         from gist_fixtures import expected_gist_requests, check_gist_requests
         expected = expected_gist_requests()

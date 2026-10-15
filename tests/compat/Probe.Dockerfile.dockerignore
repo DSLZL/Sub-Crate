@@ -12,3 +12,4 @@
 !tests/compat/fixtures/**
 !tests/compat/.generated/
 !tests/compat/.generated/script-helpers.js
+!tests/compat/.generated/script-helper-licenses.txt

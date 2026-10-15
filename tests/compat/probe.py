@@ -13,6 +13,7 @@ from upstream import ControlledUpstream
 from dns_fixtures import ControlledDns, query_path, query_bytes, response_bytes
 from mmdb_fixtures import FIXTURES as MMDB_FIXTURES, prepare as prepare_mmdb, verify_fixtures as verify_mmdb_fixtures, check_state as check_mmdb_state
 from gist_fixtures import check_gist_requests, check_gist_state
+from age_fixtures import run_age_probe
 
 HOST_CASES = [
     "SH01-storage-values-and-aliases", "SH02-root-key-routing", "SH03-storage-undefined-delete-and-errors",
@@ -276,10 +277,13 @@ def main():
                          "tests/compat/host-reference.cjs", "scripts/ip-flag-node.js", "tests/compat/fixtures/script-host-probe.js",
                          "tests/compat/fixtures/script-assertions.js", "tests/compat/fixtures/script-host.js",
                          "tests/compat/fixtures/script-host-contracts.js", "tests/compat/.generated/script-helpers.js",
+                         "tests/compat/.generated/script-helper-licenses.txt",
                          "tests/compat/build-helpers.cjs", "tests/compat/processor-reference.cjs",
                          "tests/compat/fixtures/script-processor-clock.js", "tests/compat/fixtures/script-processor-contracts.js",
                          "tests/compat/fixtures/script-helper-contracts.js", "tests/compat/fixtures/script-dns-contracts.js",
                          "tests/compat/fixtures/script-gist-contracts.js", "tests/compat/gist_fixtures.py",
+                         "tests/compat/age_fixtures.py", "tests/compat/age-reference.cjs", "tests/compat/fixtures/script-age-contracts.js",
+                         "tests/compat/fixtures/web-apis.js", "tests/compat/package.json", "tests/compat/pnpm-lock.yaml",
                          "tests/compat/fixtures/script-native-dns-contracts.js", "tests/compat/fixtures/dns-cert.pem", "tests/compat/fixtures/dns-key.pem",
                          "tests/compat/dns_fixtures.py", "tests/compat/mmdb_fixtures.py", "tests/compat/fixtures/script-mmdb-contracts.js",
                          "tests/compat/fixtures/mmdb/provenance.json", "tests/compat/Probe.Dockerfile",
@@ -308,6 +312,9 @@ def main():
             check_json(report["container_image"]["Architecture"], {"x86_64": "amd64", "aarch64": "arm64"}[platform.machine().lower()])
         else:
             report["binary_sha256"] = hashlib.sha256(executable.read_bytes()).hexdigest()
+        run_age_probe(node, executable, environment, output, report,
+                      (lambda state, mode, child_env, name: run_container(image, state, 'http://127.0.0.1:1',
+                          mode, child_env, output, name)) if args.docker else None)
         with ControlledUpstream() as upstream, ControlledDns() as dns:
             report["dns_fixture_urls"] = dns.urls
             for suite in ("host", "processor"):

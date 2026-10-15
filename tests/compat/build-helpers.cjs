@@ -53,9 +53,13 @@ const concurrency = declarations('backend/src/utils/request-concurrency.js', [
 ]);
 const output = path.join(__dirname, '.generated/script-helpers.js');
 fs.mkdirSync(path.dirname(output), { recursive: true });
-fromBackend('esbuild').buildSync({
+const build = fromBackend('esbuild').buildSync({
+  absWorkingDir: root,
+  metafile: true,
   stdin: {
-    contents: `import lodash from 'lodash'; import * as yaml from 'yaml';
+    contents: `import ${JSON.stringify(path.join(__dirname, 'fixtures/web-apis.js'))};
+      import lodash from 'lodash'; import * as yaml from 'yaml';
+      import * as ageUtils from './src/utils/age';
       import {Buffer} from 'buffer'; import {Base64} from 'js-base64';
       import JSON5 from 'json5'; import dnsPacket from 'dns-packet'; import {hex_md5} from './src/vendor/md5';
       import {ipAddress, isIPv4, isIPv6, isValidUUID, getRandomPort, getPolicyDescriptor} from './src/utils';
@@ -63,6 +67,7 @@ fromBackend('esbuild').buildSync({
       import {isMihomoConfigFile} from './src/utils/file-type';
       import {SCRIPT_RESOURCE_CACHE_KEY, DEFAULT_SCRIPT_CACHE_TTL, HEADERS_RESOURCE_CACHE_KEY, DEFAULT_HEADERS_CACHE_TTL, RESOURCE_CACHE_KEY, DEFAULT_CACHE_TTL, SETTINGS_KEY} from './src/constants';
       Object.assign(globalThis, {lodash, yaml, Buffer, b64encode: Base64.encode, b64decode: Base64.decode});
+      globalThis.ageProbeUtils = ageUtils;
       globalThis.createProbeProcessors = function($, env) {
         ${plainObject}
         ${isIP}
@@ -98,7 +103,8 @@ fromBackend('esbuild').buildSync({
         // shortcut: application helpers need their M3/M4 services; never silently emulate them here.
         const unavailable = name => () => { throw new Error('M1 probe has no application helper: ' + name); };
         const ProxyUtils = {yaml: YAML, Buffer, Base64, JSON5, hex_md5, ipAddress,
-          isIPv4, isIPv6, isIP, isValidUUID, getRandomPort, getFlag, getISO, removeFlag, doh, MMDB, Gist};
+          isIPv4, isIPv6, isIP, isValidUUID, getRandomPort, getFlag, getISO, removeFlag, doh, MMDB, Gist,
+          age: {encrypt: ageUtils.encryptArmor, decrypt: ageUtils.decryptArmorIfPresent, derivePublicKey: ageUtils.derivePublicKey}};
         // Only the DNS parser needs these URL fields; this is not a global web-URL shim.
         const URL = function(raw) { Object.assign(this, JSON.parse(__hostDnsUrl(raw))); };
         ${dns}
@@ -127,8 +133,30 @@ fromBackend('esbuild').buildSync({
     resolveDir: path.join(root, 'backend'),
   },
   bundle: true,
+  alias: {'@': path.join(root, 'backend/src')},
   platform: 'browser',
   format: 'iife',
   outfile: output,
 });
+// Keep redistribution notices beside the generated bundle, including transitive crypto.
+const notices = new Map();
+for (const input of Object.keys(build.metafile.inputs).filter(input => input.includes('node_modules/'))) {
+  let directory = path.dirname(path.resolve(root, input));
+  let metadata;
+  while (true) {
+    const manifest = path.join(directory, 'package.json');
+    metadata = fs.existsSync(manifest) ? JSON.parse(fs.readFileSync(manifest, 'utf8')) : null;
+    if (metadata?.name && metadata.version) break;
+    const parent = path.dirname(directory);
+    if (parent === directory) throw new Error(`No package metadata for ${input}`);
+    directory = parent;
+  }
+  const key = metadata.name + '@' + metadata.version;
+  if (notices.has(key)) continue;
+  const license = fs.readdirSync(directory).find(name => /^licen[cs]e(?:\.(?:md|txt))?$/i.test(name));
+  if (!license) throw new Error(`Missing license text for ${key}`);
+  notices.set(key, fs.readFileSync(path.join(directory, license), 'utf8'));
+}
+fs.writeFileSync(path.join(path.dirname(output), 'script-helper-licenses.txt'),
+  [...notices].sort(([left], [right]) => left.localeCompare(right)).map(([name, license]) => name + '\n' + license.trim() + '\n').join('\n'));
 console.log(output);

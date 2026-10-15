@@ -1,0 +1,9 @@
+{
+  "name": "sub-store-compat-probe",
+  "private": true,
+  "packageManager": "pnpm@11.0.9",
+  "dependencies": {
+    "@kayahr/text-encoding": "2.2.0",
+    "web-streams-polyfill": "4.3.0"
+  }
+}
