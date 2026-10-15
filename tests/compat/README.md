@@ -213,7 +213,12 @@ source discovery into a new output file (previous evidence is immutable):
 node tests/compat/inventory.cjs /path/to/pinned-frontend-checkout /path/to/new-inventory.json
 ```
 
-The inventory command rejects missing/stale call mappings, backend routes and
-fixture IDs, and missing parse/download checks for any exported proxy output alias
+The inventory command rejects missing/stale call mappings, backend routes,
+HTTP fixture IDs and UI workflow references, and missing parse/download checks for any exported proxy output alias
 or base/unsupported rule producer. Its 114 direct URL expressions still require complete builder and
 parameter analysis; the two mapped builders are only an initial slice.
+The inventory checks the frontend source diff and frozen backend source/lockfile.
+Computed processor names resolve through top-level string constants; parser and
+preprocessor factory names remain explicit. Unresolved registry entries are parse
+gaps, and the inline checks cover computed names, inner-scope shadowing, factories
+and unknown bindings. Registry discovery does not establish behavior coverage.

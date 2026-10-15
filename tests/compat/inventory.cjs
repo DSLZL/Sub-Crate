@@ -46,15 +46,54 @@ assert.deepEqual(findRoutes("$app.route('/api/sub/:name').get(getSub).patch(upda
   .map(route => `${route.method} ${route.path}`), ['PATCH /api/sub/:name', 'GET /api/sub/:name', 'POST /api/storage']);
 assert.equal(findRoutes("res.get('header'); obj.post('other');", 'self-check').length, 0);
 
+function findRegistry(source, filename) {
+  const ast = parse(source);
+  const constants = new Map();
+  for (const statement of ast.program.body) {
+    const declaration = statement.type === 'ExportNamedDeclaration' ? statement.declaration : statement;
+    if (declaration?.type !== 'VariableDeclaration' || declaration.kind !== 'const') continue;
+    for (const item of declaration.declarations) {
+      if (item.id.type === 'Identifier' && item.init?.type === 'StringLiteral') constants.set(item.id.name, item.init.value);
+    }
+  }
+  const result = [];
+  traverse(ast, {ExportDefaultDeclaration(p) {
+    const items = p.node.declaration.properties || p.node.declaration.elements;
+    if (!items) { result.push({expression: source.slice(p.node.declaration.start, p.node.declaration.end), unresolved: true}); return; }
+    for (const item of items) {
+      let key;
+      if (item.type === 'ObjectProperty') {
+        if (item.key.type === 'StringLiteral') key = item.key.value;
+        else key = item.computed ? constants.get(item.key.name) : item.key.name;
+      } else if (item.type === 'CallExpression' && item.callee.type === 'Identifier') key = item.callee.name;
+      result.push({key: key ?? null, kind: item.type === 'ObjectProperty' ? 'named' : 'factory',
+        expression: source.slice((item.value || item).start, (item.value || item).end), source: `${filename}:${item.loc.start.line}`,
+        execution: 'not_mapped', ...(key === undefined ? {unresolved: true} : {})});
+    }
+  }});
+  return result;
+}
+assert.deepEqual(findRegistry("export const TYPE = 'Resolved'; function inner() { const TYPE = 'Wrong'; } export default {[TYPE]: Factory, 'Alias': Factory};", 'self-check')
+  .map(item => item.key), ['Resolved', 'Alias']);
+assert.deepEqual(findRegistry('export default [First(), Second()];', 'self-check').map(item => item.key), ['First', 'Second']);
+assert.equal(findRegistry('export default {[MISSING]: Factory};', 'self-check')[0].unresolved, true);
+
 const frontend = path.resolve(process.argv[2] || '');
 const output = path.resolve(process.argv[3] || '');
 if (process.argv.length !== 4) throw new Error('Usage: inventory.cjs <pinned-frontend-root> <new-output.json>');
 const frontendCommit = execFileSync('rtk', ['proxy', 'git', '-C', frontend, 'rev-parse', 'HEAD'], {encoding: 'utf8'}).trim();
 assert.equal(frontendCommit, '4bd7b0acbe65466b933ccea14fc61dbebe036ead');
+execFileSync('rtk', ['proxy', 'git', '-C', frontend, 'diff', '--exit-code', 'HEAD'], {stdio: 'pipe'});
+execFileSync('rtk', ['proxy', 'git', '-C', root, 'diff', '--exit-code', '9cc6b5fac966993364ae33da8797f446bbf7f571', '--',
+  'backend/src', 'backend/package.json', 'backend/pnpm-lock.yaml'], {stdio: 'pipe'});
 const frontendMap = JSON.parse(fs.readFileSync(path.join(__dirname, 'frontend-contract-map.json'), 'utf8'));
 assert.equal(frontendMap.frontend_commit, frontendCommit);
+const frontendCases = new Set([...fs.readFileSync(path.join(__dirname, 'frontend.py'), 'utf8')
+  .matchAll(/"id": "(FE\d+-[^"]+)"/g)].map(match => match[1]));
+assert.ok(frontendCases.size, 'No executable frontend workflow IDs found');
 const report = {backend_commit: '9cc6b5fac966993364ae33da8797f446bbf7f571', frontend_commit: frontendCommit,
-  complete_behavior_inventory: false, routes: [], proxy_formats: [], registries: {}, frontend_requests: [], frontend_url_literals: [], parse_gaps: [],
+  complete_behavior_inventory: false, routes: [], proxy_formats: [], registries: {}, frontend_requests: [], frontend_url_literals: [],
+  executable_frontend_workflow_ids: [...frontendCases], parse_gaps: [],
   unresolved_behavior: ['Route parameter/query/coercion/error/state branches', 'Dynamic frontend type values and direct URL builders',
     'Vue template bindings and caller workflow mapping', 'Protocol/processor option combinations', 'Runtime/deployment/integration modes']};
 for (const filename of files(path.join(root, 'backend/src/restful'), ['.js'])) {
@@ -70,15 +109,10 @@ traverse(parse(fs.readFileSync(producerFile, 'utf8')), {ExportDefaultDeclaration
 for (const relative of ['backend/src/core/proxy-utils/processors/index.js', 'backend/src/core/rule-utils/producers.js',
   'backend/src/core/proxy-utils/parsers/index.js', 'backend/src/core/proxy-utils/preprocessors/index.js']) {
   const source = fs.readFileSync(path.join(root, relative), 'utf8');
-  report.registries[relative] = [];
-  traverse(parse(source), {ExportDefaultDeclaration(p) {
-    const items = p.node.declaration.properties || p.node.declaration.elements;
-    if (!items) { report.registries[relative].push({expression: source.slice(p.node.declaration.start, p.node.declaration.end), unresolved: true}); return; }
-    for (const item of items) {
-      report.registries[relative].push({key: item.key?.name || item.key?.value || null,
-        expression: source.slice((item.value || item).start, (item.value || item).end), source: `${relative}:${item.loc.start.line}`, execution: 'not_mapped'});
-    }
-  }});
+  report.registries[relative] = findRegistry(source, relative);
+  for (const item of report.registries[relative]) {
+    if (item.unresolved) report.parse_gaps.push({file: relative, error: `Unresolved registry entry: ${item.expression}`});
+  }
 }
 for (const filename of files(path.join(frontend, 'src'), ['.ts', '.js', '.vue'])) {
   const fullSource = fs.readFileSync(filename, 'utf8');
@@ -136,14 +170,20 @@ for (const request of report.frontend_requests) {
   assert.equal(mapping.method, request.method, key);
   for (const route of mapping.paths) assert.ok(report.routes.some(item => item.path === route && [request.method, 'ALL'].includes(item.method)), `Missing backend route for ${key}: ${route}`);
   for (const id of mapping.http_cases) assert.ok(fixtureIds.has(id), `Missing HTTP fixture for ${key}: ${id}`);
+  for (const id of mapping.ui_cases) assert.ok(frontendCases.has(id), `Missing UI workflow for ${key}: ${id}`);
   Object.assign(request, mapping, {mapping_status: 'source_mapped', execution: 'not_evaluated'});
 }
 assert.deepEqual([...mapped].sort(), Object.keys(frontendMap.requests).sort(), 'Stale frontend mapping entries');
 report.frontend_dynamic_domains = frontendMap.dynamic_domains;
 report.frontend_direct_builders = frontendMap.direct_builders;
+for (const builder of frontendMap.direct_builders) {
+  for (const id of builder.ui_cases || []) assert.ok(frontendCases.has(id), `Missing UI workflow for ${builder.source}: ${id}`);
+}
 fs.mkdirSync(path.dirname(output), {recursive: true});
 fs.writeFileSync(output, JSON.stringify(report, null, 2) + '\n', {flag: 'wx'});
 console.log(JSON.stringify({routes: report.routes.length, proxy_aliases: report.proxy_formats.length,
   frontend_requests: report.frontend_requests.length, frontend_url_literals: report.frontend_url_literals.length,
+  frontend_workflows: frontendCases.size,
+  registries: Object.fromEntries(Object.entries(report.registries).map(([source, entries]) => [source, entries.length])),
   parse_gaps: report.parse_gaps.length, complete_behavior_inventory: false, output}));
 if (report.parse_gaps.length) process.exitCode = 1;
