@@ -267,7 +267,7 @@ def run_container(image, state, upstream, mode, environment, output, name):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--node", type=Path, required=True, help="Pinned development-only Node 24.15.0 oracle")
+    parser.add_argument("--node", type=Path, required=True, help="Pinned development-only Node 24.16.0 oracle")
     parser.add_argument("--docker", action="store_true", help="Build and run the release probe in native Linux Docker containers")
     args = parser.parse_args()
     node = args.node.resolve(strict=True)
@@ -286,8 +286,8 @@ def main():
         environment["PATH"] = str(node.parent) + os.pathsep + environment.get("PATH", "")
         report.update(source_provenance(environment, output))
         version = execute([node, "--version"], ROOT, environment, output, "node-toolchain")
-        if version.returncode or version.stdout.strip() != "v24.15.0":
-            raise RuntimeError("The shared host oracle requires Node v24.15.0")
+        if version.returncode or version.stdout.strip() != "v24.16.0":
+            raise RuntimeError("The shared host oracle requires Node v24.16.0")
         if args.docker and platform.system() != "Linux":
             raise RuntimeError("Container acceptance requires a native Linux runner")
         executable = ROOT / "rust/target/debug/examples" / ("script_probe.exe" if os.name == "nt" else "script_probe")

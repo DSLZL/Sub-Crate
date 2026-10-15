@@ -102,7 +102,7 @@ def oracle(node, environment, output_dir, summary, log_prefix="server"):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--node", required=True, type=Path, help="Pinned Node 24.15.0 executable")
+    parser.add_argument("--node", required=True, type=Path, help="Pinned Node 24.16.0 executable")
     parser.add_argument("--mode", choices=("unit", "unit-windows", "contracts", "helpers"), required=True)
     parser.add_argument("--suite", default="smoke")
     args = parser.parse_args()
@@ -121,8 +121,8 @@ def main():
     try:
         summary.update(source_provenance(environment, output_dir))
         version = execute([node, "--version"], ROOT, environment, output_dir, "toolchain")
-        if version.returncode or version.stdout.strip() != "v24.15.0":
-            raise RuntimeError(f"Expected Node v24.15.0; observed {version.stdout.strip()!r}")
+        if version.returncode or version.stdout.strip() != "v24.16.0":
+            raise RuntimeError(f"Expected Node v24.16.0; observed {version.stdout.strip()!r}")
         if args.mode in ("unit", "unit-windows"):
             loader = str(HERE / "register.cjs") if args.mode == "unit-windows" else "@babel/register"
             summary["loader"] = loader

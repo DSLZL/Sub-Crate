@@ -6,8 +6,13 @@ replacement Rust server or demonstrate complete frontend/backend parity.
 
 - Backend base: `9cc6b5fac966993364ae33da8797f446bbf7f571` (2.42.4), plus the exact `approved-reference-fixes.patch`.
 - Unchanged frontend: `4bd7b0acbe65466b933ccea14fc61dbebe036ead` (2.34.0).
-- Development oracle: Node 24.15.0, pnpm 11.0.9, locked backend dependencies.
+- Development oracle: Node 24.16.0, pnpm 11.0.9, locked backend dependencies.
 - Contained Rust experiment: Rust 1.98.0, rquickjs 0.14.0, locked Cargo dependencies.
+
+Node 24.16.0 is the earliest fixed oracle for the Windows TCP stack-cookie crash
+confirmed in [nodejs/node#63620](https://github.com/nodejs/node/issues/63620).
+The local native dump matches that failure path; failed 24.15.0 evidence remains
+under its original version. This pin changes only the development oracle.
 
 Run from the repository root, after `pnpm --dir backend install --frozen-lockfile`
 and `pnpm --dir tests/compat install --frozen-lockfile`.
@@ -443,7 +448,7 @@ python tests/compat/frontend.py --node /absolute/path/to/node \
 ```
 
 Build that checkout first with its frozen pnpm lockfile and `pnpm build`, using
-Node 24.15.0 and pnpm 11.0.9. Install agent-browser 0.27.3 and its Chrome with
+Node 24.16.0 and pnpm 11.0.9. Install agent-browser 0.27.3 and its Chrome with
 `agent-browser install --with-deps` on Linux (`install` on Windows). The default
 browser is headless; an interactive desktop is not required in Actions. CI checks
 out the frontend at the pinned commit, runs its existing type check/build without

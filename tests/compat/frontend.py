@@ -148,7 +148,7 @@ def main():
     try:
         report.update(source_provenance(environment, output))
         version = execute([node, "--version"], ROOT, environment, output, "node")
-        assert version.returncode == 0 and version.stdout.strip() == "v24.15.0", "Pinned Node required"
+        assert version.returncode == 0 and version.stdout.strip() == "v24.16.0", "Pinned Node required"
         browser_version = execute([browser, "--version"], ROOT, environment, output, "browser-version")
         assert browser_version.returncode == 0 and browser_version.stdout.strip() == "agent-browser 0.27.3", "Pinned agent-browser required"
         report["browser_version"] = browser_version.stdout.strip()

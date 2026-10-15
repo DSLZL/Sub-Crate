@@ -41,7 +41,7 @@ jobs:
           diff --strip-trailing-cr -u tests/compat/approved-reference-fixes.patch "$RUNNER_TEMP/reference-fixes.patch"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 24.15.0
+          node-version: 24.16.0
           package-manager-cache: false
       - name: Install locked development dependencies
         run: |
@@ -94,7 +94,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 24.15.0
+          node-version: 24.16.0
           package-manager-cache: false
       - name: Install locked frontend and backend dependencies
         run: |
@@ -142,7 +142,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 24.15.0
+          node-version: 24.16.0
           package-manager-cache: false
       - name: Install locked oracle dependencies
         run: |
