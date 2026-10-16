@@ -8,7 +8,7 @@ const script = process.argv.includes('--resume')
   ? 'Promise.resolve({storage: {cache: $substore.cache, root: $substore.root}})'
   : fs.readFileSync(path.join(__dirname, 'fixtures/script-host-contracts.js'), 'utf8');
 eval(script).then(result => {
-  fs.writeSync(1, `COMPAT_HOST_RESULT ${JSON.stringify(result)}\n`);
+  process.stdout.write(`COMPAT_HOST_RESULT ${JSON.stringify(result)}\n`);
 }, error => {
   fs.writeSync(2, `${error.stack}\n`);
   process.exitCode = 1;

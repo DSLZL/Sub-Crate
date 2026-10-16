@@ -32,6 +32,6 @@ async function main() {
   const probeDownloadInput = JSON.parse(fs.readFileSync(path.join(state, 'download-input.json'), 'utf8'));
   const probeDownloadProgress = (id, event) => fs.writeSync(2, `COMPAT_DOWNLOAD ${JSON.stringify({id, event})}\n`);
   const result = await eval(fixture(process.argv.includes('--resume') ? 'script-download-resume.js' : 'script-download-contracts.js'));
-  fs.writeSync(1, `COMPAT_DOWNLOAD_RESULT ${JSON.stringify(result)}\n`);
+  process.stdout.write(`COMPAT_DOWNLOAD_RESULT ${JSON.stringify(result)}\n`);
 }
 main().catch(error => { fs.writeSync(2, `${error.stack}\n`); process.exitCode = 1; });

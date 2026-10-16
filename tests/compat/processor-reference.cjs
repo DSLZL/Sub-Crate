@@ -54,7 +54,7 @@ const script = process.argv.includes('--resume')
   ? 'Promise.resolve({storage: {cache: $substore.cache, root: $substore.root}, resourceCache: processorHost.scriptResourceCache.resourceCache, headersCache: processorHost.headersResourceCache.resourceCache, dnsCache: processorHost.resourceCache.resourceCache})'
   : fixture('script-processor-contracts.js');
 eval(script).then(result => {
-  fs.writeSync(1, `COMPAT_PROCESSOR_RESULT ${JSON.stringify(result)}\n`);
+  process.stdout.write(`COMPAT_PROCESSOR_RESULT ${JSON.stringify(result)}\n`);
 }, error => {
   fs.writeSync(2, `${error.stack}\n`);
   process.exitCode = 1;

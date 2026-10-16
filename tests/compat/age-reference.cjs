@@ -12,5 +12,5 @@ const probeAgeProgress = (id, event) => fs.writeSync(2, `COMPAT_AGE ${JSON.strin
 eval(fs.readFileSync(path.join(__dirname, 'fixtures/script-age-contracts.js'), 'utf8')).then(result => {
   fs.writeFileSync(path.join(state, 'age-output.json'), JSON.stringify(result.exchange) + '\n');
   delete result.exchange;
-  fs.writeSync(1, `COMPAT_AGE_RESULT ${JSON.stringify(result)}\n`);
+  process.stdout.write(`COMPAT_AGE_RESULT ${JSON.stringify(result)}\n`);
 }, error => { fs.writeSync(2, `${error.stack}\n`); process.exitCode = 1; });
