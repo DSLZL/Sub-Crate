@@ -275,7 +275,7 @@ def main():
     output.mkdir(parents=True)
     report = {"scope": "M1 script feasibility experiment", "production_ready": False, "full_host_parity": False,
               "os": platform.system(), "machine": platform.machine(), "execution": "docker" if args.docker else "native",
-              "exit_code": 1, "checks": []}
+              "build_profile": "release", "exit_code": 1, "checks": []}
     image = None
     try:
         environment = {key: value for key, value in os.environ.items()
@@ -290,7 +290,7 @@ def main():
             raise RuntimeError("The shared host oracle requires Node v24.16.0")
         if args.docker and platform.system() != "Linux":
             raise RuntimeError("Container acceptance requires a native Linux runner")
-        executable = ROOT / "rust/target/debug/examples" / ("script_probe.exe" if os.name == "nt" else "script_probe")
+        executable = ROOT / "rust/target/release/examples" / ("script_probe.exe" if os.name == "nt" else "script_probe")
         mmdb_manifest = verify_mmdb_fixtures()
         report["mmdb_fixture_commit"] = mmdb_manifest["commit"]
         mmdb_files = [str((MMDB_FIXTURES / item["file"]).relative_to(ROOT)).replace("\\", "/") for item in mmdb_manifest["files"]]
@@ -319,7 +319,7 @@ def main():
         native_checks = (("toolchain", ["rustc", "--version", "--verbose"]),
                          ("fmt", ["cargo", "fmt", "--manifest-path", "rust/Cargo.toml", "--", "--check"]),
                          ("clippy", ["cargo", "clippy", "--locked", "--manifest-path", "rust/Cargo.toml", "--all-targets", "--", "-D", "warnings"]),
-                         ("probe-build", ["cargo", "build", "--locked", "--manifest-path", "rust/Cargo.toml", "--example", "script_probe"]))
+                         ("probe-build", ["cargo", "build", "--release", "--locked", "--manifest-path", "rust/Cargo.toml", "--example", "script_probe"]))
         container_tag = "sub-store-compat:" + output.name.lower()
         container_checks = (("docker-version", ["docker", "version"]),
                             ("container-build", ["docker", "build", "--progress=plain", "--file", "tests/compat/Probe.Dockerfile",

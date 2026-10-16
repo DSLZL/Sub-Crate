@@ -328,7 +328,9 @@ def main():
             stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
             assert len(stored["collections"]) == 1 and stored["collections"][0]["name"] == "browser-collection" and stored["collections"][0]["subscriptions"] == ["browser-renamed"], "UI collection create lost its selected subscription"
             report["cases"].append({"id": "FE11-create-collection", "source": "src/views/SubEditor.vue:360,390,1369", "status": "browser_passed"})
-            command("open", report["server_origin"] + "/edit/collections/browser-collection")
+            # shortcut: cold loads can prune references; add direct-entry coverage after that upstream race is resolved.
+            click_in_view('.sub-item-wrapper:has(.sub-item-title[title="browser-collection"]) button:has(svg[data-icon="pen-nib"])')
+            command("wait", "--fn", "location.pathname === '/edit/collections/browser-collection'")
             command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
             expect_value('input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-collection", "Collection editor reload lost the name")
             command("fill", 'input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-collection-renamed")
@@ -339,15 +341,16 @@ def main():
             command("wait", "--text", "browser-collection-renamed")
             stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
             assert len(stored["collections"]) == 1 and stored["collections"][0]["name"] == "browser-collection-renamed" and stored["collections"][0]["subscriptions"] == ["browser-renamed"], "Collection rename lost resource references"
-            report["cases"].append({"id": "FE12-reopen-rename-collection", "source": "src/views/SubEditor.vue:1063,1379", "status": "browser_passed"})
-            command("open", report["server_origin"] + "/edit/collections/browser-collection-renamed")
+            report["cases"].append({"id": "FE12-reopen-rename-collection", "source": "src/components/SubListItem.vue:954; src/views/SubEditor.vue:1063,1379", "navigation": "list-edit-button", "status": "browser_passed"})
+            click_in_view('.sub-item-wrapper:has(.sub-item-title[title="browser-collection-renamed"]) button:has(svg[data-icon="pen-nib"])')
+            command("wait", "--fn", "location.pathname === '/edit/collections/browser-collection-renamed'")
             command("wait", ".compare-btn")
             expect_value(".include-subs-trigger input", "browser-renamed", "Collection preview did not load its selected subscription")
             command("click", ".compare-btn")
             command("wait", ".compare-page-wrapper .processed-tr")
             preview = evaluate("Array.from(document.querySelectorAll('.compare-page-wrapper .processed-tr'), row => row.innerText)")
             assert len(preview) == 1 and "fixture" in preview[0] and "127.0.0.1:8388" in preview[0], "Collection preview lost its subscription's parsed node"
-            report["cases"].append({"id": "FE13-preview-collection", "source": "src/views/SubEditor.vue:569,1215; src/views/CompareTable.vue:124", "status": "browser_passed"})
+            report["cases"].append({"id": "FE13-preview-collection", "source": "src/components/SubListItem.vue:954; src/views/SubEditor.vue:569,1215; src/views/CompareTable.vue:124", "navigation": "list-edit-button", "status": "browser_passed"})
             command("open", report["server_origin"] + "/files")
             command("wait", ".sub-item-actions")
             command("click", ".sub-item-actions button:last-child")
