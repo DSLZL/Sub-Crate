@@ -4,13 +4,14 @@ import base64
 import copy
 from datetime import datetime, timezone
 import hashlib
+from http.client import HTTPConnection
 import json
 from pathlib import Path
 import re
 import sys
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
-from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
+from urllib.request import HTTPHandler, HTTPRedirectHandler, ProxyHandler, Request, build_opener
 from upstream import ControlledUpstream, substitute
 
 HERE = Path(__file__).resolve().parent
@@ -21,6 +22,25 @@ if not __debug__:
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
+
+
+class BufferedHTTPConnection(HTTPConnection):
+    def request(self, *args, **kwargs):
+        self.segments = []
+        try:
+            super().request(*args, **kwargs)
+            # Early CORS rejection can close Windows TCP between separate header/body writes.
+            super().send(b''.join(self.segments))
+        finally:
+            del self.segments
+
+    def send(self, data):
+        self.segments.append(data)
+
+
+class BufferedHTTPHandler(HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(BufferedHTTPConnection, req)
 
 
 def check_json(actual, expected, subset=False, path="$"):
@@ -67,7 +87,7 @@ def request(base_url, step):
         parsed = urlsplit(base_url)
         base_url = f"{parsed.scheme}://{parsed.netloc}"
     req = Request(base_url.rstrip("/") + step["path"], data=data, headers=headers, method=step.get("method", "GET"))
-    opener = build_opener(ProxyHandler({}), NoRedirect())
+    opener = build_opener(ProxyHandler({}), NoRedirect(), BufferedHTTPHandler())
     try:
         response = opener.open(req, timeout=5)
     except HTTPError as error:

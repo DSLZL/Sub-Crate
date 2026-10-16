@@ -13,6 +13,40 @@ import runner
 
 
 class RunnerTests(unittest.TestCase):
+    def test_early_http_rejection_receives_one_complete_json_request_without_retry(self):
+        from http.client import HTTPConnection
+        import time
+        bodies, sends = [], []
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                # Match the oracle: reject before reading any request body.
+                bodies.append(self.headers['Content-Length'])
+                self.send_response(403)
+                self.send_header('Connection', 'close')
+                self.send_header('Content-Length', '23')
+                self.end_headers()
+                self.wfile.write(b'CORS origin not allowed')
+                self.close_connection = True
+            def log_message(self, *_args): pass
+        original_send = HTTPConnection.send
+        def delayed_send(connection, data):
+            sends.append(bytes(data))
+            if data.startswith(b'{'): time.sleep(0.05)
+            return original_send(connection, data)
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        try:
+            body = {'name': '订阅🙂', 'zero': 0, 'flag': False}
+            encoded = json.dumps(body, ensure_ascii=False).encode()
+            with patch.object(HTTPConnection, 'send', delayed_send):
+                result = runner.request(f'http://127.0.0.1:{server.server_port}', {'method': 'POST', 'path': '/api/subs', 'body': body})
+            runner.check_response(result, {'status': 403, 'body': 'CORS origin not allowed'})
+            self.assertEqual(bodies, [str(len(encoded))])
+            self.assertEqual(len(sends), 1)
+            self.assertEqual(sends[0].split(b'\r\n\r\n', 1)[1], encoded)
+        finally:
+            server.shutdown(); server.server_close(); thread.join(timeout=5)
+
     def test_artifact_wire_rejects_wrong_headers_order_missing_and_extra(self):
         from artifact_fixtures import expected_requests, check_requests
         expected = expected_requests()

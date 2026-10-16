@@ -296,7 +296,7 @@ def main():
         report["mmdb_fixture_commit"] = mmdb_manifest["commit"]
         mmdb_files = [str((MMDB_FIXTURES / item["file"]).relative_to(ROOT)).replace("\\", "/") for item in mmdb_manifest["files"]]
         for relative in ("rust/Cargo.toml", "rust/Cargo.lock", "rust/examples/script_probe.rs", "rust/examples/support/script_host.rs", "rust/examples/support/dns.rs", "rust/examples/support/mmdb.rs",
-                         "tests/compat/probe.py", "tests/compat/reference.py", "tests/compat/upstream.py", "tests/compat/register.cjs",
+                         "tests/compat/probe.py", "tests/compat/runner.py", "tests/compat/reference.py", "tests/compat/upstream.py", "tests/compat/register.cjs",
                          "tests/compat/host-reference.cjs", "scripts/ip-flag-node.js", "tests/compat/fixtures/script-host-probe.js",
                          "tests/compat/fixtures/script-assertions.js", "tests/compat/fixtures/script-host.js",
                          "tests/compat/fixtures/script-host-contracts.js", "tests/compat/.generated/script-helpers.js",
