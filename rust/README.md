@@ -45,5 +45,8 @@ files during restore; startup recovers an interrupted restore before serving.
 Malformed recovery records stop startup without resetting either file. Let Rust
 recover a pending restore before rolling back to Node. The no-Gist refresh path
 clears the three resource caches used by frontend restore; Gist refresh remains
-pending. Broader HTTP/static edge cases remain M2 acceptance work. Stored excluded
-Node scripts remain intact.
+pending. Merged frontend hosting preserves gzip/identity preferences, compressed
+assets, legacy cache headers, filesystem ETag/Last-Modified validators, conditional
+304 responses and representation metadata on HEAD. Broader HTTP/static edge cases,
+including ranges/preconditions and the standalone frontend proxy, remain M2
+acceptance work. Stored excluded Node scripts remain intact.

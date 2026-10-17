@@ -3,6 +3,7 @@ import argparse
 import base64
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+import gzip
 import hashlib
 import json
 import os
@@ -13,10 +14,10 @@ import shutil
 import socket
 import subprocess
 import time
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlsplit
 
 from reference import BACKEND, HERE, ROOT, execute, oracle, source_provenance
-from runner import check_json, load_cases, request, run_cases
+from runner import BufferedHTTPConnection, check_json, load_cases, request, run_cases
 
 
 @contextmanager
@@ -36,10 +37,12 @@ def listener(binary, environment, output, report, log_prefix="rust", image=None)
                 "--security-opt=no-new-privileges", "--user", f"{os.getuid()}:{os.getgid()}",
                 "-p", f"127.0.0.1:{port}:3000",
                 "--mount", f"type=bind,source={environment['SUB_STORE_DATA_BASE_PATH']},target=/data"]
+        if environment.get("SUB_STORE_FRONTEND_PATH"):
+            argv.extend(["--mount", f"type=bind,source={environment['SUB_STORE_FRONTEND_PATH']},target=/frontend,readonly"])
         for key, value in environment.items():
             if key.startswith("SUB_STORE_") or key == "TZ":
                 value = {"SUB_STORE_DATA_BASE_PATH": "/data", "SUB_STORE_BACKEND_API_PORT": "3000",
-                         "SUB_STORE_BACKEND_API_HOST": "0.0.0.0"}.get(key, value)
+                         "SUB_STORE_BACKEND_API_HOST": "0.0.0.0", "SUB_STORE_FRONTEND_PATH": "/frontend"}.get(key, value)
                 argv.extend(["--env", f"{key}={value}"])
         argv.append(image)
     else:
@@ -217,6 +220,108 @@ def backup_edges(url, state, output, name, offset=None):
     root = json.loads((state / "root.json").read_text(encoding="utf-8"))
     assert all(root[key] == "{}" for key in ("sub-store-cached-resource", "sub-store-cached-headers-resource", "sub-store-cached-script-resource"))
     assert (state / "sub-store.json").read_bytes() == prior_data, "No-Gist refresh changed main state"
+    (output / f"{name}.json").write_text(json.dumps(observations, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return observations
+
+
+def static_fixture(frontend):
+    files = {"index.html": b"<main>unchanged frontend entry</main>",
+             "chunks/main-84da2e86.js": b'console.log("original chunk")',
+             "css/main.css": b"body{}", "sw.js": b"worker",
+             "release-deadbeef.dir/index.html": b"nested entry",
+             "text 中文.txt": "Unicode中文🙂\r\n".encode("utf-8"),
+             ".env": b"must never expose dotfiles"}
+    for name, data in list(files.items()):
+        if name in ("index.html", "chunks/main-84da2e86.js", "css/main.css"):
+            files[name + ".gz"] = gzip.compress(data, mtime=0)
+    files["chunks/only-deadbeef.mjs.gz"] = gzip.compress(b"compressed-only module", mtime=0)
+    for name, data in files.items():
+        path = frontend / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        os.utime(path, (1609459200, 1609459200))
+    (frontend.parent / "secret.txt").write_bytes(b"must never expose parent files")
+
+
+def static_resources(url, state, output, name):
+    """Compare actual binary representations and cache metadata from both services."""
+    parsed = urlsplit(url)
+    frontend = state / "frontend"
+    observations = []
+    before = {path.name: path.read_bytes() for path in (state / "sub-store.json", state / "root.json") if path.exists()}
+    contract_headers = ("content-type", "content-length", "content-encoding", "cache-control",
+                        "etag", "last-modified", "vary", "accept-ranges")
+
+    def send(path, headers=None, method="GET", status=200, expected=None):
+        connection = BufferedHTTPConnection(parsed.hostname, parsed.port, timeout=5)
+        try:
+            connection.request(method, path, headers=headers or {})
+            response = connection.getresponse()
+            body = response.read()
+            raw = {"method": method, "path": path, "request_headers": headers or {},
+                   "status": response.status, "headers": {key.lower(): value for key, value in response.getheaders()},
+                   "body_base64": base64.b64encode(body).decode("ascii")}
+        finally:
+            connection.close()
+        with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
+            evidence.write(json.dumps(raw, ensure_ascii=False) + "\n")
+        assert raw["status"] == status, f"{name} {method} {path}: {raw}"
+        if expected is not None:
+            assert body == expected, f"{name} {method} {path}: body mismatch"
+        observations.append({"method": method, "path": path, "status": raw["status"],
+                             "headers": {key: raw["headers"][key] for key in contract_headers if key in raw["headers"]},
+                             "body_base64": raw["body_base64"]})
+        return raw["headers"]
+
+    path = "/chunks/main-84da2e86.js"
+    plain = (frontend / path.lstrip("/")).read_bytes()
+    compressed = (frontend / (path.lstrip("/") + ".gz")).read_bytes()
+    normal = send(path + "?cache=1", expected=plain)
+    encoded = send(path, {"Accept-Encoding": "gzip"}, expected=compressed)
+    assert normal["content-type"] == "application/javascript; charset=utf-8"
+    assert normal["content-length"] == str(len(plain)) and encoded["content-length"] == str(len(compressed))
+    assert normal["cache-control"] == "public, max-age=31536000, immutable"
+    assert encoded["content-encoding"] == "gzip" and "content-encoding" not in normal
+    assert normal["last-modified"] == "Fri, 01 Jan 2021 00:00:00 GMT"
+    assert re.fullmatch(r'W/"[0-9a-f]+-[0-9a-f]+"', encoded["etag"])
+    send(path, {"Accept-Encoding": "gzip"}, "HEAD", expected=b"")
+    for accept, use_gzip in (("gzip;q=0", False), ("gzip;q=0.5", True),
+                             ("gzip;q=0.5, identity;q=1", False), ("identity;q=0.5, gzip;q=1", True),
+                             ("*;q=0.8", True), ("*;q=0", False), ("gzip;q=0, *;q=1", False),
+                             ("GZIP; q=0.8", True), ("br, gzip;q=.8", True),
+                             ("identity, gzip", False), ("gzip, identity", True),
+                             ("gzip;q=0.4, gzip;q=0.8, identity;q=0.6", True),
+                             ("gzip;q=invalid", False), ("gzip;q=0.8suffix", True)):
+        send(path, {"Accept-Encoding": accept}, expected=compressed if use_gzip else plain)
+    for match in (encoded["etag"], encoded["etag"][2:], '"miss", ' + encoded["etag"], "*"):
+        result = send(path, {"Accept-Encoding": "gzip", "If-None-Match": match}, status=304, expected=b"")
+        assert all(key not in result for key in ("content-type", "content-length", "content-encoding"))
+    send(path, {"Accept-Encoding": "gzip", "If-None-Match": encoded["etag"]}, "HEAD", 304, b"")
+    send(path, {"If-Modified-Since": normal["last-modified"]}, status=304, expected=b"")
+    send(path, {"If-Modified-Since": "invalid"}, expected=plain)
+    send(path, {"If-Modified-Since": "Thu, 31 Dec 2020 23:59:59 GMT"}, expected=plain)
+    send(path, {"If-None-Match": normal["etag"], "Cache-Control": "max-age=0, no-cache"}, expected=plain)
+    send(path, {"If-None-Match": normal["etag"], "If-Modified-Since": "invalid"}, expected=plain)
+    send(path, {"Accept-Encoding": "gzip", "If-None-Match": normal["etag"]}, expected=compressed)
+    send("/sw.js", {"Accept-Encoding": "gzip"}, expected=b"worker")
+    send("/css/main.css?cache=1", {"Accept-Encoding": "gzip"}, expected=(frontend / "css/main.css.gz").read_bytes())
+    send("/chunks/only-deadbeef.mjs", {"Accept-Encoding": "gzip"}, expected=(frontend / "chunks/only-deadbeef.mjs.gz").read_bytes())
+    send(path + ".gz", expected=compressed)
+    send("/text%20%E4%B8%AD%E6%96%87.txt", expected=(frontend / "text 中文.txt").read_bytes())
+    send("/release-deadbeef.dir/index.html", expected=b"nested entry")
+    entry = (frontend / "index.html").read_bytes()
+    for route in ("/", "/settings", "/missing.js", "/.env", "/%2e%2e%2fsecret.txt"):
+        result = send(route, expected=entry)
+        assert result["cache-control"] == "public, max-age=0"
+    send("/settings", {"Accept-Encoding": "gzip"}, expected=(frontend / "index.html.gz").read_bytes())
+    for route in ("/api/not-a-resource", "/download/not-a-resource", "/share/not-a-resource"):
+        send(route, status=404, expected=b"")
+    replacement = gzip.compress(b'console.log("replacement chunk is visible")', mtime=0)
+    (frontend / (path.lstrip("/") + ".gz")).write_bytes(replacement)
+    os.utime(frontend / (path.lstrip("/") + ".gz"), (1609459202, 1609459202))
+    refreshed = send(path, {"Accept-Encoding": "gzip", "If-None-Match": encoded["etag"]}, expected=replacement)
+    assert refreshed["etag"] != encoded["etag"] and refreshed["last-modified"] != encoded["last-modified"]
+    assert all((state / filename).read_bytes() == data for filename, data in before.items()), "Static request changed state"
     (output / f"{name}.json").write_text(json.dumps(observations, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return observations
 
@@ -433,6 +538,24 @@ def main():
             assert (corrupt_restore / "sub-store.json").read_bytes() == old_data
             assert (corrupt_restore / "root.json").read_bytes() == old_root
             report["corrupt_restore_not_reset"] = True
+        for prefix in ("/backend", "/"):
+            static = {}
+            for kind in ("node", "rust"):
+                label = f"{kind}-static-{'root' if prefix == '/' else 'prefix'}"
+                state = output / label
+                state.mkdir()
+                (state / "sub-store.json").write_text(json.dumps(backup, ensure_ascii=False), encoding="utf-8")
+                (state / "root.json").write_text(json.dumps(root, ensure_ascii=False), encoding="utf-8")
+                static_fixture(state / "frontend")
+                env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state), "SUB_STORE_BACKEND_MERGE": "true",
+                       "SUB_STORE_FRONTEND_BACKEND_PATH": prefix, "SUB_STORE_FRONTEND_PATH": str(state / "frontend")}
+                manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
+                with manager as url:
+                    static[kind] = static_resources(url, state, output, label)
+                    report["phases"].append({"name": label, "requests": len(static[kind])})
+            check_json(static["rust"], static["node"])
+        report["merged_frontend_static_http_equal"] = True
+        report["static_prefix_configurations_checked"] = ["/backend", "/"]
         report["exit_code"] = 0
     except Exception as error:
         report["error"] = f"{type(error).__name__}: {error}"

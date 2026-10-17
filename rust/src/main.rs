@@ -2,18 +2,21 @@ mod api;
 mod state;
 
 use http_body_util::{BodyExt, Limited};
+use hyper::body::{Body, Incoming};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use hyper::{Method, Request, body::Incoming};
+use hyper::{HeaderMap, Method, Request};
 use hyper_util::rt::TokioIo;
 use percent_encoding::percent_decode_str;
 use serde_json::{Value, json};
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::env;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, UNIX_EPOCH};
 use tokio::net::TcpListener;
 
 struct Config {
@@ -159,42 +162,130 @@ fn backend_route(path: &str) -> bool {
         .any(|prefix| path == *prefix || path.starts_with(&format!("{prefix}/")))
 }
 
-fn static_file(root: &Path, path: &str, gzip: bool) -> api::Reply {
-    let relative = Path::new(path.trim_start_matches('/'));
-    if path.contains(['\\', '\0'])
-        || relative
-            .components()
-            .any(|part| !matches!(part, Component::Normal(_)))
-    {
-        return api::text(403, "text/plain; charset=utf-8", "");
+fn header<'a>(headers: &'a HeaderMap, name: &str) -> &'a str {
+    headers.get(name).and_then(|value| value.to_str().ok()).unwrap_or("")
+}
+
+fn gzip_preferred(headers: &HeaderMap) -> bool {
+    let raw = header(headers, "accept-encoding");
+    let mut accepted = Vec::new();
+    for (index, part) in raw.split(',').enumerate() {
+        let mut fields = part.trim().split(';');
+        let coding = fields.next().unwrap().trim();
+        if coding.is_empty() || coding.chars().any(char::is_whitespace) {
+            continue;
+        }
+        let quality = fields.find_map(|field| {
+            let (key, value) = field.trim().split_once('=')?;
+            if key != "q" {
+                return None;
+            }
+            let value = value.trim();
+            let quality = (0..=value.len()).rev().filter(|end| value.is_char_boundary(*end))
+                .find_map(|end| value[..end].parse::<f64>().ok()).unwrap_or(0.0);
+            Some(if quality.is_nan() { 0.0 } else { quality })
+        }).unwrap_or(1.0);
+        accepted.push((coding, quality, index));
     }
-    let requested = root.join(relative);
-    let logical = if requested.is_file() {
-        requested
-    } else {
-        root.join("index.html")
+    // The locked negotiator adds identity at the lowest nonzero quality.
+    if !accepted.iter().any(|(coding, _, _)| *coding == "*" || coding.eq_ignore_ascii_case("identity")) {
+        let quality = accepted.iter().map(|(_, quality, _)| if *quality == 0.0 { 1.0 } else { *quality })
+            .fold(1.0, f64::min);
+        accepted.push(("identity", quality, raw.split(',').count()));
+    }
+    let priority = |name: &str| {
+        accepted.iter().filter_map(|(coding, quality, index)| {
+            if coding.eq_ignore_ascii_case(name) {
+                Some((1, *quality, *index))
+            } else if *coding == "*" {
+                Some((0, *quality, *index))
+            } else {
+                None
+            }
+        }).max_by(|a, b| a.partial_cmp(b).unwrap()).map(|(specificity, quality, index)| {
+            (quality, specificity, Reverse(index))
+        }).unwrap_or((0.0, 0, Reverse(usize::MAX)))
     };
-    let compressed = logical.with_file_name(format!(
-        "{}.gz",
-        logical.file_name().unwrap().to_string_lossy()
-    ));
-    let (file, encoding) = if gzip && compressed.is_file() {
-        (compressed, true)
-    } else {
-        (logical.clone(), false)
+    let gzip = priority("gzip");
+    gzip.0 > 0.0 && gzip >= priority("identity")
+}
+
+fn static_fresh(headers: &HeaderMap, etag: &str, modified: std::time::SystemTime) -> bool {
+    let matched = header(headers, "if-none-match");
+    let since = header(headers, "if-modified-since");
+    if (matched.is_empty() && since.is_empty())
+        || header(headers, "cache-control").split(',').any(|part| part.trim() == "no-cache")
+    {
+        return false;
+    }
+    if !matched.is_empty() && matched != "*"
+        && !matched.split(',').any(|part| {
+            part.trim().strip_prefix("W/").unwrap_or(part.trim())
+                == etag.strip_prefix("W/").unwrap_or(etag)
+        })
+    {
+        return false;
+    }
+    since.is_empty() || httpdate::parse_http_date(since).is_ok_and(|date| modified <= date)
+}
+
+fn static_file(root: &Path, path: &str, headers: &HeaderMap) -> api::Reply {
+    let relative = Path::new(path.trim_start_matches('/'));
+    let safe = !path.contains(['\\', '\0'])
+        && !relative.components().any(|part| match part {
+            Component::Normal(name) => name.to_string_lossy().starts_with('.'),
+            _ => true,
+        });
+    let requested = if safe { root.join(relative) } else { root.join("index.html") };
+    let gzip = gzip_preferred(headers);
+    let mut selected = None;
+    for logical in [requested, root.join("index.html")] {
+        if gzip && !logical.is_dir() {
+            let compressed = logical.with_file_name(format!("{}.gz", logical.file_name().unwrap().to_string_lossy()));
+            if compressed.is_file() {
+                selected = Some(compressed);
+                break;
+            }
+        }
+        if logical.is_file() {
+            selected = Some(logical);
+            break;
+        }
+        if logical.is_dir() && logical.join("index.html").is_file() {
+            selected = Some(logical.join("index.html"));
+            break;
+        }
+    }
+    let Some(selected) = selected else {
+        return api::text(404, "text/plain; charset=utf-8", "");
     };
-    let Ok(file) = file.canonicalize() else {
+    let Ok(file) = selected.canonicalize() else {
         return api::text(404, "text/plain; charset=utf-8", "");
     };
     if !file.starts_with(root) {
         return api::text(403, "text/plain; charset=utf-8", "");
     }
-    let Ok(bytes) = std::fs::read(file) else {
+    let Ok(metadata) = std::fs::metadata(&file) else {
         return api::text(404, "text/plain; charset=utf-8", "");
     };
+    let Ok(elapsed) = metadata.modified().and_then(|date| date.duration_since(UNIX_EPOCH).map_err(io::Error::other)) else {
+        return api::text(404, "text/plain; charset=utf-8", "");
+    };
+    let modified = UNIX_EPOCH + Duration::from_secs(elapsed.as_secs());
+    let etag = format!("W/\"{:x}-{:x}\"", metadata.len(), (elapsed.as_nanos() + 500_000) / 1_000_000);
+    let fresh = static_fresh(headers, &etag, modified);
+    let bytes = if fresh {
+        Vec::new()
+    } else if let Ok(bytes) = std::fs::read(&file) {
+        bytes
+    } else {
+        return api::text(404, "text/plain; charset=utf-8", "");
+    };
+    let encoding = selected.extension().is_some_and(|extension| extension == "gz");
+    let logical = if encoding { selected.with_extension("") } else { selected };
     let content_type = match logical.extension().and_then(|s| s.to_str()).unwrap_or("") {
         "html" => "text/html; charset=utf-8",
-        "js" | "mjs" => "text/javascript; charset=utf-8",
+        "js" | "mjs" => "application/javascript; charset=utf-8",
         "css" => "text/css; charset=utf-8",
         "json" | "map" => "application/json; charset=utf-8",
         "svg" => "image/svg+xml",
@@ -203,6 +294,8 @@ fn static_file(root: &Path, path: &str, gzip: bool) -> api::Reply {
         "ico" => "image/x-icon",
         "woff" => "font/woff",
         "woff2" => "font/woff2",
+        "txt" => "text/plain; charset=utf-8",
+        "wasm" => "application/wasm",
         _ => "application/octet-stream",
     };
     let name = logical.file_name().unwrap().to_string_lossy();
@@ -210,7 +303,11 @@ fn static_file(root: &Path, path: &str, gzip: bool) -> api::Reply {
         .rsplit_once('-')
         .and_then(|(_, tail)| tail.split_once('.'))
         .is_some_and(|(hash, _)| hash.len() == 8 && hash.bytes().all(|b| b.is_ascii_hexdigit()));
-    let mut response = api::text(200, content_type, bytes);
+    let length = bytes.len();
+    let mut response = api::text(if fresh { 304 } else { 200 }, content_type, bytes);
+    response.headers_mut().insert("etag", etag.parse().unwrap());
+    response.headers_mut().insert("last-modified", httpdate::fmt_http_date(modified).parse().unwrap());
+    response.headers_mut().insert("accept-ranges", "bytes".parse().unwrap());
     response
         .headers_mut()
         .insert("vary", "Accept-Encoding".parse().unwrap());
@@ -224,7 +321,12 @@ fn static_file(root: &Path, path: &str, gzip: bool) -> api::Reply {
         .parse()
         .unwrap(),
     );
-    if encoding {
+    if fresh {
+        response.headers_mut().remove("content-type");
+    } else {
+        response.headers_mut().insert("content-length", length.into());
+    }
+    if encoding && !fresh {
         response
             .headers_mut()
             .insert("content-encoding", "gzip".parse().unwrap());
@@ -254,6 +356,11 @@ async fn handle(
     let mut response = response;
     config.headers(&mut response, &raw_origin);
     if head {
+        if !response.status().is_informational() && response.status().as_u16() != 204 && response.status().as_u16() != 304
+            && let Some(length) = response.body().size_hint().exact()
+        {
+            response.headers_mut().insert("content-length", length.into());
+        }
         *response.body_mut() = http_body_util::Full::new(hyper::body::Bytes::new());
     }
     Ok(response)
@@ -293,16 +400,7 @@ async fn route(
                 && !backend_route(&raw_path)
                 && method == Method::GET
             {
-                let gzip = request
-                    .headers()
-                    .get("accept-encoding")
-                    .and_then(|value| value.to_str().ok())
-                    .is_some_and(|value| {
-                        value
-                            .split(',')
-                            .any(|part| part.trim() == "gzip" || part.trim() == "gzip;q=1")
-                    });
-                return static_file(root, &decoded, gzip);
+                return static_file(root, &decoded, request.headers());
             }
             return api::text(404, "text/plain; charset=utf-8", "");
         }

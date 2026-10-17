@@ -1129,6 +1129,7 @@ dependencies = [
  "base64",
  "getrandom 0.4.3",
  "http-body-util",
+ "httpdate",
  "hyper",
  "hyper-rustls",
  "hyper-util",
