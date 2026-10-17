@@ -197,7 +197,7 @@ def main():
         command("wait", 'input[placeholder="最大保存日志条数(默认: 0=关闭)"]')
         command("fill", 'input[placeholder="最大保存日志条数(默认: 0=关闭)"]', "100")
         expect_value('input[placeholder="最大保存日志条数(默认: 0=关闭)"]', "100", "Log retention did not reach the form before saving")
-        command("click", ".config-card .save-btn")
+        click_in_view(".config-card .save-btn")
         command("wait", "--text", "保存成功")
         expect_value('input[placeholder="最大保存日志条数(默认: 0=关闭)"]', "100", "Saved log retention disappeared from the editor")
         stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
