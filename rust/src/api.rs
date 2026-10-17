@@ -36,13 +36,14 @@ fn success(data: Option<Value>, status: u16) -> Reply {
     if let Some(data) = data {
         value["data"] = data;
     }
-    text(status, "application/json; charset=utf-8", value.to_string())
+    // The legacy middleware sets text/plain before Express serializes JSON.
+    text(status, "text/plain; charset=utf-8", value.to_string())
 }
 
 pub fn failure(status: u16, code: &str, kind: &str, message: &str) -> Reply {
     text(
         status,
-        "application/json; charset=utf-8",
+        "text/plain; charset=utf-8",
         json!({
             "status":"failed", "error":{"code":code, "type":kind, "message":message}
         })
@@ -66,7 +67,7 @@ fn pending(message: &str) -> Reply {
 fn invalid_backup() -> Reply {
     text(
         500,
-        "application/json; charset=utf-8",
+        "text/plain; charset=utf-8",
         json!({"status":"failed", "error":{
             "code":"INVALID_BACKUP_DATA", "type":"RequestInvalidError",
             "message":"Invalid backup data, failed to restore!",
@@ -508,7 +509,7 @@ pub fn dispatch(
         } else if !subscription {
             text(
                 500,
-                "application/json; charset=utf-8",
+                "text/plain; charset=utf-8",
                 json!({"status":"failed", "error":{
                     "code":"SUBSCRIPTION_NOT_FOUND", "type":"ResourceNotFoundError",
                     "message":format!("{label} {name} does not exist"), "details":404
@@ -558,18 +559,15 @@ pub fn dispatch(
         if item_name.contains('/') {
             return invalid("INVALID_NAME", &format!("{label} {item_name} is invalid"));
         }
-        if next[key]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|old| match (old.get("name"), item.get("name")) {
+        if next[key].as_array().unwrap().iter().any(|old| {
+            match (old.get("name"), item.get("name")) {
                 (Some(Value::Number(old)), Some(Value::Number(new))) => {
                     old.as_f64() == new.as_f64()
                 }
                 (_, Some(Value::Array(_) | Value::Object(_))) => false,
                 (old, new) => old == new,
-            })
-        {
+            }
+        }) {
             return invalid(
                 "DUPLICATE_KEY",
                 &format!("{label} {item_name} already exists."),

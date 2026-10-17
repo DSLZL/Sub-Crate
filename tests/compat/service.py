@@ -166,8 +166,9 @@ def crud_edges(url, state, output, name):
         with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
             evidence.write(json.dumps(observation, ensure_ascii=False) + "\n")
         assert response["status"] == status, f"{name} {method} {path}: {response}"
-        assert response["headers"]["content-type"] == "application/json; charset=utf-8"
-        observation["response"] = {"status": response["status"], "json": json.loads(response["body"])}
+        content_type = response["headers"]["content-type"]
+        assert content_type == ("application/json; charset=utf-8" if path == "/api/storage" else "text/plain; charset=utf-8")
+        observation["response"] = {"status": response["status"], "content_type": content_type, "json": json.loads(response["body"])}
         observations.append(observation)
         return observation["response"]["json"]
 
@@ -199,7 +200,7 @@ def crud_edges(url, state, output, name):
     assert stored["collections"][0]["subscriptions"] == ["1", "0", 1, 0]
     assert stored["artifacts"][0]["source"] == "renamed🙂", "Permanent delete unexpectedly rewrote artifact references"
 
-    for plural, singular, label in (("subs", "sub", "Subscription"), ("collections", "collection", "Collection")):
+    for plural, singular in (("subs", "sub"), ("collections", "collection")):
         path = f"/api/{singular}/missing"
         before = (state / "sub-store.json").read_bytes()
         for mode in ("", "?mode=", "?mode=permanent", "?mode=invalid"):
@@ -265,9 +266,9 @@ def backup_edges(url, state, output, name, offset=None):
                                        "state": stored, "root": root}, ensure_ascii=False) + "\n")
         assert response["status"] == status, f"{name} {path}: {response}"
         parsed = json.loads(response["body"])
+        assert response["headers"]["content-type"] == ("application/json; charset=utf-8" if filename is not None else "text/plain; charset=utf-8")
         assert root["opaque"] == {"text": "根缓存🙂\r\n", "zero": 0, "flag": False, "nil": None}
         if filename is not None:
-            assert response["headers"]["content-type"] == "application/json; charset=utf-8"
             assert response["headers"]["access-control-expose-headers"] == "content-disposition"
             disposition = response["headers"]["content-disposition"]
             match = re.fullmatch(r'attachment; filename="([^"\r\n]+)"', disposition)
