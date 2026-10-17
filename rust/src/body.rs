@@ -177,7 +177,6 @@ async fn inflate(mut body: Incoming, gzip: bool, limit: usize) -> Result<Bytes, 
                     break;
                 }
                 decoder = Decompress::new_gzip(15);
-                finished = false;
             }
             let mut decoded = [0u8; 8192];
             let before_in = decoder.total_in();
