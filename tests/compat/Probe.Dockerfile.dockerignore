@@ -1,0 +1,15 @@
+**
+!rust/
+!rust/Cargo.toml
+!rust/Cargo.lock
+!rust/examples/
+!rust/examples/**
+!scripts/
+!scripts/ip-flag-node.js
+!tests/
+!tests/compat/
+!tests/compat/fixtures/
+!tests/compat/fixtures/**
+!tests/compat/.generated/
+!tests/compat/.generated/script-helpers.js
+!tests/compat/.generated/script-helper-licenses.txt

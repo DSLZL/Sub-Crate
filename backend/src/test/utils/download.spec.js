@@ -160,6 +160,42 @@ describe('download github proxy regex', function () {
         expect(capturedUrls).to.deep.equal(['https://example.com/archive.txt']);
     });
 
+    it('reads native absolute paths without making an HTTP request', async function () {
+        const filename = path.join(tempDir, '本地 subscription🙂.txt');
+        const content = '本地订阅🙂\r\n';
+        fs.writeFileSync(filename, content, 'utf8');
+
+        expect(await download(filename)).to.equal(content);
+        expect(
+            await download(
+                `${filename.replace(/\\/g, '/')}#noFlow`,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                { returnRaw: true },
+            ),
+        ).to.deep.equal({ result: content, raw: content });
+        expect(capturedUrls).to.deep.equal([]);
+    });
+
+    it('reports missing native files without falling back to HTTP', async function () {
+        const filename = path.join(tempDir, 'missing.txt');
+        let error;
+        try {
+            await download(filename);
+        } catch (e) {
+            error = e;
+        }
+
+        expect(error).to.be.instanceOf(Error);
+        expect(error.message).to.equal(`无法从该路径读取文本内容: ${filename}`);
+        expect(capturedUrls).to.deep.equal([]);
+    });
+
     it('uses download defaults when settings are missing', async function () {
         delete state[SETTINGS_KEY];
 

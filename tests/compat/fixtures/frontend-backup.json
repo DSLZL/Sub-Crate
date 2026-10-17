@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "2.0",
+  "settings": {"logsMaxCount": 0},
+  "subs": [{"name": "ui-restored-sub", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "unknown": false, "process": [{"type": "Script Operator", "args": {"mode": "script", "content": "// 保留旧脚本🙂\r\nrequire('node:fs')\r\n"}}]}],
+  "collections": [{"name": "ui-restored-col", "subscriptions": ["ui-restored-sub"], "unknown": 0}],
+  "files": [{"name": "ui-restored-file", "source": "local", "type": "file", "content": "浏览器恢复🙂\r\n", "unknown": null}],
+  "artifacts": [],
+  "tokens": [],
+  "modules": [],
+  "archives": [],
+  "unknownUI": {"nil": null, "zero": 0, "flag": false, "empty": ""}
+}

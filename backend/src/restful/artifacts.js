@@ -66,7 +66,7 @@ async function restoreArtifacts(_, res) {
     try {
         const { gistToken, syncPlatform } = $.read(SETTINGS_KEY) || {};
         if (!gistToken) {
-            return Promise.reject('未设置 GitHub Token！');
+            throw new Error('未设置 GitHub Token！');
         }
         const manager = new Gist({
             token: gistToken,

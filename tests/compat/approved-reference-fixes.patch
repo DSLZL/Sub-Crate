@@ -1,0 +1,69 @@
+diff --git a/backend/src/restful/artifacts.js b/backend/src/restful/artifacts.js
+index 65dbfd3..6383fdc 100644
+--- a/backend/src/restful/artifacts.js
++++ b/backend/src/restful/artifacts.js
+@@ -69 +69 @@ async function restoreArtifacts(_, res) {
+-            return Promise.reject('未设置 GitHub Token！');
++            throw new Error('未设置 GitHub Token！');
+diff --git a/backend/src/test/runtime/runtime-manifest.spec.js b/backend/src/test/runtime/runtime-manifest.spec.js
+index b97608a..579980d 100644
+--- a/backend/src/test/runtime/runtime-manifest.spec.js
++++ b/backend/src/test/runtime/runtime-manifest.spec.js
+@@ -13,0 +14 @@ function createFixture() {
++    const directoryLinkType = process.platform === 'win32' ? 'junction' : 'dir';
+@@ -19 +20 @@ function createFixture() {
+-        'dir',
++        directoryLinkType,
+@@ -24 +25 @@ function createFixture() {
+-        'dir',
++        directoryLinkType,
+diff --git a/backend/src/test/utils/download.spec.js b/backend/src/test/utils/download.spec.js
+index f5e729f..ee40fe5 100644
+--- a/backend/src/test/utils/download.spec.js
++++ b/backend/src/test/utils/download.spec.js
+@@ -162,0 +163,36 @@ describe('download github proxy regex', function () {
++    it('reads native absolute paths without making an HTTP request', async function () {
++        const filename = path.join(tempDir, '本地 subscription🙂.txt');
++        const content = '本地订阅🙂\r\n';
++        fs.writeFileSync(filename, content, 'utf8');
++
++        expect(await download(filename)).to.equal(content);
++        expect(
++            await download(
++                `${filename.replace(/\\/g, '/')}#noFlow`,
++                undefined,
++                undefined,
++                undefined,
++                undefined,
++                undefined,
++                undefined,
++                undefined,
++                { returnRaw: true },
++            ),
++        ).to.deep.equal({ result: content, raw: content });
++        expect(capturedUrls).to.deep.equal([]);
++    });
++
++    it('reports missing native files without falling back to HTTP', async function () {
++        const filename = path.join(tempDir, 'missing.txt');
++        let error;
++        try {
++            await download(filename);
++        } catch (e) {
++            error = e;
++        }
++
++        expect(error).to.be.instanceOf(Error);
++        expect(error.message).to.equal(`无法从该路径读取文本内容: ${filename}`);
++        expect(capturedUrls).to.deep.equal([]);
++    });
++
+diff --git a/backend/src/utils/download.js b/backend/src/utils/download.js
+index 167892a..6ce908b 100644
+--- a/backend/src/utils/download.js
++++ b/backend/src/utils/download.js
+@@ -19,0 +20 @@ import getFs from '@/runtime/fs';
++import getPath from '@/runtime/path';
+@@ -330 +331 @@ export default async function download(
+-    } else if (url?.startsWith('/')) {
++    } else if (url?.startsWith('/') || (isNode && getPath().isAbsolute(url))) {

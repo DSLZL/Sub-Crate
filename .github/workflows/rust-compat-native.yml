@@ -1,0 +1,165 @@
+name: Rust compatibility native baseline
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/rust-server-parity]
+    paths: [backend/**, scripts/ip-flag-node.js, rust/**, tests/compat/**, .github/workflows/rust-compat-native.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  native-baseline:
+    name: Native ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            runner: ubuntu-24.04
+            unit-mode: unit
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+            unit-mode: unit
+          - target: windows-x64
+            runner: windows-2025
+            unit-mode: unit-windows
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify approved reference fixes
+        run: |
+          git diff --no-ext-diff --binary --no-color --unified=0 9cc6b5fac966993364ae33da8797f446bbf7f571 -- backend scripts/ip-flag-node.js > "$RUNNER_TEMP/reference-fixes.patch"
+          diff --strip-trailing-cr -u tests/compat/approved-reference-fixes.patch "$RUNNER_TEMP/reference-fixes.patch"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24.16.0
+          package-manager-cache: false
+      - name: Install locked development dependencies
+        run: |
+          npm install --global pnpm@11.0.9
+          pnpm --dir backend install --frozen-lockfile
+          pnpm --dir tests/compat install --frozen-lockfile
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+          rustup override set 1.98.0
+      - name: Runner self-checks
+        run: python -m unittest discover -s tests/compat -p test_runner.py
+      - name: Build general JS helpers
+        run: python tests/compat/reference.py --node "$(node -p 'process.execPath')" --mode helpers
+      - name: Native Rust JS probe
+        if: ${{ !cancelled() }}
+        run: python tests/compat/probe.py --node "$(node -p 'process.execPath')"
+      - name: Node HTTP contract slice
+        if: ${{ !cancelled() }}
+        run: python tests/compat/reference.py --node "$(node -p 'process.execPath')" --mode contracts
+      - name: Node unit suite including reference regressions
+        if: ${{ !cancelled() }}
+        run: python tests/compat/reference.py --node "$(node -p 'process.execPath')" --mode ${{ matrix.unit-mode }}
+      - name: Preserve platform evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: m1-native-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: tests/compat/evidence/
+          if-no-files-found: error
+          retention-days: 30
+
+  frontend-baseline:
+    name: Unchanged frontend (headless Chrome)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: sub-store-org/Sub-Store-Front-End
+          ref: 4bd7b0acbe65466b933ccea14fc61dbebe036ead
+          path: .compat-frontend
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24.16.0
+          package-manager-cache: false
+      - name: Install locked frontend and backend dependencies
+        run: |
+          mkdir -p tests/compat/evidence/frontend-setup
+          npm install --global pnpm@11.0.9 agent-browser@0.27.3 2>&1 | tee tests/compat/evidence/frontend-setup/tools.log
+          pnpm --dir backend install --frozen-lockfile 2>&1 | tee tests/compat/evidence/frontend-setup/backend-install.log
+          pnpm --dir .compat-frontend install --frozen-lockfile 2>&1 | tee tests/compat/evidence/frontend-setup/frontend-install.log
+      - name: Build the unchanged frontend with type checks
+        run: pnpm --dir .compat-frontend build 2>&1 | tee tests/compat/evidence/frontend-setup/frontend-build.log
+      - name: Install headless Chrome and Linux dependencies
+        run: agent-browser install --with-deps 2>&1 | tee tests/compat/evidence/frontend-setup/browser-install.log
+      - name: Browser UI, persisted state and HAR contracts
+        run: |
+          python tests/compat/frontend.py --node "$(node -p 'process.execPath')" \
+            --frontend "$GITHUB_WORKSPACE/.compat-frontend" \
+            --browser "$(npm root --global)/agent-browser/bin/agent-browser-linux-x64"
+      - name: Preserve browser evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: m1-frontend-linux-x64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: tests/compat/evidence/
+          if-no-files-found: error
+          retention-days: 30
+
+  docker-baseline:
+    name: Docker ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            runner: ubuntu-24.04
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24.16.0
+          package-manager-cache: false
+      - name: Install locked oracle dependencies
+        run: |
+          npm install --global pnpm@11.0.9
+          pnpm --dir backend install --frozen-lockfile
+          pnpm --dir tests/compat install --frozen-lockfile
+      - name: Runner self-checks
+        run: python -m unittest discover -s tests/compat -p test_runner.py
+      - name: Build general JS helpers
+        run: python tests/compat/reference.py --node "$(node -p 'process.execPath')" --mode helpers
+      - name: Container release binary, HTTP, persistence and restart contracts
+        run: python tests/compat/probe.py --node "$(node -p 'process.execPath')" --docker
+      - name: Preserve container evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: m1-docker-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: tests/compat/evidence/
+          if-no-files-found: error
+          retention-days: 30
