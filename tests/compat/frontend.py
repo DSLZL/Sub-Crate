@@ -153,11 +153,20 @@ def main():
         command("wait", selector)
         # The CLI's scrollintoview inherits smooth scrolling and returns before it settles.
         evaluate("(() => { document.querySelector(" + json.dumps(selector) + ").scrollIntoView({block:'center',inline:'center',behavior:'instant'}); return true })()")
-        command("wait", "--fn", """(() => {
+        command("wait", "--fn", """(async () => {
             const el = document.querySelector(""" + json.dumps(selector) + """), r = el.getBoundingClientRect();
+            await new Promise(requestAnimationFrame);
+            await new Promise(requestAnimationFrame);
+            const settled = el.getBoundingClientRect();
+            let animationsStopped = el.getAnimations({subtree:true}).every(animation => animation.playState !== 'running');
+            for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+                animationsStopped = animationsStopped && parent.getAnimations().every(animation => animation.playState !== 'running');
+            }
             return r.width > 0 && r.height > 0 && r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth
                 && el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2))
-                && (el.closest('.config-card') || el).getAnimations({subtree:true}).every(animation => animation.playState !== 'running');
+                && !el.matches(':disabled, [aria-disabled="true"], .nut-button--loading')
+                && document.fonts.status === 'loaded' && animationsStopped
+                && ['x', 'y', 'width', 'height'].every(key => Math.abs(r[key] - settled[key]) < 0.25);
         })()""")
         command("click", selector)
 
@@ -210,7 +219,22 @@ def main():
         command("wait", 'input[placeholder="最大保存日志条数(默认: 0=关闭)"]')
         command("fill", 'input[placeholder="最大保存日志条数(默认: 0=关闭)"]', "100")
         expect_value('input[placeholder="最大保存日志条数(默认: 0=关闭)"]', "100", "Log retention did not reach the form before saving")
+        evaluate("""(() => {
+            const button = document.querySelector('.config-card .save-btn');
+            window.__compatSaveClick = [];
+            for (const type of ['pointerdown', 'pointerup', 'click']) {
+                document.addEventListener(type, event => window.__compatSaveClick.push({
+                    type, trusted: event.isTrusted, inSaveButton: button.contains(event.target),
+                    x: event.clientX, y: event.clientY, target: event.target.tagName,
+                    buttonRect: button.getBoundingClientRect().toJSON()
+                }), {capture:true, once:true});
+            }
+            return true;
+        })()""")
         click_in_view(".config-card .save-btn")
+        report["settings_save_click"] = evaluate("(() => { const events = window.__compatSaveClick; delete window.__compatSaveClick; return events })()")
+        assert any(event["type"] == "click" and event["trusted"] and event["inSaveButton"]
+                   for event in report["settings_save_click"]), "Physical save click did not reach its visible button"
         command("wait", "--text", "保存成功")
         expect_value('input[placeholder="最大保存日志条数(默认: 0=关闭)"]', "100", "Saved log retention disappeared from the editor")
         stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))

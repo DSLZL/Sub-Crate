@@ -281,7 +281,9 @@ fn static_range(
         let raw = raw.trim_start();
         let prefix = raw
             .char_indices()
-            .take_while(|(index, ch)| ch.is_ascii_digit() || (*index == 0 && matches!(*ch, '+' | '-')))
+            .take_while(|(index, ch)| {
+                ch.is_ascii_digit() || (*index == 0 && matches!(*ch, '+' | '-'))
+            })
             .map(|(index, ch)| index + ch.len_utf8())
             .last()?;
         raw[..prefix].parse::<f64>().ok()
