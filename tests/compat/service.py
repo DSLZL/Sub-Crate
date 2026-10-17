@@ -152,6 +152,103 @@ def state_edges(url, state, keys, output, name):
     return observations
 
 
+def crud_edges(url, state, output, name):
+    """Subscription/collection CRUD with exact typed values and persisted state."""
+    observations = []
+
+    def send(method, path, body=None, status=200):
+        step = {"method": method, "path": path}
+        if body is not None:
+            step["body"] = body
+        response = request(url, step)
+        observation = {**step, "response": response,
+                       "state": json.loads((state / "sub-store.json").read_text(encoding="utf-8"))}
+        with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
+            evidence.write(json.dumps(observation, ensure_ascii=False) + "\n")
+        assert response["status"] == status, f"{name} {method} {path}: {response}"
+        assert response["headers"]["content-type"] == "application/json; charset=utf-8"
+        observation["response"] = {"status": response["status"], "json": json.loads(response["body"])}
+        observations.append(observation)
+        return observation["response"]["json"]
+
+    for old, renamed in (("1", "renamed🙂"), ("0", "zero-renamed")):
+        patched = send("PATCH", f"/api/sub/{old}", {"name": renamed, "subscriptions": ["ignored"]})["data"]
+        assert patched["subscriptions"] == ["reserved"], "PATCH removed the existing reserved subscription field"
+        assert patched["unknown"] == {"zero": 0, "flag": False, "text": "保留🙂\r\n"}
+    send("PATCH", "/api/collection/1", {"name": "collection-renamed"})
+    document = send("GET", "/api/storage")["subs"]
+    assert [item["name"] for item in document] == ["renamed🙂", "zero-renamed"]
+    stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+    assert stored["collections"][0]["subscriptions"] == ["renamed🙂", "1", "zero-renamed", "0", 1, 0]
+    expected = ["renamed🙂", "01", "renamed🙂", "renamed🙂", "zero-renamed", "zero-renamed", None,
+                "renamed🙂", "renamed🙂", "zero-renamed", [], {}]
+    check_json([item["source"] for item in stored["artifacts"] if item["type"] == "subscription"], expected)
+    check_json([item["sourceName"] for item in stored["files"] if item["sourceType"] == "subscription"], expected)
+    check_json([item["source"] for item in stored["artifacts"] if item["type"] == "collection"],
+               ["collection-renamed", 1, True, [1]])
+    before = (state / "sub-store.json").read_bytes()
+    assert "subscriptions" not in send("GET", "/api/sub/" + quote("renamed🙂", safe=""))["data"]
+    assert "subscriptions" not in send("GET", "/api/subs")["data"][0]
+    assert (state / "sub-store.json").read_bytes() == before, "GET persisted a live-object cleanup prematurely"
+    send("PATCH", "/api/sub/" + quote("renamed🙂", safe=""), {})
+    assert "subscriptions" not in json.loads((state / "sub-store.json").read_text(encoding="utf-8"))["subs"][0]
+    send("DELETE", "/api/sub/" + quote("renamed🙂", safe=""))
+    send("DELETE", "/api/sub/zero-renamed?mode=permanent")
+    send("DELETE", "/api/collection/collection-renamed?mode=")
+    stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+    assert stored["collections"][0]["subscriptions"] == ["1", "0", 1, 0]
+    assert stored["artifacts"][0]["source"] == "renamed🙂", "Permanent delete unexpectedly rewrote artifact references"
+
+    for plural, singular, label in (("subs", "sub", "Subscription"), ("collections", "collection", "Collection")):
+        path = f"/api/{singular}/missing"
+        before = (state / "sub-store.json").read_bytes()
+        for mode in ("", "?mode=", "?mode=permanent", "?mode=invalid"):
+            error = send("DELETE", path + mode, status=500)["error"]
+            assert error["code"] == ("INVALID_DELETE_MODE" if mode.endswith("invalid") else "RESOURCE_NOT_FOUND")
+        send("PATCH", path, {}, 404)
+        if plural == "collections":
+            error = send("GET", path, status=500)["error"]
+            check_json(error, {"code": "SUBSCRIPTION_NOT_FOUND", "type": "ResourceNotFoundError",
+                               "message": "Collection missing does not exist", "details": 404})
+        assert (state / "sub-store.json").read_bytes() == before, "Missing-resource requests changed state"
+        for item in ({"name": ""}, {"name": None}, {}, {"name": False}, {"name": 0}, {"name": 1.5}):
+            send("POST", f"/api/{plural}", item, 201)
+            before = (state / "sub-store.json").read_bytes()
+            assert send("POST", f"/api/{plural}", item, 500)["error"]["code"] == "DUPLICATE_KEY"
+            assert (state / "sub-store.json").read_bytes() == before
+        for item in ({"name": ["alias"]}, {"name": {"alias": True}}):
+            send("POST", f"/api/{plural}", item, 201)
+            send("POST", f"/api/{plural}", item, 201)
+        before = (state / "sub-store.json").read_bytes()
+        for value in ("bad/name", ["bad/name"]):
+            assert send("POST", f"/api/{plural}", {"name": value}, 500)["error"]["code"] == "INVALID_NAME"
+        assert (state / "sub-store.json").read_bytes() == before
+        for position in ("top", "bottom"):
+            send("PATCH", "/api/settings", {"appearanceSetting": {"createItemPosition": position}})
+            send("POST", f"/api/{plural}", {"name": position, "subscriptions": ["keep-only-on-collections"]}, 201)
+            items = send("GET", f"/api/{plural}")["data"]
+            assert items[0 if position == "top" else -1]["name"] == position
+        items = [{"name": "editable", "subscriptions": ["replace-keeps-this"], "unknown": {"nil": None},
+                  "editorLanguage": "yaml", "previewLanguage": "bad",
+                  "process": [None, False, {"type": "Script Operator", "args": {"content": "require('node:fs')\r\n🙂", "editorLanguage": "plaintext", "previewLanguage": "bad"}}]},
+                 {"name": "duplicate", "subscriptions": []}, {"name": "duplicate", "subscriptions": []}]
+        send("PUT", f"/api/{plural}", items)
+        patch_path = f"/api/{singular}/editable"
+        for value in (None, False, 0, ""):
+            changed = send("PATCH", patch_path, {"name": value, "subscriptions": ["patch-input"], "opaque": value})["data"]
+            assert changed["name"] == "editable" and changed["unknown"] == {"nil": None}
+            assert changed["subscriptions"] == (["replace-keeps-this"] if plural == "subs" else ["patch-input"])
+            assert changed["process"] == [None, False, {"type": "Script Operator", "args": {"content": "require('node:fs')\r\n🙂", "editorLanguage": "plaintext"}}]
+        before = (state / "sub-store.json").read_bytes()
+        assert send("DELETE", patch_path + "?mode=invalid", status=500)["error"]["code"] == "INVALID_DELETE_MODE"
+        assert (state / "sub-store.json").read_bytes() == before
+        send("PATCH", patch_path, {"name": "duplicate"})
+        send("DELETE", f"/api/{singular}/duplicate?mode=permanent")
+        remaining = send("GET", f"/api/{plural}")["data"]
+        check_json(remaining, [{"name": "duplicate", "subscriptions": []}, {"name": "duplicate", "subscriptions": []}])
+    return observations
+
+
 def backup_edges(url, state, output, name, offset=None):
     observations = []
     local_zone = datetime.now().astimezone().tzinfo if offset is None else timezone(timedelta(minutes=offset))
@@ -444,6 +541,63 @@ def main():
                 report["phases"].append({"name": f"{kind}-edges", "requests": len(edges[kind])})
         check_json(edges["rust"], edges["node"])
         report["settings_and_recipient_http_state_equal"] = True
+        unknown = {"zero": 0, "flag": False, "text": "保留🙂\r\n"}
+        sources = ["1", "01", 1, True, 0, False, None, ["1"], [1], [0], [], {}]
+        seed = {"schemaVersion": "2.0", "settings": {}, "rules": [], "modules": [], "tokens": [], "archives": [],
+                "subs": [{"name": name, "subscriptions": ["reserved"], "unknown": unknown} for name in ("1", "0")],
+                "collections": [{"name": "refs", "subscriptions": ["1", "1", "0", "0", 1, 0]}, {"name": "1", "subscriptions": []}],
+                "artifacts": [{"name": f"sub-{index}", "type": "subscription", "source": value} for index, value in enumerate(sources)]
+                             + [{"name": f"col-{index}", "type": "collection", "source": value} for index, value in enumerate(["1", 1, True, [1]])],
+                "files": [{"name": f"sub-{index}", "sourceType": "subscription", "sourceName": value} for index, value in enumerate(sources)],
+                "opaque": unknown}
+        crud = {}
+        final_crud = {}
+        for kind in ("node", "rust"):
+            state = output / f"{kind}-crud"
+            state.mkdir()
+            (state / "sub-store.json").write_text(json.dumps(seed, ensure_ascii=False), encoding="utf-8")
+            env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}
+            label = f"{kind}-crud"
+            manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
+            with manager as url:
+                if kind == "rust":
+                    before = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+                    saved = state / "saved-state.json"
+                    (state / "sub-store.json").rename(saved)
+                    (state / "sub-store.json").mkdir()
+                    try:
+                        failed = request(url, {"method": "PATCH", "path": "/api/sub/1", "body": {"name": "must-not-commit"}})
+                        unchanged = request(url, {"path": "/api/storage"})
+                        (output / "crud-write-failure.json").write_text(json.dumps({"before": before, "failure": failed, "after": unchanged}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                        assert failed["status"] == 500 and json.loads(failed["body"])["error"]["code"] == "STATE_WRITE_FAILED"
+                        assert unchanged["status"] == 200
+                        check_json(json.loads(unchanged["body"]), before)
+                    finally:
+                        (state / "sub-store.json").rmdir()
+                        saved.rename(state / "sub-store.json")
+                    report["crud_failed_rename_preserved_all_references"] = True
+                crud[kind] = crud_edges(url, state, output, label)
+                final_crud[kind] = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+                report["phases"].append({"name": label, "requests": len(crud[kind])})
+            manager = oracle(args.node, env, output, report, label + "-restart") if kind == "node" else listener(args.binary, env, output, report, label + "-restart", image)
+            with manager as url:
+                response = request(url, {"path": "/api/storage"})
+                (output / f"{label}-restart.json").write_text(json.dumps(response, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                assert response["status"] == 200
+                check_json(json.loads(response["body"]), final_crud[kind])
+        check_json(crud["rust"], crud["node"])
+        check_json(final_crud["rust"], final_crud["node"])
+        rollback = output / "crud-node-rollback"
+        rollback.mkdir()
+        for filename in ("sub-store.json", "root.json"):
+            shutil.copyfile(output / "rust-crud" / filename, rollback / filename)
+        with oracle(args.node, {**environment, "SUB_STORE_DATA_BASE_PATH": str(rollback)}, output, report, "crud-node-rollback") as url:
+            response = request(url, {"path": "/api/storage"})
+            (output / "crud-node-rollback.json").write_text(json.dumps(response, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            assert response["status"] == 200
+            check_json(json.loads(response["body"]), final_crud["rust"])
+        report["crud_http_and_state_equal"] = True
+        report["crud_restart_and_node_rollback_checked"] = True
         backup = json.loads((HERE / "fixtures/frontend-backup.json").read_text(encoding="utf-8"))
         root = {"opaque": {"text": "根缓存🙂\r\n", "zero": 0, "flag": False, "nil": None}, "sub-store": "previous backup"}
         for key in ("sub-store-cached-resource", "sub-store-cached-headers-resource", "sub-store-cached-script-resource"):
