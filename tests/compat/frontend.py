@@ -156,7 +156,8 @@ def main():
         command("wait", "--fn", """(() => {
             const el = document.querySelector(""" + json.dumps(selector) + """), r = el.getBoundingClientRect();
             return r.width > 0 && r.height > 0 && r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth
-                && el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+                && el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2))
+                && (el.closest('.config-card') || el).getAnimations({subtree:true}).every(animation => animation.playState !== 'running');
         })()""")
         command("click", selector)
 

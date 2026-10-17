@@ -266,9 +266,7 @@ fn static_file(root: &Path, path: &str, headers: &HeaderMap, fallback: bool) -> 
     };
     let gzip = gzip_preferred(headers);
     let mut selected = None;
-    for logical in std::iter::once(requested)
-        .chain(fallback.then(|| root.join("index.html")))
-    {
+    for logical in std::iter::once(requested).chain(fallback.then(|| root.join("index.html"))) {
         if gzip && !logical.is_dir() {
             let compressed = logical.with_file_name(format!(
                 "{}.gz",
@@ -439,7 +437,9 @@ async fn frontend_handle(
     if !config.frontend_backend_path.is_empty() {
         for namespace in ["api", "download"] {
             let prefix = format!("{mount}/{namespace}");
-            if path.get(..prefix.len()).is_some_and(|part| part.eq_ignore_ascii_case(&prefix))
+            if path
+                .get(..prefix.len())
+                .is_some_and(|part| part.eq_ignore_ascii_case(&prefix))
                 && (path.len() == prefix.len() || path.as_bytes()[prefix.len()] == b'/')
             {
                 let backend_prefix = config.prefix.as_deref().unwrap_or("").trim_end_matches('/');
@@ -451,10 +451,18 @@ async fn frontend_handle(
                     target.push_str(query);
                 }
                 if namespace == "api" {
-                    target.push_str(if request.uri().query().is_some() { "&share=true" } else { "?share=true" });
+                    target.push_str(if request.uri().query().is_some() {
+                        "&share=true"
+                    } else {
+                        "?share=true"
+                    });
                 }
                 let Ok(uri) = target.parse() else {
-                    return Ok(api::text(400, "text/plain; charset=utf-8", "Invalid proxy URL"));
+                    return Ok(api::text(
+                        400,
+                        "text/plain; charset=utf-8",
+                        "Invalid proxy URL",
+                    ));
                 };
                 *request.uri_mut() = uri;
                 return handle(request, config, store).await;
@@ -465,7 +473,11 @@ async fn frontend_handle(
     let mut response = api::not_found();
     if !config.frontend_backend_path.is_empty() && path.starts_with("/share/") {
         // shortcut: public share forwarding requires M4 token enforcement; keep it unavailable until then.
-        response = api::text(501, "text/plain; charset=utf-8", "Public share proxy is not implemented yet");
+        response = api::text(
+            501,
+            "text/plain; charset=utf-8",
+            "Public share proxy is not implemented yet",
+        );
     } else if (request.method() == Method::GET || head)
         && let Some(root) = &config.frontend
         && let Ok(decoded) = percent_decode_str(&path).decode_utf8()
@@ -480,15 +492,31 @@ async fn frontend_handle(
         }
     }
     if response.status().as_u16() == 404 {
-        let escaped = path.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
-            .replace('"', "&quot;").replace('\'', "&#39;");
-        response = api::text(404, "text/html; charset=utf-8", format!(
-            "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Cannot {} {escaped}</pre>\n</body>\n</html>\n", request.method()
-        ));
-        response.headers_mut().insert("content-security-policy", "default-src 'none'".parse().unwrap());
-        response.headers_mut().insert("x-content-type-options", "nosniff".parse().unwrap());
+        let escaped = path
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+            .replace('\'', "&#39;");
+        response = api::text(
+            404,
+            "text/html; charset=utf-8",
+            format!(
+                "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Cannot {} {escaped}</pre>\n</body>\n</html>\n",
+                request.method()
+            ),
+        );
+        response.headers_mut().insert(
+            "content-security-policy",
+            "default-src 'none'".parse().unwrap(),
+        );
+        response
+            .headers_mut()
+            .insert("x-content-type-options", "nosniff".parse().unwrap());
     }
-    response.headers_mut().insert("x-powered-by", "Express".parse().unwrap());
+    response
+        .headers_mut()
+        .insert("x-powered-by", "Express".parse().unwrap());
     if head {
         strip_head_body(&mut response);
     }
@@ -606,7 +634,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     if config.frontend.is_some() && !config.merge {
         let frontend = TcpListener::bind((
-            configured("SUB_STORE_FRONTEND_HOST", &configured("SUB_STORE_BACKEND_API_HOST", "::")),
+            configured(
+                "SUB_STORE_FRONTEND_HOST",
+                &configured("SUB_STORE_BACKEND_API_HOST", "::"),
+            ),
             configured("SUB_STORE_FRONTEND_PORT", "3001").parse::<u16>()?,
         ))
         .await?;

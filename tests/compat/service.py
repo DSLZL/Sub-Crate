@@ -449,6 +449,7 @@ def standalone_resources(frontend_url, backend_url, mount, state, output, name):
         data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
         headers = {"Origin": "https://allowed.invalid", **({"Content-Type": "application/json"} if data else {}), **(headers or {})}
         connection = BufferedHTTPConnection(parsed.hostname, parsed.port, timeout=5)
+        before_request = datetime.now().astimezone()
         try:
             connection.request(method, path, body=data, headers=headers)
             response = connection.getresponse()
@@ -458,6 +459,8 @@ def standalone_resources(frontend_url, backend_url, mount, state, output, name):
                    "body_base64": base64.b64encode(content).decode("ascii")}
         finally:
             connection.close()
+        after_request = datetime.now().astimezone()
+        raw.update(before=before_request.isoformat(), after=after_request.isoformat())
         with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
             evidence.write(json.dumps(raw, ensure_ascii=False) + "\n")
         assert raw["status"] == status, f"{name} {method} {path}: {raw}"
@@ -465,10 +468,17 @@ def standalone_resources(frontend_url, backend_url, mount, state, output, name):
             assert content == expected, f"{name} {method} {path}: unexpected body"
         if api:
             assert raw["headers"].get("x-powered-by") == "Sub-Store", "Frontend did not enter backend routing"
+            if "content-disposition" in raw["headers"]:
+                filename = "sub-store_subscription_" + unquote(path.split("?")[0].rsplit("/", 1)[1])
+                encoded = quote(filename, safe="-_.!~*'()")
+                stamp = re.fullmatch(r'attachment; filename="' + re.escape(encoded) + r'_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.json"', raw["headers"]["content-disposition"])
+                assert stamp, "Proxy lost the encoded export filename"
+                instant = datetime.strptime(stamp[1], "%Y-%m-%d_%H-%M-%S").replace(tzinfo=before_request.tzinfo)
+                assert before_request - timedelta(seconds=1) <= instant <= after_request, "Proxy export has an invalid calendar time"
         else:
             assert raw["headers"].get("x-powered-by") == "Express"
             assert "access-control-allow-origin" not in raw["headers"], "Static frontend inherited backend CORS"
-        compared_headers = ("content-type", "content-disposition", "x-powered-by", "vary",
+        compared_headers = ("content-type", "x-powered-by", "vary",
                             "access-control-allow-origin", "access-control-allow-methods", "access-control-allow-headers") if api else contract_headers
         observations.append({"method": method, "path": path, "status": raw["status"],
                              "headers": {key: raw["headers"][key] for key in compared_headers if key in raw["headers"]},
@@ -499,7 +509,8 @@ def standalone_resources(frontend_url, backend_url, mount, state, output, name):
         assert json.loads(direct["body"])["data"]["standalone"] == "转交🙂", "Proxy wrote a different store"
         send(api_path + "/subs", method="POST", body={"name": "独立 %?", "url": "https://example.invalid/list"}, status=201, api=True)
         encoded = quote("独立 %?", safe="")
-        send(api_path + "/sub/" + encoded + "?raw=1&opaque=%26%2B", api=True)
+        exported = send(api_path + "/sub/" + encoded + "?raw=1&opaque=%26%2B", api=True)
+        assert "content-disposition" in exported, "Proxy lost raw export headers"
         send(api_path + "/sub/" + encoded, method="PATCH", body={"name": "renamed", "custom": False}, api=True)
         send(api_path + "/sub/renamed", method="DELETE", api=True)
         send(api_path + "/settings", method="OPTIONS", expected=b"", api=True)
@@ -823,6 +834,11 @@ def main():
                 with manager as url:
                     standalone[kind] = standalone_resources(f"http://127.0.0.1:{port}", url, mount, state, output, label)
                     report["phases"].append({"name": label, "requests": len(standalone[kind])})
+                    if kind == "rust" and mode == "prefixed":
+                        pending = request(f"http://127.0.0.1:{port}", {"path": "/share/sub/renamed?token=invalid"})
+                        (output / "standalone-share-pending.json").write_text(json.dumps(pending, indent=2) + "\n", encoding="utf-8")
+                        assert pending["status"] == 501, "Public share forwarding must remain unavailable pending M4"
+                        report["standalone_share_proxy_unavailable"] = True
             check_json(standalone["rust"], standalone["node"])
         report["standalone_frontend_http_and_state_equal"] = True
         report["standalone_configurations_checked"] = ["prefixed", "unprefixed", "root", "static-only"]
