@@ -111,15 +111,22 @@ fn editor_languages(value: &mut Value) {
     }
 }
 
-fn normalize_item(item: &mut Value, subscription: bool) {
+fn normalize_item(item: &mut Value, subscription: bool) -> Result<(), &'static str> {
     if subscription {
         item.as_object_mut().unwrap().remove("subscriptions");
     }
-    if item
+    let key = item
         .get("age-public-key")
-        .is_some_and(|key| key.is_null() || key.as_str().is_some_and(|s| s.trim().is_empty()))
-    {
+        .filter(|key| !key.is_null())
+        .map(js_string)
+        .unwrap_or_default();
+    let key = js_trim(&key);
+    if key.is_empty() {
         item.as_object_mut().unwrap().remove("age-public-key");
+    } else if valid_recipient(key) {
+        item["age-public-key"] = json!(key);
+    } else {
+        return Err("age-public-key 仅支持 X25519(age1...) 或 MLKEM768-X25519(age1pq1...) 公钥");
     }
     editor_languages(item);
     if let Some(processes) = item.get_mut("process").and_then(Value::as_array_mut) {
@@ -128,6 +135,97 @@ fn normalize_item(item: &mut Value, subscription: bool) {
                 editor_languages(args);
             }
         }
+    }
+    Ok(())
+}
+
+fn valid_recipient(key: &str) -> bool {
+    let Some((prefix, encoded)) = key.rsplit_once('1') else {
+        return false;
+    };
+    let bytes: usize = match prefix {
+        "age" => 32,
+        "age1pq" => 1216,
+        _ => return false,
+    };
+    let words = (bytes * 8).div_ceil(5);
+    if encoded.len() != words + 6 {
+        return false;
+    }
+    let alphabet = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+    let Some(values): Option<Vec<_>> = encoded
+        .bytes()
+        .map(|byte| {
+            alphabet
+                .iter()
+                .position(|symbol| *symbol == byte)
+                .map(|index| index as u32)
+        })
+        .collect()
+    else {
+        return false;
+    };
+    // Bech32 requires a checksum of one and zero unused bits in the last word.
+    if values[words - 1] & ((1 << (words * 5 - bytes * 8)) - 1) != 0 {
+        return false;
+    }
+    let mut checksum = 1u32;
+    for value in prefix
+        .bytes()
+        .map(|byte| u32::from(byte >> 5))
+        .chain([0])
+        .chain(prefix.bytes().map(|byte| u32::from(byte & 31)))
+        .chain(values)
+    {
+        let top = checksum >> 25;
+        checksum = ((checksum & 0x1ffffff) << 5) ^ value;
+        for (index, generator) in [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3]
+            .iter()
+            .enumerate()
+        {
+            if (top >> index) & 1 != 0 {
+                checksum ^= *generator;
+            }
+        }
+    }
+    checksum == 1
+}
+
+fn js_trim(value: &str) -> &str {
+    value.trim_matches(|c| {
+        matches!(
+            c,
+            '\u{0009}'..='\u{000d}'
+                | ' '
+                | '\u{00a0}'
+                | '\u{1680}'
+                | '\u{2000}'..='\u{200a}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202f}'
+                | '\u{205f}'
+                | '\u{3000}'
+                | '\u{feff}'
+        )
+    })
+}
+
+fn js_string(value: &Value) -> String {
+    match value {
+        Value::String(value) => value.clone(),
+        Value::Array(items) => items
+            .iter()
+            .map(|item| {
+                if item.is_null() {
+                    String::new()
+                } else {
+                    js_string(item)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+        Value::Object(_) => "[object Object]".to_owned(),
+        _ => value.to_string(),
     }
 }
 
@@ -142,10 +240,36 @@ fn number(value: &Value) -> f64 {
             }
         }
         Value::Number(value) => value.as_f64().unwrap_or(f64::NAN),
-        Value::String(value) if value.trim().is_empty() => 0.0,
-        Value::String(value) => value.trim().parse().unwrap_or(f64::NAN),
-        Value::Array(value) if value.is_empty() => 0.0,
-        Value::Array(value) if value.len() == 1 => number(&value[0]),
+        Value::String(value) => {
+            let value = js_trim(value);
+            if value.is_empty() {
+                return 0.0;
+            }
+            for (prefix, radix) in [
+                ("0x", 16),
+                ("0X", 16),
+                ("0b", 2),
+                ("0B", 2),
+                ("0o", 8),
+                ("0O", 8),
+            ] {
+                if let Some(digits) = value.strip_prefix(prefix) {
+                    if digits.is_empty() {
+                        return f64::NAN;
+                    }
+                    return digits
+                        .chars()
+                        .try_fold(0.0, |total, digit| {
+                            digit
+                                .to_digit(radix)
+                                .map(|digit| total * f64::from(radix) + f64::from(digit))
+                        })
+                        .unwrap_or(f64::NAN);
+                }
+            }
+            value.parse().unwrap_or(f64::NAN)
+        }
+        Value::Array(_) => number(&Value::String(js_string(value))),
         _ => f64::NAN,
     }
 }
@@ -340,14 +464,10 @@ pub fn dispatch(
         if items.iter().any(|item| !item.is_object()) {
             return invalid("INVALID_DATA", "Expected object items");
         }
-        if items
-            .iter()
-            .any(|item| item.get("age-public-key").is_some_and(truthy))
-        {
-            return pending("age recipient validation is pending");
-        }
         for item in &mut items {
-            normalize_item(item, false);
+            if let Err(message) = normalize_item(item, false) {
+                return invalid("INVALID_AGE_PUBLIC_KEY", message);
+            }
         }
         next[key] = Value::Array(items);
         return publish(store, next, success(None, 200));
@@ -356,6 +476,9 @@ pub fn dispatch(
         let mut item = body;
         if !item.is_object() {
             return invalid("INVALID_DATA", "Expected an object");
+        }
+        if let Err(message) = normalize_item(&mut item, subscription) {
+            return invalid("INVALID_AGE_PUBLIC_KEY", message);
         }
         let item_name = item["name"].as_str().unwrap_or("").to_owned();
         if item_name.is_empty() || item_name.contains('/') {
@@ -372,10 +495,6 @@ pub fn dispatch(
                 &format!("{label} {item_name} already exists."),
             );
         }
-        if item.get("age-public-key").is_some_and(truthy) {
-            return pending("age recipient validation is pending");
-        }
-        normalize_item(&mut item, subscription);
         let top = next["settings"]["appearanceSetting"]["createItemPosition"] == "top";
         let items = next[key].as_array_mut().unwrap();
         if top {
@@ -419,15 +538,14 @@ pub fn dispatch(
         let Some(mut patch) = body.as_object().cloned() else {
             return invalid("INVALID_DATA", "Expected an object");
         };
-        if patch.get("age-public-key").is_some_and(truthy) {
-            return pending("age recipient validation is pending");
-        }
         if !patch.get("name").is_some_and(truthy) {
             patch.insert("name".to_owned(), json!(name));
         }
         let mut item = next[key][position].clone();
         item.as_object_mut().unwrap().extend(patch);
-        normalize_item(&mut item, subscription);
+        if let Err(message) = normalize_item(&mut item, subscription) {
+            return invalid("INVALID_AGE_PUBLIC_KEY", message);
+        }
         let new_name = item["name"].clone();
         let source_type = if subscription {
             "subscription"

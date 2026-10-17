@@ -84,6 +84,62 @@ def check_cases(url, state, cases, output, name):
     return results
 
 
+def state_edges(url, state, keys, output, name):
+    """Compare actual HTTP values and persisted state without response normalization."""
+    observations = []
+
+    def send(method, path, body, status):
+        response = request(url, {"method": method, "path": path, "body": body})
+        observation = {"method": method, "path": path, "body": body, "response": response,
+                       "state": json.loads((state / "sub-store.json").read_text(encoding="utf-8"))}
+        observations.append(observation)
+        with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
+            evidence.write(json.dumps(observation, ensure_ascii=False) + "\n")
+        assert response["status"] == status, f"{name} {method} {path}: {response}"
+        observation["response"] = {"status": response["status"], "json": json.loads(response["body"])}
+        return observation["response"]["json"]
+
+    numeric_fields = ("defaultTimeout", "githubApiTimeout", "artifactSyncBatchSize", "cacheThreshold",
+                      "resourceCacheTtl", "headersCacheTtl", "scriptCacheTtl", "logsMaxCount",
+                      "backendRequestConcurrency", "backendRequestConcurrencyWaitTime")
+    values = [None, False, True, 0, -1, 0.5, 2, 2.5, "", " ", "1", "1.5", "0x20", "0X20",
+              "0b10", "0B10", "0o10", "0O10", "+0x10", "-0b1", "0x", "Infinity", "NaN",
+              "\ufeff2\ufeff", "\u00852", "\u20032\u2028", [], [None], [False], [True], ["2"],
+              [[["2"]]], ["2", "3"], [{}], {}, ["0x20"], [[None]], [-0.0], [[[]]]]
+    for value in values:
+        send("PATCH", "/api/settings", dict.fromkeys(numeric_fields, value), 200)
+    send("PATCH", "/api/settings", dict.fromkeys(numeric_fields), 200)
+    for plural, singular in (("subs", "sub"), ("collections", "collection")):
+        for index, key in enumerate(keys["valid"]):
+            item = {"name": f"key-{index}", "age-public-key": f"\ufeff \n{key}\r ",
+                    "editorLanguage": "invalid", "previewLanguage": "yaml",
+                    "process": [{"type": "Script Operator", "args": {"content": "// 保留🙂\r\n", "editorLanguage": "bad"}}],
+                    "custom": {"null": None, "false": False, "zero": 0}}
+            created = send("POST", f"/api/{plural}", item, 201)["data"]
+            assert created["age-public-key"] == key and "editorLanguage" not in created
+            assert created["process"][0]["args"] == {"content": "// 保留🙂\r\n"}
+            path = f"/api/{singular}/key-{index}"
+            for blank in (None, "", "\ufeff \n", [], [None], [[[]]]):
+                assert "age-public-key" not in send("PATCH", path, {"age-public-key": blank}, 200)["data"]
+            assert send("PATCH", path, {"age-public-key": [[key]]}, 200)["data"]["age-public-key"] == key
+            for invalid in [*keys["invalid"], "age1invalid", "age1tag1invalid", "age1tagpq1invalid", 0, False, {}, [key, ""], "\u0085" + key]:
+                before = (state / "sub-store.json").read_bytes()
+                rejected = send("PATCH", path, {"age-public-key": invalid}, 500)
+                assert rejected["error"]["code"] == "INVALID_AGE_PUBLIC_KEY"
+                assert (state / "sub-store.json").read_bytes() == before, "Invalid recipient changed durable state"
+            rejected = send("POST", f"/api/{plural}", {"name": "bad/name", "age-public-key": "age1invalid"}, 500)
+            assert rejected["error"]["code"] == "INVALID_AGE_PUBLIC_KEY", "Recipient validation order changed"
+        before = (state / "sub-store.json").read_bytes()
+        rejected = send("PUT", f"/api/{plural}", [{"name": "valid", "age-public-key": keys["valid"][0]},
+                                                   {"name": "invalid", "age-public-key": keys["invalid"][0]}], 500)
+        assert rejected["error"]["code"] == "INVALID_AGE_PUBLIC_KEY"
+        assert (state / "sub-store.json").read_bytes() == before, "Rejected bulk replacement changed state"
+        send("PUT", f"/api/{plural}", [{"name": f"bulk-{index}", "age-public-key": [key], "previewLanguage": "bad"}
+                                       for index, key in enumerate(keys["valid"])], 200)
+    (output / f"{name}.json").write_text(json.dumps(observations, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return observations
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--node", required=True, type=Path)
@@ -157,6 +213,8 @@ def main():
         check_json(final["rust"], final["node"])
         report["full_document_equal_after_shared_suite"] = True
         legacy = {"settings": {}, "subs": {"z-last": {"name": "z-last", "display-name": "旧数据🙂", "process": [{"type": "Useless Filter"}, {"type": "Set Property Operator", "args": {"key": "udp", "value": False}}, {"type": "Flag Operator", "args": False}, {"type": "Script Operator", "args": {"content": "require('node:fs')\r\n"}}]}, "a-first": {"name": "a-first"}}, "collections": {"c": {"name": "c", "ua": "old", "subscriptions": ["z-last"], "extra": False}}, "unknown": {"nil": None, "zero": 0, "flag": False}}
+        for key in ("10", "2", "01", "0", "4294967295", "4294967294"):
+            legacy["subs"][key] = {"name": "index-" + key}
         original = json.dumps(legacy, ensure_ascii=False).encode("utf-8")
         root = {"opaque": {"text": "cache🙂", "zero": 0, "flag": False}, "sub-store-cached-resource": "{}"}
         migrated = {}
@@ -179,6 +237,22 @@ def main():
                 if kind == "rust":
                     check_json(migrated[kind][key], migrated["node"][key])
         report["legacy_base64_migration_and_snapshots_checked"] = True
+        report["legacy_numeric_key_order_checked"] = True
+        generated = execute([args.node, HERE / "fixtures/service-recipient-keys.mjs"], BACKEND, environment, output, "recipient-oracle", timeout=30)
+        assert generated.returncode == 0, "Could not generate pinned recipient fixtures"
+        keys = json.loads(generated.stdout)
+        report["recipient_fixture_sha256"] = hashlib.sha256((HERE / "fixtures/service-recipient-keys.mjs").read_bytes()).hexdigest()
+        edges = {}
+        for kind in ("node", "rust"):
+            state = output / f"{kind}-edges"
+            state.mkdir()
+            env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}
+            manager = oracle(args.node, env, output, report, "node-edges") if kind == "node" else listener(args.binary, env, output, report, "rust-edges", image)
+            with manager as url:
+                edges[kind] = state_edges(url, state, keys, output, f"{kind}-edges")
+                report["phases"].append({"name": f"{kind}-edges", "requests": len(edges[kind])})
+        check_json(edges["rust"], edges["node"])
+        report["settings_and_recipient_http_state_equal"] = True
         rollback = output / "node-rollback"
         rollback.mkdir()
         shutil.copyfile(output / "rust-state/sub-store.json", rollback / "sub-store.json")

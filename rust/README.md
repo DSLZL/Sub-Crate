@@ -10,7 +10,8 @@ All builds and tests run in the **Rust service and compatibility** GitHub Action
 workflow. Native Linux x64/arm64 and Windows x64 jobs produce release binaries;
 Linux x64/arm64 Docker jobs build and run `rust/Dockerfile`. The browser job uses
 the pinned unchanged frontend and runs a separate initial CRUD slice against the
-Rust listener. No local build, test or Docker setup is required.
+Rust listener, including subscription/collection edits, settings and manual
+export. No local build, test or Docker setup is required.
 
 Downloaded service binaries use the existing environment variables:
 
@@ -33,5 +34,9 @@ backend against a writable data directory.
 The HTTP environment keeps the frontend's `Node` discriminator, identifies Rust
 in metadata, and advertises version `0.1.0` with final feature parity incomplete.
 Archive deletion and Gist/age setting mutations return an explicit pending error.
+Subscription/collection public recipients are validated and normalized natively
+for both X25519 and MLKEM768-X25519, including checksum and padding. Settings
+retain the submitted JSON types after legacy numeric validation, and old object
+stores migrate using JavaScript's numeric-key ordering.
 The raw export filename's calendar timestamp format and broader HTTP/static
 edge cases remain M2 acceptance work. Stored excluded Node scripts remain intact.

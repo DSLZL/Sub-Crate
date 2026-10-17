@@ -144,7 +144,7 @@ jobs:
         run: |
           rustup toolchain install 1.98.0 --profile minimal
           cargo +1.98.0 build --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust 2>&1 | tee tests/compat/evidence/frontend-setup/rust-build.log
-      - name: Unchanged frontend setup, create and rename against Rust
+      - name: Unchanged frontend CRUD, settings and export against Rust
         if: ${{ !cancelled() }}
         run: |
           python tests/compat/frontend.py --node "$(node -p 'process.execPath')" \

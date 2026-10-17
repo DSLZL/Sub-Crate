@@ -64,11 +64,13 @@ class StateSliceComplete(Exception):
 
 
 def main():
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        raise SystemExit("Build and execute frontend acceptance in GitHub Actions only")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--node", required=True, type=Path)
     parser.add_argument("--frontend", required=True, type=Path, help="Unchanged pinned checkout with completed dist build")
     parser.add_argument("--browser", required=True, type=Path, help="Installed native agent-browser executable")
-    parser.add_argument("--rust-binary", type=Path, help="Run the M2 setup/create/rename slice against this Rust service")
+    parser.add_argument("--rust-binary", type=Path, help="Run the M2 CRUD/settings/export slice against this Rust service")
     args = parser.parse_args()
     node = args.node.resolve(strict=True)
     frontend = args.frontend.resolve(strict=True)
@@ -91,7 +93,9 @@ def main():
     if args.rust_binary:
         report["kind"] = "rust-frontend-service-state"
         report["binary_sha256"] = hashlib.sha256(args.rust_binary.read_bytes()).hexdigest()
-        report["required_cases"] = ["FE01-url-backend-setup", "FE02-create-subscription", "FE03-reopen-rename-subscription"]
+        report["required_cases"] = ["FE01-url-backend-setup", "FE02-create-subscription", "FE03-reopen-rename-subscription",
+                                    "FE11-create-collection", "FE12-reopen-rename-collection", "FE16-save-log-settings",
+                                    "FE19-download-manual-backup"]
     command_index = 0
 
     def command(*arguments):
@@ -153,6 +157,68 @@ def main():
             command("click", "@" + matches[0])
         else:
             command("find", "text", name, "click", "--exact")
+
+    def collection_crud():
+        command("open", report["server_origin"] + "/edit/collections/UNTITLED")
+        command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
+        command("fill", 'input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-collection")
+        if evaluate("getComputedStyle(document.querySelector('.include-subs-wrapper')).display === 'none'"):
+            click_in_view(".include-subs-trigger .nut-cell__title")
+        click_in_view(".subs-checkbox-wrapper .subs-checkbox")
+        expect_value(".include-subs-trigger input", "browser-renamed", "Collection picker did not select the visible subscription")
+        command("snapshot", "-i")
+        command("click", ".submit-btn")
+        command("wait", "--fn", "location.pathname === '/subs'")
+        command("wait", "--text", "browser-collection")
+        stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+        assert len(stored["collections"]) == 1 and stored["collections"][0]["name"] == "browser-collection" and stored["collections"][0]["subscriptions"] == ["browser-renamed"], "UI collection create lost its selected subscription"
+        report["cases"].append({"id": "FE11-create-collection", "source": "src/views/SubEditor.vue:360,390,1369", "status": "browser_passed"})
+        # shortcut: cold loads can prune references; add direct-entry coverage after that upstream race is resolved.
+        click_in_view('.sub-item-wrapper:has(.sub-item-title[title="browser-collection"]) button:has(svg[data-icon="pen-nib"])')
+        command("wait", "--fn", "location.pathname === '/edit/collections/browser-collection'")
+        command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
+        expect_value('input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-collection", "Collection editor reload lost the name")
+        command("fill", 'input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-collection-renamed")
+        click_name("内容", "tab")
+        expect_value(".include-subs-trigger input", "browser-renamed", "Collection reload lost its selected subscription")
+        command("click", ".submit-btn")
+        command("wait", "--fn", "location.pathname === '/subs'")
+        command("wait", "--text", "browser-collection-renamed")
+        stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+        assert len(stored["collections"]) == 1 and stored["collections"][0]["name"] == "browser-collection-renamed" and stored["collections"][0]["subscriptions"] == ["browser-renamed"], "Collection rename lost resource references"
+        report["cases"].append({"id": "FE12-reopen-rename-collection", "source": "src/components/SubListItem.vue:954; src/views/SubEditor.vue:1063,1379", "navigation": "list-edit-button", "status": "browser_passed"})
+
+    def save_settings():
+        command("open", report["server_origin"] + "/my")
+        command("wait", ".config-card")
+        # Initial store loading can reset the form after its controls appear.
+        command("wait", "--load", "networkidle")
+        click_name("缓存配置")
+        command("wait", 'input[placeholder="最大保存日志条数(默认: 0=关闭)"]')
+        command("fill", 'input[placeholder="最大保存日志条数(默认: 0=关闭)"]', "100")
+        expect_value('input[placeholder="最大保存日志条数(默认: 0=关闭)"]', "100", "Log retention did not reach the form before saving")
+        command("click", ".config-card .save-btn")
+        command("wait", "--text", "保存成功")
+        expect_value('input[placeholder="最大保存日志条数(默认: 0=关闭)"]', "100", "Saved log retention disappeared from the editor")
+        stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+        assert stored["settings"]["logsMaxCount"] == "100", "UI settings did not preserve the form's string log retention"
+        report["cases"].append({"id": "FE16-save-log-settings", "source": "src/views/My.vue:989,1002; src/store/settings.ts", "status": "browser_passed"})
+
+    def download_backup():
+        command("open", report["server_origin"] + "/my")
+        command("wait", ".config-card")
+        click_name("手动管理")
+        command("wait", ".profile-block .download-btn")
+        stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+        command("click", ".profile-block .download-btn")
+        command("wait", "--text", "下载成功")
+        assert json.loads((state / "sub-store.json").read_text(encoding="utf-8")) == stored, "Manual download changed backend state"
+        report["backup_download_requests"] = command("network", "requests", "--filter", "/api/storage", "--method", "GET")
+        report["backup_download_response"] = command("network", "request", report["backup_download_requests"]["requests"][0]["requestId"])
+        exported = report["backup_download_response"]
+        assert exported["url"] == backend_url + "/api/storage" and exported["status"] == 200, "Backup response came from another endpoint"
+        check_json(json.loads(exported["responseBody"]), stored)
+        report["cases"].append({"id": "FE19-download-manual-backup", "source": "src/views/My.vue:1234; src/api/settings/index.ts", "status": "browser_passed"})
 
     try:
         report.update(source_provenance(environment, output))
@@ -247,6 +313,9 @@ def main():
             assert len(stored["subs"]) == 1 and stored["subs"][0]["name"] == "browser-renamed", "UI rename did not persist"
             report["cases"].append({"id": "FE03-reopen-rename-subscription", "source": "src/views/SubEditor.vue:66", "status": "browser_passed"})
             if args.rust_binary:
+                collection_crud()
+                save_settings()
+                download_backup()
                 command("screenshot", output / "frontend-page.png")
                 report["page_errors"] = command("errors")
                 assert not report["page_errors"]["errors"], "Frontend JavaScript errors"
@@ -336,34 +405,7 @@ def main():
             stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
             assert len(stored["tokens"]) == 1 and stored["tokens"][0]["token"] == "browser-token" and stored["tokens"][0]["count"] == 3 and stored["tokens"][0]["usedCount"] == 1, "UI share update lost consumed count or duplicated token"
             report["cases"].append({"id": "FE10-reopen-update-count-share", "source": "src/views/share/ShareEditorPage.vue:869,1096,1465", "status": "browser_passed"})
-            command("open", report["server_origin"] + "/edit/collections/UNTITLED")
-            command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
-            command("fill", 'input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-collection")
-            if evaluate("getComputedStyle(document.querySelector('.include-subs-wrapper')).display === 'none'"):
-                click_in_view(".include-subs-trigger .nut-cell__title")
-            click_in_view(".subs-checkbox-wrapper .subs-checkbox")
-            expect_value(".include-subs-trigger input", "browser-renamed", "Collection picker did not select the visible subscription")
-            command("snapshot", "-i")
-            command("click", ".submit-btn")
-            command("wait", "--fn", "location.pathname === '/subs'")
-            command("wait", "--text", "browser-collection")
-            stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
-            assert len(stored["collections"]) == 1 and stored["collections"][0]["name"] == "browser-collection" and stored["collections"][0]["subscriptions"] == ["browser-renamed"], "UI collection create lost its selected subscription"
-            report["cases"].append({"id": "FE11-create-collection", "source": "src/views/SubEditor.vue:360,390,1369", "status": "browser_passed"})
-            # shortcut: cold loads can prune references; add direct-entry coverage after that upstream race is resolved.
-            click_in_view('.sub-item-wrapper:has(.sub-item-title[title="browser-collection"]) button:has(svg[data-icon="pen-nib"])')
-            command("wait", "--fn", "location.pathname === '/edit/collections/browser-collection'")
-            command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
-            expect_value('input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-collection", "Collection editor reload lost the name")
-            command("fill", 'input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-collection-renamed")
-            click_name("内容", "tab")
-            expect_value(".include-subs-trigger input", "browser-renamed", "Collection reload lost its selected subscription")
-            command("click", ".submit-btn")
-            command("wait", "--fn", "location.pathname === '/subs'")
-            command("wait", "--text", "browser-collection-renamed")
-            stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
-            assert len(stored["collections"]) == 1 and stored["collections"][0]["name"] == "browser-collection-renamed" and stored["collections"][0]["subscriptions"] == ["browser-renamed"], "Collection rename lost resource references"
-            report["cases"].append({"id": "FE12-reopen-rename-collection", "source": "src/components/SubListItem.vue:954; src/views/SubEditor.vue:1063,1379", "navigation": "list-edit-button", "status": "browser_passed"})
+            collection_crud()
             click_in_view('.sub-item-wrapper:has(.sub-item-title[title="browser-collection-renamed"]) button:has(svg[data-icon="pen-nib"])')
             command("wait", "--fn", "location.pathname === '/edit/collections/browser-collection-renamed'")
             command("wait", ".compare-btn")
@@ -401,20 +443,7 @@ def main():
             command("wait", "--fn", "document.querySelector('.cm-content').innerText.includes('browser file🙂')")
             assert evaluate("document.querySelector('.cm-content').innerText").rstrip("\n") == "browser file🙂", "Restored file editor lost its content"
             report["cases"].append({"id": "FE15-restore-file-archive", "source": "src/views/archive/Archive.vue:837; src/store/archive.ts:73", "archive_id": entry["id"], "status": "browser_passed"})
-            command("open", report["server_origin"] + "/my")
-            command("wait", ".config-card")
-            # Initial store loading can reset the form after its controls appear.
-            command("wait", "--load", "networkidle")
-            click_name("缓存配置")
-            command("wait", 'input[placeholder="最大保存日志条数(默认: 0=关闭)"]')
-            command("fill", 'input[placeholder="最大保存日志条数(默认: 0=关闭)"]', "100")
-            expect_value('input[placeholder="最大保存日志条数(默认: 0=关闭)"]', "100", "Log retention did not reach the form before saving")
-            command("click", ".config-card .save-btn")
-            command("wait", "--text", "保存成功")
-            expect_value('input[placeholder="最大保存日志条数(默认: 0=关闭)"]', "100", "Saved log retention disappeared from the editor")
-            stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
-            assert stored["settings"]["logsMaxCount"] == "100", "UI settings did not preserve the form's string log retention"
-            report["cases"].append({"id": "FE16-save-log-settings", "source": "src/views/My.vue:989,1002; src/store/settings.ts", "status": "browser_passed"})
+            save_settings()
             command("open", report["server_origin"] + "/edit/files/browser-file-renamed")
             command("wait", ".editor-section-tab-list")
             click_name("显示", "tab")
@@ -439,20 +468,7 @@ def main():
             root = json.loads((state / "root.json").read_text(encoding="utf-8"))
             assert json.loads(root["sub-store-logs"]) == [], "UI clear did not persist empty backend logs"
             report["cases"].append({"id": "FE18-clear-logs", "source": "src/components/LogsPanel.vue:639,652", "status": "browser_passed"})
-            command("open", report["server_origin"] + "/my")
-            command("wait", ".config-card")
-            click_name("手动管理")
-            command("wait", ".profile-block .download-btn")
-            stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
-            command("click", ".profile-block .download-btn")
-            command("wait", "--text", "下载成功")
-            assert json.loads((state / "sub-store.json").read_text(encoding="utf-8")) == stored, "Manual download changed backend state"
-            report["backup_download_requests"] = command("network", "requests", "--filter", "/api/storage", "--method", "GET")
-            report["backup_download_response"] = command("network", "request", report["backup_download_requests"]["requests"][0]["requestId"])
-            exported = report["backup_download_response"]
-            assert exported["url"] == backend_url + "/api/storage" and exported["status"] == 200, "Backup response came from another endpoint"
-            check_json(json.loads(exported["responseBody"]), stored)
-            report["cases"].append({"id": "FE19-download-manual-backup", "source": "src/views/My.vue:1234; src/api/settings/index.ts", "status": "browser_passed"})
+            download_backup()
             backup_file = HERE / "fixtures/frontend-backup.json"
             report["backup_fixture_sha256"] = hashlib.sha256(backup_file.read_bytes()).hexdigest()
             backup = json.loads(backup_file.read_text(encoding="utf-8"))

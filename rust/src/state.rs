@@ -187,7 +187,17 @@ pub fn migrate(data: &mut Value) -> io::Result<()> {
                 .remove(key)
                 .unwrap_or(Value::Null);
             let mut items: Vec<Value> = match previous {
-                Value::Object(items) => items.into_values().collect(),
+                Value::Object(items) => {
+                    let mut entries: Vec<_> = items.into_iter().collect();
+                    // Object.values visits canonical array indices before other keys.
+                    entries.sort_by_key(|(key, _)| {
+                        key.parse::<u32>()
+                            .ok()
+                            .filter(|index| index.to_string() == *key)
+                            .unwrap_or(u32::MAX)
+                    });
+                    entries.into_iter().map(|(_, value)| value).collect()
+                }
                 Value::Array(items) => items,
                 Value::Null => Vec::new(),
                 _ => return Err(io::Error::other(format!("Invalid legacy {key}"))),
