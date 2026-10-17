@@ -543,8 +543,21 @@ pub fn dispatch(
         }
         let mut item = next[key][position].clone();
         item.as_object_mut().unwrap().extend(patch);
-        if let Err(message) = normalize_item(&mut item, subscription) {
-            return invalid("INVALID_AGE_PUBLIC_KEY", message);
+        if normalize_item(&mut item, subscription).is_err() {
+            // The legacy PATCH handler lets this error reach Express's HTML handler.
+            let mut response = text(
+                500,
+                "text/html; charset=utf-8",
+                "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>[object Object]</pre>\n</body>\n</html>\n",
+            );
+            response.headers_mut().insert(
+                "content-security-policy",
+                "default-src 'none'".parse().unwrap(),
+            );
+            response
+                .headers_mut()
+                .insert("x-content-type-options", "nosniff".parse().unwrap());
+            return response;
         }
         let new_name = item["name"].clone();
         let source_type = if subscription {

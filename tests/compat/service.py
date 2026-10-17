@@ -88,7 +88,7 @@ def state_edges(url, state, keys, output, name):
     """Compare actual HTTP values and persisted state without response normalization."""
     observations = []
 
-    def send(method, path, body, status):
+    def send(method, path, body, status, html=False):
         response = request(url, {"method": method, "path": path, "body": body})
         observation = {"method": method, "path": path, "body": body, "response": response,
                        "state": json.loads((state / "sub-store.json").read_text(encoding="utf-8"))}
@@ -96,6 +96,12 @@ def state_edges(url, state, keys, output, name):
         with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
             evidence.write(json.dumps(observation, ensure_ascii=False) + "\n")
         assert response["status"] == status, f"{name} {method} {path}: {response}"
+        if html:
+            assert response["headers"]["content-type"] == "text/html; charset=utf-8"
+            assert response["headers"]["content-security-policy"] == "default-src 'none'"
+            assert response["headers"]["x-content-type-options"] == "nosniff"
+            observation["response"] = {"status": response["status"], "html": response["body"]}
+            return response["body"]
         observation["response"] = {"status": response["status"], "json": json.loads(response["body"])}
         return observation["response"]["json"]
 
@@ -124,7 +130,8 @@ def state_edges(url, state, keys, output, name):
             assert send("PATCH", path, {"age-public-key": [[key]]}, 200)["data"]["age-public-key"] == key
             for invalid in [*keys["invalid"], "age1invalid", "age1tag1invalid", "age1tagpq1invalid", 0, False, {}, [key, ""], "\u0085" + key]:
                 before = (state / "sub-store.json").read_bytes()
-                rejected = send("PATCH", path, {"age-public-key": invalid}, 500)
+                send("PATCH", path, {"age-public-key": invalid}, 500, html=True)
+                rejected = send("POST", f"/api/{plural}", {"name": "invalid", "age-public-key": invalid}, 500)
                 assert rejected["error"]["code"] == "INVALID_AGE_PUBLIC_KEY"
                 assert (state / "sub-store.json").read_bytes() == before, "Invalid recipient changed durable state"
             rejected = send("POST", f"/api/{plural}", {"name": "bad/name", "age-public-key": "age1invalid"}, 500)
