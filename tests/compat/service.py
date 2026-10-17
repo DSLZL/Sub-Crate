@@ -386,6 +386,105 @@ def backup_edges(url, state, output, name, offset=None):
     return observations
 
 
+def api_entities(url, state, output, name, origin=None):
+    """Pin send/end response boundaries on direct and forwarded business APIs."""
+    parsed = urlsplit(url)
+    observations = []
+    compared_headers = ("content-type", "content-length", "etag", "last-modified", "content-encoding",
+                        "cache-control", "vary", "content-security-policy", "x-content-type-options")
+
+    def send(path, headers=None, method="GET", status=200, body=None, tagged=True, expected=None):
+        headers = {**({"Origin": origin} if origin else {}), **(headers or {})}
+        if body is not None:
+            headers.setdefault("Content-Type", "application/json")
+        connection = BufferedHTTPConnection(parsed.hostname, parsed.port, timeout=5)
+        before = datetime.now().astimezone()
+        try:
+            connection.request(method, parsed.path.rstrip("/") + path, body=body, headers=headers)
+            response = connection.getresponse()
+            content = response.read()
+            raw = {"method": method, "path": path, "request_headers": headers,
+                   "request_body_base64": base64.b64encode(body or b"").decode("ascii"),
+                   "status": response.status, "headers": {key.lower(): value for key, value in response.getheaders()},
+                   "body_base64": base64.b64encode(content).decode("ascii"), "before": before.isoformat(),
+                   "after": datetime.now().astimezone().isoformat(),
+                   "state": json.loads((state / "sub-store.json").read_text(encoding="utf-8"))}
+        finally:
+            connection.close()
+        with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
+            evidence.write(json.dumps(raw, ensure_ascii=False) + "\n")
+        assert raw["status"] == status, f"{name} {method} {path}: {raw}"
+        actual = raw["headers"]
+        if expected is not None:
+            assert content == expected, f"{name} {method} {path}: body mismatch"
+        if tagged:
+            assert "etag" in actual, f"{name} {method} {path}: missing entity ETag"
+            if method != "HEAD" and status != 304:
+                digest = base64.b64encode(hashlib.sha1(content).digest()).decode("ascii")[:27]
+                assert actual["etag"] == f'W/"{len(content):x}-{digest}"'
+                assert actual["content-length"] == str(len(content))
+        else:
+            assert "etag" not in actual, "end/finalhandler response gained an entity tag"
+        if status == 304:
+            assert not content and all(key not in actual for key in ("content-type", "content-length", "transfer-encoding"))
+        if "content-disposition" in actual:
+            attachment = re.fullmatch(r'attachment; filename=".*_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.json"', actual["content-disposition"])
+            assert attachment and actual["access-control-expose-headers"] == "content-disposition"
+            instant = datetime.strptime(attachment[1], "%Y-%m-%d_%H-%M-%S").replace(tzinfo=before.tzinfo)
+            assert before - timedelta(seconds=1) <= instant <= datetime.fromisoformat(raw["after"])
+        if headers.get("Origin") and status != 403:
+            assert actual["access-control-allow-origin"] == headers["Origin"]
+        observations.append({"method": method, "path": path, "status": status,
+                             "headers": {key: actual[key] for key in compared_headers if key in actual},
+                             "body_base64": raw["body_base64"], "state": raw["state"]})
+        return actual, content
+
+    payload = json.dumps({"name": "entity-保留🙂", "text": "Unicode🙂\r\n", "zero": 0, "nil": None}, ensure_ascii=False).encode("utf-8")
+    send("/api/collections", method="POST", status=201, body=payload)
+    item = "/api/collection/" + quote("entity-保留🙂", safe="")
+    send("/api/settings", method="PATCH", body=b'{"entityValidator":"before"}')
+    before_reads = {filename: (state / filename).read_bytes() for filename in ("sub-store.json", "root.json")}
+    for path in ("/api/settings", "/api/subs", "/api/collections", item, item + "?raw=1", "/api/storage"):
+        normal, content = send(path)
+        head, _ = send(path, method="HEAD", expected=b"")
+        assert all(head.get(key) == normal.get(key) for key in compared_headers)
+        for match in (normal["etag"], normal["etag"][2:], '"miss", ' + normal["etag"], "*"):
+            cached, _ = send(path, {"If-None-Match": match}, status=304, expected=b"")
+            assert cached["etag"] == normal["etag"]
+        send(path, {"If-None-Match": normal["etag"]}, method="HEAD", status=304, expected=b"")
+        for headers in ({"If-None-Match": '"miss"'},
+                        {"If-None-Match": normal["etag"], "Cache-Control": "max-age=0, no-cache"},
+                        {"If-None-Match": normal["etag"], "If-Modified-Since": "Fri, 01 Jan 2100 00:00:00 GMT"},
+                        {"If-None-Match": normal["etag"], "If-Modified-Since": "invalid"},
+                        {"If-Modified-Since": "Fri, 01 Jan 2100 00:00:00 GMT"},
+                        {"If-None-Match": '"miss",\t' + normal["etag"]},
+                        {"If-Match": '"miss"', "If-Unmodified-Since": "Fri, 01 Jan 1999 00:00:00 GMT", "Range": "bytes=0-1"}):
+            fresh, _ = send(path, headers, expected=content)
+            assert fresh["etag"] == normal["etag"] and "last-modified" not in fresh
+    assert all((state / filename).read_bytes() == data for filename, data in before_reads.items()), "API revalidation changed durable state"
+    previous, _ = send("/api/settings")
+    changed, _ = send("/api/settings", {"If-None-Match": "*", "If-Match": '"miss"'},
+                      method="PATCH", body=b'{"entityValidator":"after"}')
+    assert changed["etag"] != previous["etag"]
+    assert observations[-1]["state"]["settings"]["entityValidator"] == "after"
+    send("/api/settings", {"If-None-Match": previous["etag"]})
+    send("/api/settings", {"If-None-Match": changed["etag"]}, status=304, expected=b"")
+    send("/api/collections", {"If-None-Match": "*"}, method="POST", body=payload, status=500)
+    send(item + "?mode=permanent", {"If-None-Match": "*"}, method="DELETE")
+    send(item, {"If-None-Match": "*"}, status=500)
+    send(item, method="HEAD", status=500, expected=b"")
+    send("/api/sub/missing-entity", {"If-None-Match": "*"}, status=500, tagged=False)
+    send("/api/sub/missing-entity", method="HEAD", status=500, tagged=False, expected=b"")
+    send("/api/settings", method="PATCH", body=b"{", status=400, tagged=False)
+    send("/api/not-a-resource", {"If-None-Match": "*"}, status=404, tagged=False, expected=b"")
+    send("/api/settings", {"Origin": "https://denied.invalid", "If-None-Match": "*"}, status=403,
+         tagged=False, expected=b"CORS origin not allowed")
+    allowed = origin or f"{parsed.scheme}://{parsed.netloc}"
+    send("/api/settings", {"Origin": allowed, "If-None-Match": "*"}, method="OPTIONS", tagged=False, expected=b"")
+    (output / f"{name}.json").write_text(json.dumps(observations, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return observations
+
+
 def static_fixture(frontend):
     files = {"index.html": b"<main>unchanged frontend entry</main>",
              "chunks/main-84da2e86.js": b'console.log("original chunk")',
@@ -566,6 +665,7 @@ def static_resources(url, state, output, name):
     refreshed = send(path, {"Accept-Encoding": "gzip", "If-None-Match": encoded["etag"]}, expected=replacement)
     assert refreshed["etag"] != encoded["etag"] and refreshed["last-modified"] != encoded["last-modified"]
     assert all((state / filename).read_bytes() == data for filename, data in before.items()), "Static request changed state"
+    observations.extend(api_entities(url, state, output, name + "-api-http"))
     (output / f"{name}.json").write_text(json.dumps(observations, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return observations
 
@@ -655,6 +755,7 @@ def standalone_resources(frontend_url, backend_url, mount, state, output, name):
         send(mount.rstrip("/") + "/download/not-a-route/missing/extra/segment?raw=1", status=404, expected=b"", api=True)
         send(api_path.upper() + "/settings", api=True)
         send(api_path + "extra/settings", {"Accept": "text/html"}, expected=entry)
+        observations.extend(api_entities(frontend_url + mount.rstrip("/"), state, output, name + "-api-http", "https://allowed.invalid"))
     else:
         send("/api/settings", status=404)
         send("/api/settings", {"Accept": "text/html"}, expected=entry)
@@ -681,6 +782,7 @@ def main():
         report.update(source_provenance(environment, output))
         report["sources"] = {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
                              for path in [ROOT / "rust/Cargo.toml", ROOT / "rust/Cargo.lock", *sorted((ROOT / "rust/src").glob("*.rs"))]}
+        report["harness_sha256"] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
         version = execute([args.node, "--version"], ROOT, environment, output, "node-version")
         assert version.returncode == 0 and version.stdout.strip() == "v24.16.0", "Pinned Node required"
         bundled = execute([args.node, "bundle-esbuild.js"], BACKEND, environment, output, "reference-bundle", timeout=120)
@@ -998,6 +1100,9 @@ def main():
             check_json(standalone["rust"], standalone["node"])
         report["standalone_frontend_http_and_state_equal"] = True
         report["standalone_configurations_checked"] = ["prefixed", "unprefixed", "root", "static-only"]
+        report["api_entity_validators_and_head_checked"] = True
+        report["api_entity_error_and_mutation_boundaries_checked"] = True
+        report["api_entity_configurations_checked"] = ["merged-prefix", "merged-root", "standalone-prefixed", "standalone-unprefixed", "standalone-root"]
         report["exit_code"] = 0
     except Exception as error:
         report["error"] = f"{type(error).__name__}: {error}"

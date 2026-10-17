@@ -64,7 +64,12 @@ these assets with legacy Accept-based history fallback and API/download forwardi
 Its public share proxy returns an explicit pending error until M4 implements
 token enforcement. Both hosting modes support selected-representation byte ranges,
 If-Range, If-Match and If-Unmodified-Since, including conditional/HEAD precedence.
-Range combination and validator matching retain the locked Node dependency's
-behavior. Static 412/416 errors use production HTML messages; Node development
-stack bodies and broader HTTP/API edge cases remain M2 acceptance work.
+Business API responses and JSON exports retain content-based weak ETags and UTF-8
+lengths. Successful GET/HEAD revalidation returns 304; HEAD preserves entity
+metadata. Mutations and errors keep their original status, and empty end-style
+responses and production HTML errors remain untagged. Both frontend listeners
+reuse this behavior. Range combination and validator matching retain the locked
+Node dependency's behavior. Static 412/416 errors use production HTML messages;
+Node development stack bodies and broader HTTP/API edge cases remain M2
+acceptance work.
 Stored excluded Node scripts remain intact.

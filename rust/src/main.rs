@@ -228,17 +228,17 @@ fn gzip_preferred(headers: &HeaderMap) -> bool {
     gzip.0 > 0.0 && gzip >= priority("identity")
 }
 
-fn static_etag_match(raw: &str, etag: &str) -> bool {
+fn etag_match(raw: &str, etag: &str) -> bool {
     raw == "*"
         || raw.split(',').any(|part| {
-            let part = part.trim();
+            let part = part.trim_matches(' ');
             part == etag
                 || part.strip_prefix("W/") == Some(etag)
                 || etag.strip_prefix("W/") == Some(part)
         })
 }
 
-fn static_fresh(headers: &HeaderMap, etag: &str, modified: std::time::SystemTime) -> bool {
+fn fresh(headers: &HeaderMap, etag: &str, modified: Option<std::time::SystemTime>) -> bool {
     let matched = header(headers, "if-none-match");
     let since = header(headers, "if-modified-since");
     if (matched.is_empty() && since.is_empty())
@@ -248,10 +248,13 @@ fn static_fresh(headers: &HeaderMap, etag: &str, modified: std::time::SystemTime
     {
         return false;
     }
-    if !matched.is_empty() && !static_etag_match(matched, etag) {
+    if !matched.is_empty() && !etag_match(matched, etag) {
         return false;
     }
-    since.is_empty() || httpdate::parse_http_date(since).is_ok_and(|date| modified <= date)
+    since.is_empty()
+        || modified
+            .zip(httpdate::parse_http_date(since).ok())
+            .is_some_and(|(modified, date)| modified <= date)
 }
 
 fn static_range(
@@ -378,12 +381,12 @@ fn static_file(root: &Path, path: &str, headers: &HeaderMap, fallback: bool) -> 
     );
     let matched = header(headers, "if-match");
     let precondition_failed = if !matched.is_empty() {
-        !static_etag_match(matched, &etag)
+        !etag_match(matched, &etag)
     } else {
         httpdate::parse_http_date(header(headers, "if-unmodified-since"))
             .is_ok_and(|date| modified > date)
     };
-    let fresh = !precondition_failed && static_fresh(headers, &etag, modified);
+    let fresh = !precondition_failed && fresh(headers, &etag, Some(modified));
     let range = if precondition_failed || fresh {
         Ok(None)
     } else {
@@ -529,6 +532,8 @@ async fn handle(
         .unwrap_or("")
         .to_owned();
     let head = request.method() == Method::HEAD;
+    let read = head || request.method() == Method::GET;
+    let headers = request.headers().clone();
     let response = if !config.allowed(&raw_origin) {
         api::text(403, "text/plain;charset=UTF-8", "CORS origin not allowed")
     } else if request.method() == Method::OPTIONS {
@@ -538,6 +543,14 @@ async fn handle(
     };
     let mut response = response;
     config.headers(&mut response, &raw_origin);
+    let etag = header(response.headers(), "etag");
+    if read && response.status().is_success() && !etag.is_empty() && fresh(&headers, etag, None) {
+        *response.status_mut() = hyper::StatusCode::NOT_MODIFIED;
+        for name in ["content-type", "content-length", "transfer-encoding"] {
+            response.headers_mut().remove(name);
+        }
+        *response.body_mut() = http_body_util::Full::new(hyper::body::Bytes::new());
+    }
     if head {
         strip_head_body(&mut response);
     }
@@ -704,7 +717,7 @@ async fn route(
     .into_owned()
     .collect::<HashMap<_, _>>();
     if (path == "/" || path == "/api/utils/env") && method == Method::GET {
-        return api::text(200, "application/json;charset=UTF-8", json!({
+        return api::send(200, "application/json; charset=utf-8", json!({
             "status":"success", "data":{
                 "backend":"Node", "version":env!("CARGO_PKG_VERSION"),
                 "feature":{"archive":false},

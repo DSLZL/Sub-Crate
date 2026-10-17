@@ -1,4 +1,5 @@
 use crate::state::{Store, decode, migrate, truthy, valid_records};
+use base64::Engine;
 use http_body_util::Full;
 use hyper::{Method, Response, body::Bytes};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
@@ -27,6 +28,18 @@ pub fn text(status: u16, content_type: &str, body: impl Into<Bytes>) -> Reply {
         .unwrap()
 }
 
+pub fn send(status: u16, content_type: &str, body: impl Into<Bytes>) -> Reply {
+    let body = body.into();
+    let length = body.len();
+    let digest = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA1_FOR_LEGACY_USE_ONLY, &body);
+    let hash = base64::engine::general_purpose::STANDARD_NO_PAD.encode(digest.as_ref());
+    let etag = format!("W/\"{length:x}-{hash}\"");
+    let mut response = text(status, content_type, body);
+    response.headers_mut().insert("etag", etag.parse().unwrap());
+    response.headers_mut().insert("content-length", length.into());
+    response
+}
+
 pub fn not_found() -> Reply {
     text(404, "text/plain;charset=UTF-8", "")
 }
@@ -53,7 +66,7 @@ fn null_name_error(caught: bool) -> Reply {
     if !caught {
         return html_error(500, "Internal Server Error");
     }
-    text(
+    send(
         500,
         "text/plain; charset=utf-8",
         json!({"status":"failed", "error":{"message":"Cannot read properties of null (reading 'name')"}}).to_string(),
@@ -78,11 +91,11 @@ fn success(data: Option<Value>, status: u16) -> Reply {
         value["data"] = data;
     }
     // The legacy middleware sets text/plain before Express serializes JSON.
-    text(status, "text/plain; charset=utf-8", value.to_string())
+    send(status, "text/plain; charset=utf-8", value.to_string())
 }
 
 pub fn failure(status: u16, code: &str, kind: &str, message: &str) -> Reply {
-    text(
+    send(
         status,
         "text/plain; charset=utf-8",
         json!({
@@ -106,7 +119,7 @@ fn pending(message: &str) -> Reply {
 }
 
 fn invalid_backup() -> Reply {
-    text(
+    send(
         500,
         "text/plain; charset=utf-8",
         json!({"status":"failed", "error":{
@@ -151,7 +164,7 @@ fn download(value: &Value, name: &str) -> Reply {
         "attachment; filename=\"{}\"",
         utf8_percent_encode(&filename, COMPONENT)
     );
-    let mut response = text(200, "application/json; charset=utf-8", value.to_string());
+    let mut response = send(200, "application/json; charset=utf-8", value.to_string());
     response.headers_mut().insert(
         "access-control-expose-headers",
         "content-disposition".parse().unwrap(),
@@ -565,7 +578,7 @@ pub fn dispatch(
                 success(Some(item), 200)
             }
         } else if !subscription {
-            text(
+            send(
                 500,
                 "text/plain; charset=utf-8",
                 json!({"status":"failed", "error":{
