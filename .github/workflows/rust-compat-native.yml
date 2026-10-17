@@ -72,7 +72,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: python tests/compat/service.py --node "$(node -p 'process.execPath')"
       - name: Preserve native service binary
-        if: ${{ steps.service-build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.service-build.outcome == 'success' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: m2-service-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -82,6 +82,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Build general JS helpers
+        if: ${{ !cancelled() }}
         run: python tests/compat/reference.py --node "$(node -p 'process.execPath')" --mode helpers
       - name: Native Rust JS probe
         if: ${{ !cancelled() }}

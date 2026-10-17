@@ -53,12 +53,22 @@ impl Store {
             snapshot(&path, &original)?;
         }
         migrate(&mut data)?;
-        for key in ["subs", "collections", "artifacts", "files", "tokens", "modules", "archives"] {
+        for key in [
+            "subs",
+            "collections",
+            "artifacts",
+            "files",
+            "tokens",
+            "modules",
+            "archives",
+        ] {
             if !truthy(&data[key]) {
                 data[key] = json!([]);
             }
             if !data[key].is_array() {
-                return Err(io::Error::other(format!("{key} must be an array after migration")));
+                return Err(io::Error::other(format!(
+                    "{key} must be an array after migration"
+                )));
             }
         }
         if !truthy(&data["settings"]) {
@@ -83,8 +93,22 @@ impl Store {
 }
 
 pub fn valid_records(data: &Value) -> bool {
-    ["subs", "collections", "artifacts", "files", "tokens", "modules", "archives"].iter().all(|key| {
-        data.get(key).is_none_or(|items| items.as_array().is_some_and(|items| items.iter().all(Value::is_object)))
+    [
+        "subs",
+        "collections",
+        "artifacts",
+        "files",
+        "tokens",
+        "modules",
+        "archives",
+    ]
+    .iter()
+    .all(|key| {
+        data.get(key).is_none_or(|items| {
+            items
+                .as_array()
+                .is_some_and(|items| items.iter().all(Value::is_object))
+        })
     })
 }
 
@@ -149,8 +173,19 @@ pub fn migrate(data: &mut Value) -> io::Result<()> {
         return Err(io::Error::other("State must be an object"));
     }
     if !truthy(&data["schemaVersion"]) {
-        for key in ["subs", "collections", "artifacts", "rules", "files", "tokens"] {
-            let previous = data.as_object_mut().unwrap().remove(key).unwrap_or(Value::Null);
+        for key in [
+            "subs",
+            "collections",
+            "artifacts",
+            "rules",
+            "files",
+            "tokens",
+        ] {
+            let previous = data
+                .as_object_mut()
+                .unwrap()
+                .remove(key)
+                .unwrap_or(Value::Null);
             let mut items: Vec<Value> = match previous {
                 Value::Object(items) => items.into_values().collect(),
                 Value::Array(items) => items,
@@ -159,7 +194,9 @@ pub fn migrate(data: &mut Value) -> io::Result<()> {
             };
             if key == "subs" || key == "collections" {
                 for item in &mut items {
-                    let object = item.as_object_mut().ok_or_else(|| io::Error::other("Invalid legacy item"))?;
+                    let object = item
+                        .as_object_mut()
+                        .ok_or_else(|| io::Error::other("Invalid legacy item"))?;
                     if key == "subs" && !truthy(object.get("source").unwrap_or(&Value::Null)) {
                         object.insert("source".to_owned(), json!("remote"));
                     }
@@ -179,7 +216,9 @@ pub fn migrate(data: &mut Value) -> io::Result<()> {
                         }});
                         let mut next = Vec::new();
                         for mut process in std::mem::take(processes) {
-                            let Some(kind) = process["type"].as_str() else { continue };
+                            let Some(kind) = process["type"].as_str() else {
+                                continue;
+                            };
                             if kind == "Useless Filter" {
                                 quick["args"]["useless"] = json!("ENABLED");
                             } else if kind == "Set Property Operator" {
@@ -190,13 +229,19 @@ pub fn migrate(data: &mut Value) -> io::Result<()> {
                                     Some("aead") => "vmess aead",
                                     _ => continue,
                                 };
-                                quick["args"][field] = json!(if truthy(&process["args"]["value"]) { "ENABLED" } else { "DISABLED" });
+                                quick["args"][field] =
+                                    json!(if truthy(&process["args"]["value"]) {
+                                        "ENABLED"
+                                    } else {
+                                        "DISABLED"
+                                    });
                             } else if kind.contains("Keyword") {
                                 continue;
                             } else {
                                 if kind == "Flag Operator" {
                                     let add = process.get("args").is_none_or(truthy);
-                                    process["args"] = json!({"mode": if add { "add" } else { "remove" }});
+                                    process["args"] =
+                                        json!({"mode": if add { "add" } else { "remove" }});
                                 }
                                 next.push(process);
                             }

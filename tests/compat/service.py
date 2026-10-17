@@ -31,7 +31,8 @@ def listener(binary, environment, output, report, log_prefix="rust", image=None)
     name = f"m2-{os.getpid()}-{port}"
     if image:
         argv = ["docker", "run", "--rm", "--name", name, "--read-only", "--cap-drop=ALL",
-                "--security-opt=no-new-privileges", "-p", f"127.0.0.1:{port}:3000",
+                "--security-opt=no-new-privileges", "--user", f"{os.getuid()}:{os.getgid()}",
+                "-p", f"127.0.0.1:{port}:3000",
                 "--mount", f"type=bind,source={environment['SUB_STORE_DATA_BASE_PATH']},target=/data"]
         for key, value in environment.items():
             if key.startswith("SUB_STORE_"):
