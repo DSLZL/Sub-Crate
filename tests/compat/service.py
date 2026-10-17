@@ -393,7 +393,7 @@ def request_bodies(url, state, output, name, origin=None):
     original = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
     compared_headers = ("content-type", "content-length", "etag", "content-security-policy", "x-content-type-options")
 
-    def send(path="/api/settings", body=b"{}", media="application/json", status=200, method="PATCH", headers=None):
+    def send(path="/api/settings", body=b"{}", media="application/json", status=200, method="PATCH", headers=None, parser_error=False):
         headers = {**({"Origin": origin} if origin else {}), **(headers or {})}
         if media is not None:
             headers["Content-Type"] = media
@@ -414,8 +414,8 @@ def request_bodies(url, state, output, name, origin=None):
             evidence.write(json.dumps(raw, ensure_ascii=False) + "\n")
         assert raw["status"] == status, f"{name} {method} {path}: expected {status}, got {raw['status']} {content!r}"
         actual = raw["headers"]
-        if status in (400, 413, 415):
-            message = {400: "Bad Request", 413: "Payload Too Large", 415: "Unsupported Media Type"}[status]
+        if status in (400, 413, 415) or parser_error:
+            message = {400: "Bad Request", 403: "Forbidden", 413: "Payload Too Large", 415: "Unsupported Media Type"}[status]
             assert content == (f'<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>Error</title>\n</head>\n<body>\n<pre>{message}</pre>\n</body>\n</html>\n').encode()
             assert actual["content-security-policy"] == "default-src 'none'" and actual["x-content-type-options"] == "nosniff"
             assert "etag" not in actual
@@ -435,14 +435,16 @@ def request_bodies(url, state, output, name, origin=None):
         send(body=body, media=media)
     for charset, encoded in (("utf-8", b'\xef\xbb\xbf{"parserUnicode":"\xe4\xb8\xad"}'),
                              ("UTF-16LE", '{"parserUnicode":"UTF16🙂"}'.encode("utf-16le")),
-                             ("utf-16be", '{"parserUnicode":"UTF16🙂"}'.encode("utf-16be")),
-                             ("utf-16", b"\xfe\xff" + '{"parserUnicode":"BOM🙂"}'.encode("utf-16be")),
                              ("utf-8", b'{"parserLossy":"\xff"}')):
         data = send(body=encoded, media=f'Application/JSON; charset="{charset}"')["data"]
-        assert data.get("parserLossy") == "�" or data["parserUnicode"] in ("中", "UTF16🙂", "BOM🙂")
+        assert data.get("parserLossy") == "�" or data["parserUnicode"] in ("中", "UTF16🙂")
+    for charset in ("utf-16be", "utf-16", "utf-7", "utf-7imap"):
+        send(media=f"application/json; charset={charset}", status=403, parser_error=True)
+        send(body=b"", media=f"application/json; charset={charset}")
     for encoded in (b"{", b"null", b"false", b"0", b'"text"', b" \t\r\n"):
         send(body=encoded, status=400)
     for media in ("application/json; charset=latin1", "application/json; charset=utf-99",
+                  "application/json; charset=utf-32",
                   "application/x-www-form-urlencoded; charset=iso-8859-1"):
         send(media=media, status=415)
     send(headers={"Content-Encoding": "br"}, status=415)

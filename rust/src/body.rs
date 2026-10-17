@@ -71,17 +71,11 @@ fn decode(bytes: &[u8], charset: &str) -> String {
     let text = if charset == "utf-8" {
         String::from_utf8_lossy(bytes).into_owned()
     } else {
-        let big =
-            charset == "utf-16be" || (charset == "utf-16" && bytes.starts_with(&[0xfe, 0xff]));
         let words: Vec<_> = bytes
-            .chunks_exact(2)
-            .map(|pair| {
-                if big {
-                    u16::from_be_bytes([pair[0], pair[1]])
-                } else {
-                    u16::from_le_bytes([pair[0], pair[1]])
-                }
-            })
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| u16::from_le_bytes(*pair))
             .collect();
         String::from_utf16_lossy(&words)
     };
@@ -101,7 +95,11 @@ pub async fn read(request: Request<Incoming>, json_limit: usize) -> Result<Body,
     };
     let json = media == "application/json";
     let form = media == "application/x-www-form-urlencoded";
-    if (json && !["utf-8", "utf-16", "utf-16le", "utf-16be"].contains(&charset.as_str()))
+    if (json
+        && ![
+            "utf-8", "utf-16le", "utf-16", "utf-16be", "utf-7", "utf-7imap",
+        ]
+        .contains(&charset.as_str()))
         || (form && charset != "utf-8")
     {
         return Err(415);
@@ -120,6 +118,10 @@ pub async fn read(request: Request<Incoming>, json_limit: usize) -> Result<Body,
         .await
         .map_err(|_| 413u16)?
         .to_bytes();
+    // The legacy rawBodySaver uses Buffer.toString, which rejects these iconv-supported charsets.
+    if json && !bytes.is_empty() && !["utf-8", "utf-16le"].contains(&charset.as_str()) {
+        return Err(403);
+    }
     if json || form {
         let text = decode(&bytes, &charset);
         let value = if form {

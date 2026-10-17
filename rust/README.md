@@ -52,11 +52,14 @@ before dispatch. Uncaught errors use production HTML responses. Development stac
 bodies and invalid-reference-graph mutations remain unverified.
 The HTTP entry point selects strict JSON, extended URL-encoded forms or raw
 bytes before routing, including environment requests. Identity-encoded UTF-8
-and UTF-16 JSON, nested/repeated form fields, settings array/byte spreads and
+and UTF-16LE JSON, nested/repeated form fields, settings array/byte spreads and
 raw-buffer CRUD retain legacy behavior. JSON uses SUB_STORE_BODY_JSON_LIMIT;
 form/raw bodies retain their separate 100 KiB limit. Invalid JSON, excessive
 size/depth/parameters and unsupported charset/encoding return production HTML
-errors without publishing state. Compressed request inflation, other UTF codecs,
+errors without publishing state. The legacy verifier rejects nonempty UTF-16BE
+and UTF-7 bodies with 403 while permitting empty bodies in these charsets.
+The locked decoder rejects UTF-32 with 415.
+Compressed request inflation, other UTF aliases,
 exotic form overflow collisions and raw-buffer bulk replacement remain M2 gaps.
 Raw JSON exports retain the legacy local-calendar filenames and escaped resource
 names. Manual restore keeps the pre-migration backup in `root.json`'s `sub-store`

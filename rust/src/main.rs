@@ -685,6 +685,7 @@ async fn route(
             return api::html_error(
                 status,
                 match status {
+                    403 => "Forbidden",
                     413 => "Payload Too Large",
                     415 => "Unsupported Media Type",
                     _ => "Bad Request",
