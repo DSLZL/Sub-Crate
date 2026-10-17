@@ -333,7 +333,7 @@ def static_fixture(frontend):
              "chunks/main-84da2e86.js": b'console.log("original chunk")',
              "chunks/multi-deadbeef.locale-extra.js": b"hashed suffix",
              "chunks/multi-deadbeef.-extra.js": b"hashed dash suffix",
-             "css/main.css": b"body{}", "sw.js": b"worker",
+             "css/main.css": b"body{}", "sw.js": b"worker", "empty.txt": b"",
              "release-deadbeef.dir/index.html": b"nested entry",
              "text 中文.txt": "Unicode中文🙂\r\n".encode("utf-8"),
              ".env": b"must never expose dotfiles"}
@@ -349,6 +349,81 @@ def static_fixture(frontend):
     (frontend.parent / "secret.txt").write_bytes(b"must never expose parent files")
 
 
+def static_conditions(send, frontend):
+    """The same range/precondition contract runs through both hosting owners."""
+    path = "/chunks/main-84da2e86.js"
+    plain = (frontend / path.lstrip("/")).read_bytes()
+    compressed = (frontend / (path.lstrip("/") + ".gz")).read_bytes()
+    normal = send(path + "?conditional=plain", expected=plain)
+    encoded = send(path + "?conditional=gzip", {"Accept-Encoding": "gzip"}, expected=compressed)
+    errors = {status: (f'<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>Error</title>\n</head>\n<body>\n<pre>{message}</pre>\n</body>\n</html>\n').encode()
+              for status, message in ((412, "Precondition Failed"), (416, "Range Not Satisfiable"))}
+
+    def case(label, headers, status, expected, method="GET", content_range=None):
+        result = send(path + "?conditional=" + label, headers, method, status, b"" if method == "HEAD" else expected)
+        assert result.get("content-range") == content_range, f"{label}: incorrect Content-Range"
+        if status != 304:
+            assert result["content-length"] == str(len(expected)), f"{label}: incorrect representation length"
+        if status >= 400:
+            assert result["content-type"] == "text/html; charset=utf-8"
+            assert result["content-security-policy"] == "default-src 'none'" and result["x-content-type-options"] == "nosniff"
+            assert "content-encoding" not in result
+        return result
+
+    length = len(plain)
+    for label, value, start, end in (
+            ("first", "bytes=0-3", 0, 3), ("open", "bytes=4-", 4, length - 1),
+            ("suffix", "bytes=-4", length - 4, length - 1),
+            ("clamped", "bytes=2-99999999999999999999999", 2, length - 1),
+            ("whole-suffix", f"bytes=-{length}", 0, length - 1),
+            ("adjacent", "bytes=3-5,0-2", 0, 5), ("overlap", "bytes=2-5,0-3", 0, 5),
+            ("duplicate", "bytes=0-3,0-3", 0, 3), ("one-valid", "bytes=99999-,1-4", 1, 4),
+            ("numeric-prefix", "bytes=1garbage-4suffix", 1, 4),
+            ("suffix-coercion", "bytes=invalid-4", length - 4, length - 1),
+            ("spaces", "bytes= 1 - 4 ", 1, 4)):
+        case(label, {"Range": value}, 206, plain[start:end + 1], content_range=f"bytes {start}-{end}/{length}")
+    for label, value in (("disjoint", "bytes=0-1,4-5"), ("other-unit", "items=0-3"),
+                         ("uppercase", "Bytes=0-3"), ("no-equals", "bytes"), ("space-before-equals", "bytes =0-3")):
+        case(label, {"Range": value}, 200, plain)
+    for label, value in (("past-end", f"bytes={length}-"), ("reversed", "bytes=5-2"),
+                         ("zero-suffix", "bytes=-0"), ("large-suffix", f"bytes=-{length + 1}"),
+                         ("empty-range", "bytes="), ("invalid-range", "bytes=garbage")):
+        case(label, {"Range": value}, 416, errors[416], content_range=f"bytes */{length}")
+    case("head-range", {"Range": "bytes=0-3"}, 206, plain[:4], "HEAD", f"bytes 0-3/{length}")
+    case("head-unsatisfied", {"Range": "bytes=99999-"}, 416, errors[416], "HEAD", f"bytes */{length}")
+    for label, value, fresh in (("weak", normal["etag"], True), ("strong", normal["etag"][2:], False),
+                                ("missing", '"miss"', False), ("date", normal["last-modified"], True),
+                                ("future", "Sat, 02 Jan 2021 00:00:00 GMT", True),
+                                ("old", "Thu, 31 Dec 2020 23:59:59 GMT", False), ("invalid", "invalid", False)):
+        case("if-range-" + label, {"Range": "bytes=0-3", "If-Range": value}, 206 if fresh else 200,
+             plain[:4] if fresh else plain, content_range=f"bytes 0-3/{length}" if fresh else None)
+    case("stale-unsatisfied", {"Range": "bytes=99999-", "If-Range": '"miss"'}, 200, plain)
+    for label, value in (("weak", normal["etag"]), ("strong", normal["etag"][2:]),
+                         ("list", '"miss", ' + normal["etag"]), ("wildcard", "*")):
+        case("if-match-" + label, {"If-Match": value}, 200, plain)
+    case("if-match-miss", {"If-Match": '"miss"'}, 412, errors[412])
+    case("head-precondition", {"If-Match": '"miss"'}, 412, errors[412], "HEAD")
+    for label, value in (("equal", normal["last-modified"]), ("future", "Sat, 02 Jan 2021 00:00:00 GMT"), ("invalid", "invalid")):
+        case("unmodified-" + label, {"If-Unmodified-Since": value}, 200, plain)
+    old = "Thu, 31 Dec 2020 23:59:59 GMT"
+    case("unmodified-old", {"If-Unmodified-Since": old}, 412, errors[412])
+    case("match-over-date", {"If-Match": normal["etag"], "If-Unmodified-Since": old}, 200, plain)
+    case("precondition-before-fresh", {"If-Match": '"miss"', "If-None-Match": normal["etag"]}, 412, errors[412])
+    case("precondition-before-range", {"If-Match": '"miss"', "Range": "bytes=0-3"}, 412, errors[412])
+    case("fresh-before-range", {"If-None-Match": normal["etag"], "Range": "bytes=99999-"}, 304, b"")
+    case("matched-range", {"If-Match": normal["etag"], "Range": "bytes=0-3"}, 206, plain[:4], content_range=f"bytes 0-3/{length}")
+    gzip_headers = {"Accept-Encoding": "gzip", "Range": "bytes=0-3"}
+    case("gzip-range", gzip_headers, 206, compressed[:4], content_range=f"bytes 0-3/{len(compressed)}")
+    case("gzip-range-head", gzip_headers, 206, compressed[:4], "HEAD", f"bytes 0-3/{len(compressed)}")
+    case("gzip-if-range", {**gzip_headers, "If-Range": encoded["etag"]}, 206, compressed[:4], content_range=f"bytes 0-3/{len(compressed)}")
+    case("gzip-stale-if-range", {**gzip_headers, "If-Range": normal["etag"]}, 200, compressed)
+    case("gzip-precondition", {**gzip_headers, "If-Match": normal["etag"]}, 412, errors[412])
+    case("gzip-unsatisfied", {"Accept-Encoding": "gzip", "Range": "bytes=99999-"}, 416, errors[416], content_range=f"bytes */{len(compressed)}")
+    send("/empty.txt?conditional=empty", expected=b"")
+    empty = send("/empty.txt?conditional=range", {"Range": "bytes=0-"}, status=416, expected=errors[416])
+    assert empty["content-range"] == "bytes */0"
+
+
 def static_resources(url, state, output, name):
     """Compare actual binary representations and cache metadata from both services."""
     parsed = urlsplit(url)
@@ -356,7 +431,8 @@ def static_resources(url, state, output, name):
     observations = []
     before = {path.name: path.read_bytes() for path in (state / "sub-store.json", state / "root.json") if path.exists()}
     contract_headers = ("content-type", "content-length", "content-encoding", "cache-control",
-                        "etag", "last-modified", "vary", "accept-ranges")
+                        "etag", "last-modified", "vary", "accept-ranges", "content-range",
+                        "content-security-policy", "x-content-type-options")
 
     def send(path, headers=None, method="GET", status=200, expected=None):
         connection = BufferedHTTPConnection(parsed.hostname, parsed.port, timeout=5)
@@ -425,6 +501,7 @@ def static_resources(url, state, output, name):
     send("/settings", {"Accept-Encoding": "gzip"}, expected=(frontend / "index.html.gz").read_bytes())
     for route in ("/api/not-a-resource", "/download/not-a-route/missing/extra/segment", "/share/not-a-resource"):
         send(route, status=404, expected=b"")
+    static_conditions(send, frontend)
     replacement = gzip.compress(b'console.log("replacement chunk is visible")', mtime=0)
     (frontend / (path.lstrip("/") + ".gz")).write_bytes(replacement)
     os.utime(frontend / (path.lstrip("/") + ".gz"), (1609459202, 1609459202))
@@ -443,7 +520,7 @@ def standalone_resources(frontend_url, backend_url, mount, state, output, name):
     contract_headers = ("content-type", "content-length", "content-encoding", "cache-control", "etag",
                         "last-modified", "vary", "accept-ranges", "content-disposition", "x-powered-by",
                         "access-control-allow-origin", "access-control-allow-methods", "access-control-allow-headers",
-                        "content-security-policy", "x-content-type-options")
+                        "content-security-policy", "x-content-type-options", "content-range")
 
     def send(path, headers=None, method="GET", status=200, expected=None, body=None, api=False):
         data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
@@ -500,6 +577,7 @@ def standalone_resources(frontend_url, backend_url, mount, state, output, name):
     for headers in ({}, {"Accept": "application/json"}, {"Accept": "application/json, text/html"}):
         send("/settings", headers, status=404)
     send("/settings?query=1", {"Accept": "text/html"}, method="POST", status=404)
+    static_conditions(send, frontend)
     assert all((state / filename).read_bytes() == data for filename, data in before.items()), "Static frontend changed state"
     if mount:
         api_path = mount.rstrip("/") + "/api"
@@ -804,7 +882,7 @@ def main():
                 (state / "sub-store.json").write_text(json.dumps(backup, ensure_ascii=False), encoding="utf-8")
                 (state / "root.json").write_text(json.dumps(root, ensure_ascii=False), encoding="utf-8")
                 static_fixture(state / "frontend")
-                env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state), "SUB_STORE_BACKEND_MERGE": "true",
+                env = {**environment, "NODE_ENV": "production", "SUB_STORE_DATA_BASE_PATH": str(state), "SUB_STORE_BACKEND_MERGE": "true",
                        "SUB_STORE_FRONTEND_BACKEND_PATH": prefix, "SUB_STORE_FRONTEND_PATH": str(state / "frontend")}
                 manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
                 with manager as url:
@@ -813,6 +891,9 @@ def main():
             check_json(static["rust"], static["node"])
         report["merged_frontend_static_http_equal"] = True
         report["static_prefix_configurations_checked"] = ["/backend", "/"]
+        report["static_ranges_preconditions_checked"] = True
+        report["static_conditional_error_mode"] = "production"
+        report["development_error_stack_parity"] = "NOT_VERIFIED"
         for mode, mount, prefix in (("prefixed", "/backend", "true"), ("unprefixed", "/gateway", ""),
                                     ("root", "/", "true"), ("static-only", "", "")):
             standalone = {}
@@ -826,7 +907,7 @@ def main():
                 with socket.socket() as reserved:
                     reserved.bind(("127.0.0.1", 0))
                     port = reserved.getsockname()[1]
-                env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state), "SUB_STORE_BACKEND_MERGE": "",
+                env = {**environment, "NODE_ENV": "production", "SUB_STORE_DATA_BASE_PATH": str(state), "SUB_STORE_BACKEND_MERGE": "",
                        "SUB_STORE_BACKEND_PREFIX": prefix, "SUB_STORE_FRONTEND_BACKEND_PATH": mount,
                        "SUB_STORE_FRONTEND_PATH": str(state / "frontend"), "SUB_STORE_FRONTEND_HOST": "127.0.0.1",
                        "SUB_STORE_FRONTEND_PORT": str(port), "SUB_STORE_CORS_ALLOWED_ORIGINS": "https://allowed.invalid"}

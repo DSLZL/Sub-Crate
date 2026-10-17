@@ -58,5 +58,9 @@ assets, legacy cache headers, filesystem ETag/Last-Modified validators, conditio
 304 responses and representation metadata on HEAD. Standalone hosting reuses
 these assets with legacy Accept-based history fallback and API/download forwarding.
 Its public share proxy returns an explicit pending error until M4 implements
-token enforcement. Broader HTTP/static edge cases, including ranges/preconditions,
-remain M2 acceptance work. Stored excluded Node scripts remain intact.
+token enforcement. Both hosting modes support selected-representation byte ranges,
+If-Range, If-Match and If-Unmodified-Since, including conditional/HEAD precedence.
+Range combination and validator matching retain the locked Node dependency's
+behavior. Static 412/416 errors use production HTML messages; Node development
+stack bodies and broader HTTP/API edge cases remain M2 acceptance work.
+Stored excluded Node scripts remain intact.

@@ -228,6 +228,16 @@ fn gzip_preferred(headers: &HeaderMap) -> bool {
     gzip.0 > 0.0 && gzip >= priority("identity")
 }
 
+fn static_etag_match(raw: &str, etag: &str) -> bool {
+    raw == "*"
+        || raw.split(',').any(|part| {
+            let part = part.trim();
+            part == etag
+                || part.strip_prefix("W/") == Some(etag)
+                || etag.strip_prefix("W/") == Some(part)
+        })
+}
+
 fn static_fresh(headers: &HeaderMap, etag: &str, modified: std::time::SystemTime) -> bool {
     let matched = header(headers, "if-none-match");
     let since = header(headers, "if-modified-since");
@@ -238,16 +248,70 @@ fn static_fresh(headers: &HeaderMap, etag: &str, modified: std::time::SystemTime
     {
         return false;
     }
-    if !matched.is_empty()
-        && matched != "*"
-        && !matched.split(',').any(|part| {
-            part.trim().strip_prefix("W/").unwrap_or(part.trim())
-                == etag.strip_prefix("W/").unwrap_or(etag)
-        })
-    {
+    if !matched.is_empty() && !static_etag_match(matched, etag) {
         return false;
     }
     since.is_empty() || httpdate::parse_http_date(since).is_ok_and(|date| modified <= date)
+}
+
+fn static_range(
+    headers: &HeaderMap,
+    etag: &str,
+    modified: std::time::SystemTime,
+    length: usize,
+) -> Result<Option<(usize, usize)>, ()> {
+    let Some(raw) = header(headers, "range")
+        .trim_start_matches(' ')
+        .strip_prefix("bytes=")
+    else {
+        return Ok(None);
+    };
+    let condition = header(headers, "if-range");
+    if !condition.is_empty()
+        && !(if condition.contains('"') {
+            condition.contains(etag)
+        } else {
+            httpdate::parse_http_date(condition).is_ok_and(|date| modified <= date)
+        })
+    {
+        return Ok(None);
+    }
+    // The locked range-parser uses parseInt, including numeric prefixes.
+    let number = |raw: &str| {
+        let raw = raw.trim_start();
+        let prefix = raw
+            .char_indices()
+            .take_while(|(index, ch)| ch.is_ascii_digit() || (*index == 0 && matches!(*ch, '+' | '-')))
+            .map(|(index, ch)| index + ch.len_utf8())
+            .last()?;
+        raw[..prefix].parse::<f64>().ok()
+    };
+    let last = length as f64 - 1.0;
+    let mut ranges = Vec::new();
+    for part in raw.split(',') {
+        let mut fields = part.split('-');
+        let start = number(fields.next().unwrap());
+        let end = number(fields.next().unwrap_or(""));
+        let (start, end) = match (start, end) {
+            (Some(start), end) => (start, end.unwrap_or(last).min(last)),
+            (None, Some(suffix)) => (length as f64 - suffix, last),
+            _ => continue,
+        };
+        if start >= 0.0 && start <= end {
+            ranges.push((start as usize, end as usize));
+        }
+    }
+    ranges.sort_unstable();
+    let Some(&(start, mut end)) = ranges.first() else {
+        return Err(());
+    };
+    for &(next, last) in &ranges[1..] {
+        if next > end.saturating_add(1) {
+            return Ok(None);
+        }
+        end = end.max(last);
+    }
+    Ok(Some((start, end)))
 }
 
 fn static_file(root: &Path, path: &str, headers: &HeaderMap, fallback: bool) -> api::Reply {
@@ -310,11 +374,48 @@ fn static_file(root: &Path, path: &str, headers: &HeaderMap, fallback: bool) -> 
         metadata.len(),
         (elapsed.as_nanos() + 500_000) / 1_000_000
     );
-    let fresh = static_fresh(headers, &etag, modified);
-    let bytes = if fresh {
+    let matched = header(headers, "if-match");
+    let precondition_failed = if !matched.is_empty() {
+        !static_etag_match(matched, &etag)
+    } else {
+        httpdate::parse_http_date(header(headers, "if-unmodified-since"))
+            .is_ok_and(|date| modified > date)
+    };
+    let fresh = !precondition_failed && static_fresh(headers, &etag, modified);
+    let range = if precondition_failed || fresh {
+        Ok(None)
+    } else {
+        static_range(headers, &etag, modified, metadata.len() as usize)
+    };
+    let status = if precondition_failed {
+        412
+    } else if fresh {
+        304
+    } else {
+        match range {
+            Ok(Some(_)) => 206,
+            Ok(None) => 200,
+            Err(()) => 416,
+        }
+    };
+    let bytes = if status >= 400 {
+        let message = if status == 412 {
+            "Precondition Failed"
+        } else {
+            "Range Not Satisfiable"
+        };
+        format!("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>{message}</pre>\n</body>\n</html>\n").into_bytes()
+    } else if fresh {
         Vec::new()
     } else if let Ok(bytes) = std::fs::read(&file) {
-        bytes
+        if let Ok(Some((start, end))) = range {
+            let Some(slice) = bytes.get(start..=end) else {
+                return api::not_found();
+            };
+            slice.to_vec()
+        } else {
+            bytes
+        }
     } else {
         return api::not_found();
     };
@@ -349,13 +450,20 @@ fn static_file(root: &Path, path: &str, headers: &HeaderMap, fallback: bool) -> 
         hash.len() == 8 && hash.bytes().all(|b| b.is_ascii_hexdigit()) && !suffix.is_empty()
     });
     let length = bytes.len();
-    let mut response = api::text(if fresh { 304 } else { 200 }, content_type, bytes);
+    let mut response = api::text(
+        status,
+        if status >= 400 {
+            "text/html; charset=utf-8"
+        } else {
+            content_type
+        },
+        bytes,
+    );
     response.headers_mut().insert("etag", etag.parse().unwrap());
     response.headers_mut().insert(
         "last-modified",
         httpdate::fmt_http_date(modified).parse().unwrap(),
     );
-    // shortcut: Range/preconditions return full responses; complete them in the M2 HTTP slice.
     response
         .headers_mut()
         .insert("accept-ranges", "bytes".parse().unwrap());
@@ -379,10 +487,30 @@ fn static_file(root: &Path, path: &str, headers: &HeaderMap, fallback: bool) -> 
             .headers_mut()
             .insert("content-length", length.into());
     }
-    if encoding && !fresh {
+    if encoding && status < 300 {
         response
             .headers_mut()
             .insert("content-encoding", "gzip".parse().unwrap());
+    }
+    if status >= 400 {
+        // Development-mode Node stack paths are outside the stable wire contract.
+        response.headers_mut().insert(
+            "content-security-policy",
+            "default-src 'none'".parse().unwrap(),
+        );
+        response
+            .headers_mut()
+            .insert("x-content-type-options", "nosniff".parse().unwrap());
+    }
+    let content_range = match range {
+        Ok(Some((start, end))) => Some(format!("bytes {start}-{end}/{}", metadata.len())),
+        Err(()) => Some(format!("bytes */{}", metadata.len())),
+        _ => None,
+    };
+    if let Some(value) = content_range {
+        response
+            .headers_mut()
+            .insert("content-range", value.parse().unwrap());
     }
     response
 }
