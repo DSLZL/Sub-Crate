@@ -30,7 +30,8 @@ def listener(binary, environment, output, report, log_prefix="rust", image=None)
     if environment.get("SUB_STORE_FRONTEND_PATH"):
         environment.setdefault("SUB_STORE_CORS_ALLOWED_ORIGINS", origin)
         report["fixture_cors_origin"] = environment["SUB_STORE_CORS_ALLOWED_ORIGINS"]
-    url = origin + environment.get("SUB_STORE_FRONTEND_BACKEND_PATH", "/").rstrip("/")
+    prefixed = environment.get("SUB_STORE_BACKEND_MERGE") or environment.get("SUB_STORE_BACKEND_PREFIX")
+    url = origin + (environment.get("SUB_STORE_FRONTEND_BACKEND_PATH", "") if prefixed else "").rstrip("/")
     name = f"m2-{os.getpid()}-{port}"
     if image:
         argv = ["docker", "run", "--rm", "--name", name, "--read-only", "--cap-drop=ALL",
@@ -39,10 +40,13 @@ def listener(binary, environment, output, report, log_prefix="rust", image=None)
                 "--mount", f"type=bind,source={environment['SUB_STORE_DATA_BASE_PATH']},target=/data"]
         if environment.get("SUB_STORE_FRONTEND_PATH"):
             argv.extend(["--mount", f"type=bind,source={environment['SUB_STORE_FRONTEND_PATH']},target=/frontend,readonly"])
+            if not environment.get("SUB_STORE_BACKEND_MERGE"):
+                argv.extend(["-p", f"127.0.0.1:{environment['SUB_STORE_FRONTEND_PORT']}:3001"])
         for key, value in environment.items():
             if key.startswith("SUB_STORE_") or key == "TZ":
                 value = {"SUB_STORE_DATA_BASE_PATH": "/data", "SUB_STORE_BACKEND_API_PORT": "3000",
-                         "SUB_STORE_BACKEND_API_HOST": "0.0.0.0", "SUB_STORE_FRONTEND_PATH": "/frontend"}.get(key, value)
+                         "SUB_STORE_BACKEND_API_HOST": "0.0.0.0", "SUB_STORE_FRONTEND_PATH": "/frontend",
+                         "SUB_STORE_FRONTEND_HOST": "0.0.0.0", "SUB_STORE_FRONTEND_PORT": "3001"}.get(key, value)
                 argv.extend(["--env", f"{key}={value}"])
         argv.append(image)
     else:
@@ -62,7 +66,9 @@ def listener(binary, environment, output, report, log_prefix="rust", image=None)
                 if child.poll() is not None:
                     raise RuntimeError(f"Rust listener exited before readiness: {child.returncode}")
                 try:
-                    if request(url, {"path": "/api/utils/env"})["status"] == 200:
+                    frontend_ready = not environment.get("SUB_STORE_FRONTEND_PATH") or environment.get("SUB_STORE_BACKEND_MERGE") or request(
+                        f"http://127.0.0.1:{environment.get('SUB_STORE_FRONTEND_PORT', '3001')}", {"path": "/"})["status"] == 200
+                    if frontend_ready and request(url, {"path": "/api/utils/env"})["status"] == 200:
                         break
                 except OSError:
                     pass
@@ -429,6 +435,86 @@ def static_resources(url, state, output, name):
     return observations
 
 
+def standalone_resources(frontend_url, backend_url, mount, state, output, name):
+    """Exercise the real second listener and its shared backend state."""
+    parsed = urlsplit(frontend_url)
+    observations = []
+    before = {path.name: path.read_bytes() for path in (state / "sub-store.json", state / "root.json")}
+    contract_headers = ("content-type", "content-length", "content-encoding", "cache-control", "etag",
+                        "last-modified", "vary", "accept-ranges", "content-disposition", "x-powered-by",
+                        "access-control-allow-origin", "access-control-allow-methods", "access-control-allow-headers",
+                        "content-security-policy", "x-content-type-options")
+
+    def send(path, headers=None, method="GET", status=200, expected=None, body=None, api=False):
+        data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+        headers = {"Origin": "https://allowed.invalid", **({"Content-Type": "application/json"} if data else {}), **(headers or {})}
+        connection = BufferedHTTPConnection(parsed.hostname, parsed.port, timeout=5)
+        try:
+            connection.request(method, path, body=data, headers=headers)
+            response = connection.getresponse()
+            content = response.read()
+            raw = {"method": method, "path": path, "request_headers": headers, "request_body": body,
+                   "status": response.status, "headers": {key.lower(): value for key, value in response.getheaders()},
+                   "body_base64": base64.b64encode(content).decode("ascii")}
+        finally:
+            connection.close()
+        with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
+            evidence.write(json.dumps(raw, ensure_ascii=False) + "\n")
+        assert raw["status"] == status, f"{name} {method} {path}: {raw}"
+        if expected is not None:
+            assert content == expected, f"{name} {method} {path}: unexpected body"
+        if api:
+            assert raw["headers"].get("x-powered-by") == "Sub-Store", "Frontend did not enter backend routing"
+        else:
+            assert raw["headers"].get("x-powered-by") == "Express"
+            assert "access-control-allow-origin" not in raw["headers"], "Static frontend inherited backend CORS"
+        compared_headers = ("content-type", "content-disposition", "x-powered-by", "vary",
+                            "access-control-allow-origin", "access-control-allow-methods", "access-control-allow-headers") if api else contract_headers
+        observations.append({"method": method, "path": path, "status": raw["status"],
+                             "headers": {key: raw["headers"][key] for key in compared_headers if key in raw["headers"]},
+                             "body": json.loads(content) if api and content.startswith(b"{") else raw["body_base64"],
+                             "state": json.loads((state / "sub-store.json").read_text(encoding="utf-8"))})
+        return raw["headers"]
+
+    frontend = state / "frontend"
+    entry = (frontend / "index.html").read_bytes()
+    normal = send("/chunks/main-84da2e86.js?cache=1", expected=(frontend / "chunks/main-84da2e86.js").read_bytes())
+    send("/chunks/main-84da2e86.js", {"Accept-Encoding": "gzip"}, expected=(frontend / "chunks/main-84da2e86.js.gz").read_bytes())
+    send("/chunks/main-84da2e86.js", method="HEAD", expected=b"")
+    send("/chunks/main-84da2e86.js", {"If-None-Match": normal["etag"]}, status=304, expected=b"")
+    send("/", expected=entry)
+    for path in ("/settings", "/missing.js", "/.env", "/%2e%2e%2fsecret.txt"):
+        send(path, {"Accept": "text/html"}, expected=entry)
+    send("/settings", {"Accept": "*/*", "Accept-Encoding": "gzip"}, expected=(frontend / "index.html.gz").read_bytes())
+    send("/settings", {"Accept": "text/html"}, method="HEAD", expected=b"")
+    for headers in ({}, {"Accept": "application/json"}, {"Accept": "application/json, text/html"}):
+        send("/settings", headers, status=404)
+    send("/settings?query=1", {"Accept": "text/html"}, method="POST", status=404)
+    assert all((state / filename).read_bytes() == data for filename, data in before.items()), "Static frontend changed state"
+    if mount:
+        api_path = mount.rstrip("/") + "/api"
+        send(api_path + "/settings", api=True)
+        send(api_path + "/settings?keep=%E4%B8%AD&keep=%2B", method="PATCH", body={"standalone": "转交🙂", "zero": 0}, api=True)
+        direct = request(backend_url, {"path": "/api/settings"})
+        assert json.loads(direct["body"])["data"]["standalone"] == "转交🙂", "Proxy wrote a different store"
+        send(api_path + "/subs", method="POST", body={"name": "独立 %?", "url": "https://example.invalid/list"}, status=201, api=True)
+        encoded = quote("独立 %?", safe="")
+        send(api_path + "/sub/" + encoded + "?raw=1&opaque=%26%2B", api=True)
+        send(api_path + "/sub/" + encoded, method="PATCH", body={"name": "renamed", "custom": False}, api=True)
+        send(api_path + "/sub/renamed", method="DELETE", api=True)
+        send(api_path + "/settings", method="OPTIONS", expected=b"", api=True)
+        send(api_path + "/settings", {"Origin": "https://denied.invalid"}, method="PATCH", body={"mustNotWrite": True}, status=403, expected=b"CORS origin not allowed", api=True)
+        assert "mustNotWrite" not in json.loads((state / "sub-store.json").read_text(encoding="utf-8"))["settings"]
+        send(mount.rstrip("/") + "/download/not-a-route/missing/extra/segment?raw=1", status=404, expected=b"", api=True)
+        send(api_path.upper() + "/settings", api=True)
+        send(api_path + "extra/settings", {"Accept": "text/html"}, expected=entry)
+    else:
+        send("/api/settings", status=404)
+        send("/api/settings", {"Accept": "text/html"}, expected=entry)
+    (output / f"{name}.json").write_text(json.dumps(observations, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return observations
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--node", required=True, type=Path)
@@ -716,6 +802,30 @@ def main():
             check_json(static["rust"], static["node"])
         report["merged_frontend_static_http_equal"] = True
         report["static_prefix_configurations_checked"] = ["/backend", "/"]
+        for mode, mount, prefix in (("prefixed", "/backend", "true"), ("unprefixed", "/gateway", ""),
+                                    ("root", "/", "true"), ("static-only", "", "")):
+            standalone = {}
+            for kind in ("node", "rust"):
+                label = f"{kind}-standalone-{mode}"
+                state = output / label
+                state.mkdir()
+                (state / "sub-store.json").write_text(json.dumps(backup, ensure_ascii=False), encoding="utf-8")
+                (state / "root.json").write_text(json.dumps(root, ensure_ascii=False), encoding="utf-8")
+                static_fixture(state / "frontend")
+                with socket.socket() as reserved:
+                    reserved.bind(("127.0.0.1", 0))
+                    port = reserved.getsockname()[1]
+                env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state), "SUB_STORE_BACKEND_MERGE": "",
+                       "SUB_STORE_BACKEND_PREFIX": prefix, "SUB_STORE_FRONTEND_BACKEND_PATH": mount,
+                       "SUB_STORE_FRONTEND_PATH": str(state / "frontend"), "SUB_STORE_FRONTEND_HOST": "127.0.0.1",
+                       "SUB_STORE_FRONTEND_PORT": str(port), "SUB_STORE_CORS_ALLOWED_ORIGINS": "https://allowed.invalid"}
+                manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
+                with manager as url:
+                    standalone[kind] = standalone_resources(f"http://127.0.0.1:{port}", url, mount, state, output, label)
+                    report["phases"].append({"name": label, "requests": len(standalone[kind])})
+            check_json(standalone["rust"], standalone["node"])
+        report["standalone_frontend_http_and_state_equal"] = True
+        report["standalone_configurations_checked"] = ["prefixed", "unprefixed", "root", "static-only"]
         report["exit_code"] = 0
     except Exception as error:
         report["error"] = f"{type(error).__name__}: {error}"

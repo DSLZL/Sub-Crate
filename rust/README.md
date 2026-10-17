@@ -22,7 +22,11 @@ Downloaded service binaries use the existing environment variables:
 - `SUB_STORE_BACKEND_PREFIX` / `SUB_STORE_FRONTEND_BACKEND_PATH`: existing prefix
   mode and backend path. Prefix/merge modes require a path starting with `/`.
 - `SUB_STORE_BACKEND_MERGE` / `SUB_STORE_FRONTEND_PATH`: serve unchanged frontend
-  assets in the same listener.
+  assets in the same listener. Without merge, FRONTEND_PATH starts a separate
+  listener using `SUB_STORE_FRONTEND_HOST` / `SUB_STORE_FRONTEND_PORT` (defaults
+  backend host / `3001`). FRONTEND_BACKEND_PATH mounts API/download forwarding
+  to the same Rust backend; without that path the frontend port serves only
+  static assets. Configure CORS to allow the frontend origin when needed.
 - `SUB_STORE_CORS_ALLOWED_ORIGINS`, `SUB_STORE_BACKEND_CUSTOM_NAME`,
   `SUB_STORE_X_POWERED_BY`, `SUB_STORE_BODY_JSON_LIMIT`: existing HTTP policy.
 
@@ -51,6 +55,8 @@ recover a pending restore before rolling back to Node. The no-Gist refresh path
 clears the three resource caches used by frontend restore; Gist refresh remains
 pending. Merged frontend hosting preserves gzip/identity preferences, compressed
 assets, legacy cache headers, filesystem ETag/Last-Modified validators, conditional
-304 responses and representation metadata on HEAD. Broader HTTP/static edge cases,
-including ranges/preconditions and the standalone frontend proxy, remain M2
-acceptance work. Stored excluded Node scripts remain intact.
+304 responses and representation metadata on HEAD. Standalone hosting reuses
+these assets with legacy Accept-based history fallback and API/download forwarding.
+Its public share proxy returns an explicit pending error until M4 implements
+token enforcement. Broader HTTP/static edge cases, including ranges/preconditions,
+remain M2 acceptance work. Stored excluded Node scripts remain intact.

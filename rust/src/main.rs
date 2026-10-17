@@ -22,6 +22,8 @@ use tokio::net::TcpListener;
 struct Config {
     prefix: Option<String>,
     frontend: Option<PathBuf>,
+    merge: bool,
+    frontend_backend_path: String,
     cors: Vec<String>,
     local_origins: bool,
     body_limit: usize,
@@ -48,20 +50,18 @@ impl Config {
         let merge = !configured("SUB_STORE_BACKEND_MERGE", "").is_empty();
         let prefixed = !configured("SUB_STORE_BACKEND_PREFIX", "").is_empty();
         let backend_path = configured("SUB_STORE_FRONTEND_BACKEND_PATH", "");
-        if (merge || prefixed) && !backend_path.starts_with('/') {
+        let frontend = env::var("SUB_STORE_FRONTEND_PATH")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(fs_root)
+            .transpose()?;
+        if (merge || prefixed || (frontend.is_some() && !backend_path.is_empty()))
+            && !backend_path.starts_with('/')
+        {
             return Err(io::Error::other(
-                "SUB_STORE_FRONTEND_BACKEND_PATH must start with / when prefix or merge is enabled",
+                "SUB_STORE_FRONTEND_BACKEND_PATH must start with / when a backend mount is configured",
             ));
         }
-        let frontend = if merge {
-            env::var("SUB_STORE_FRONTEND_PATH")
-                .ok()
-                .filter(|s| !s.is_empty())
-                .map(fs_root)
-                .transpose()?
-        } else {
-            None
-        };
         let allowed = configured("SUB_STORE_CORS_ALLOWED_ORIGINS", "");
         let mut cors: Vec<_> = allowed
             .split(|c: char| c == ',' || c == '，' || c.is_whitespace())
@@ -99,8 +99,10 @@ impl Config {
                 .collect(),
         );
         Ok(Self {
-            prefix: (merge || prefixed).then_some(backend_path),
+            prefix: (merge || prefixed).then(|| backend_path.clone()),
             frontend,
+            merge,
+            frontend_backend_path: backend_path,
             cors,
             local_origins: default_cors
                 && !configured("SUB_STORE_BACKEND_CUSTOM_NAME", "").is_empty(),
@@ -248,7 +250,7 @@ fn static_fresh(headers: &HeaderMap, etag: &str, modified: std::time::SystemTime
     since.is_empty() || httpdate::parse_http_date(since).is_ok_and(|date| modified <= date)
 }
 
-fn static_file(root: &Path, path: &str, headers: &HeaderMap) -> api::Reply {
+fn static_file(root: &Path, path: &str, headers: &HeaderMap, fallback: bool) -> api::Reply {
     let relative = Path::new(path.trim_start_matches('/'));
     let safe = !path.contains(['\\', '\0'])
         && !relative.components().any(|part| match part {
@@ -257,12 +259,16 @@ fn static_file(root: &Path, path: &str, headers: &HeaderMap) -> api::Reply {
         });
     let requested = if safe {
         root.join(relative)
-    } else {
+    } else if fallback {
         root.join("index.html")
+    } else {
+        return api::not_found();
     };
     let gzip = gzip_preferred(headers);
     let mut selected = None;
-    for logical in [requested, root.join("index.html")] {
+    for logical in std::iter::once(requested)
+        .chain(fallback.then(|| root.join("index.html")))
+    {
         if gzip && !logical.is_dir() {
             let compressed = logical.with_file_name(format!(
                 "{}.gz",
@@ -405,16 +411,86 @@ async fn handle(
     let mut response = response;
     config.headers(&mut response, &raw_origin);
     if head {
-        if !response.status().is_informational()
-            && response.status().as_u16() != 204
-            && response.status().as_u16() != 304
-            && let Some(length) = response.body().size_hint().exact()
-        {
-            response
-                .headers_mut()
-                .insert("content-length", length.into());
+        strip_head_body(&mut response);
+    }
+    Ok(response)
+}
+
+fn strip_head_body(response: &mut api::Reply) {
+    if !response.status().is_informational()
+        && response.status().as_u16() != 204
+        && response.status().as_u16() != 304
+        && let Some(length) = response.body().size_hint().exact()
+    {
+        response
+            .headers_mut()
+            .insert("content-length", length.into());
+    }
+    *response.body_mut() = http_body_util::Full::new(hyper::body::Bytes::new());
+}
+
+async fn frontend_handle(
+    mut request: Request<Incoming>,
+    config: Arc<Config>,
+    store: Arc<Mutex<state::Store>>,
+) -> Result<api::Reply, Infallible> {
+    let path = request.uri().path().to_owned();
+    let mount = config.frontend_backend_path.trim_end_matches('/');
+    if !config.frontend_backend_path.is_empty() {
+        for namespace in ["api", "download"] {
+            let prefix = format!("{mount}/{namespace}");
+            if path.get(..prefix.len()).is_some_and(|part| part.eq_ignore_ascii_case(&prefix))
+                && (path.len() == prefix.len() || path.as_bytes()[prefix.len()] == b'/')
+            {
+                let backend_prefix = config.prefix.as_deref().unwrap_or("").trim_end_matches('/');
+                let suffix = &path[prefix.len()..];
+                let suffix = if suffix.is_empty() { "/" } else { suffix };
+                let mut target = format!("{backend_prefix}/{namespace}{suffix}");
+                if let Some(query) = request.uri().query() {
+                    target.push('?');
+                    target.push_str(query);
+                }
+                if namespace == "api" {
+                    target.push_str(if request.uri().query().is_some() { "&share=true" } else { "?share=true" });
+                }
+                let Ok(uri) = target.parse() else {
+                    return Ok(api::text(400, "text/plain; charset=utf-8", "Invalid proxy URL"));
+                };
+                *request.uri_mut() = uri;
+                return handle(request, config, store).await;
+            }
         }
-        *response.body_mut() = http_body_util::Full::new(hyper::body::Bytes::new());
+    }
+    let head = request.method() == Method::HEAD;
+    let mut response = api::not_found();
+    if !config.frontend_backend_path.is_empty() && path.starts_with("/share/") {
+        // shortcut: public share forwarding requires M4 token enforcement; keep it unavailable until then.
+        response = api::text(501, "text/plain; charset=utf-8", "Public share proxy is not implemented yet");
+    } else if (request.method() == Method::GET || head)
+        && let Some(root) = &config.frontend
+        && let Ok(decoded) = percent_decode_str(&path).decode_utf8()
+    {
+        response = static_file(root, &decoded, request.headers(), false);
+        let accept = header(request.headers(), "accept");
+        if response.status().as_u16() == 404
+            && !accept.starts_with("application/json")
+            && (accept.contains("text/html") || accept.contains("*/*"))
+        {
+            response = static_file(root, "/index.html", request.headers(), false);
+        }
+    }
+    if response.status().as_u16() == 404 {
+        let escaped = path.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+            .replace('"', "&quot;").replace('\'', "&#39;");
+        response = api::text(404, "text/html; charset=utf-8", format!(
+            "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Cannot {} {escaped}</pre>\n</body>\n</html>\n", request.method()
+        ));
+        response.headers_mut().insert("content-security-policy", "default-src 'none'".parse().unwrap());
+        response.headers_mut().insert("x-content-type-options", "nosniff".parse().unwrap());
+    }
+    response.headers_mut().insert("x-powered-by", "Express".parse().unwrap());
+    if head {
+        strip_head_body(&mut response);
     }
     Ok(response)
 }
@@ -437,7 +513,7 @@ async fn route(
     let path = if let Some(prefix) = &config.prefix {
         let matches = if prefix == "/" {
             backend_route(&raw_path)
-                && !(config.frontend.is_some() && raw_path.starts_with("/share/"))
+                && !(config.merge && config.frontend.is_some() && raw_path.starts_with("/share/"))
         } else {
             raw_path.starts_with(prefix)
         };
@@ -450,10 +526,11 @@ async fn route(
             if stripped.is_empty() { "/" } else { stripped }
         } else {
             if let Some(root) = &config.frontend
+                && config.merge
                 && !backend_route(&raw_path)
                 && method == Method::GET
             {
-                return static_file(root, &decoded, request.headers());
+                return static_file(root, &decoded, request.headers(), true);
             }
             return api::not_found();
         }
@@ -527,13 +604,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         env!("CARGO_PKG_VERSION"),
         listener.local_addr()?
     );
+    if config.frontend.is_some() && !config.merge {
+        let frontend = TcpListener::bind((
+            configured("SUB_STORE_FRONTEND_HOST", &configured("SUB_STORE_BACKEND_API_HOST", "::")),
+            configured("SUB_STORE_FRONTEND_PORT", "3001").parse::<u16>()?,
+        ))
+        .await?;
+        println!("Sub-Store frontend listening on {}", frontend.local_addr()?);
+        tokio::try_join!(
+            serve(listener, Arc::clone(&config), Arc::clone(&store), false),
+            serve(frontend, config, store, true),
+        )?;
+    } else {
+        serve(listener, config, store, false).await?;
+    }
+    Ok(())
+}
+
+async fn serve(
+    listener: TcpListener,
+    config: Arc<Config>,
+    store: Arc<Mutex<state::Store>>,
+    frontend: bool,
+) -> io::Result<()> {
     loop {
         let (stream, _) = listener.accept().await?;
         let config = Arc::clone(&config);
         let store = Arc::clone(&store);
         tokio::spawn(async move {
-            let service =
-                service_fn(move |request| handle(request, Arc::clone(&config), Arc::clone(&store)));
+            let service = service_fn(move |request| {
+                let config = Arc::clone(&config);
+                let store = Arc::clone(&store);
+                async move {
+                    if frontend {
+                        frontend_handle(request, config, store).await
+                    } else {
+                        handle(request, config, store).await
+                    }
+                }
+            });
             if let Err(error) = http1::Builder::new()
                 .serve_connection(TokioIo::new(stream), service)
                 .await

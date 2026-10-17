@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import platform
 import shutil
+import socket
 import subprocess
 from urllib.parse import parse_qs, quote, urlsplit
 
@@ -71,7 +72,10 @@ def main():
     parser.add_argument("--frontend", required=True, type=Path, help="Unchanged pinned checkout with completed dist build")
     parser.add_argument("--browser", required=True, type=Path, help="Installed native agent-browser executable")
     parser.add_argument("--rust-binary", type=Path, help="Run the M2 CRUD/settings/export slice against this Rust service")
+    parser.add_argument("--standalone", action="store_true", help="Use the separate Rust frontend port and API mount")
     args = parser.parse_args()
+    if args.standalone and not args.rust_binary:
+        parser.error("--standalone requires --rust-binary")
     node = args.node.resolve(strict=True)
     frontend = args.frontend.resolve(strict=True)
     browser = args.browser.resolve(strict=True)
@@ -85,11 +89,19 @@ def main():
     environment.update(SUB_STORE_DATA_BASE_PATH=str(state), SUB_STORE_BACKEND_API_HOST="127.0.0.1",
                        SUB_STORE_FRONTEND_BACKEND_PATH="/backend", SUB_STORE_BACKEND_MERGE="true",
                        SUB_STORE_FRONTEND_PATH=str(frontend / "dist"), AGENT_BROWSER_DEFAULT_TIMEOUT="15000")
+    if args.standalone:
+        with socket.socket() as reserved:
+            reserved.bind(("127.0.0.1", 0))
+            frontend_port = reserved.getsockname()[1]
+        frontend_origin = f"http://127.0.0.1:{frontend_port}"
+        environment.update(SUB_STORE_BACKEND_MERGE="", SUB_STORE_BACKEND_PREFIX="true",
+                           SUB_STORE_FRONTEND_HOST="127.0.0.1", SUB_STORE_FRONTEND_PORT=str(frontend_port),
+                           SUB_STORE_CORS_ALLOWED_ORIGINS=frontend_origin)
     session = "sub-store-rust-" + run_id.lower().replace(".", "-")
     report = {"kind": "node-frontend-baseline", "frontend_commit": "4bd7b0acbe65466b933ccea14fc61dbebe036ead",
               "full_coverage": False,
               "rust_parity": False, "session": session, "os": platform.system(), "machine": platform.machine(),
-              "exit_code": 1, "cases": []}
+              "exit_code": 1, "cases": [], "frontend_hosting": "standalone" if args.standalone else "merged"}
     if args.rust_binary:
         report["kind"] = "rust-frontend-service-state"
         report["binary_sha256"] = hashlib.sha256(args.rust_binary.read_bytes()).hexdigest()
@@ -264,6 +276,10 @@ def main():
             assert bundle.returncode == 0, "Backend bundle failed"
             server = oracle(node, environment, output, report)
         with ControlledUpstream() as upstream, server as backend_url:
+            if args.standalone:
+                report["direct_backend_url"] = backend_url
+                backend_url = frontend_origin + "/backend"
+                report.update(server_origin=frontend_origin, server_url=backend_url)
             command("open", "about:blank")
             report["browser_runtime"] = evaluate("({userAgent:navigator.userAgent,language:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,viewport:{width:innerWidth,height:innerHeight}})")
             command("network", "har", "start")
