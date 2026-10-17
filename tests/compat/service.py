@@ -15,6 +15,7 @@ import socket
 import subprocess
 import time
 from urllib.parse import quote, unquote, urlsplit
+import zlib
 
 from reference import BACKEND, HERE, ROOT, execute, oracle, source_provenance
 from runner import BufferedHTTPConnection, check_json, load_cases, request, run_cases
@@ -393,18 +394,23 @@ def request_bodies(url, state, output, name, origin=None):
     original = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
     compared_headers = ("content-type", "content-length", "etag", "content-security-policy", "x-content-type-options")
 
-    def send(path="/api/settings", body=b"{}", media="application/json", status=200, method="PATCH", headers=None, parser_error=False):
+    def send(path="/api/settings", body=b"{}", media="application/json", status=200, method="PATCH", headers=None, parser_error=False, chunk_size=None):
         headers = {**({"Origin": origin} if origin else {}), **(headers or {})}
         if media is not None:
             headers["Content-Type"] = media
+        if chunk_size is not None:
+            headers["Transfer-Encoding"] = "chunked"
+        chunks = [body[i:i + chunk_size] for i in range(0, len(body), chunk_size)] if chunk_size else None
         before = {filename: (state / filename).read_bytes() for filename in ("sub-store.json", "root.json")}
         connection = BufferedHTTPConnection(parsed.hostname, parsed.port, timeout=5)
         try:
-            connection.request(method, parsed.path.rstrip("/") + path, body=body, headers=headers)
+            connection.request(method, parsed.path.rstrip("/") + path, body=chunks if chunks is not None else body,
+                               headers=headers, encode_chunked=chunks is not None)
             response = connection.getresponse()
             content = response.read()
             raw = {"method": method, "path": path, "request_headers": headers,
                    "request_body_base64": base64.b64encode(body).decode("ascii"), "status": response.status,
+                   "request_chunk_sizes": [len(chunk) for chunk in chunks] if chunks is not None else None,
                    "headers": {key.lower(): value for key, value in response.getheaders()},
                    "body_base64": base64.b64encode(content).decode("ascii"),
                    "state": json.loads((state / "sub-store.json").read_text(encoding="utf-8"))}
@@ -486,6 +492,53 @@ def request_bodies(url, state, output, name, origin=None):
     assert results[1]["parserSparse"] == ["a", "c"] and results[1]["parserObjects"] == [{"a": "1", "b": "2"}]
     assert results[3]["parserMalformed"] == "%E0%A4%A" and results[3]["parserPlus"] == "a b"
     assert "polluted" not in results[-1] and "__proto__" not in results[-1]
+    for coding in ("gzip", "deflate"):
+        compress = (lambda data: gzip.compress(data, mtime=0)) if coding == "gzip" else zlib.compress
+        headers = {"Content-Encoding": coding}
+        data = send(body=compress(json.dumps({"parserCompressed": coding + "中🙂"}, ensure_ascii=False).encode()),
+                    headers={"Content-Encoding": coding.upper()})["data"]
+        assert data["parserCompressed"] == coding + "中🙂"
+        data = send(body=compress(b"parserInflated[a][]=one&parserInflated[a][]=two"),
+                    media="application/x-www-form-urlencoded", headers=headers)["data"]
+        assert data["parserInflated"] == {"a": ["one", "two"]}
+        data = send(body=compress(b"C\x00\xff"), media="application/octet-stream", headers=headers)["data"]
+        assert [data[str(i)] for i in range(3)] == [67, 0, 255]
+        for media in ("application/json", "text/plain", "application/x-www-form-urlencoded"):
+            send(body=compress(b""), media=media, headers=headers)
+            expanded_limit = 32768 if media == "application/json" else 102400
+            exact = b'{"padding":"' + b"x" * (expanded_limit - 14) + b'"}' if media == "application/json" else b"x" * expanded_limit
+            assert len(exact) == expanded_limit
+            send(body=compress(exact), media=media, headers=headers, method="GET")
+            send(body=compress(exact + b" "), media=media, headers=headers, status=413)
+        for plain in (b"{", b"null"):
+            send(body=compress(plain), headers=headers, status=400)
+        send(body=compress('{"parserInflatedUtf16":"中🙂"}'.encode("utf-16le")),
+             media="application/json; charset=utf-16le", headers=headers)
+        send(body=compress(b"{}"), media="application/json; charset=utf-16be", headers=headers,
+             status=403, parser_error=True)
+        encoded = compress(b"{}")
+        corrupted = bytearray(encoded)
+        corrupted[-1] ^= 1
+        for invalid in (b"", b"bad-header", encoded[:1], encoded[:-1], bytes(corrupted)):
+            send(body=invalid, headers=headers, status=400)
+        send(body=encoded, headers=headers, chunk_size=1)
+        send(body=encoded[:-1], headers=headers, chunk_size=1, status=400)
+        send(body=encoded, headers={**headers, "Origin": "https://denied.invalid"}, status=403)
+        send(body=b"bad-header", headers={**headers, "Origin": allowed}, method="OPTIONS")
+        send(body=b"bad-header", media=None, headers=headers)
+    member = lambda data: gzip.compress(data, mtime=0)
+    members = member(b'{"parserMembers":') + member(b'"all"}')
+    assert send(body=members, headers={"Content-Encoding": "gzip"}, chunk_size=3)["data"]["parserMembers"] == "all"
+    send(body=member(b"") + member(b"{}"), headers={"Content-Encoding": "gzip"})
+    send(body=member(b"{}") + b"\x00" * 8, headers={"Content-Encoding": "gzip"})
+    send(body=member(b"{}") + b"\x00ignored", headers={"Content-Encoding": "gzip"})
+    send(body=member(b"{}") + b"garbage", headers={"Content-Encoding": "gzip"}, status=400)
+    send(body=member(b"{}") + member(b"")[:-1], headers={"Content-Encoding": "gzip"}, status=400)
+    send(body=zlib.compress(b"{}") + b"ignored", headers={"Content-Encoding": "deflate"})
+    send(body=zlib.compress(b"{}")[2:-4], headers={"Content-Encoding": "deflate"}, status=400)
+    for coding in ("br", "x-gzip", "gzip, deflate"):
+        send(headers={"Content-Encoding": coding}, status=415)
+    send(headers={"Content-Encoding": ""})
     for plural in ("subs", "collections"):
         current = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))[plural]
         send("/api/" + plural, json.dumps(original[plural] + current, ensure_ascii=False).encode(), method="PUT")
@@ -1052,7 +1105,9 @@ def main():
         report["request_body_identity_json_form_raw_checked"] = True
         report["request_body_limits_errors_and_cors_checked"] = True
         report["request_body_restart_and_node_rollback_checked"] = True
-        report["compressed_request_body_parity"] = "NOT_VERIFIED"
+        report["compressed_request_body_parity"] = "gzip_and_deflate_checked"
+        report["compressed_body_expanded_limits_and_errors_checked"] = True
+        report["compressed_body_chunking_and_members_checked"] = True
         report["crud_development_stack_parity"] = "NOT_VERIFIED"
         backup = json.loads((HERE / "fixtures/frontend-backup.json").read_text(encoding="utf-8"))
         root = {"opaque": {"text": "根缓存🙂\r\n", "zero": 0, "flag": False, "nil": None}, "sub-store": "previous backup"}

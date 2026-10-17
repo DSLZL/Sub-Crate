@@ -1,3 +1,4 @@
+use flate2::{Decompress, FlushDecompress, Status};
 use http_body_util::{BodyExt, Limited};
 use hyper::{Request, body::Bytes, body::Incoming};
 use percent_encoding::percent_decode_str;
@@ -109,20 +110,25 @@ pub async fn read(request: Request<Incoming>, json_limit: usize) -> Result<Body,
     {
         return Err(415);
     }
-    // shortcut: request gzip/deflate inflation remains an M2 gap; add bounded inflation before claiming full parser parity.
-    if headers
+    let encoding = headers
         .get("content-encoding")
         .and_then(|v| v.to_str().ok())
-        .is_some_and(|v| !v.eq_ignore_ascii_case("identity"))
-    {
+        .filter(|v| !v.is_empty())
+        .unwrap_or("identity")
+        .to_ascii_lowercase();
+    if !["identity", "gzip", "deflate"].contains(&encoding.as_str()) {
         return Err(415);
     }
     let limit = if json { json_limit } else { 100 * 1024 };
-    let bytes = Limited::new(request.into_body(), limit)
-        .collect()
-        .await
-        .map_err(|_| 413u16)?
-        .to_bytes();
+    let bytes = if encoding == "identity" {
+        Limited::new(request.into_body(), limit)
+            .collect()
+            .await
+            .map_err(|_| 413u16)?
+            .to_bytes()
+    } else {
+        inflate(request.into_body(), encoding == "gzip", limit).await?
+    };
     // The legacy rawBodySaver uses Buffer.toString, which rejects these iconv-supported charsets.
     if json && !bytes.is_empty() && !["utf-8", "utf-16le"].contains(&charset.as_str()) {
         return Err(403);
@@ -143,6 +149,61 @@ pub async fn read(request: Request<Incoming>, json_limit: usize) -> Result<Body,
     } else {
         Ok(Body::Raw(bytes))
     }
+}
+
+async fn inflate(mut body: Incoming, gzip: bool, limit: usize) -> Result<Bytes, u16> {
+    let mut decoder = if gzip {
+        Decompress::new_gzip(15)
+    } else {
+        Decompress::new(true)
+    };
+    let mut output = Vec::new();
+    let mut finished = false;
+    let mut padding = false;
+    while let Some(frame) = body.frame().await {
+        let frame = frame.map_err(|_| 400u16)?;
+        let Ok(data) = frame.into_data() else {
+            continue;
+        };
+        let mut input = data.as_ref();
+        while !padding {
+            if finished {
+                let Some(&first) = input.first() else {
+                    break;
+                };
+                // Node ignores bytes after a zlib stream or gzip's first padding zero.
+                if !gzip || first == 0 {
+                    padding = true;
+                    break;
+                }
+                decoder = Decompress::new_gzip(15);
+                finished = false;
+            }
+            let mut decoded = [0u8; 8192];
+            let before_in = decoder.total_in();
+            let before_out = decoder.total_out();
+            let status = decoder.decompress(input, &mut decoded, FlushDecompress::None);
+            let consumed = (decoder.total_in() - before_in) as usize;
+            let produced = (decoder.total_out() - before_out) as usize;
+            if produced > limit.saturating_sub(output.len()) {
+                return Err(413);
+            }
+            let status = status.map_err(|_| 400u16)?;
+            output.extend_from_slice(&decoded[..produced]);
+            input = &input[consumed..];
+            finished = status == Status::StreamEnd;
+            if consumed == 0 && produced == 0 && !finished {
+                if !input.is_empty() {
+                    return Err(400);
+                }
+                break;
+            }
+        }
+    }
+    if !finished {
+        return Err(400);
+    }
+    Ok(Bytes::from(output))
 }
 
 fn form_decode(value: &str) -> String {
