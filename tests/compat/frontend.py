@@ -59,11 +59,16 @@ def check_network(entries, cases, backend_url):
     return [{"method": method, "url": url, "status": status} for method, url, status in observed if url.startswith((backend_url.rstrip("/") + "/", origin + "/share/"))]
 
 
+class StateSliceComplete(Exception):
+    """The explicitly selected M2 browser slice finished."""
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--node", required=True, type=Path)
     parser.add_argument("--frontend", required=True, type=Path, help="Unchanged pinned checkout with completed dist build")
     parser.add_argument("--browser", required=True, type=Path, help="Installed native agent-browser executable")
+    parser.add_argument("--rust-binary", type=Path, help="Run the M2 setup/create/rename slice against this Rust service")
     args = parser.parse_args()
     node = args.node.resolve(strict=True)
     frontend = args.frontend.resolve(strict=True)
@@ -83,6 +88,10 @@ def main():
               "full_coverage": False,
               "rust_parity": False, "session": session, "os": platform.system(), "machine": platform.machine(),
               "exit_code": 1, "cases": []}
+    if args.rust_binary:
+        report["kind"] = "rust-frontend-service-state"
+        report["binary_sha256"] = hashlib.sha256(args.rust_binary.read_bytes()).hexdigest()
+        report["required_cases"] = ["FE01-url-backend-setup", "FE02-create-subscription", "FE03-reopen-rename-subscription"]
     command_index = 0
 
     def command(*arguments):
@@ -162,9 +171,14 @@ def main():
         artifact = json.dumps(assets, sort_keys=True).encode("utf-8")
         report["frontend_artifact_sha256"] = hashlib.sha256(artifact).hexdigest()
         (output / "frontend-assets.json").write_bytes(artifact)
-        bundle = execute([node, "bundle-esbuild.js"], BACKEND, environment, output, "backend-bundle")
-        assert bundle.returncode == 0, "Backend bundle failed"
-        with ControlledUpstream() as upstream, oracle(node, environment, output, report) as backend_url:
+        if args.rust_binary:
+            from service import listener
+            server = listener(args.rust_binary.resolve(strict=True), environment, output, report)
+        else:
+            bundle = execute([node, "bundle-esbuild.js"], BACKEND, environment, output, "backend-bundle")
+            assert bundle.returncode == 0, "Backend bundle failed"
+            server = oracle(node, environment, output, report)
+        with ControlledUpstream() as upstream, server as backend_url:
             command("open", "about:blank")
             report["browser_runtime"] = evaluate("({userAgent:navigator.userAgent,language:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,viewport:{width:innerWidth,height:innerHeight}})")
             command("network", "har", "start")
@@ -175,7 +189,9 @@ def main():
             metadata = evaluate("({host:JSON.parse(localStorage.getItem('hostAPI')),env:JSON.parse(localStorage.getItem('envCache')).data.data.data,body:document.body.innerText})")
             report["metadata"] = metadata
             assert any(item["url"] == backend_url and item["name"] == metadata["host"]["current"] for item in metadata["host"]["apis"]), "UI backend setup failed"
-            assert metadata["env"]["backend"] == "Node" and metadata["env"]["version"] == "2.42.4", "Metadata mismatch"
+            assert metadata["env"]["backend"] == "Node" and metadata["env"]["version"] == ("0.1.0" if args.rust_binary else "2.42.4"), "Metadata mismatch"
+            if args.rust_binary:
+                assert metadata["env"]["meta"]["rust"]["complete"] is False, "Partial Rust service must not claim final parity"
             assert metadata["env"]["meta"]["node"]["env"]["SUB_STORE_FRONTEND_BACKEND_PATH"] == "/backend", "Legacy config metadata missing"
             # CI's browser language differs from the Windows baseline; use the real language control.
             command("open", report["server_origin"] + "/my")
@@ -230,6 +246,12 @@ def main():
             stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
             assert len(stored["subs"]) == 1 and stored["subs"][0]["name"] == "browser-renamed", "UI rename did not persist"
             report["cases"].append({"id": "FE03-reopen-rename-subscription", "source": "src/views/SubEditor.vue:66", "status": "browser_passed"})
+            if args.rust_binary:
+                command("screenshot", output / "frontend-page.png")
+                report["page_errors"] = command("errors")
+                assert not report["page_errors"]["errors"], "Frontend JavaScript errors"
+                assert [case["id"] for case in report["cases"]] == report["required_cases"], "Incomplete M2 browser slice"
+                raise StateSliceComplete
             command("open", report["server_origin"] + "/edit/subs/browser-renamed")
             command("wait", ".compare-btn")
             expect_value('input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-renamed", "Preview editor did not load the subscription")
@@ -451,6 +473,8 @@ def main():
             report["page_errors"] = command("errors")
             assert not report["page_errors"]["errors"], "Frontend JavaScript errors"
             report["exit_code"] = 0
+    except StateSliceComplete:
+        report["exit_code"] = 0
     except Exception as error:
         report["error"] = f"{type(error).__name__}: {error}"
         if command_index:
