@@ -43,7 +43,7 @@ def listener(binary, environment, output, report, log_prefix="rust", image=None)
             if not environment.get("SUB_STORE_BACKEND_MERGE"):
                 argv.extend(["-p", f"127.0.0.1:{environment['SUB_STORE_FRONTEND_PORT']}:3001"])
         for key, value in environment.items():
-            if key.startswith("SUB_STORE_") or key == "TZ":
+            if key.startswith("SUB_STORE_") or key in ("TZ", "NODE_ENV"):
                 value = {"SUB_STORE_DATA_BASE_PATH": "/data", "SUB_STORE_BACKEND_API_PORT": "3000",
                          "SUB_STORE_BACKEND_API_HOST": "0.0.0.0", "SUB_STORE_FRONTEND_PATH": "/frontend",
                          "SUB_STORE_FRONTEND_HOST": "0.0.0.0", "SUB_STORE_FRONTEND_PORT": "3001"}.get(key, value)
@@ -162,9 +162,9 @@ def crud_edges(url, state, output, name):
     """Subscription/collection CRUD with exact typed values and persisted state."""
     observations = []
 
-    def send(method, path, body=None, status=200):
+    def send(method, path, body=..., status=200, html=None):
         step = {"method": method, "path": path}
-        if body is not None:
+        if body is not ...:
             step["body"] = body
         response = request(url, step)
         observation = {**step, "response": response,
@@ -173,6 +173,16 @@ def crud_edges(url, state, output, name):
             evidence.write(json.dumps(observation, ensure_ascii=False) + "\n")
         assert response["status"] == status, f"{name} {method} {path}: {response}"
         content_type = response["headers"]["content-type"]
+        if html is not None:
+            assert content_type == "text/html; charset=utf-8"
+            assert response["headers"]["content-security-policy"] == "default-src 'none'"
+            assert response["headers"]["x-content-type-options"] == "nosniff"
+            assert response["body"] == ('<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
+                                        '<title>Error</title>\n</head>\n<body>\n<pre>' + html + '</pre>\n</body>\n</html>\n')
+            assert int(response["headers"]["content-length"]) == len(response["body"].encode("utf-8"))
+            observation["response"] = {"status": status, "content_type": content_type, "body": response["body"]}
+            observations.append(observation)
+            return response["body"]
         assert content_type == ("application/json; charset=utf-8" if path == "/api/storage" else "text/plain; charset=utf-8")
         observation["response"] = {"status": response["status"], "content_type": content_type, "json": json.loads(response["body"])}
         observations.append(observation)
@@ -213,7 +223,9 @@ def crud_edges(url, state, output, name):
             error = send("DELETE", path + mode, status=500)["error"]
             assert error["code"] == ("INVALID_DELETE_MODE" if mode.endswith("invalid") else "RESOURCE_NOT_FOUND")
         send("PATCH", path, {}, 404)
-        if plural == "collections":
+        if plural == "subs":
+            send("GET", path, status=500, html="Internal Server Error")
+        else:
             error = send("GET", path, status=500)["error"]
             check_json(error, {"code": "SUBSCRIPTION_NOT_FOUND", "type": "ResourceNotFoundError",
                                "message": "Collection missing does not exist", "details": 404})
@@ -253,6 +265,51 @@ def crud_edges(url, state, output, name):
         send("DELETE", f"/api/{singular}/duplicate?mode=permanent")
         remaining = send("GET", f"/api/{plural}")["data"]
         check_json(remaining, [{"name": "duplicate", "subscriptions": []}, {"name": "duplicate", "subscriptions": []}])
+
+    for plural, singular in (("subs", "sub"), ("collections", "collection")):
+        path = f"/api/{plural}"
+        item_path = f"/api/{singular}/typed"
+        before = (state / "sub-store.json").read_bytes()
+        for value in (None, False, 0, "scalar🙂"):
+            for method, target in (("POST", path), ("PUT", path), ("PATCH", item_path)):
+                send(method, target, value, 400, html="Bad Request")
+                assert (state / "sub-store.json").read_bytes() == before, "Rejected scalar JSON changed state"
+        for value in ([], [None, False, {"opaque": "数组🙂\r\n"}]):
+            send("PUT", path, [])
+            created = send("POST", path, value, 201)["data"]
+            check_json(created, dict((str(index), item) for index, item in enumerate(value)) if plural == "subs" else value)
+            before = (state / "sub-store.json").read_bytes()
+            assert send("POST", path, {}, 500)["error"]["code"] == "DUPLICATE_KEY"
+            assert (state / "sub-store.json").read_bytes() == before, "Duplicate unnamed record changed state"
+        target = {"name": "typed", "opaque": {"zero": 0, "flag": False}}
+        send("PUT", path, [target])
+        for value in ([], [None, False, {"opaque": "PATCH🙂\r\n"}]):
+            changed = send("PATCH", item_path, value)["data"]
+            target.update((str(index), item) for index, item in enumerate(value))
+            check_json(changed, target)
+        mixed = [False, 0, "text🙂\r\n", [], [None, {"name": "nested"}], target, None]
+        send("PUT", path, mixed)
+        check_json(send("GET", path)["data"], mixed)
+        check_json(send("GET", item_path)["data"], target)
+        check_json(send("PATCH", item_path, ["after-scalars"])["data"], {**target, "0": "after-scalars"})
+        mixed = [None, *mixed[:-1]]
+        send("PUT", path, mixed)
+        before = (state / "sub-store.json").read_bytes()
+        send("GET", item_path, status=500, html="Internal Server Error")
+        send("PATCH", item_path, [], 500, html="Internal Server Error")
+        for method, target_path, value in (("DELETE", item_path, ...), ("POST", path, {"name": "new"})):
+            error = send(method, target_path, value, 500)["error"]
+            check_json(error, {"message": "Cannot read properties of null (reading 'name')"})
+        assert send("DELETE", item_path + "?mode=invalid", status=500)["error"]["code"] == "INVALID_DELETE_MODE"
+        check_json(send("GET", path)["data"], mixed)
+        assert (state / "sub-store.json").read_bytes() == before, "Null-record lookup failure changed state"
+    restored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+    for key in ("subs", "collections"):
+        restored[key] = [None, False, 0, "恢复🙂\r\n", [], [None, {"name": "nested"}],
+                         {"0": False, "1": None, "name": "restored", "opaque": {"zero": 0}}]
+    send("POST", "/api/storage", {"content": json.dumps(restored, ensure_ascii=False)})
+    check_json(json.loads((state / "root.json").read_text(encoding="utf-8"))["sub-store"], json.dumps(restored, ensure_ascii=False, indent=2))
+    check_json(send("GET", "/api/storage"), restored)
     return observations
 
 
@@ -734,6 +791,7 @@ def main():
             (state / "sub-store.json").write_text(json.dumps(seed, ensure_ascii=False), encoding="utf-8")
             env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}
             label = f"{kind}-crud"
+            env["NODE_ENV"] = "production"
             manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
             with manager as url:
                 if kind == "rust":
@@ -774,6 +832,11 @@ def main():
             check_json(json.loads(response["body"]), final_crud["rust"])
         report["crud_http_and_state_equal"] = True
         report["crud_restart_and_node_rollback_checked"] = True
+        report["crud_non_object_and_ordered_null_lookup_checked"] = True
+        report["crud_scalar_json_rejected_before_dispatch"] = True
+        report["crud_missing_subscription_production_html_checked"] = True
+        report["crud_mixed_entries_restore_checked"] = True
+        report["crud_development_stack_parity"] = "NOT_VERIFIED"
         backup = json.loads((HERE / "fixtures/frontend-backup.json").read_text(encoding="utf-8"))
         root = {"opaque": {"text": "根缓存🙂\r\n", "zero": 0, "flag": False, "nil": None}, "sub-store": "previous backup"}
         for key in ("sub-store-cached-resource", "sub-store-cached-headers-resource", "sub-store-cached-script-resource"):
@@ -861,6 +924,17 @@ def main():
             result = execute([args.binary], ROOT, {**environment, "SUB_STORE_DATA_BASE_PATH": str(corrupt)}, output, "corrupt-startup", timeout=10)
             assert result.returncode != 0 and (corrupt / "sub-store.json").read_bytes() == b"invalid backup \xff"
             report["corrupt_state_not_reset"] = True
+            for label, document in (("invalid-legacy-record", {"settings": {}, "subs": [None]}),
+                                    ("invalid-other-family", {"schemaVersion": "2.0", "settings": {}, "artifacts": [None]})):
+                state = output / label
+                state.mkdir()
+                original = json.dumps(document).encode("utf-8")
+                (state / "sub-store.json").write_bytes(original)
+                (state / "root.json").write_bytes(old_root)
+                result = execute([args.binary], ROOT, {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}, output, label, timeout=10)
+                assert result.returncode != 0 and (state / "sub-store.json").read_bytes() == original
+                assert (state / "root.json").read_bytes() == old_root
+            report["invalid_legacy_and_other_family_records_not_reset"] = True
             corrupt_restore = output / "corrupt-restore"
             corrupt_restore.mkdir()
             (corrupt_restore / "sub-store.json").write_bytes(old_data)

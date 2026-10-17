@@ -730,15 +730,8 @@ async fn route(
         json!({})
     } else {
         match serde_json::from_slice(&bytes) {
-            Ok(body) => body,
-            Err(_) => {
-                return api::failure(
-                    400,
-                    "INVALID_JSON",
-                    "RequestInvalidError",
-                    "Invalid JSON body",
-                );
-            }
+            Ok(body) if matches!(body, Value::Object(_) | Value::Array(_)) => body,
+            _ => return api::html_error(400, "Bad Request"),
         }
     };
     let mut store = store.lock().unwrap();

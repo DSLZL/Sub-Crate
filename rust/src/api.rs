@@ -31,6 +31,45 @@ pub fn not_found() -> Reply {
     text(404, "text/plain;charset=UTF-8", "")
 }
 
+pub fn html_error(status: u16, message: &str) -> Reply {
+    let mut response = text(
+        status,
+        "text/html; charset=utf-8",
+        format!("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>{message}</pre>\n</body>\n</html>\n"),
+    );
+    response.headers_mut().insert(
+        "content-security-policy",
+        "default-src 'none'".parse().unwrap(),
+    );
+    response
+        .headers_mut()
+        .insert("x-content-type-options", "nosniff".parse().unwrap());
+    response
+}
+
+fn null_name_error(caught: bool) -> Reply {
+    if !caught {
+        return html_error(500, "Internal Server Error");
+    }
+    text(
+        500,
+        "text/plain; charset=utf-8",
+        json!({"status":"failed", "error":{"message":"Cannot read properties of null (reading 'name')"}}).to_string(),
+    )
+}
+
+fn item_fields(value: &Value) -> serde_json::Map<String, Value> {
+    match value {
+        Value::Object(object) => object.clone(),
+        Value::Array(items) => items
+            .iter()
+            .enumerate()
+            .map(|(index, item)| (index.to_string(), item.clone()))
+            .collect(),
+        _ => serde_json::Map::new(),
+    }
+}
+
 fn success(data: Option<Value>, status: u16) -> Reply {
     let mut value = json!({"status":"success"});
     if let Some(data) = data {
@@ -157,19 +196,22 @@ fn editor_languages(value: &mut Value) {
 }
 
 fn normalize_item(item: &mut Value, subscription: bool) -> Result<(), &'static str> {
+    let Some(object) = item.as_object_mut() else {
+        return Ok(());
+    };
     if subscription {
-        item.as_object_mut().unwrap().remove("subscriptions");
+        object.remove("subscriptions");
     }
-    let key = item
+    let key = object
         .get("age-public-key")
         .filter(|key| !key.is_null())
         .map(js_string)
         .unwrap_or_default();
     let key = js_trim(&key);
     if key.is_empty() {
-        item.as_object_mut().unwrap().remove("age-public-key");
+        object.remove("age-public-key");
     } else if valid_recipient(key) {
-        item["age-public-key"] = json!(key);
+        object.insert("age-public-key".to_owned(), json!(key));
     } else {
         return Err("age-public-key 仅支持 X25519(age1...) 或 MLKEM768-X25519(age1pq1...) 公钥");
     }
@@ -478,10 +520,29 @@ pub fn dispatch(
         return success(store.data.get(key).cloned(), 200);
     }
     let name = path.strip_prefix(singular).unwrap_or("");
-    let position = store.data[key]
-        .as_array()
-        .and_then(|items| items.iter().position(|item| item["name"] == name));
+    let mut position = None;
+    let mut null_record = false;
+    if path != plural {
+        for (index, item) in store.data[key]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            if item.is_null() {
+                null_record = true;
+                break;
+            }
+            if item.get("name").is_some_and(|value| value == name) {
+                position = Some(index);
+                break;
+            }
+        }
+    }
     if path != plural && method == Method::GET {
+        if null_record {
+            return null_name_error(false);
+        }
         return if let Some(position) = position {
             if subscription {
                 // Legacy GET cleans the live object; its next write persists the change.
@@ -517,12 +578,7 @@ pub fn dispatch(
                 .to_string(),
             )
         } else {
-            failure(
-                404,
-                "SUBSCRIPTION_NOT_FOUND",
-                "ResourceNotFoundError",
-                &format!("{label} {name} does not exist"),
-            )
+            html_error(500, "Internal Server Error")
         };
     }
     let mut next = store.data.clone();
@@ -533,9 +589,6 @@ pub fn dispatch(
         let Some(mut items) = body.as_array().cloned() else {
             return invalid("INVALID_DATA", "Expected an array");
         };
-        if items.iter().any(|item| !item.is_object()) {
-            return invalid("INVALID_DATA", "Expected object items");
-        }
         for item in &mut items {
             if let Err(message) = normalize_item(item, false) {
                 return invalid("INVALID_AGE_PUBLIC_KEY", message);
@@ -545,10 +598,11 @@ pub fn dispatch(
         return publish(store, next, success(None, 200));
     }
     if path == plural && method == Method::POST {
-        let mut item = body;
-        if !item.is_object() {
-            return invalid("INVALID_DATA", "Expected an object");
-        }
+        let mut item = if subscription {
+            Value::Object(item_fields(&body))
+        } else {
+            body
+        };
         if let Err(message) = normalize_item(&mut item, subscription) {
             return invalid("INVALID_AGE_PUBLIC_KEY", message);
         }
@@ -559,19 +613,23 @@ pub fn dispatch(
         if item_name.contains('/') {
             return invalid("INVALID_NAME", &format!("{label} {item_name} is invalid"));
         }
-        if next[key].as_array().unwrap().iter().any(|old| {
-            match (old.get("name"), item.get("name")) {
+        for old in next[key].as_array().unwrap() {
+            if old.is_null() {
+                return null_name_error(true);
+            }
+            let duplicate = match (old.get("name"), item.get("name")) {
                 (Some(Value::Number(old)), Some(Value::Number(new))) => {
                     old.as_f64() == new.as_f64()
                 }
                 (_, Some(Value::Array(_) | Value::Object(_))) => false,
                 (old, new) => old == new,
+            };
+            if duplicate {
+                return invalid(
+                    "DUPLICATE_KEY",
+                    &format!("{label} {item_name} already exists."),
+                );
             }
-        }) {
-            return invalid(
-                "DUPLICATE_KEY",
-                &format!("{label} {item_name} already exists."),
-            );
         }
         let top = next["settings"]["appearanceSetting"]["createItemPosition"] == "top";
         let items = next[key].as_array_mut().unwrap();
@@ -596,6 +654,9 @@ pub fn dispatch(
                 );
             }
         }
+        if null_record {
+            return null_name_error(method == Method::DELETE);
+        }
         let Some(position) = position else {
             return failure(
                 if method == Method::DELETE { 500 } else { 404 },
@@ -615,9 +676,7 @@ pub fn dispatch(
             }
             return publish(store, next, success(None, 200));
         }
-        let Some(mut patch) = body.as_object().cloned() else {
-            return invalid("INVALID_DATA", "Expected an object");
-        };
+        let mut patch = item_fields(&body);
         if subscription {
             patch.remove("subscriptions");
         }
@@ -628,19 +687,7 @@ pub fn dispatch(
         item.as_object_mut().unwrap().extend(patch);
         if normalize_item(&mut item, false).is_err() {
             // The legacy PATCH handler lets this error reach Express's HTML handler.
-            let mut response = text(
-                500,
-                "text/html; charset=utf-8",
-                "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>[object Object]</pre>\n</body>\n</html>\n",
-            );
-            response.headers_mut().insert(
-                "content-security-policy",
-                "default-src 'none'".parse().unwrap(),
-            );
-            response
-                .headers_mut()
-                .insert("x-content-type-options", "nosniff".parse().unwrap());
-            return response;
+            return html_error(500, "[object Object]");
         }
         let new_name = item["name"].clone();
         let source_type = if subscription {

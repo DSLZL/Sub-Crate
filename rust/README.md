@@ -44,8 +44,12 @@ retain the submitted JSON types after legacy numeric validation, and old object
 stores migrate using JavaScript's numeric-key ordering.
 Subscription/collection CRUD keeps legacy create ordering and typed names,
 permanent-delete errors, rename references and reserved-field behavior. Subscription
-reference matching is intentionally looser than collection matching. Other malformed
-payload and HTTP edge cases remain part of the unfinished M2 acceptance.
+reference matching is intentionally looser than collection matching. Array bodies
+retain legacy create/PATCH behavior, and versioned subscription/collection lists
+preserve mixed JSON entries across bulk writes, restart and restore. Null-record
+lookup failures retain endpoint-specific errors; scalar JSON bodies are rejected
+before dispatch. Uncaught errors use production HTML responses. Development stack
+bodies, non-JSON parsing and invalid-reference-graph mutations remain unverified.
 Raw JSON exports retain the legacy local-calendar filenames and escaped resource
 names. Manual restore keeps the pre-migration backup in `root.json`'s `sub-store`
 key and preserves unrelated root entries. A private undo record protects the two

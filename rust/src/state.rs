@@ -211,9 +211,10 @@ pub fn valid_records(data: &Value) -> bool {
     .iter()
     .all(|key| {
         data.get(key).is_none_or(|items| {
-            items
-                .as_array()
-                .is_some_and(|items| items.iter().all(Value::is_object))
+            items.as_array().is_some_and(|items| {
+                // Versioned CRUD accepts mixed entries in these two lists.
+                matches!(*key, "subs" | "collections") || items.iter().all(Value::is_object)
+            })
         })
     })
 }
