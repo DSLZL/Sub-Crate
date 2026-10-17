@@ -36,7 +36,9 @@ pub fn send(status: u16, content_type: &str, body: impl Into<Bytes>) -> Reply {
     let etag = format!("W/\"{length:x}-{hash}\"");
     let mut response = text(status, content_type, body);
     response.headers_mut().insert("etag", etag.parse().unwrap());
-    response.headers_mut().insert("content-length", length.into());
+    response
+        .headers_mut()
+        .insert("content-length", length.into());
     response
 }
 
