@@ -1,4 +1,5 @@
-use crate::state::{Store, decode, migrate, truthy, valid_records};
+use crate::body::Body;
+use crate::state::{Store, decode, legacy_object_order, migrate, truthy, valid_records};
 use base64::Engine;
 use http_body_util::Full;
 use hyper::{Method, Response, body::Bytes};
@@ -75,22 +76,10 @@ fn null_name_error(caught: bool) -> Reply {
     )
 }
 
-fn item_fields(value: &Value) -> serde_json::Map<String, Value> {
-    match value {
-        Value::Object(object) => object.clone(),
-        Value::Array(items) => items
-            .iter()
-            .enumerate()
-            .map(|(index, item)| (index.to_string(), item.clone()))
-            .collect(),
-        _ => serde_json::Map::new(),
-    }
-}
-
 fn success(data: Option<Value>, status: u16) -> Reply {
     let mut value = json!({"status":"success"});
     if let Some(data) = data {
-        value["data"] = data;
+        value["data"] = legacy_object_order(data);
     }
     // The legacy middleware sets text/plain before Express serializes JSON.
     send(status, "text/plain; charset=utf-8", value.to_string())
@@ -166,7 +155,11 @@ fn download(value: &Value, name: &str) -> Reply {
         "attachment; filename=\"{}\"",
         utf8_percent_encode(&filename, COMPONENT)
     );
-    let mut response = send(200, "application/json; charset=utf-8", value.to_string());
+    let mut response = send(
+        200,
+        "application/json; charset=utf-8",
+        legacy_object_order(value.clone()).to_string(),
+    );
     response.headers_mut().insert(
         "access-control-expose-headers",
         "content-disposition".parse().unwrap(),
@@ -378,10 +371,8 @@ fn number(value: &Value) -> f64 {
     }
 }
 
-fn settings(store: &mut Store, body: Value) -> Reply {
-    let Some(patch) = body.as_object() else {
-        return invalid("INVALID_SETTINGS", "Settings must be an object");
-    };
+fn settings(store: &mut Store, body: Body) -> Reply {
+    let patch = body.fields();
     if patch
         .get("gistDownloadTokenStrategy")
         .is_some_and(|v| ![json!("ask"), json!("overwrite"), json!("keep")].contains(v))
@@ -460,7 +451,7 @@ pub fn dispatch(
     method: &Method,
     path: &str,
     query: &HashMap<String, String>,
-    body: Value,
+    body: Body,
     store: &mut Store,
 ) -> Reply {
     if path == "/api/utils/refresh" && method == Method::GET {
@@ -474,7 +465,7 @@ pub fn dispatch(
             return download(&store.data, "sub-store_data");
         }
         if method == Method::POST {
-            let restored = body["content"]
+            let restored = body.into_json()["content"]
                 .as_str()
                 .ok_or_else(|| "Missing content".to_owned())
                 .and_then(decode);
@@ -598,7 +589,7 @@ pub fn dispatch(
         next[key] = json!([]);
     }
     if path == plural && method == Method::PUT {
-        let Some(mut items) = body.as_array().cloned() else {
+        let Some(mut items) = body.into_json().as_array().cloned() else {
             return invalid("INVALID_DATA", "Expected an array");
         };
         for item in &mut items {
@@ -611,9 +602,9 @@ pub fn dispatch(
     }
     if path == plural && method == Method::POST {
         let mut item = if subscription {
-            Value::Object(item_fields(&body))
+            Value::Object(body.fields())
         } else {
-            body
+            body.into_json()
         };
         if let Err(message) = normalize_item(&mut item, subscription) {
             return invalid("INVALID_AGE_PUBLIC_KEY", message);
@@ -691,7 +682,7 @@ pub fn dispatch(
             }
             return publish(store, next, success(None, 200));
         }
-        let mut patch = item_fields(&body);
+        let mut patch = body.fields();
         if subscription {
             patch.remove("subscriptions");
         }

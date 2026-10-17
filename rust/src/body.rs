@@ -1,0 +1,321 @@
+use http_body_util::{BodyExt, Limited};
+use hyper::{Request, body::Bytes, body::Incoming};
+use percent_encoding::percent_decode_str;
+use serde_json::{Map, Value, json};
+
+pub enum Body {
+    Json(Value),
+    Raw(Bytes),
+}
+
+impl Body {
+    pub fn fields(&self) -> Map<String, Value> {
+        match self {
+            Self::Json(Value::Object(object)) => object.clone(),
+            Self::Json(Value::Array(items)) => items
+                .iter()
+                .enumerate()
+                .map(|(index, item)| (index.to_string(), item.clone()))
+                .collect(),
+            Self::Raw(bytes) => bytes
+                .iter()
+                .enumerate()
+                .map(|(index, byte)| (index.to_string(), json!(byte)))
+                .collect(),
+            _ => Map::new(),
+        }
+    }
+
+    pub fn into_json(self) -> Value {
+        match self {
+            Self::Json(value) => value,
+            Self::Raw(bytes) => json!({"type": "Buffer", "data": bytes.to_vec()}),
+        }
+    }
+}
+
+fn content_type(value: &str) -> Option<(String, String)> {
+    let mut parts = value.split(';');
+    let media = parts.next()?.trim().to_ascii_lowercase();
+    let token = |s: &str| {
+        !s.is_empty()
+            && s.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b))
+    };
+    let (kind, subtype) = media.split_once('/')?;
+    if !token(kind) || !token(subtype) {
+        return None;
+    }
+    let mut charset = "utf-8".to_owned();
+    for parameter in parts {
+        let (key, value) = parameter.trim().split_once('=')?;
+        let value = value.trim();
+        let value = if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
+            &value[1..value.len() - 1]
+        } else if token(value) {
+            value
+        } else {
+            return None;
+        };
+        if !token(key) {
+            return None;
+        }
+        if key.eq_ignore_ascii_case("charset") {
+            charset = value.to_ascii_lowercase();
+        }
+    }
+    Some((media, charset))
+}
+
+fn decode(bytes: &[u8], charset: &str) -> String {
+    let text = if charset == "utf-8" {
+        String::from_utf8_lossy(bytes).into_owned()
+    } else {
+        let big =
+            charset == "utf-16be" || (charset == "utf-16" && bytes.starts_with(&[0xfe, 0xff]));
+        let words: Vec<_> = bytes
+            .chunks_exact(2)
+            .map(|pair| {
+                if big {
+                    u16::from_be_bytes([pair[0], pair[1]])
+                } else {
+                    u16::from_le_bytes([pair[0], pair[1]])
+                }
+            })
+            .collect();
+        String::from_utf16_lossy(&words)
+    };
+    text.strip_prefix('\u{feff}').unwrap_or(&text).to_owned()
+}
+
+pub async fn read(request: Request<Incoming>, json_limit: usize) -> Result<Body, u16> {
+    let headers = request.headers();
+    let media = headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .and_then(content_type);
+    let Some((media, charset)) = media.filter(|_| {
+        headers.contains_key("content-length") || headers.contains_key("transfer-encoding")
+    }) else {
+        return Ok(Body::Json(json!({})));
+    };
+    let json = media == "application/json";
+    let form = media == "application/x-www-form-urlencoded";
+    if (json && !["utf-8", "utf-16", "utf-16le", "utf-16be"].contains(&charset.as_str()))
+        || (form && charset != "utf-8")
+    {
+        return Err(415);
+    }
+    // shortcut: request gzip/deflate inflation remains an M2 gap; add bounded inflation before claiming full parser parity.
+    if headers
+        .get("content-encoding")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| !v.eq_ignore_ascii_case("identity"))
+    {
+        return Err(415);
+    }
+    let limit = if json { json_limit } else { 100 * 1024 };
+    let bytes = Limited::new(request.into_body(), limit)
+        .collect()
+        .await
+        .map_err(|_| 413u16)?
+        .to_bytes();
+    if json || form {
+        let text = decode(&bytes, &charset);
+        let value = if form {
+            parse_form(&text)?
+        } else if text.is_empty() {
+            json!({})
+        } else {
+            match serde_json::from_str(&text) {
+                Ok(value @ (Value::Object(_) | Value::Array(_))) => value,
+                _ => return Err(400),
+            }
+        };
+        Ok(Body::Json(value))
+    } else {
+        Ok(Body::Raw(bytes))
+    }
+}
+
+fn form_decode(value: &str) -> String {
+    let value = value.replace('+', " ");
+    let bytes = value.as_bytes();
+    if bytes.iter().enumerate().any(|(index, &byte)| {
+        byte == b'%'
+            && !bytes
+                .get(index + 1..index + 3)
+                .is_some_and(|digits| digits.iter().all(u8::is_ascii_hexdigit))
+    }) {
+        return value;
+    }
+    percent_decode_str(&value)
+        .decode_utf8()
+        .map(|decoded| decoded.into_owned())
+        .unwrap_or(value)
+}
+
+fn merge(target: &mut Value, source: Value) {
+    if target.is_null() {
+        *target = source;
+        return;
+    }
+    match (target, source) {
+        (Value::Array(left), Value::Array(right)) => {
+            for (index, value) in right.into_iter().enumerate() {
+                if value.is_null() {
+                    continue;
+                }
+                if index >= left.len() {
+                    left.resize(index + 1, Value::Null);
+                    left[index] = value;
+                } else if left[index].is_null() {
+                    left[index] = value;
+                } else if (left[index].is_object() || left[index].is_array())
+                    && (value.is_object() || value.is_array())
+                {
+                    merge(&mut left[index], value);
+                } else {
+                    left.push(value);
+                }
+            }
+        }
+        (left @ Value::Array(_), right @ Value::Object(_)) => {
+            let items = std::mem::take(left).as_array().unwrap().clone();
+            *left = Value::Object(
+                items
+                    .into_iter()
+                    .enumerate()
+                    .filter(|(_, v)| !v.is_null())
+                    .map(|(i, v)| (i.to_string(), v))
+                    .collect(),
+            );
+            merge(left, right);
+        }
+        (Value::Object(left), Value::Object(right)) => {
+            for (key, value) in right {
+                if let Some(old) = left.get_mut(&key) {
+                    merge(old, value);
+                } else {
+                    left.insert(key, value);
+                }
+            }
+        }
+        (left @ Value::Object(_), Value::Array(right)) => {
+            let right = Value::Object(
+                right
+                    .into_iter()
+                    .enumerate()
+                    .filter(|(_, v)| !v.is_null())
+                    .map(|(i, v)| (i.to_string(), v))
+                    .collect(),
+            );
+            merge(left, right);
+        }
+        (Value::Array(left), right) => left.push(right),
+        (left, Value::Array(mut right)) => {
+            right.insert(0, std::mem::take(left));
+            *left = Value::Array(right);
+        }
+        (left, right) => *left = json!([std::mem::take(left), right]),
+    }
+}
+
+fn compact(value: &mut Value) {
+    match value {
+        Value::Array(items) => {
+            items.retain(|v| !v.is_null());
+            items.iter_mut().for_each(compact);
+        }
+        Value::Object(fields) => fields.values_mut().for_each(compact),
+        _ => {}
+    }
+}
+
+fn parse_form(text: &str) -> Result<Value, u16> {
+    if text.is_empty() {
+        return Ok(json!({}));
+    }
+    let count = text.bytes().filter(|&b| b == b'&').count() + 1;
+    if count > 1000 {
+        return Err(413);
+    }
+    let mut fields = Map::new();
+    for pair in text.split('&') {
+        let pair = pair
+            .replace("%5B", "[")
+            .replace("%5b", "[")
+            .replace("%5D", "]")
+            .replace("%5d", "]");
+        let split = pair.find("]=").map(|i| i + 1).or_else(|| pair.find('='));
+        let (key, value) = split
+            .map(|i| (&pair[..i], &pair[i + 1..]))
+            .unwrap_or((&pair, ""));
+        let key = form_decode(key);
+        let value = Value::String(form_decode(value));
+        if let Some(old) = fields.get_mut(&key) {
+            if let Value::Array(items) = old {
+                items.push(value);
+            } else {
+                *old = json!([std::mem::take(old), value]);
+            }
+        } else {
+            fields.insert(key, value);
+        }
+    }
+    let mut result = json!({});
+    for (key, mut value) in fields {
+        if key.is_empty() {
+            continue;
+        }
+        let mut segments = Vec::new();
+        let mut offset = 0;
+        let mut opening = None;
+        let mut depth = 0;
+        for (end, character) in key.char_indices() {
+            if character == '[' {
+                opening = Some(end);
+            } else if character == ']'
+                && let Some(start) = opening.take()
+            {
+                depth += 1;
+                if depth > 32 {
+                    return Err(400);
+                }
+                if segments.is_empty() && start > 0 {
+                    segments.push((&key[..start], false));
+                }
+                segments.push((&key[start + 1..end], true));
+                offset = end + 1;
+            }
+        }
+        if offset == 0 {
+            segments.push((&key, false));
+        }
+        for (key, bracket) in segments.into_iter().rev() {
+            value = if key == "__proto__" {
+                json!({})
+            } else if bracket && key.is_empty() {
+                if value.is_array() {
+                    value
+                } else {
+                    json!([value])
+                }
+            } else if bracket
+                && let Ok(index) = key.parse::<usize>()
+                && index.to_string() == key
+                && index < count.max(100)
+            {
+                let mut items = vec![Value::Null; index + 1];
+                items[index] = value;
+                Value::Array(items)
+            } else {
+                Value::Object(Map::from_iter([(key.to_owned(), value)]))
+            };
+        }
+        // shortcut: qs overflow-array collision metadata is not modeled; extend before accepting that exotic form shape.
+        merge(&mut result, value);
+    }
+    compact(&mut result);
+    Ok(result)
+}

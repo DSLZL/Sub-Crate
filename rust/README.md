@@ -49,7 +49,15 @@ retain legacy create/PATCH behavior, and versioned subscription/collection lists
 preserve mixed JSON entries across bulk writes, restart and restore. Null-record
 lookup failures retain endpoint-specific errors; scalar JSON bodies are rejected
 before dispatch. Uncaught errors use production HTML responses. Development stack
-bodies, non-JSON parsing and invalid-reference-graph mutations remain unverified.
+bodies and invalid-reference-graph mutations remain unverified.
+The HTTP entry point selects strict JSON, extended URL-encoded forms or raw
+bytes before routing, including environment requests. Identity-encoded UTF-8
+and UTF-16 JSON, nested/repeated form fields, settings array/byte spreads and
+raw-buffer CRUD retain legacy behavior. JSON uses SUB_STORE_BODY_JSON_LIMIT;
+form/raw bodies retain their separate 100 KiB limit. Invalid JSON, excessive
+size/depth/parameters and unsupported charset/encoding return production HTML
+errors without publishing state. Compressed request inflation, other UTF codecs,
+exotic form overflow collisions and raw-buffer bulk replacement remain M2 gaps.
 Raw JSON exports retain the legacy local-calendar filenames and escaped resource
 names. Manual restore keeps the pre-migration backup in `root.json`'s `sub-store`
 key and preserves unrelated root entries. A private undo record protects the two

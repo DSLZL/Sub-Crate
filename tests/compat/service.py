@@ -386,6 +386,109 @@ def backup_edges(url, state, output, name, offset=None):
     return observations
 
 
+def request_bodies(url, state, output, name, origin=None):
+    """Exercise the production parser, durable CRUD, and the standalone forwarding path."""
+    parsed = urlsplit(url)
+    observations = []
+    original = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+    compared_headers = ("content-type", "content-length", "etag", "content-security-policy", "x-content-type-options")
+
+    def send(path="/api/settings", body=b"{}", media="application/json", status=200, method="PATCH", headers=None):
+        headers = {**({"Origin": origin} if origin else {}), **(headers or {})}
+        if media is not None:
+            headers["Content-Type"] = media
+        before = {filename: (state / filename).read_bytes() for filename in ("sub-store.json", "root.json")}
+        connection = BufferedHTTPConnection(parsed.hostname, parsed.port, timeout=5)
+        try:
+            connection.request(method, parsed.path.rstrip("/") + path, body=body, headers=headers)
+            response = connection.getresponse()
+            content = response.read()
+            raw = {"method": method, "path": path, "request_headers": headers,
+                   "request_body_base64": base64.b64encode(body).decode("ascii"), "status": response.status,
+                   "headers": {key.lower(): value for key, value in response.getheaders()},
+                   "body_base64": base64.b64encode(content).decode("ascii"),
+                   "state": json.loads((state / "sub-store.json").read_text(encoding="utf-8"))}
+        finally:
+            connection.close()
+        with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
+            evidence.write(json.dumps(raw, ensure_ascii=False) + "\n")
+        assert raw["status"] == status, f"{name} {method} {path}: expected {status}, got {raw['status']} {content!r}"
+        actual = raw["headers"]
+        if status in (400, 413, 415):
+            message = {400: "Bad Request", 413: "Payload Too Large", 415: "Unsupported Media Type"}[status]
+            assert content == (f'<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>Error</title>\n</head>\n<body>\n<pre>{message}</pre>\n</body>\n</html>\n').encode()
+            assert actual["content-security-policy"] == "default-src 'none'" and actual["x-content-type-options"] == "nosniff"
+            assert "etag" not in actual
+        if status >= 400 or method == "GET" or method == "OPTIONS":
+            assert all((state / filename).read_bytes() == data for filename, data in before.items()), "Parser/read/rejection mutated durable state"
+        observations.append({"method": method, "path": path, "status": status,
+                             "headers": {key: actual[key] for key in compared_headers if key in actual},
+                             "body_base64": raw["body_base64"], "state": raw["state"]})
+        return json.loads(content) if status < 400 and content else None
+
+    for plural in ("subs", "collections"):
+        send("/api/" + plural, b"[]", method="PUT")
+        send("/api/" + plural, json.dumps({"name": "parser-" + plural}).encode(), status=201, method="POST")
+    for body, media in ((b"", "application/json"), (b"", "text/plain"),
+                        (b"not-json", None), (b"not-json", "invalid"),
+                        (b"not-json", "application/json; broken")):
+        send(body=body, media=media)
+    for charset, encoded in (("utf-8", b'\xef\xbb\xbf{"parserUnicode":"\xe4\xb8\xad"}'),
+                             ("UTF-16LE", '{"parserUnicode":"UTF16🙂"}'.encode("utf-16le")),
+                             ("utf-16be", '{"parserUnicode":"UTF16🙂"}'.encode("utf-16be")),
+                             ("utf-16", b"\xfe\xff" + '{"parserUnicode":"BOM🙂"}'.encode("utf-16be")),
+                             ("utf-8", b'{"parserLossy":"\xff"}')):
+        data = send(body=encoded, media=f'Application/JSON; charset="{charset}"')["data"]
+        assert data.get("parserLossy") == "�" or data["parserUnicode"] in ("中", "UTF16🙂", "BOM🙂")
+    for encoded in (b"{", b"null", b"false", b"0", b'"text"', b" \t\r\n"):
+        send(body=encoded, status=400)
+    for media in ("application/json; charset=latin1", "application/json; charset=utf-99",
+                  "application/x-www-form-urlencoded; charset=iso-8859-1"):
+        send(media=media, status=415)
+    send(headers={"Content-Encoding": "br"}, status=415)
+    for path in ("/api/utils/env", "/", "/api/missing-parser-route"):
+        send(path, b"{", status=400, method="GET")
+    for media in ("application/json", "text/plain", "application/x-www-form-urlencoded"):
+        send(body=b"x" * (102400 + 1), media=media, status=413, method="GET")
+    send(body=json.dumps({"large": "x" * 32768}).encode(), status=413)
+    for media in ("application/octet-stream", "application/x-www-form-urlencoded"):
+        send(body=b"large=" + b"x" * 32768, media=media, method="GET")
+    send(body=b"x=1&" * 1000 + b"y=2", media="application/x-www-form-urlencoded", status=413)
+    send(body=b"deep" + b"[x]" * 33 + b"=1", media="application/x-www-form-urlencoded", status=400)
+    send(body=b"{", status=403, headers={"Origin": "https://denied.invalid"})
+    allowed = origin or "https://sub-store.vercel.app"
+    send(body=b"{", method="OPTIONS", headers={"Origin": allowed})
+    for media in ("text/plain", "application/octet-stream; charset=unrecognized", "application/problem+json"):
+        data = send(body=b"A\x00\xff", media=media)["data"]
+        assert [data[str(i)] for i in range(3)] == [65, 0, 255]
+    data = send(body=b'["array",{"opaque":false}]')["data"]
+    assert data["0"] == "array" and data["1"] == {"opaque": False}
+    for plural, singular in (("subs", "sub"), ("collections", "collection")):
+        data = send("/api/" + plural, b"A\x00\xff", "text/plain", 201, "POST")["data"]
+        assert data == ({"0": 65, "1": 0, "2": 255} if plural == "subs" else {"type": "Buffer", "data": [65, 0, 255]})
+        data = send(f"/api/{singular}/parser-{plural}", b"B\x00\xff", "text/plain")["data"]
+        assert data["name"] == "parser-" + plural and data["0"] == 66
+        body = b"name=form+%E4%B8%AD&subscriptions[]=one&subscriptions[]=two&custom[text]=a%2Bb%0D%0A"
+        data = send("/api/" + plural, body, "application/x-www-form-urlencoded", 201, "POST")["data"]
+        assert data["name"] == "form 中" and data["custom"] == {"text": "a+b\r\n"}
+        assert ("subscriptions" not in data) if plural == "subs" else data["subscriptions"] == ["one", "two"]
+    forms = (b"parserForm[a][b]=nested&parserRepeat=one&parserRepeat=two&parserEmpty&literal.dot=keep",
+             b"parserSparse[2]=c&parserSparse[0]=a&parserObjects[0][a]=1&parserObjects[0][b]=2",
+             b"parserConflict[x]=nested&parserConflict=scalar&parserNumeric[100]=object",
+             b"parserMalformed=%E0%A4%A&parserPlus=a+b&parserComma=a,b&parserEquals[x=y]=z",
+             b"__proto__[polluted]=yes&parserSafe[__proto__][polluted]=yes&constructor[prototype][opaque]=keep")
+    results = [send(body=body, media="application/x-www-form-urlencoded")["data"] for body in forms]
+    assert results[0]["parserForm"] == {"a": {"b": "nested"}} and results[0]["parserRepeat"] == ["one", "two"]
+    assert results[1]["parserSparse"] == ["a", "c"] and results[1]["parserObjects"] == [{"a": "1", "b": "2"}]
+    assert results[3]["parserMalformed"] == "%E0%A4%A" and results[3]["parserPlus"] == "a b"
+    assert "polluted" not in results[-1] and "__proto__" not in results[-1]
+    for plural in ("subs", "collections"):
+        current = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))[plural]
+        send("/api/" + plural, json.dumps(original[plural] + current, ensure_ascii=False).encode(), method="PUT")
+    (output / f"{name}.json").write_text(json.dumps(observations, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return observations
+
+
 def api_entities(url, state, output, name, origin=None):
     """Pin send/end response boundaries on direct and forwarded business APIs."""
     parsed = urlsplit(url)
@@ -756,6 +859,8 @@ def standalone_resources(frontend_url, backend_url, mount, state, output, name):
         send(api_path.upper() + "/settings", api=True)
         send(api_path + "extra/settings", {"Accept": "text/html"}, expected=entry)
         observations.extend(api_entities(frontend_url + mount.rstrip("/"), state, output, name + "-api-http", "https://allowed.invalid"))
+        if mount == "/backend":
+            observations.extend(request_bodies(frontend_url + mount, state, output, name + "-body-http", "https://allowed.invalid"))
     else:
         send("/api/settings", status=404)
         send("/api/settings", {"Accept": "text/html"}, expected=entry)
@@ -892,7 +997,7 @@ def main():
             state = output / f"{kind}-crud"
             state.mkdir()
             (state / "sub-store.json").write_text(json.dumps(seed, ensure_ascii=False), encoding="utf-8")
-            env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}
+            env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state), "SUB_STORE_BODY_JSON_LIMIT": "32kb"}
             label = f"{kind}-crud"
             env["NODE_ENV"] = "production"
             manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
@@ -914,6 +1019,7 @@ def main():
                         saved.rename(state / "sub-store.json")
                     report["crud_failed_rename_preserved_all_references"] = True
                 crud[kind] = crud_edges(url, state, output, label)
+                crud[kind].extend(request_bodies(url, state, output, label + "-body-http"))
                 final_crud[kind] = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
                 report["phases"].append({"name": label, "requests": len(crud[kind])})
             manager = oracle(args.node, env, output, report, label + "-restart") if kind == "node" else listener(args.binary, env, output, report, label + "-restart", image)
@@ -939,6 +1045,10 @@ def main():
         report["crud_scalar_json_rejected_before_dispatch"] = True
         report["crud_missing_subscription_production_html_checked"] = True
         report["crud_mixed_entries_restore_checked"] = True
+        report["request_body_identity_json_form_raw_checked"] = True
+        report["request_body_limits_errors_and_cors_checked"] = True
+        report["request_body_restart_and_node_rollback_checked"] = True
+        report["compressed_request_body_parity"] = "NOT_VERIFIED"
         report["crud_development_stack_parity"] = "NOT_VERIFIED"
         backup = json.loads((HERE / "fixtures/frontend-backup.json").read_text(encoding="utf-8"))
         root = {"opaque": {"text": "根缓存🙂\r\n", "zero": 0, "flag": False, "nil": None}, "sub-store": "previous backup"}
@@ -1088,6 +1198,7 @@ def main():
                        "SUB_STORE_BACKEND_PREFIX": prefix, "SUB_STORE_FRONTEND_BACKEND_PATH": mount,
                        "SUB_STORE_FRONTEND_PATH": str(state / "frontend"), "SUB_STORE_FRONTEND_HOST": "127.0.0.1",
                        "SUB_STORE_FRONTEND_PORT": str(port), "SUB_STORE_CORS_ALLOWED_ORIGINS": "https://allowed.invalid"}
+                env["SUB_STORE_BODY_JSON_LIMIT"] = "32kb"
                 manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
                 with manager as url:
                     standalone[kind] = standalone_resources(f"http://127.0.0.1:{port}", url, mount, state, output, label)
@@ -1099,6 +1210,7 @@ def main():
                         report["standalone_share_proxy_unavailable"] = True
             check_json(standalone["rust"], standalone["node"])
         report["standalone_frontend_http_and_state_equal"] = True
+        report["standalone_request_body_forwarding_checked"] = True
         report["standalone_configurations_checked"] = ["prefixed", "unprefixed", "root", "static-only"]
         report["api_entity_validators_and_head_checked"] = True
         report["api_entity_error_and_mutation_boundaries_checked"] = True

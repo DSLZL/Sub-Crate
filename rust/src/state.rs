@@ -181,7 +181,7 @@ fn array_index(key: &str) -> u32 {
         .unwrap_or(u32::MAX)
 }
 
-fn legacy_object_order(value: Value) -> Value {
+pub fn legacy_object_order(value: Value) -> Value {
     match value {
         Value::Object(fields) => {
             let mut fields: Vec<_> = fields.into_iter().collect();

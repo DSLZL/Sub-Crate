@@ -1,7 +1,7 @@
 mod api;
+mod body;
 mod state;
 
-use http_body_util::{BodyExt, Limited};
 use hyper::body::{Body, Incoming};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -677,6 +677,21 @@ async fn route(
         request.method().clone()
     };
     let raw_path = request.uri().path().to_owned();
+    let headers = request.headers().clone();
+    let raw_query = request.uri().query().unwrap_or("").to_owned();
+    let body = match body::read(request, config.body_limit).await {
+        Ok(body) => body,
+        Err(status) => {
+            return api::html_error(
+                status,
+                match status {
+                    413 => "Payload Too Large",
+                    415 => "Unsupported Media Type",
+                    _ => "Bad Request",
+                },
+            );
+        }
+    };
     let decoded = match percent_decode_str(&raw_path).decode_utf8() {
         Ok(path) => path,
         Err(_) => return api::text(400, "text/plain; charset=utf-8", "Invalid URL encoding"),
@@ -701,21 +716,18 @@ async fn route(
                 && !backend_route(&raw_path)
                 && method == Method::GET
             {
-                return static_file(root, &decoded, request.headers(), true);
+                return static_file(root, &decoded, &headers, true);
             }
             return api::not_found();
         }
     } else {
         decoded.as_ref()
     };
-    let query = reqwest::Url::parse(&format!(
-        "http://localhost/?{}",
-        request.uri().query().unwrap_or("")
-    ))
-    .unwrap()
-    .query_pairs()
-    .into_owned()
-    .collect::<HashMap<_, _>>();
+    let query = reqwest::Url::parse(&format!("http://localhost/?{raw_query}"))
+        .unwrap()
+        .query_pairs()
+        .into_owned()
+        .collect::<HashMap<_, _>>();
     if (path == "/" || path == "/api/utils/env") && method == Method::GET {
         return api::send(200, "application/json; charset=utf-8", json!({
             "status":"success", "data":{
@@ -725,28 +737,6 @@ async fn route(
             }
         }).to_string());
     }
-    let bytes = match Limited::new(request.into_body(), config.body_limit)
-        .collect()
-        .await
-    {
-        Ok(body) => body.to_bytes(),
-        Err(_) => {
-            return api::failure(
-                413,
-                "INVALID_BODY",
-                "RequestInvalidError",
-                "Request body is invalid or exceeds the configured limit",
-            );
-        }
-    };
-    let body = if bytes.is_empty() {
-        json!({})
-    } else {
-        match serde_json::from_slice(&bytes) {
-            Ok(body) if matches!(body, Value::Object(_) | Value::Array(_)) => body,
-            _ => return api::html_error(400, "Bad Request"),
-        }
-    };
     let mut store = store.lock().unwrap();
     api::dispatch(&method, path, &query, body, &mut store)
 }
