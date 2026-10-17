@@ -35,7 +35,9 @@ pub fn html_error(status: u16, message: &str) -> Reply {
     let mut response = text(
         status,
         "text/html; charset=utf-8",
-        format!("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>{message}</pre>\n</body>\n</html>\n"),
+        format!(
+            "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>{message}</pre>\n</body>\n</html>\n"
+        ),
     );
     response.headers_mut().insert(
         "content-security-policy",
@@ -523,12 +525,7 @@ pub fn dispatch(
     let mut position = None;
     let mut null_record = false;
     if path != plural {
-        for (index, item) in store.data[key]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .enumerate()
-        {
+        for (index, item) in store.data[key].as_array().into_iter().flatten().enumerate() {
             if item.is_null() {
                 null_record = true;
                 break;

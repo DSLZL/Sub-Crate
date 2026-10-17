@@ -183,7 +183,8 @@ def crud_edges(url, state, output, name):
             observation["response"] = {"status": status, "content_type": content_type, "body": response["body"]}
             observations.append(observation)
             return response["body"]
-        assert content_type == ("application/json; charset=utf-8" if path == "/api/storage" else "text/plain; charset=utf-8")
+        expected_type = "application/json; charset=utf-8" if path == "/api/storage" and method == "GET" else "text/plain; charset=utf-8"
+        assert content_type == expected_type, f"{name} {method} {path}: Content-Type {content_type!r} != {expected_type!r}"
         observation["response"] = {"status": response["status"], "content_type": content_type, "json": json.loads(response["body"])}
         observations.append(observation)
         return observation["response"]["json"]
