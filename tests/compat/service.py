@@ -3,6 +3,7 @@ import argparse
 import base64
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+import gzip
 import hashlib
 import json
 import os
@@ -13,10 +14,10 @@ import shutil
 import socket
 import subprocess
 import time
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlsplit
 
 from reference import BACKEND, HERE, ROOT, execute, oracle, source_provenance
-from runner import check_json, load_cases, request, run_cases
+from runner import BufferedHTTPConnection, check_json, load_cases, request, run_cases
 
 
 @contextmanager
@@ -29,17 +30,23 @@ def listener(binary, environment, output, report, log_prefix="rust", image=None)
     if environment.get("SUB_STORE_FRONTEND_PATH"):
         environment.setdefault("SUB_STORE_CORS_ALLOWED_ORIGINS", origin)
         report["fixture_cors_origin"] = environment["SUB_STORE_CORS_ALLOWED_ORIGINS"]
-    url = origin + environment.get("SUB_STORE_FRONTEND_BACKEND_PATH", "/").rstrip("/")
+    prefixed = environment.get("SUB_STORE_BACKEND_MERGE") or environment.get("SUB_STORE_BACKEND_PREFIX")
+    url = origin + (environment.get("SUB_STORE_FRONTEND_BACKEND_PATH", "") if prefixed else "").rstrip("/")
     name = f"m2-{os.getpid()}-{port}"
     if image:
         argv = ["docker", "run", "--rm", "--name", name, "--read-only", "--cap-drop=ALL",
                 "--security-opt=no-new-privileges", "--user", f"{os.getuid()}:{os.getgid()}",
                 "-p", f"127.0.0.1:{port}:3000",
                 "--mount", f"type=bind,source={environment['SUB_STORE_DATA_BASE_PATH']},target=/data"]
+        if environment.get("SUB_STORE_FRONTEND_PATH"):
+            argv.extend(["--mount", f"type=bind,source={environment['SUB_STORE_FRONTEND_PATH']},target=/frontend,readonly"])
+            if not environment.get("SUB_STORE_BACKEND_MERGE"):
+                argv.extend(["-p", f"127.0.0.1:{environment['SUB_STORE_FRONTEND_PORT']}:3001"])
         for key, value in environment.items():
             if key.startswith("SUB_STORE_") or key == "TZ":
                 value = {"SUB_STORE_DATA_BASE_PATH": "/data", "SUB_STORE_BACKEND_API_PORT": "3000",
-                         "SUB_STORE_BACKEND_API_HOST": "0.0.0.0"}.get(key, value)
+                         "SUB_STORE_BACKEND_API_HOST": "0.0.0.0", "SUB_STORE_FRONTEND_PATH": "/frontend",
+                         "SUB_STORE_FRONTEND_HOST": "0.0.0.0", "SUB_STORE_FRONTEND_PORT": "3001"}.get(key, value)
                 argv.extend(["--env", f"{key}={value}"])
         argv.append(image)
     else:
@@ -59,7 +66,9 @@ def listener(binary, environment, output, report, log_prefix="rust", image=None)
                 if child.poll() is not None:
                     raise RuntimeError(f"Rust listener exited before readiness: {child.returncode}")
                 try:
-                    if request(url, {"path": "/api/utils/env"})["status"] == 200:
+                    frontend_ready = not environment.get("SUB_STORE_FRONTEND_PATH") or environment.get("SUB_STORE_BACKEND_MERGE") or request(
+                        f"http://127.0.0.1:{environment.get('SUB_STORE_FRONTEND_PORT', '3001')}", {"path": "/"})["status"] == 200
+                    if frontend_ready and request(url, {"path": "/api/utils/env"})["status"] == 200:
                         break
                 except OSError:
                     pass
@@ -149,6 +158,104 @@ def state_edges(url, state, keys, output, name):
     return observations
 
 
+def crud_edges(url, state, output, name):
+    """Subscription/collection CRUD with exact typed values and persisted state."""
+    observations = []
+
+    def send(method, path, body=None, status=200):
+        step = {"method": method, "path": path}
+        if body is not None:
+            step["body"] = body
+        response = request(url, step)
+        observation = {**step, "response": response,
+                       "state": json.loads((state / "sub-store.json").read_text(encoding="utf-8"))}
+        with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
+            evidence.write(json.dumps(observation, ensure_ascii=False) + "\n")
+        assert response["status"] == status, f"{name} {method} {path}: {response}"
+        content_type = response["headers"]["content-type"]
+        assert content_type == ("application/json; charset=utf-8" if path == "/api/storage" else "text/plain; charset=utf-8")
+        observation["response"] = {"status": response["status"], "content_type": content_type, "json": json.loads(response["body"])}
+        observations.append(observation)
+        return observation["response"]["json"]
+
+    for old, renamed in (("1", "renamed🙂"), ("0", "zero-renamed")):
+        patched = send("PATCH", f"/api/sub/{old}", {"name": renamed, "subscriptions": ["ignored"]})["data"]
+        assert patched["subscriptions"] == ["reserved"], "PATCH removed the existing reserved subscription field"
+        assert patched["unknown"] == {"zero": 0, "flag": False, "text": "保留🙂\r\n"}
+    send("PATCH", "/api/collection/1", {"name": "collection-renamed"})
+    document = send("GET", "/api/storage")["subs"]
+    assert [item["name"] for item in document] == ["renamed🙂", "zero-renamed"]
+    stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+    assert stored["collections"][0]["subscriptions"] == ["renamed🙂", "1", "zero-renamed", "0", 1, 0]
+    expected = ["renamed🙂", "01", "renamed🙂", "renamed🙂", "zero-renamed", "zero-renamed", None,
+                "renamed🙂", "renamed🙂", "zero-renamed", [], {}]
+    check_json([item["source"] for item in stored["artifacts"] if item["type"] == "subscription"], expected)
+    check_json([item["sourceName"] for item in stored["files"] if item["sourceType"] == "subscription"], expected)
+    check_json([item["source"] for item in stored["artifacts"] if item["type"] == "collection"],
+               ["collection-renamed", 1, True, [1]])
+    before = (state / "sub-store.json").read_bytes()
+    assert "subscriptions" not in send("GET", "/api/sub/" + quote("renamed🙂", safe=""))["data"]
+    assert "subscriptions" not in send("GET", "/api/subs")["data"][0]
+    assert (state / "sub-store.json").read_bytes() == before, "GET persisted a live-object cleanup prematurely"
+    send("PATCH", "/api/sub/" + quote("renamed🙂", safe=""), {})
+    assert "subscriptions" not in json.loads((state / "sub-store.json").read_text(encoding="utf-8"))["subs"][0]
+    send("DELETE", "/api/sub/" + quote("renamed🙂", safe=""))
+    send("DELETE", "/api/sub/zero-renamed?mode=permanent")
+    send("DELETE", "/api/collection/collection-renamed?mode=")
+    stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+    assert stored["collections"][0]["subscriptions"] == ["1", "0", 1, 0]
+    assert stored["artifacts"][0]["source"] == "renamed🙂", "Permanent delete unexpectedly rewrote artifact references"
+
+    for plural, singular in (("subs", "sub"), ("collections", "collection")):
+        path = f"/api/{singular}/missing"
+        before = (state / "sub-store.json").read_bytes()
+        for mode in ("", "?mode=", "?mode=permanent", "?mode=invalid"):
+            error = send("DELETE", path + mode, status=500)["error"]
+            assert error["code"] == ("INVALID_DELETE_MODE" if mode.endswith("invalid") else "RESOURCE_NOT_FOUND")
+        send("PATCH", path, {}, 404)
+        if plural == "collections":
+            error = send("GET", path, status=500)["error"]
+            check_json(error, {"code": "SUBSCRIPTION_NOT_FOUND", "type": "ResourceNotFoundError",
+                               "message": "Collection missing does not exist", "details": 404})
+        assert (state / "sub-store.json").read_bytes() == before, "Missing-resource requests changed state"
+        for item in ({"name": ""}, {"name": None}, {}, {"name": False}, {"name": 0}, {"name": 1.5}):
+            send("POST", f"/api/{plural}", item, 201)
+            before = (state / "sub-store.json").read_bytes()
+            assert send("POST", f"/api/{plural}", item, 500)["error"]["code"] == "DUPLICATE_KEY"
+            assert (state / "sub-store.json").read_bytes() == before
+        for item in ({"name": ["alias"]}, {"name": {"alias": True}}):
+            send("POST", f"/api/{plural}", item, 201)
+            send("POST", f"/api/{plural}", item, 201)
+        before = (state / "sub-store.json").read_bytes()
+        for value in ("bad/name", ["bad/name"]):
+            assert send("POST", f"/api/{plural}", {"name": value}, 500)["error"]["code"] == "INVALID_NAME"
+        assert (state / "sub-store.json").read_bytes() == before
+        for position in ("top", "bottom"):
+            send("PATCH", "/api/settings", {"appearanceSetting": {"createItemPosition": position}})
+            send("POST", f"/api/{plural}", {"name": position, "subscriptions": ["keep-only-on-collections"]}, 201)
+            items = send("GET", f"/api/{plural}")["data"]
+            assert items[0 if position == "top" else -1]["name"] == position
+        items = [{"name": "editable", "subscriptions": ["replace-keeps-this"], "unknown": {"nil": None},
+                  "editorLanguage": "yaml", "previewLanguage": "bad",
+                  "process": [None, False, {"type": "Script Operator", "args": {"content": "require('node:fs')\r\n🙂", "editorLanguage": "plaintext", "previewLanguage": "bad"}}]},
+                 {"name": "duplicate", "subscriptions": []}, {"name": "duplicate", "subscriptions": []}]
+        send("PUT", f"/api/{plural}", items)
+        patch_path = f"/api/{singular}/editable"
+        for value in (None, False, 0, ""):
+            changed = send("PATCH", patch_path, {"name": value, "subscriptions": ["patch-input"], "opaque": value})["data"]
+            assert changed["name"] == "editable" and changed["unknown"] == {"nil": None}
+            assert changed["subscriptions"] == (["replace-keeps-this"] if plural == "subs" else ["patch-input"])
+            assert changed["process"] == [None, False, {"type": "Script Operator", "args": {"content": "require('node:fs')\r\n🙂", "editorLanguage": "plaintext"}}]
+        before = (state / "sub-store.json").read_bytes()
+        assert send("DELETE", patch_path + "?mode=invalid", status=500)["error"]["code"] == "INVALID_DELETE_MODE"
+        assert (state / "sub-store.json").read_bytes() == before
+        send("PATCH", patch_path, {"name": "duplicate"})
+        send("DELETE", f"/api/{singular}/duplicate?mode=permanent")
+        remaining = send("GET", f"/api/{plural}")["data"]
+        check_json(remaining, [{"name": "duplicate", "subscriptions": []}, {"name": "duplicate", "subscriptions": []}])
+    return observations
+
+
 def backup_edges(url, state, output, name, offset=None):
     observations = []
     local_zone = datetime.now().astimezone().tzinfo if offset is None else timezone(timedelta(minutes=offset))
@@ -165,9 +272,9 @@ def backup_edges(url, state, output, name, offset=None):
                                        "state": stored, "root": root}, ensure_ascii=False) + "\n")
         assert response["status"] == status, f"{name} {path}: {response}"
         parsed = json.loads(response["body"])
+        assert response["headers"]["content-type"] == ("application/json; charset=utf-8" if filename is not None else "text/plain; charset=utf-8")
         assert root["opaque"] == {"text": "根缓存🙂\r\n", "zero": 0, "flag": False, "nil": None}
         if filename is not None:
-            assert response["headers"]["content-type"] == "application/json; charset=utf-8"
             assert response["headers"]["access-control-expose-headers"] == "content-disposition"
             disposition = response["headers"]["content-disposition"]
             match = re.fullmatch(r'attachment; filename="([^"\r\n]+)"', disposition)
@@ -217,6 +324,282 @@ def backup_edges(url, state, output, name, offset=None):
     root = json.loads((state / "root.json").read_text(encoding="utf-8"))
     assert all(root[key] == "{}" for key in ("sub-store-cached-resource", "sub-store-cached-headers-resource", "sub-store-cached-script-resource"))
     assert (state / "sub-store.json").read_bytes() == prior_data, "No-Gist refresh changed main state"
+    (output / f"{name}.json").write_text(json.dumps(observations, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return observations
+
+
+def static_fixture(frontend):
+    files = {"index.html": b"<main>unchanged frontend entry</main>",
+             "chunks/main-84da2e86.js": b'console.log("original chunk")',
+             "chunks/multi-deadbeef.locale-extra.js": b"hashed suffix",
+             "chunks/multi-deadbeef.-extra.js": b"hashed dash suffix",
+             "css/main.css": b"body{}", "sw.js": b"worker", "empty.txt": b"",
+             "release-deadbeef.dir/index.html": b"nested entry",
+             "text 中文.txt": "Unicode中文🙂\r\n".encode("utf-8"),
+             ".env": b"must never expose dotfiles"}
+    for name, data in list(files.items()):
+        if name in ("index.html", "chunks/main-84da2e86.js", "css/main.css"):
+            files[name + ".gz"] = gzip.compress(data, mtime=0)
+    files["chunks/only-deadbeef.mjs.gz"] = gzip.compress(b"compressed-only module", mtime=0)
+    for name, data in files.items():
+        path = frontend / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        os.utime(path, (1609459200, 1609459200))
+    (frontend.parent / "secret.txt").write_bytes(b"must never expose parent files")
+
+
+def static_conditions(send, frontend):
+    """The same range/precondition contract runs through both hosting owners."""
+    path = "/chunks/main-84da2e86.js"
+    plain = (frontend / path.lstrip("/")).read_bytes()
+    compressed = (frontend / (path.lstrip("/") + ".gz")).read_bytes()
+    normal = send(path + "?conditional=plain", expected=plain)
+    encoded = send(path + "?conditional=gzip", {"Accept-Encoding": "gzip"}, expected=compressed)
+    errors = {status: (f'<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>Error</title>\n</head>\n<body>\n<pre>{message}</pre>\n</body>\n</html>\n').encode()
+              for status, message in ((412, "Precondition Failed"), (416, "Range Not Satisfiable"))}
+
+    def case(label, headers, status, expected, method="GET", content_range=None):
+        result = send(path + "?conditional=" + label, headers, method, status, b"" if method == "HEAD" else expected)
+        assert result.get("content-range") == content_range, f"{label}: incorrect Content-Range"
+        if status != 304:
+            assert result["content-length"] == str(len(expected)), f"{label}: incorrect representation length"
+        if status >= 400:
+            assert result["content-type"] == "text/html; charset=utf-8"
+            assert result["content-security-policy"] == "default-src 'none'" and result["x-content-type-options"] == "nosniff"
+            assert "content-encoding" not in result
+        return result
+
+    length = len(plain)
+    for label, value, start, end in (
+            ("first", "bytes=0-3", 0, 3), ("open", "bytes=4-", 4, length - 1),
+            ("suffix", "bytes=-4", length - 4, length - 1),
+            ("clamped", "bytes=2-99999999999999999999999", 2, length - 1),
+            ("whole-suffix", f"bytes=-{length}", 0, length - 1),
+            ("adjacent", "bytes=3-5,0-2", 0, 5), ("overlap", "bytes=2-5,0-3", 0, 5),
+            ("duplicate", "bytes=0-3,0-3", 0, 3), ("one-valid", "bytes=99999-,1-4", 1, 4),
+            ("numeric-prefix", "bytes=1garbage-4suffix", 1, 4),
+            ("suffix-coercion", "bytes=invalid-4", length - 4, length - 1),
+            ("spaces", "bytes= 1 - 4 ", 1, 4)):
+        case(label, {"Range": value}, 206, plain[start:end + 1], content_range=f"bytes {start}-{end}/{length}")
+    for label, value in (("disjoint", "bytes=0-1,4-5"), ("other-unit", "items=0-3"),
+                         ("uppercase", "Bytes=0-3"), ("no-equals", "bytes"), ("space-before-equals", "bytes =0-3")):
+        case(label, {"Range": value}, 200, plain)
+    for label, value in (("past-end", f"bytes={length}-"), ("reversed", "bytes=5-2"),
+                         ("zero-suffix", "bytes=-0"), ("large-suffix", f"bytes=-{length + 1}"),
+                         ("empty-range", "bytes="), ("invalid-range", "bytes=garbage")):
+        case(label, {"Range": value}, 416, errors[416], content_range=f"bytes */{length}")
+    case("head-range", {"Range": "bytes=0-3"}, 206, plain[:4], "HEAD", f"bytes 0-3/{length}")
+    case("head-unsatisfied", {"Range": "bytes=99999-"}, 416, errors[416], "HEAD", f"bytes */{length}")
+    for label, value, fresh in (("weak", normal["etag"], True), ("strong", normal["etag"][2:], False),
+                                ("missing", '"miss"', False), ("date", normal["last-modified"], True),
+                                ("future", "Sat, 02 Jan 2021 00:00:00 GMT", True),
+                                ("old", "Thu, 31 Dec 2020 23:59:59 GMT", False), ("invalid", "invalid", False)):
+        case("if-range-" + label, {"Range": "bytes=0-3", "If-Range": value}, 206 if fresh else 200,
+             plain[:4] if fresh else plain, content_range=f"bytes 0-3/{length}" if fresh else None)
+    case("stale-unsatisfied", {"Range": "bytes=99999-", "If-Range": '"miss"'}, 200, plain)
+    for label, value in (("weak", normal["etag"]), ("strong", normal["etag"][2:]),
+                         ("list", '"miss", ' + normal["etag"]), ("wildcard", "*")):
+        case("if-match-" + label, {"If-Match": value}, 200, plain)
+    case("if-match-miss", {"If-Match": '"miss"'}, 412, errors[412])
+    case("head-precondition", {"If-Match": '"miss"'}, 412, errors[412], "HEAD")
+    for label, value in (("equal", normal["last-modified"]), ("future", "Sat, 02 Jan 2021 00:00:00 GMT"), ("invalid", "invalid")):
+        case("unmodified-" + label, {"If-Unmodified-Since": value}, 200, plain)
+    old = "Thu, 31 Dec 2020 23:59:59 GMT"
+    case("unmodified-old", {"If-Unmodified-Since": old}, 412, errors[412])
+    case("match-over-date", {"If-Match": normal["etag"], "If-Unmodified-Since": old}, 200, plain)
+    case("precondition-before-fresh", {"If-Match": '"miss"', "If-None-Match": normal["etag"]}, 412, errors[412])
+    case("precondition-before-range", {"If-Match": '"miss"', "Range": "bytes=0-3"}, 412, errors[412])
+    case("fresh-before-range", {"If-None-Match": normal["etag"], "Range": "bytes=99999-"}, 304, b"")
+    case("matched-range", {"If-Match": normal["etag"], "Range": "bytes=0-3"}, 206, plain[:4], content_range=f"bytes 0-3/{length}")
+    gzip_headers = {"Accept-Encoding": "gzip", "Range": "bytes=0-3"}
+    case("gzip-range", gzip_headers, 206, compressed[:4], content_range=f"bytes 0-3/{len(compressed)}")
+    case("gzip-range-head", gzip_headers, 206, compressed[:4], "HEAD", f"bytes 0-3/{len(compressed)}")
+    case("gzip-if-range", {**gzip_headers, "If-Range": encoded["etag"]}, 206, compressed[:4], content_range=f"bytes 0-3/{len(compressed)}")
+    case("gzip-stale-if-range", {**gzip_headers, "If-Range": normal["etag"]}, 200, compressed)
+    case("gzip-precondition", {**gzip_headers, "If-Match": normal["etag"]}, 412, errors[412])
+    case("gzip-unsatisfied", {"Accept-Encoding": "gzip", "Range": "bytes=99999-"}, 416, errors[416], content_range=f"bytes */{len(compressed)}")
+    send("/empty.txt?conditional=empty", expected=b"")
+    empty = send("/empty.txt?conditional=range", {"Range": "bytes=0-"}, status=416, expected=errors[416])
+    assert empty["content-range"] == "bytes */0"
+
+
+def static_resources(url, state, output, name):
+    """Compare actual binary representations and cache metadata from both services."""
+    parsed = urlsplit(url)
+    frontend = state / "frontend"
+    observations = []
+    before = {path.name: path.read_bytes() for path in (state / "sub-store.json", state / "root.json") if path.exists()}
+    contract_headers = ("content-type", "content-length", "content-encoding", "cache-control",
+                        "etag", "last-modified", "vary", "accept-ranges", "content-range",
+                        "content-security-policy", "x-content-type-options")
+
+    def send(path, headers=None, method="GET", status=200, expected=None):
+        connection = BufferedHTTPConnection(parsed.hostname, parsed.port, timeout=5)
+        try:
+            connection.request(method, path, headers=headers or {})
+            response = connection.getresponse()
+            body = response.read()
+            raw = {"method": method, "path": path, "request_headers": headers or {},
+                   "status": response.status, "headers": {key.lower(): value for key, value in response.getheaders()},
+                   "body_base64": base64.b64encode(body).decode("ascii")}
+        finally:
+            connection.close()
+        with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
+            evidence.write(json.dumps(raw, ensure_ascii=False) + "\n")
+        assert raw["status"] == status, f"{name} {method} {path}: {raw}"
+        if expected is not None:
+            assert body == expected, f"{name} {method} {path}: body mismatch"
+        observations.append({"method": method, "path": path, "status": raw["status"],
+                             "headers": {key: raw["headers"][key] for key in contract_headers if key in raw["headers"]},
+                             "body_base64": raw["body_base64"]})
+        return raw["headers"]
+
+    path = "/chunks/main-84da2e86.js"
+    plain = (frontend / path.lstrip("/")).read_bytes()
+    compressed = (frontend / (path.lstrip("/") + ".gz")).read_bytes()
+    normal = send(path + "?cache=1", expected=plain)
+    encoded = send(path, {"Accept-Encoding": "gzip"}, expected=compressed)
+    assert normal["content-type"] == "application/javascript; charset=utf-8"
+    assert normal["content-length"] == str(len(plain)) and encoded["content-length"] == str(len(compressed))
+    assert normal["cache-control"] == "public, max-age=31536000, immutable"
+    assert encoded["content-encoding"] == "gzip" and "content-encoding" not in normal
+    assert normal["last-modified"] == "Fri, 01 Jan 2021 00:00:00 GMT"
+    assert re.fullmatch(r'W/"[0-9a-f]+-[0-9a-f]+"', encoded["etag"])
+    send(path, {"Accept-Encoding": "gzip"}, "HEAD", expected=b"")
+    for accept, use_gzip in (("gzip;q=0", False), ("gzip;q=0.5", True),
+                             ("gzip;q=0.5, identity;q=1", False), ("identity;q=0.5, gzip;q=1", True),
+                             ("*;q=0.8", True), ("*;q=0", False), ("gzip;q=0, *;q=1", False),
+                             ("GZIP; q=0.8", True), ("br, gzip;q=.8", True),
+                             ("identity, gzip", False), ("gzip, identity", True),
+                             ("gzip;q=0.4, gzip;q=0.8, identity;q=0.6", True),
+                             ("gzip;q=invalid", False), ("gzip;q=0.8suffix", True)):
+        send(path, {"Accept-Encoding": accept}, expected=compressed if use_gzip else plain)
+    for match in (encoded["etag"], encoded["etag"][2:], '"miss", ' + encoded["etag"], "*"):
+        result = send(path, {"Accept-Encoding": "gzip", "If-None-Match": match}, status=304, expected=b"")
+        assert all(key not in result for key in ("content-type", "content-length", "content-encoding"))
+    send(path, {"Accept-Encoding": "gzip", "If-None-Match": encoded["etag"]}, "HEAD", 304, b"")
+    send(path, {"If-Modified-Since": normal["last-modified"]}, status=304, expected=b"")
+    send(path, {"If-Modified-Since": "invalid"}, expected=plain)
+    send(path, {"If-Modified-Since": "Thu, 31 Dec 2020 23:59:59 GMT"}, expected=plain)
+    send(path, {"If-None-Match": normal["etag"], "Cache-Control": "max-age=0, no-cache"}, expected=plain)
+    send(path, {"If-None-Match": normal["etag"], "If-Modified-Since": "invalid"}, expected=plain)
+    send(path, {"Accept-Encoding": "gzip", "If-None-Match": normal["etag"]}, expected=compressed)
+    send("/sw.js", {"Accept-Encoding": "gzip"}, expected=b"worker")
+    send("/css/main.css?cache=1", {"Accept-Encoding": "gzip"}, expected=(frontend / "css/main.css.gz").read_bytes())
+    send("/chunks/only-deadbeef.mjs", {"Accept-Encoding": "gzip"}, expected=(frontend / "chunks/only-deadbeef.mjs.gz").read_bytes())
+    send(path + ".gz", expected=compressed)
+    send("/text%20%E4%B8%AD%E6%96%87.txt", expected=(frontend / "text 中文.txt").read_bytes())
+    send("/release-deadbeef.dir/index.html", expected=b"nested entry")
+    for suffix, content in (("locale-extra", b"hashed suffix"), ("-extra", b"hashed dash suffix")):
+        result = send(f"/chunks/multi-deadbeef.{suffix}.js", expected=content)
+        assert result["cache-control"] == "public, max-age=31536000, immutable"
+    entry = (frontend / "index.html").read_bytes()
+    for route in ("/", "/settings", "/missing.js", "/.env", "/%2e%2e%2fsecret.txt"):
+        result = send(route, expected=entry)
+        assert result["cache-control"] == "public, max-age=0"
+    send("/settings", {"Accept-Encoding": "gzip"}, expected=(frontend / "index.html.gz").read_bytes())
+    for route in ("/api/not-a-resource", "/download/not-a-route/missing/extra/segment", "/share/not-a-resource"):
+        send(route, status=404, expected=b"")
+    static_conditions(send, frontend)
+    replacement = gzip.compress(b'console.log("replacement chunk is visible")', mtime=0)
+    (frontend / (path.lstrip("/") + ".gz")).write_bytes(replacement)
+    os.utime(frontend / (path.lstrip("/") + ".gz"), (1609459202, 1609459202))
+    refreshed = send(path, {"Accept-Encoding": "gzip", "If-None-Match": encoded["etag"]}, expected=replacement)
+    assert refreshed["etag"] != encoded["etag"] and refreshed["last-modified"] != encoded["last-modified"]
+    assert all((state / filename).read_bytes() == data for filename, data in before.items()), "Static request changed state"
+    (output / f"{name}.json").write_text(json.dumps(observations, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return observations
+
+
+def standalone_resources(frontend_url, backend_url, mount, state, output, name):
+    """Exercise the real second listener and its shared backend state."""
+    parsed = urlsplit(frontend_url)
+    observations = []
+    before = {path.name: path.read_bytes() for path in (state / "sub-store.json", state / "root.json")}
+    contract_headers = ("content-type", "content-length", "content-encoding", "cache-control", "etag",
+                        "last-modified", "vary", "accept-ranges", "content-disposition", "x-powered-by",
+                        "access-control-allow-origin", "access-control-allow-methods", "access-control-allow-headers",
+                        "content-security-policy", "x-content-type-options", "content-range")
+
+    def send(path, headers=None, method="GET", status=200, expected=None, body=None, api=False):
+        data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+        headers = {"Origin": "https://allowed.invalid", **({"Content-Type": "application/json"} if data else {}), **(headers or {})}
+        connection = BufferedHTTPConnection(parsed.hostname, parsed.port, timeout=5)
+        before_request = datetime.now().astimezone()
+        try:
+            connection.request(method, path, body=data, headers=headers)
+            response = connection.getresponse()
+            content = response.read()
+            raw = {"method": method, "path": path, "request_headers": headers, "request_body": body,
+                   "status": response.status, "headers": {key.lower(): value for key, value in response.getheaders()},
+                   "body_base64": base64.b64encode(content).decode("ascii")}
+        finally:
+            connection.close()
+        after_request = datetime.now().astimezone()
+        raw.update(before=before_request.isoformat(), after=after_request.isoformat())
+        with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
+            evidence.write(json.dumps(raw, ensure_ascii=False) + "\n")
+        assert raw["status"] == status, f"{name} {method} {path}: {raw}"
+        if expected is not None:
+            assert content == expected, f"{name} {method} {path}: unexpected body"
+        if api:
+            assert raw["headers"].get("x-powered-by") == "Sub-Store", "Frontend did not enter backend routing"
+            if "content-disposition" in raw["headers"]:
+                filename = "sub-store_subscription_" + unquote(path.split("?")[0].rsplit("/", 1)[1])
+                encoded = quote(filename, safe="-_.!~*'()")
+                stamp = re.fullmatch(r'attachment; filename="' + re.escape(encoded) + r'_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.json"', raw["headers"]["content-disposition"])
+                assert stamp, "Proxy lost the encoded export filename"
+                instant = datetime.strptime(stamp[1], "%Y-%m-%d_%H-%M-%S").replace(tzinfo=before_request.tzinfo)
+                assert before_request - timedelta(seconds=1) <= instant <= after_request, "Proxy export has an invalid calendar time"
+        else:
+            assert raw["headers"].get("x-powered-by") == "Express"
+            assert "access-control-allow-origin" not in raw["headers"], "Static frontend inherited backend CORS"
+        compared_headers = ("content-type", "x-powered-by", "vary",
+                            "access-control-allow-origin", "access-control-allow-methods", "access-control-allow-headers") if api else contract_headers
+        observations.append({"method": method, "path": path, "status": raw["status"],
+                             "headers": {key: raw["headers"][key] for key in compared_headers if key in raw["headers"]},
+                             "body": json.loads(content) if api and content.startswith(b"{") else raw["body_base64"],
+                             "state": json.loads((state / "sub-store.json").read_text(encoding="utf-8"))})
+        return raw["headers"]
+
+    frontend = state / "frontend"
+    entry = (frontend / "index.html").read_bytes()
+    normal = send("/chunks/main-84da2e86.js?cache=1", expected=(frontend / "chunks/main-84da2e86.js").read_bytes())
+    send("/chunks/main-84da2e86.js", {"Accept-Encoding": "gzip"}, expected=(frontend / "chunks/main-84da2e86.js.gz").read_bytes())
+    send("/chunks/main-84da2e86.js", method="HEAD", expected=b"")
+    send("/chunks/main-84da2e86.js", {"If-None-Match": normal["etag"]}, status=304, expected=b"")
+    send("/", expected=entry)
+    for path in ("/settings", "/missing.js", "/.env", "/%2e%2e%2fsecret.txt"):
+        send(path, {"Accept": "text/html"}, expected=entry)
+    send("/settings", {"Accept": "*/*", "Accept-Encoding": "gzip"}, expected=(frontend / "index.html.gz").read_bytes())
+    send("/settings", {"Accept": "text/html"}, method="HEAD", expected=b"")
+    for headers in ({}, {"Accept": "application/json"}, {"Accept": "application/json, text/html"}):
+        send("/settings", headers, status=404)
+    send("/settings?query=1", {"Accept": "text/html"}, method="POST", status=404)
+    static_conditions(send, frontend)
+    assert all((state / filename).read_bytes() == data for filename, data in before.items()), "Static frontend changed state"
+    if mount:
+        api_path = mount.rstrip("/") + "/api"
+        send(api_path + "/settings", api=True)
+        send(api_path + "/settings?keep=%E4%B8%AD&keep=%2B", method="PATCH", body={"standalone": "转交🙂", "zero": 0}, api=True)
+        direct = request(backend_url, {"path": "/api/settings"})
+        assert json.loads(direct["body"])["data"]["standalone"] == "转交🙂", "Proxy wrote a different store"
+        send(api_path + "/subs", method="POST", body={"name": "独立 %?", "url": "https://example.invalid/list"}, status=201, api=True)
+        encoded = quote("独立 %?", safe="")
+        exported = send(api_path + "/sub/" + encoded + "?raw=1&opaque=%26%2B", api=True)
+        assert "content-disposition" in exported, "Proxy lost raw export headers"
+        send(api_path + "/sub/" + encoded, method="PATCH", body={"name": "renamed", "custom": False}, api=True)
+        send(api_path + "/sub/renamed", method="DELETE", api=True)
+        send(api_path + "/settings", method="OPTIONS", expected=b"", api=True)
+        send(api_path + "/settings", {"Origin": "https://denied.invalid"}, method="PATCH", body={"mustNotWrite": True}, status=403, expected=b"CORS origin not allowed", api=True)
+        assert "mustNotWrite" not in json.loads((state / "sub-store.json").read_text(encoding="utf-8"))["settings"]
+        send(mount.rstrip("/") + "/download/not-a-route/missing/extra/segment?raw=1", status=404, expected=b"", api=True)
+        send(api_path.upper() + "/settings", api=True)
+        send(api_path + "extra/settings", {"Accept": "text/html"}, expected=entry)
+    else:
+        send("/api/settings", status=404)
+        send("/api/settings", {"Accept": "text/html"}, expected=entry)
     (output / f"{name}.json").write_text(json.dumps(observations, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return observations
 
@@ -334,6 +717,63 @@ def main():
                 report["phases"].append({"name": f"{kind}-edges", "requests": len(edges[kind])})
         check_json(edges["rust"], edges["node"])
         report["settings_and_recipient_http_state_equal"] = True
+        unknown = {"zero": 0, "flag": False, "text": "保留🙂\r\n"}
+        sources = ["1", "01", 1, True, 0, False, None, ["1"], [1], [0], [], {}]
+        seed = {"schemaVersion": "2.0", "settings": {}, "rules": [], "modules": [], "tokens": [], "archives": [],
+                "subs": [{"name": name, "subscriptions": ["reserved"], "unknown": unknown} for name in ("1", "0")],
+                "collections": [{"name": "refs", "subscriptions": ["1", "1", "0", "0", 1, 0]}, {"name": "1", "subscriptions": []}],
+                "artifacts": [{"name": f"sub-{index}", "type": "subscription", "source": value} for index, value in enumerate(sources)]
+                             + [{"name": f"col-{index}", "type": "collection", "source": value} for index, value in enumerate(["1", 1, True, [1]])],
+                "files": [{"name": f"sub-{index}", "sourceType": "subscription", "sourceName": value} for index, value in enumerate(sources)],
+                "opaque": unknown}
+        crud = {}
+        final_crud = {}
+        for kind in ("node", "rust"):
+            state = output / f"{kind}-crud"
+            state.mkdir()
+            (state / "sub-store.json").write_text(json.dumps(seed, ensure_ascii=False), encoding="utf-8")
+            env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}
+            label = f"{kind}-crud"
+            manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
+            with manager as url:
+                if kind == "rust":
+                    before = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+                    saved = state / "saved-state.json"
+                    (state / "sub-store.json").rename(saved)
+                    (state / "sub-store.json").mkdir()
+                    try:
+                        failed = request(url, {"method": "PATCH", "path": "/api/sub/1", "body": {"name": "must-not-commit"}})
+                        unchanged = request(url, {"path": "/api/storage"})
+                        (output / "crud-write-failure.json").write_text(json.dumps({"before": before, "failure": failed, "after": unchanged}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                        assert failed["status"] == 500 and json.loads(failed["body"])["error"]["code"] == "STATE_WRITE_FAILED"
+                        assert unchanged["status"] == 200
+                        check_json(json.loads(unchanged["body"]), before)
+                    finally:
+                        (state / "sub-store.json").rmdir()
+                        saved.rename(state / "sub-store.json")
+                    report["crud_failed_rename_preserved_all_references"] = True
+                crud[kind] = crud_edges(url, state, output, label)
+                final_crud[kind] = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+                report["phases"].append({"name": label, "requests": len(crud[kind])})
+            manager = oracle(args.node, env, output, report, label + "-restart") if kind == "node" else listener(args.binary, env, output, report, label + "-restart", image)
+            with manager as url:
+                response = request(url, {"path": "/api/storage"})
+                (output / f"{label}-restart.json").write_text(json.dumps(response, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                assert response["status"] == 200
+                check_json(json.loads(response["body"]), final_crud[kind])
+        check_json(crud["rust"], crud["node"])
+        check_json(final_crud["rust"], final_crud["node"])
+        rollback = output / "crud-node-rollback"
+        rollback.mkdir()
+        for filename in ("sub-store.json", "root.json"):
+            shutil.copyfile(output / "rust-crud" / filename, rollback / filename)
+        with oracle(args.node, {**environment, "SUB_STORE_DATA_BASE_PATH": str(rollback)}, output, report, "crud-node-rollback") as url:
+            response = request(url, {"path": "/api/storage"})
+            (output / "crud-node-rollback.json").write_text(json.dumps(response, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            assert response["status"] == 200
+            check_json(json.loads(response["body"]), final_crud["rust"])
+        report["crud_http_and_state_equal"] = True
+        report["crud_restart_and_node_rollback_checked"] = True
         backup = json.loads((HERE / "fixtures/frontend-backup.json").read_text(encoding="utf-8"))
         root = {"opaque": {"text": "根缓存🙂\r\n", "zero": 0, "flag": False, "nil": None}, "sub-store": "previous backup"}
         for key in ("sub-store-cached-resource", "sub-store-cached-headers-resource", "sub-store-cached-script-resource"):
@@ -433,6 +873,56 @@ def main():
             assert (corrupt_restore / "sub-store.json").read_bytes() == old_data
             assert (corrupt_restore / "root.json").read_bytes() == old_root
             report["corrupt_restore_not_reset"] = True
+        for prefix in ("/backend", "/"):
+            static = {}
+            for kind in ("node", "rust"):
+                label = f"{kind}-static-{'root' if prefix == '/' else 'prefix'}"
+                state = output / label
+                state.mkdir()
+                (state / "sub-store.json").write_text(json.dumps(backup, ensure_ascii=False), encoding="utf-8")
+                (state / "root.json").write_text(json.dumps(root, ensure_ascii=False), encoding="utf-8")
+                static_fixture(state / "frontend")
+                env = {**environment, "NODE_ENV": "production", "SUB_STORE_DATA_BASE_PATH": str(state), "SUB_STORE_BACKEND_MERGE": "true",
+                       "SUB_STORE_FRONTEND_BACKEND_PATH": prefix, "SUB_STORE_FRONTEND_PATH": str(state / "frontend")}
+                manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
+                with manager as url:
+                    static[kind] = static_resources(url, state, output, label)
+                    report["phases"].append({"name": label, "requests": len(static[kind])})
+            check_json(static["rust"], static["node"])
+        report["merged_frontend_static_http_equal"] = True
+        report["static_prefix_configurations_checked"] = ["/backend", "/"]
+        report["static_ranges_preconditions_checked"] = True
+        report["static_conditional_error_mode"] = "production"
+        report["development_error_stack_parity"] = "NOT_VERIFIED"
+        for mode, mount, prefix in (("prefixed", "/backend", "true"), ("unprefixed", "/gateway", ""),
+                                    ("root", "/", "true"), ("static-only", "", "")):
+            standalone = {}
+            for kind in ("node", "rust"):
+                label = f"{kind}-standalone-{mode}"
+                state = output / label
+                state.mkdir()
+                (state / "sub-store.json").write_text(json.dumps(backup, ensure_ascii=False), encoding="utf-8")
+                (state / "root.json").write_text(json.dumps(root, ensure_ascii=False), encoding="utf-8")
+                static_fixture(state / "frontend")
+                with socket.socket() as reserved:
+                    reserved.bind(("127.0.0.1", 0))
+                    port = reserved.getsockname()[1]
+                env = {**environment, "NODE_ENV": "production", "SUB_STORE_DATA_BASE_PATH": str(state), "SUB_STORE_BACKEND_MERGE": "",
+                       "SUB_STORE_BACKEND_PREFIX": prefix, "SUB_STORE_FRONTEND_BACKEND_PATH": mount,
+                       "SUB_STORE_FRONTEND_PATH": str(state / "frontend"), "SUB_STORE_FRONTEND_HOST": "127.0.0.1",
+                       "SUB_STORE_FRONTEND_PORT": str(port), "SUB_STORE_CORS_ALLOWED_ORIGINS": "https://allowed.invalid"}
+                manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
+                with manager as url:
+                    standalone[kind] = standalone_resources(f"http://127.0.0.1:{port}", url, mount, state, output, label)
+                    report["phases"].append({"name": label, "requests": len(standalone[kind])})
+                    if kind == "rust" and mode == "prefixed":
+                        pending = request(f"http://127.0.0.1:{port}", {"path": "/share/sub/renamed?token=invalid"})
+                        (output / "standalone-share-pending.json").write_text(json.dumps(pending, indent=2) + "\n", encoding="utf-8")
+                        assert pending["status"] == 501, "Public share forwarding must remain unavailable pending M4"
+                        report["standalone_share_proxy_unavailable"] = True
+            check_json(standalone["rust"], standalone["node"])
+        report["standalone_frontend_http_and_state_equal"] = True
+        report["standalone_configurations_checked"] = ["prefixed", "unprefixed", "root", "static-only"]
         report["exit_code"] = 0
     except Exception as error:
         report["error"] = f"{type(error).__name__}: {error}"

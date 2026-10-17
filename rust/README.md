@@ -22,7 +22,11 @@ Downloaded service binaries use the existing environment variables:
 - `SUB_STORE_BACKEND_PREFIX` / `SUB_STORE_FRONTEND_BACKEND_PATH`: existing prefix
   mode and backend path. Prefix/merge modes require a path starting with `/`.
 - `SUB_STORE_BACKEND_MERGE` / `SUB_STORE_FRONTEND_PATH`: serve unchanged frontend
-  assets in the same listener.
+  assets in the same listener. Without merge, FRONTEND_PATH starts a separate
+  listener using `SUB_STORE_FRONTEND_HOST` / `SUB_STORE_FRONTEND_PORT` (defaults
+  backend host / `3001`). FRONTEND_BACKEND_PATH mounts API/download forwarding
+  to the same Rust backend; without that path the frontend port serves only
+  static assets. Configure CORS to allow the frontend origin when needed.
 - `SUB_STORE_CORS_ALLOWED_ORIGINS`, `SUB_STORE_BACKEND_CUSTOM_NAME`,
   `SUB_STORE_X_POWERED_BY`, `SUB_STORE_BODY_JSON_LIMIT`: existing HTTP policy.
 
@@ -38,6 +42,10 @@ Subscription/collection public recipients are validated and normalized natively
 for both X25519 and MLKEM768-X25519, including checksum and padding. Settings
 retain the submitted JSON types after legacy numeric validation, and old object
 stores migrate using JavaScript's numeric-key ordering.
+Subscription/collection CRUD keeps legacy create ordering and typed names,
+permanent-delete errors, rename references and reserved-field behavior. Subscription
+reference matching is intentionally looser than collection matching. Other malformed
+payload and HTTP edge cases remain part of the unfinished M2 acceptance.
 Raw JSON exports retain the legacy local-calendar filenames and escaped resource
 names. Manual restore keeps the pre-migration backup in `root.json`'s `sub-store`
 key and preserves unrelated root entries. A private undo record protects the two
@@ -45,5 +53,14 @@ files during restore; startup recovers an interrupted restore before serving.
 Malformed recovery records stop startup without resetting either file. Let Rust
 recover a pending restore before rolling back to Node. The no-Gist refresh path
 clears the three resource caches used by frontend restore; Gist refresh remains
-pending. Broader HTTP/static edge cases remain M2 acceptance work. Stored excluded
-Node scripts remain intact.
+pending. Merged frontend hosting preserves gzip/identity preferences, compressed
+assets, legacy cache headers, filesystem ETag/Last-Modified validators, conditional
+304 responses and representation metadata on HEAD. Standalone hosting reuses
+these assets with legacy Accept-based history fallback and API/download forwarding.
+Its public share proxy returns an explicit pending error until M4 implements
+token enforcement. Both hosting modes support selected-representation byte ranges,
+If-Range, If-Match and If-Unmodified-Since, including conditional/HEAD precedence.
+Range combination and validator matching retain the locked Node dependency's
+behavior. Static 412/416 errors use production HTML messages; Node development
+stack bodies and broader HTTP/API edge cases remain M2 acceptance work.
+Stored excluded Node scripts remain intact.

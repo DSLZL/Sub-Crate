@@ -10,6 +10,7 @@ publish = false
 base64 = "=0.23.1"
 getrandom = "=0.4.3"
 http-body-util = "=0.1.5"
+httpdate = "=1.0.3"
 hyper = { version = "=1.12.0", features = ["client", "server", "http1"] }
 hyper-rustls = { version = "=0.27.10", default-features = false, features = ["http1", "tls12", "rustls-platform-verifier", "aws-lc-rs"] }
 hyper-util = { version = "=0.1.21", features = ["client-legacy", "http1", "tokio"] }

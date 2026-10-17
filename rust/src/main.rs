@@ -2,23 +2,28 @@ mod api;
 mod state;
 
 use http_body_util::{BodyExt, Limited};
+use hyper::body::{Body, Incoming};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use hyper::{Method, Request, body::Incoming};
+use hyper::{HeaderMap, Method, Request};
 use hyper_util::rt::TokioIo;
 use percent_encoding::percent_decode_str;
 use serde_json::{Value, json};
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::env;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, UNIX_EPOCH};
 use tokio::net::TcpListener;
 
 struct Config {
     prefix: Option<String>,
     frontend: Option<PathBuf>,
+    merge: bool,
+    frontend_backend_path: String,
     cors: Vec<String>,
     local_origins: bool,
     body_limit: usize,
@@ -45,20 +50,18 @@ impl Config {
         let merge = !configured("SUB_STORE_BACKEND_MERGE", "").is_empty();
         let prefixed = !configured("SUB_STORE_BACKEND_PREFIX", "").is_empty();
         let backend_path = configured("SUB_STORE_FRONTEND_BACKEND_PATH", "");
-        if (merge || prefixed) && !backend_path.starts_with('/') {
+        let frontend = env::var("SUB_STORE_FRONTEND_PATH")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(fs_root)
+            .transpose()?;
+        if (merge || prefixed || (frontend.is_some() && !backend_path.is_empty()))
+            && !backend_path.starts_with('/')
+        {
             return Err(io::Error::other(
-                "SUB_STORE_FRONTEND_BACKEND_PATH must start with / when prefix or merge is enabled",
+                "SUB_STORE_FRONTEND_BACKEND_PATH must start with / when a backend mount is configured",
             ));
         }
-        let frontend = if merge {
-            env::var("SUB_STORE_FRONTEND_PATH")
-                .ok()
-                .filter(|s| !s.is_empty())
-                .map(fs_root)
-                .transpose()?
-        } else {
-            None
-        };
         let allowed = configured("SUB_STORE_CORS_ALLOWED_ORIGINS", "");
         let mut cors: Vec<_> = allowed
             .split(|c: char| c == ',' || c == '，' || c.is_whitespace())
@@ -96,8 +99,10 @@ impl Config {
                 .collect(),
         );
         Ok(Self {
-            prefix: (merge || prefixed).then_some(backend_path),
+            prefix: (merge || prefixed).then(|| backend_path.clone()),
             frontend,
+            merge,
+            frontend_backend_path: backend_path,
             cors,
             local_origins: default_cors
                 && !configured("SUB_STORE_BACKEND_CUSTOM_NAME", "").is_empty(),
@@ -159,42 +164,274 @@ fn backend_route(path: &str) -> bool {
         .any(|prefix| path == *prefix || path.starts_with(&format!("{prefix}/")))
 }
 
-fn static_file(root: &Path, path: &str, gzip: bool) -> api::Reply {
-    let relative = Path::new(path.trim_start_matches('/'));
-    if path.contains(['\\', '\0'])
-        || relative
-            .components()
-            .any(|part| !matches!(part, Component::Normal(_)))
-    {
-        return api::text(403, "text/plain; charset=utf-8", "");
+fn header<'a>(headers: &'a HeaderMap, name: &str) -> &'a str {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+}
+
+fn gzip_preferred(headers: &HeaderMap) -> bool {
+    let raw = header(headers, "accept-encoding");
+    let mut accepted = Vec::new();
+    for (index, part) in raw.split(',').enumerate() {
+        let mut fields = part.trim().split(';');
+        let coding = fields.next().unwrap().trim();
+        if coding.is_empty() || coding.chars().any(char::is_whitespace) {
+            continue;
+        }
+        let quality = fields
+            .find_map(|field| {
+                let (key, value) = field.trim().split_once('=')?;
+                if key != "q" {
+                    return None;
+                }
+                let value = value.trim();
+                let quality = (0..=value.len())
+                    .rev()
+                    .filter(|end| value.is_char_boundary(*end))
+                    .find_map(|end| value[..end].parse::<f64>().ok())
+                    .unwrap_or(0.0);
+                Some(if quality.is_nan() { 0.0 } else { quality })
+            })
+            .unwrap_or(1.0);
+        accepted.push((coding, quality, index));
     }
-    let requested = root.join(relative);
-    let logical = if requested.is_file() {
-        requested
-    } else {
+    // The locked negotiator adds identity at the lowest nonzero quality.
+    if !accepted
+        .iter()
+        .any(|(coding, _, _)| *coding == "*" || coding.eq_ignore_ascii_case("identity"))
+    {
+        let quality = accepted
+            .iter()
+            .map(|(_, quality, _)| if *quality == 0.0 { 1.0 } else { *quality })
+            .fold(1.0, f64::min);
+        accepted.push(("identity", quality, raw.split(',').count()));
+    }
+    let priority = |name: &str| {
+        accepted
+            .iter()
+            .filter_map(|(coding, quality, index)| {
+                if coding.eq_ignore_ascii_case(name) {
+                    Some((1, *quality, *index))
+                } else if *coding == "*" {
+                    Some((0, *quality, *index))
+                } else {
+                    None
+                }
+            })
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .map(|(specificity, quality, index)| (quality, specificity, Reverse(index)))
+            .unwrap_or((0.0, 0, Reverse(usize::MAX)))
+    };
+    let gzip = priority("gzip");
+    gzip.0 > 0.0 && gzip >= priority("identity")
+}
+
+fn static_etag_match(raw: &str, etag: &str) -> bool {
+    raw == "*"
+        || raw.split(',').any(|part| {
+            let part = part.trim();
+            part == etag
+                || part.strip_prefix("W/") == Some(etag)
+                || etag.strip_prefix("W/") == Some(part)
+        })
+}
+
+fn static_fresh(headers: &HeaderMap, etag: &str, modified: std::time::SystemTime) -> bool {
+    let matched = header(headers, "if-none-match");
+    let since = header(headers, "if-modified-since");
+    if (matched.is_empty() && since.is_empty())
+        || header(headers, "cache-control")
+            .split(',')
+            .any(|part| part.trim() == "no-cache")
+    {
+        return false;
+    }
+    if !matched.is_empty() && !static_etag_match(matched, etag) {
+        return false;
+    }
+    since.is_empty() || httpdate::parse_http_date(since).is_ok_and(|date| modified <= date)
+}
+
+fn static_range(
+    headers: &HeaderMap,
+    etag: &str,
+    modified: std::time::SystemTime,
+    length: usize,
+) -> Result<Option<(usize, usize)>, ()> {
+    let Some(raw) = header(headers, "range")
+        .trim_start_matches(' ')
+        .strip_prefix("bytes=")
+    else {
+        return Ok(None);
+    };
+    let condition = header(headers, "if-range");
+    if !condition.is_empty()
+        && !(if condition.contains('"') {
+            condition.contains(etag)
+        } else {
+            httpdate::parse_http_date(condition).is_ok_and(|date| modified <= date)
+        })
+    {
+        return Ok(None);
+    }
+    // The locked range-parser uses parseInt, including numeric prefixes.
+    let number = |raw: &str| {
+        let raw = raw.trim_start();
+        let prefix = raw
+            .char_indices()
+            .take_while(|(index, ch)| {
+                ch.is_ascii_digit() || (*index == 0 && matches!(*ch, '+' | '-'))
+            })
+            .map(|(index, ch)| index + ch.len_utf8())
+            .last()?;
+        raw[..prefix].parse::<f64>().ok()
+    };
+    let last = length as f64 - 1.0;
+    let mut ranges = Vec::new();
+    for part in raw.split(',') {
+        let mut fields = part.split('-');
+        let start = number(fields.next().unwrap());
+        let end = number(fields.next().unwrap_or(""));
+        let (start, end) = match (start, end) {
+            (Some(start), end) => (start, end.unwrap_or(last).min(last)),
+            (None, Some(suffix)) => (length as f64 - suffix, last),
+            _ => continue,
+        };
+        if start >= 0.0 && start <= end {
+            ranges.push((start as usize, end as usize));
+        }
+    }
+    ranges.sort_unstable();
+    let Some(&(start, mut end)) = ranges.first() else {
+        return Err(());
+    };
+    for &(next, last) in &ranges[1..] {
+        if next > end.saturating_add(1) {
+            return Ok(None);
+        }
+        end = end.max(last);
+    }
+    Ok(Some((start, end)))
+}
+
+fn static_file(root: &Path, path: &str, headers: &HeaderMap, fallback: bool) -> api::Reply {
+    let relative = Path::new(path.trim_start_matches('/'));
+    let safe = !path.contains(['\\', '\0'])
+        && !relative.components().any(|part| match part {
+            Component::Normal(name) => name.to_string_lossy().starts_with('.'),
+            _ => true,
+        });
+    let requested = if safe {
+        root.join(relative)
+    } else if fallback {
         root.join("index.html")
-    };
-    let compressed = logical.with_file_name(format!(
-        "{}.gz",
-        logical.file_name().unwrap().to_string_lossy()
-    ));
-    let (file, encoding) = if gzip && compressed.is_file() {
-        (compressed, true)
     } else {
-        (logical.clone(), false)
+        return api::not_found();
     };
-    let Ok(file) = file.canonicalize() else {
-        return api::text(404, "text/plain; charset=utf-8", "");
+    let gzip = gzip_preferred(headers);
+    let mut selected = None;
+    for logical in std::iter::once(requested).chain(fallback.then(|| root.join("index.html"))) {
+        if gzip && !logical.is_dir() {
+            let compressed = logical.with_file_name(format!(
+                "{}.gz",
+                logical.file_name().unwrap().to_string_lossy()
+            ));
+            if compressed.is_file() {
+                selected = Some(compressed);
+                break;
+            }
+        }
+        if logical.is_file() {
+            selected = Some(logical);
+            break;
+        }
+        if logical.is_dir() && logical.join("index.html").is_file() {
+            selected = Some(logical.join("index.html"));
+            break;
+        }
+    }
+    let Some(selected) = selected else {
+        return api::not_found();
+    };
+    let Ok(file) = selected.canonicalize() else {
+        return api::not_found();
     };
     if !file.starts_with(root) {
         return api::text(403, "text/plain; charset=utf-8", "");
     }
-    let Ok(bytes) = std::fs::read(file) else {
-        return api::text(404, "text/plain; charset=utf-8", "");
+    let Ok(metadata) = std::fs::metadata(&file) else {
+        return api::not_found();
+    };
+    let Ok(elapsed) = metadata
+        .modified()
+        .and_then(|date| date.duration_since(UNIX_EPOCH).map_err(io::Error::other))
+    else {
+        return api::not_found();
+    };
+    let modified = UNIX_EPOCH + Duration::from_secs(elapsed.as_secs());
+    let etag = format!(
+        "W/\"{:x}-{:x}\"",
+        metadata.len(),
+        (elapsed.as_nanos() + 500_000) / 1_000_000
+    );
+    let matched = header(headers, "if-match");
+    let precondition_failed = if !matched.is_empty() {
+        !static_etag_match(matched, &etag)
+    } else {
+        httpdate::parse_http_date(header(headers, "if-unmodified-since"))
+            .is_ok_and(|date| modified > date)
+    };
+    let fresh = !precondition_failed && static_fresh(headers, &etag, modified);
+    let range = if precondition_failed || fresh {
+        Ok(None)
+    } else {
+        static_range(headers, &etag, modified, metadata.len() as usize)
+    };
+    let status = if precondition_failed {
+        412
+    } else if fresh {
+        304
+    } else {
+        match range {
+            Ok(Some(_)) => 206,
+            Ok(None) => 200,
+            Err(()) => 416,
+        }
+    };
+    let bytes = if status >= 400 {
+        let message = if status == 412 {
+            "Precondition Failed"
+        } else {
+            "Range Not Satisfiable"
+        };
+        format!("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>{message}</pre>\n</body>\n</html>\n").into_bytes()
+    } else if fresh {
+        Vec::new()
+    } else if let Ok(bytes) = std::fs::read(&file) {
+        if let Ok(Some((start, end))) = range {
+            let Some(slice) = bytes.get(start..=end) else {
+                return api::not_found();
+            };
+            slice.to_vec()
+        } else {
+            bytes
+        }
+    } else {
+        return api::not_found();
+    };
+    let encoding = selected
+        .extension()
+        .is_some_and(|extension| extension == "gz");
+    let logical = if encoding {
+        selected.with_extension("")
+    } else {
+        selected
     };
     let content_type = match logical.extension().and_then(|s| s.to_str()).unwrap_or("") {
         "html" => "text/html; charset=utf-8",
-        "js" | "mjs" => "text/javascript; charset=utf-8",
+        "js" | "mjs" => "application/javascript; charset=utf-8",
         "css" => "text/css; charset=utf-8",
         "json" | "map" => "application/json; charset=utf-8",
         "svg" => "image/svg+xml",
@@ -203,14 +440,35 @@ fn static_file(root: &Path, path: &str, gzip: bool) -> api::Reply {
         "ico" => "image/x-icon",
         "woff" => "font/woff",
         "woff2" => "font/woff2",
+        "txt" => "text/plain; charset=utf-8",
+        "wasm" => "application/wasm",
         _ => "application/octet-stream",
     };
     let name = logical.file_name().unwrap().to_string_lossy();
-    let hashed = name
-        .rsplit_once('-')
-        .and_then(|(_, tail)| tail.split_once('.'))
-        .is_some_and(|(hash, _)| hash.len() == 8 && hash.bytes().all(|b| b.is_ascii_hexdigit()));
-    let mut response = api::text(200, content_type, bytes);
+    let hashed = name.match_indices('-').any(|(index, _)| {
+        let Some((hash, suffix)) = name[index + 1..].split_once('.') else {
+            return false;
+        };
+        hash.len() == 8 && hash.bytes().all(|b| b.is_ascii_hexdigit()) && !suffix.is_empty()
+    });
+    let length = bytes.len();
+    let mut response = api::text(
+        status,
+        if status >= 400 {
+            "text/html; charset=utf-8"
+        } else {
+            content_type
+        },
+        bytes,
+    );
+    response.headers_mut().insert("etag", etag.parse().unwrap());
+    response.headers_mut().insert(
+        "last-modified",
+        httpdate::fmt_http_date(modified).parse().unwrap(),
+    );
+    response
+        .headers_mut()
+        .insert("accept-ranges", "bytes".parse().unwrap());
     response
         .headers_mut()
         .insert("vary", "Accept-Encoding".parse().unwrap());
@@ -224,10 +482,37 @@ fn static_file(root: &Path, path: &str, gzip: bool) -> api::Reply {
         .parse()
         .unwrap(),
     );
-    if encoding {
+    if fresh {
+        response.headers_mut().remove("content-type");
+    } else {
+        response
+            .headers_mut()
+            .insert("content-length", length.into());
+    }
+    if encoding && status < 300 {
         response
             .headers_mut()
             .insert("content-encoding", "gzip".parse().unwrap());
+    }
+    if status >= 400 {
+        // Development-mode Node stack paths are outside the stable wire contract.
+        response.headers_mut().insert(
+            "content-security-policy",
+            "default-src 'none'".parse().unwrap(),
+        );
+        response
+            .headers_mut()
+            .insert("x-content-type-options", "nosniff".parse().unwrap());
+    }
+    let content_range = match range {
+        Ok(Some((start, end))) => Some(format!("bytes {start}-{end}/{}", metadata.len())),
+        Err(()) => Some(format!("bytes */{}", metadata.len())),
+        _ => None,
+    };
+    if let Some(value) = content_range {
+        response
+            .headers_mut()
+            .insert("content-range", value.parse().unwrap());
     }
     response
 }
@@ -254,7 +539,116 @@ async fn handle(
     let mut response = response;
     config.headers(&mut response, &raw_origin);
     if head {
-        *response.body_mut() = http_body_util::Full::new(hyper::body::Bytes::new());
+        strip_head_body(&mut response);
+    }
+    Ok(response)
+}
+
+fn strip_head_body(response: &mut api::Reply) {
+    if !response.status().is_informational()
+        && response.status().as_u16() != 204
+        && response.status().as_u16() != 304
+        && let Some(length) = response.body().size_hint().exact()
+    {
+        response
+            .headers_mut()
+            .insert("content-length", length.into());
+    }
+    *response.body_mut() = http_body_util::Full::new(hyper::body::Bytes::new());
+}
+
+async fn frontend_handle(
+    mut request: Request<Incoming>,
+    config: Arc<Config>,
+    store: Arc<Mutex<state::Store>>,
+) -> Result<api::Reply, Infallible> {
+    let path = request.uri().path().to_owned();
+    let mount = config.frontend_backend_path.trim_end_matches('/');
+    if !config.frontend_backend_path.is_empty() {
+        for namespace in ["api", "download"] {
+            let prefix = format!("{mount}/{namespace}");
+            if path
+                .get(..prefix.len())
+                .is_some_and(|part| part.eq_ignore_ascii_case(&prefix))
+                && (path.len() == prefix.len() || path.as_bytes()[prefix.len()] == b'/')
+            {
+                let backend_prefix = config.prefix.as_deref().unwrap_or("").trim_end_matches('/');
+                let suffix = &path[prefix.len()..];
+                let suffix = if suffix.is_empty() { "/" } else { suffix };
+                let mut target = format!("{backend_prefix}/{namespace}{suffix}");
+                if let Some(query) = request.uri().query() {
+                    target.push('?');
+                    target.push_str(query);
+                }
+                if namespace == "api" {
+                    target.push_str(if request.uri().query().is_some() {
+                        "&share=true"
+                    } else {
+                        "?share=true"
+                    });
+                }
+                let Ok(uri) = target.parse() else {
+                    return Ok(api::text(
+                        400,
+                        "text/plain; charset=utf-8",
+                        "Invalid proxy URL",
+                    ));
+                };
+                *request.uri_mut() = uri;
+                return handle(request, config, store).await;
+            }
+        }
+    }
+    let head = request.method() == Method::HEAD;
+    let mut response = api::not_found();
+    if !config.frontend_backend_path.is_empty() && path.starts_with("/share/") {
+        // shortcut: public share forwarding requires M4 token enforcement; keep it unavailable until then.
+        response = api::text(
+            501,
+            "text/plain; charset=utf-8",
+            "Public share proxy is not implemented yet",
+        );
+    } else if (request.method() == Method::GET || head)
+        && let Some(root) = &config.frontend
+        && let Ok(decoded) = percent_decode_str(&path).decode_utf8()
+    {
+        response = static_file(root, &decoded, request.headers(), false);
+        let accept = header(request.headers(), "accept");
+        if response.status().as_u16() == 404
+            && !accept.starts_with("application/json")
+            && (accept.contains("text/html") || accept.contains("*/*"))
+        {
+            response = static_file(root, "/index.html", request.headers(), false);
+        }
+    }
+    if response.status().as_u16() == 404 {
+        let escaped = path
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+            .replace('\'', "&#39;");
+        response = api::text(
+            404,
+            "text/html; charset=utf-8",
+            format!(
+                "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Cannot {} {escaped}</pre>\n</body>\n</html>\n",
+                request.method()
+            ),
+        );
+        response.headers_mut().insert(
+            "content-security-policy",
+            "default-src 'none'".parse().unwrap(),
+        );
+        response
+            .headers_mut()
+            .insert("x-content-type-options", "nosniff".parse().unwrap());
+    }
+    response
+        .headers_mut()
+        .insert("x-powered-by", "Express".parse().unwrap());
+    if head {
+        strip_head_body(&mut response);
     }
     Ok(response)
 }
@@ -277,7 +671,7 @@ async fn route(
     let path = if let Some(prefix) = &config.prefix {
         let matches = if prefix == "/" {
             backend_route(&raw_path)
-                && !(config.frontend.is_some() && raw_path.starts_with("/share/"))
+                && !(config.merge && config.frontend.is_some() && raw_path.starts_with("/share/"))
         } else {
             raw_path.starts_with(prefix)
         };
@@ -290,21 +684,13 @@ async fn route(
             if stripped.is_empty() { "/" } else { stripped }
         } else {
             if let Some(root) = &config.frontend
+                && config.merge
                 && !backend_route(&raw_path)
                 && method == Method::GET
             {
-                let gzip = request
-                    .headers()
-                    .get("accept-encoding")
-                    .and_then(|value| value.to_str().ok())
-                    .is_some_and(|value| {
-                        value
-                            .split(',')
-                            .any(|part| part.trim() == "gzip" || part.trim() == "gzip;q=1")
-                    });
-                return static_file(root, &decoded, gzip);
+                return static_file(root, &decoded, request.headers(), true);
             }
-            return api::text(404, "text/plain; charset=utf-8", "");
+            return api::not_found();
         }
     } else {
         decoded.as_ref()
@@ -376,13 +762,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         env!("CARGO_PKG_VERSION"),
         listener.local_addr()?
     );
+    if config.frontend.is_some() && !config.merge {
+        let frontend = TcpListener::bind((
+            configured(
+                "SUB_STORE_FRONTEND_HOST",
+                &configured("SUB_STORE_BACKEND_API_HOST", "::"),
+            ),
+            configured("SUB_STORE_FRONTEND_PORT", "3001").parse::<u16>()?,
+        ))
+        .await?;
+        println!("Sub-Store frontend listening on {}", frontend.local_addr()?);
+        tokio::try_join!(
+            serve(listener, Arc::clone(&config), Arc::clone(&store), false),
+            serve(frontend, config, store, true),
+        )?;
+    } else {
+        serve(listener, config, store, false).await?;
+    }
+    Ok(())
+}
+
+async fn serve(
+    listener: TcpListener,
+    config: Arc<Config>,
+    store: Arc<Mutex<state::Store>>,
+    frontend: bool,
+) -> io::Result<()> {
     loop {
         let (stream, _) = listener.accept().await?;
         let config = Arc::clone(&config);
         let store = Arc::clone(&store);
         tokio::spawn(async move {
-            let service =
-                service_fn(move |request| handle(request, Arc::clone(&config), Arc::clone(&store)));
+            let service = service_fn(move |request| {
+                let config = Arc::clone(&config);
+                let store = Arc::clone(&store);
+                async move {
+                    if frontend {
+                        frontend_handle(request, config, store).await
+                    } else {
+                        handle(request, config, store).await
+                    }
+                }
+            });
             if let Err(error) = http1::Builder::new()
                 .serve_connection(TokioIo::new(stream), service)
                 .await

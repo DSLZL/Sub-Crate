@@ -69,7 +69,8 @@ def oracle(node, environment, output_dir, summary, log_prefix="server"):
     if environment.get("SUB_STORE_FRONTEND_PATH"):
         environment.setdefault("SUB_STORE_CORS_ALLOWED_ORIGINS", origin)
         summary["fixture_cors_origin"] = environment["SUB_STORE_CORS_ALLOWED_ORIGINS"]
-    backend_url = origin + environment["SUB_STORE_FRONTEND_BACKEND_PATH"].rstrip("/")
+    prefixed = environment.get("SUB_STORE_BACKEND_MERGE") or environment.get("SUB_STORE_BACKEND_PREFIX")
+    backend_url = origin + (environment.get("SUB_STORE_FRONTEND_BACKEND_PATH", "") if prefixed else "").rstrip("/")
     bundle = BACKEND / "dist/sub-store.bundle.js"
     from runner import request
     with (output_dir / f"{log_prefix}.stdout.log").open("w", encoding="utf-8") as stdout, (output_dir / f"{log_prefix}.stderr.log").open("w", encoding="utf-8") as stderr:
@@ -83,7 +84,9 @@ def oracle(node, environment, output_dir, summary, log_prefix="server"):
                 if child.poll() is not None:
                     raise RuntimeError("Node oracle exited before readiness; inspect preserved server logs")
                 try:
-                    if request(backend_url, {"path": "/api/utils/env"})["status"] == 200:
+                    frontend_ready = not environment.get("SUB_STORE_FRONTEND_PATH") or environment.get("SUB_STORE_BACKEND_MERGE") or request(
+                        f"http://127.0.0.1:{environment.get('SUB_STORE_FRONTEND_PORT', '3001')}", {"path": "/"})["status"] == 200
+                    if frontend_ready and request(backend_url, {"path": "/api/utils/env"})["status"] == 200:
                         break
                 except OSError:
                     pass

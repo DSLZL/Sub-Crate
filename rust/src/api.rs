@@ -27,18 +27,23 @@ pub fn text(status: u16, content_type: &str, body: impl Into<Bytes>) -> Reply {
         .unwrap()
 }
 
+pub fn not_found() -> Reply {
+    text(404, "text/plain;charset=UTF-8", "")
+}
+
 fn success(data: Option<Value>, status: u16) -> Reply {
     let mut value = json!({"status":"success"});
     if let Some(data) = data {
         value["data"] = data;
     }
-    text(status, "application/json; charset=utf-8", value.to_string())
+    // The legacy middleware sets text/plain before Express serializes JSON.
+    text(status, "text/plain; charset=utf-8", value.to_string())
 }
 
 pub fn failure(status: u16, code: &str, kind: &str, message: &str) -> Reply {
     text(
         status,
-        "application/json; charset=utf-8",
+        "text/plain; charset=utf-8",
         json!({
             "status":"failed", "error":{"code":code, "type":kind, "message":message}
         })
@@ -62,7 +67,7 @@ fn pending(message: &str) -> Reply {
 fn invalid_backup() -> Reply {
     text(
         500,
-        "application/json; charset=utf-8",
+        "text/plain; charset=utf-8",
         json!({"status":"failed", "error":{
             "code":"INVALID_BACKUP_DATA", "type":"RequestInvalidError",
             "message":"Invalid backup data, failed to restore!",
@@ -380,6 +385,18 @@ fn settings(store: &mut Store, body: Value) -> Reply {
     publish(store, next, success(Some(value), 200))
 }
 
+fn reference_name_matches(value: &Value, name: &str, subscription: bool) -> bool {
+    if value == name {
+        return true;
+    }
+    subscription
+        && match value {
+            Value::Number(_) | Value::Bool(_) => number(value) == number(&json!(name)),
+            Value::Array(_) | Value::Object(_) => js_string(value) == name,
+            _ => false,
+        }
+}
+
 pub fn dispatch(
     method: &Method,
     path: &str,
@@ -454,7 +471,7 @@ pub fn dispatch(
             "/api/collection/",
         )
     } else {
-        return text(404, "text/plain; charset=utf-8", "");
+        return not_found();
     };
     let subscription = key == "subs";
     if path == plural && method == Method::GET {
@@ -466,10 +483,14 @@ pub fn dispatch(
         .and_then(|items| items.iter().position(|item| item["name"] == name));
     if path != plural && method == Method::GET {
         return if let Some(position) = position {
-            let mut item = store.data[key][position].clone();
             if subscription {
-                item.as_object_mut().unwrap().remove("subscriptions");
+                // Legacy GET cleans the live object; its next write persists the change.
+                store.data[key][position]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("subscriptions");
             }
+            let item = store.data[key][position].clone();
             if query.get("raw").is_some_and(|s| !s.is_empty()) {
                 download(
                     &item,
@@ -485,6 +506,16 @@ pub fn dispatch(
             } else {
                 success(Some(item), 200)
             }
+        } else if !subscription {
+            text(
+                500,
+                "text/plain; charset=utf-8",
+                json!({"status":"failed", "error":{
+                    "code":"SUBSCRIPTION_NOT_FOUND", "type":"ResourceNotFoundError",
+                    "message":format!("{label} {name} does not exist"), "details":404
+                }})
+                .to_string(),
+            )
         } else {
             failure(
                 404,
@@ -521,16 +552,22 @@ pub fn dispatch(
         if let Err(message) = normalize_item(&mut item, subscription) {
             return invalid("INVALID_AGE_PUBLIC_KEY", message);
         }
-        let item_name = item["name"].as_str().unwrap_or("").to_owned();
-        if item_name.is_empty() || item_name.contains('/') {
+        let item_name = item
+            .get("name")
+            .map(js_string)
+            .unwrap_or_else(|| "undefined".to_owned());
+        if item_name.contains('/') {
             return invalid("INVALID_NAME", &format!("{label} {item_name} is invalid"));
         }
-        if next[key]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|old| old["name"] == item_name)
-        {
+        if next[key].as_array().unwrap().iter().any(|old| {
+            match (old.get("name"), item.get("name")) {
+                (Some(Value::Number(old)), Some(Value::Number(new))) => {
+                    old.as_f64() == new.as_f64()
+                }
+                (_, Some(Value::Array(_) | Value::Object(_))) => false,
+                (old, new) => old == new,
+            }
+        }) {
             return invalid(
                 "DUPLICATE_KEY",
                 &format!("{label} {item_name} already exists."),
@@ -546,26 +583,28 @@ pub fn dispatch(
         return publish(store, next, success(Some(item), 201));
     }
     if path != plural && (method == Method::PATCH || method == Method::DELETE) {
+        if method == Method::DELETE
+            && let Some(mode) = query.get("mode")
+        {
+            if mode == "archive" {
+                return pending("Archive deletion is pending");
+            }
+            if !mode.is_empty() && mode != "permanent" {
+                return invalid(
+                    "INVALID_DELETE_MODE",
+                    &format!("Unsupported delete mode: {mode}"),
+                );
+            }
+        }
         let Some(position) = position else {
             return failure(
-                404,
+                if method == Method::DELETE { 500 } else { 404 },
                 "RESOURCE_NOT_FOUND",
                 "ResourceNotFoundError",
                 &format!("{label} {name} does not exist!"),
             );
         };
         if method == Method::DELETE {
-            if let Some(mode) = query.get("mode") {
-                if mode == "archive" {
-                    return pending("Archive deletion is pending");
-                }
-                if !mode.is_empty() && mode != "permanent" {
-                    return invalid(
-                        "INVALID_DELETE_MODE",
-                        &format!("Unsupported delete mode: {mode}"),
-                    );
-                }
-            }
             next[key].as_array_mut().unwrap().remove(position);
             if subscription {
                 for collection in next["collections"].as_array_mut().into_iter().flatten() {
@@ -579,12 +618,15 @@ pub fn dispatch(
         let Some(mut patch) = body.as_object().cloned() else {
             return invalid("INVALID_DATA", "Expected an object");
         };
+        if subscription {
+            patch.remove("subscriptions");
+        }
         if !patch.get("name").is_some_and(truthy) {
             patch.insert("name".to_owned(), json!(name));
         }
         let mut item = next[key][position].clone();
         item.as_object_mut().unwrap().extend(patch);
-        if normalize_item(&mut item, subscription).is_err() {
+        if normalize_item(&mut item, false).is_err() {
             // The legacy PATCH handler lets this error reach Express's HTML handler.
             let mut response = text(
                 500,
@@ -617,12 +659,16 @@ pub fn dispatch(
                 }
             }
             for artifact in next["artifacts"].as_array_mut().into_iter().flatten() {
-                if artifact["type"] == source_type && artifact["source"] == name {
+                if artifact["type"] == source_type
+                    && reference_name_matches(&artifact["source"], name, subscription)
+                {
                     artifact["source"] = new_name.clone();
                 }
             }
             for file in next["files"].as_array_mut().into_iter().flatten() {
-                if file["sourceType"] == source_type && file["sourceName"] == name {
+                if file["sourceType"] == source_type
+                    && reference_name_matches(&file["sourceName"], name, subscription)
+                {
                     file["sourceName"] = new_name.clone();
                 }
             }
@@ -630,5 +676,5 @@ pub fn dispatch(
         next[key][position] = item.clone();
         return publish(store, next, success(Some(item), 200));
     }
-    text(404, "text/plain; charset=utf-8", "")
+    not_found()
 }

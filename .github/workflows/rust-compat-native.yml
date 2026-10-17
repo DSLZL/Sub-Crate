@@ -151,6 +151,13 @@ jobs:
             --frontend "$GITHUB_WORKSPACE/.compat-frontend" \
             --browser "$(npm root --global)/agent-browser/bin/agent-browser-linux-x64" \
             --rust-binary "$GITHUB_WORKSPACE/rust/target/release/sub-store-rust"
+      - name: Unchanged frontend through the standalone Rust port
+        if: ${{ !cancelled() }}
+        run: |
+          python tests/compat/frontend.py --node "$(node -p 'process.execPath')" \
+            --frontend "$GITHUB_WORKSPACE/.compat-frontend" \
+            --browser "$(npm root --global)/agent-browser/bin/agent-browser-linux-x64" \
+            --rust-binary "$GITHUB_WORKSPACE/rust/target/release/sub-store-rust" --standalone
       - name: Preserve browser evidence, including failures
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
