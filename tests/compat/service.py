@@ -227,6 +227,8 @@ def backup_edges(url, state, output, name, offset=None):
 def static_fixture(frontend):
     files = {"index.html": b"<main>unchanged frontend entry</main>",
              "chunks/main-84da2e86.js": b'console.log("original chunk")',
+             "chunks/multi-deadbeef.locale-extra.js": b"hashed suffix",
+             "chunks/multi-deadbeef.-extra.js": b"hashed dash suffix",
              "css/main.css": b"body{}", "sw.js": b"worker",
              "release-deadbeef.dir/index.html": b"nested entry",
              "text 中文.txt": "Unicode中文🙂\r\n".encode("utf-8"),
@@ -309,6 +311,9 @@ def static_resources(url, state, output, name):
     send(path + ".gz", expected=compressed)
     send("/text%20%E4%B8%AD%E6%96%87.txt", expected=(frontend / "text 中文.txt").read_bytes())
     send("/release-deadbeef.dir/index.html", expected=b"nested entry")
+    for suffix, content in (("locale-extra", b"hashed suffix"), ("-extra", b"hashed dash suffix")):
+        result = send(f"/chunks/multi-deadbeef.{suffix}.js", expected=content)
+        assert result["cache-control"] == "public, max-age=31536000, immutable"
     entry = (frontend / "index.html").read_bytes()
     for route in ("/", "/settings", "/missing.js", "/.env", "/%2e%2e%2fsecret.txt"):
         result = send(route, expected=entry)

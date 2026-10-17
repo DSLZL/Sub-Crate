@@ -163,7 +163,10 @@ fn backend_route(path: &str) -> bool {
 }
 
 fn header<'a>(headers: &'a HeaderMap, name: &str) -> &'a str {
-    headers.get(name).and_then(|value| value.to_str().ok()).unwrap_or("")
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
 }
 
 fn gzip_preferred(headers: &HeaderMap) -> bool {
@@ -175,36 +178,49 @@ fn gzip_preferred(headers: &HeaderMap) -> bool {
         if coding.is_empty() || coding.chars().any(char::is_whitespace) {
             continue;
         }
-        let quality = fields.find_map(|field| {
-            let (key, value) = field.trim().split_once('=')?;
-            if key != "q" {
-                return None;
-            }
-            let value = value.trim();
-            let quality = (0..=value.len()).rev().filter(|end| value.is_char_boundary(*end))
-                .find_map(|end| value[..end].parse::<f64>().ok()).unwrap_or(0.0);
-            Some(if quality.is_nan() { 0.0 } else { quality })
-        }).unwrap_or(1.0);
+        let quality = fields
+            .find_map(|field| {
+                let (key, value) = field.trim().split_once('=')?;
+                if key != "q" {
+                    return None;
+                }
+                let value = value.trim();
+                let quality = (0..=value.len())
+                    .rev()
+                    .filter(|end| value.is_char_boundary(*end))
+                    .find_map(|end| value[..end].parse::<f64>().ok())
+                    .unwrap_or(0.0);
+                Some(if quality.is_nan() { 0.0 } else { quality })
+            })
+            .unwrap_or(1.0);
         accepted.push((coding, quality, index));
     }
     // The locked negotiator adds identity at the lowest nonzero quality.
-    if !accepted.iter().any(|(coding, _, _)| *coding == "*" || coding.eq_ignore_ascii_case("identity")) {
-        let quality = accepted.iter().map(|(_, quality, _)| if *quality == 0.0 { 1.0 } else { *quality })
+    if !accepted
+        .iter()
+        .any(|(coding, _, _)| *coding == "*" || coding.eq_ignore_ascii_case("identity"))
+    {
+        let quality = accepted
+            .iter()
+            .map(|(_, quality, _)| if *quality == 0.0 { 1.0 } else { *quality })
             .fold(1.0, f64::min);
         accepted.push(("identity", quality, raw.split(',').count()));
     }
     let priority = |name: &str| {
-        accepted.iter().filter_map(|(coding, quality, index)| {
-            if coding.eq_ignore_ascii_case(name) {
-                Some((1, *quality, *index))
-            } else if *coding == "*" {
-                Some((0, *quality, *index))
-            } else {
-                None
-            }
-        }).max_by(|a, b| a.partial_cmp(b).unwrap()).map(|(specificity, quality, index)| {
-            (quality, specificity, Reverse(index))
-        }).unwrap_or((0.0, 0, Reverse(usize::MAX)))
+        accepted
+            .iter()
+            .filter_map(|(coding, quality, index)| {
+                if coding.eq_ignore_ascii_case(name) {
+                    Some((1, *quality, *index))
+                } else if *coding == "*" {
+                    Some((0, *quality, *index))
+                } else {
+                    None
+                }
+            })
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .map(|(specificity, quality, index)| (quality, specificity, Reverse(index)))
+            .unwrap_or((0.0, 0, Reverse(usize::MAX)))
     };
     let gzip = priority("gzip");
     gzip.0 > 0.0 && gzip >= priority("identity")
@@ -214,11 +230,14 @@ fn static_fresh(headers: &HeaderMap, etag: &str, modified: std::time::SystemTime
     let matched = header(headers, "if-none-match");
     let since = header(headers, "if-modified-since");
     if (matched.is_empty() && since.is_empty())
-        || header(headers, "cache-control").split(',').any(|part| part.trim() == "no-cache")
+        || header(headers, "cache-control")
+            .split(',')
+            .any(|part| part.trim() == "no-cache")
     {
         return false;
     }
-    if !matched.is_empty() && matched != "*"
+    if !matched.is_empty()
+        && matched != "*"
         && !matched.split(',').any(|part| {
             part.trim().strip_prefix("W/").unwrap_or(part.trim())
                 == etag.strip_prefix("W/").unwrap_or(etag)
@@ -236,12 +255,19 @@ fn static_file(root: &Path, path: &str, headers: &HeaderMap) -> api::Reply {
             Component::Normal(name) => name.to_string_lossy().starts_with('.'),
             _ => true,
         });
-    let requested = if safe { root.join(relative) } else { root.join("index.html") };
+    let requested = if safe {
+        root.join(relative)
+    } else {
+        root.join("index.html")
+    };
     let gzip = gzip_preferred(headers);
     let mut selected = None;
     for logical in [requested, root.join("index.html")] {
         if gzip && !logical.is_dir() {
-            let compressed = logical.with_file_name(format!("{}.gz", logical.file_name().unwrap().to_string_lossy()));
+            let compressed = logical.with_file_name(format!(
+                "{}.gz",
+                logical.file_name().unwrap().to_string_lossy()
+            ));
             if compressed.is_file() {
                 selected = Some(compressed);
                 break;
@@ -257,32 +283,45 @@ fn static_file(root: &Path, path: &str, headers: &HeaderMap) -> api::Reply {
         }
     }
     let Some(selected) = selected else {
-        return api::text(404, "text/plain; charset=utf-8", "");
+        return api::not_found();
     };
     let Ok(file) = selected.canonicalize() else {
-        return api::text(404, "text/plain; charset=utf-8", "");
+        return api::not_found();
     };
     if !file.starts_with(root) {
         return api::text(403, "text/plain; charset=utf-8", "");
     }
     let Ok(metadata) = std::fs::metadata(&file) else {
-        return api::text(404, "text/plain; charset=utf-8", "");
+        return api::not_found();
     };
-    let Ok(elapsed) = metadata.modified().and_then(|date| date.duration_since(UNIX_EPOCH).map_err(io::Error::other)) else {
-        return api::text(404, "text/plain; charset=utf-8", "");
+    let Ok(elapsed) = metadata
+        .modified()
+        .and_then(|date| date.duration_since(UNIX_EPOCH).map_err(io::Error::other))
+    else {
+        return api::not_found();
     };
     let modified = UNIX_EPOCH + Duration::from_secs(elapsed.as_secs());
-    let etag = format!("W/\"{:x}-{:x}\"", metadata.len(), (elapsed.as_nanos() + 500_000) / 1_000_000);
+    let etag = format!(
+        "W/\"{:x}-{:x}\"",
+        metadata.len(),
+        (elapsed.as_nanos() + 500_000) / 1_000_000
+    );
     let fresh = static_fresh(headers, &etag, modified);
     let bytes = if fresh {
         Vec::new()
     } else if let Ok(bytes) = std::fs::read(&file) {
         bytes
     } else {
-        return api::text(404, "text/plain; charset=utf-8", "");
+        return api::not_found();
     };
-    let encoding = selected.extension().is_some_and(|extension| extension == "gz");
-    let logical = if encoding { selected.with_extension("") } else { selected };
+    let encoding = selected
+        .extension()
+        .is_some_and(|extension| extension == "gz");
+    let logical = if encoding {
+        selected.with_extension("")
+    } else {
+        selected
+    };
     let content_type = match logical.extension().and_then(|s| s.to_str()).unwrap_or("") {
         "html" => "text/html; charset=utf-8",
         "js" | "mjs" => "application/javascript; charset=utf-8",
@@ -299,15 +338,22 @@ fn static_file(root: &Path, path: &str, headers: &HeaderMap) -> api::Reply {
         _ => "application/octet-stream",
     };
     let name = logical.file_name().unwrap().to_string_lossy();
-    let hashed = name
-        .rsplit_once('-')
-        .and_then(|(_, tail)| tail.split_once('.'))
-        .is_some_and(|(hash, _)| hash.len() == 8 && hash.bytes().all(|b| b.is_ascii_hexdigit()));
+    let hashed = name.match_indices('-').any(|(index, _)| {
+        let Some((hash, suffix)) = name[index + 1..].split_once('.') else {
+            return false;
+        };
+        hash.len() == 8 && hash.bytes().all(|b| b.is_ascii_hexdigit()) && !suffix.is_empty()
+    });
     let length = bytes.len();
     let mut response = api::text(if fresh { 304 } else { 200 }, content_type, bytes);
     response.headers_mut().insert("etag", etag.parse().unwrap());
-    response.headers_mut().insert("last-modified", httpdate::fmt_http_date(modified).parse().unwrap());
-    response.headers_mut().insert("accept-ranges", "bytes".parse().unwrap());
+    response.headers_mut().insert(
+        "last-modified",
+        httpdate::fmt_http_date(modified).parse().unwrap(),
+    );
+    response
+        .headers_mut()
+        .insert("accept-ranges", "bytes".parse().unwrap());
     response
         .headers_mut()
         .insert("vary", "Accept-Encoding".parse().unwrap());
@@ -324,7 +370,9 @@ fn static_file(root: &Path, path: &str, headers: &HeaderMap) -> api::Reply {
     if fresh {
         response.headers_mut().remove("content-type");
     } else {
-        response.headers_mut().insert("content-length", length.into());
+        response
+            .headers_mut()
+            .insert("content-length", length.into());
     }
     if encoding && !fresh {
         response
@@ -356,10 +404,14 @@ async fn handle(
     let mut response = response;
     config.headers(&mut response, &raw_origin);
     if head {
-        if !response.status().is_informational() && response.status().as_u16() != 204 && response.status().as_u16() != 304
+        if !response.status().is_informational()
+            && response.status().as_u16() != 204
+            && response.status().as_u16() != 304
             && let Some(length) = response.body().size_hint().exact()
         {
-            response.headers_mut().insert("content-length", length.into());
+            response
+                .headers_mut()
+                .insert("content-length", length.into());
         }
         *response.body_mut() = http_body_util::Full::new(hyper::body::Bytes::new());
     }
@@ -402,7 +454,7 @@ async fn route(
             {
                 return static_file(root, &decoded, request.headers());
             }
-            return api::text(404, "text/plain; charset=utf-8", "");
+            return api::not_found();
         }
     } else {
         decoded.as_ref()

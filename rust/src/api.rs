@@ -27,6 +27,10 @@ pub fn text(status: u16, content_type: &str, body: impl Into<Bytes>) -> Reply {
         .unwrap()
 }
 
+pub fn not_found() -> Reply {
+    text(404, "text/plain;charset=UTF-8", "")
+}
+
 fn success(data: Option<Value>, status: u16) -> Reply {
     let mut value = json!({"status":"success"});
     if let Some(data) = data {
@@ -454,7 +458,7 @@ pub fn dispatch(
             "/api/collection/",
         )
     } else {
-        return text(404, "text/plain; charset=utf-8", "");
+        return not_found();
     };
     let subscription = key == "subs";
     if path == plural && method == Method::GET {
@@ -630,5 +634,5 @@ pub fn dispatch(
         next[key][position] = item.clone();
         return publish(store, next, success(Some(item), 200));
     }
-    text(404, "text/plain; charset=utf-8", "")
+    not_found()
 }
