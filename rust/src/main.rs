@@ -351,6 +351,7 @@ fn static_file(root: &Path, path: &str, headers: &HeaderMap) -> api::Reply {
         "last-modified",
         httpdate::fmt_http_date(modified).parse().unwrap(),
     );
+    // shortcut: Range/preconditions return full responses; complete them in the M2 HTTP slice.
     response
         .headers_mut()
         .insert("accept-ranges", "bytes".parse().unwrap());

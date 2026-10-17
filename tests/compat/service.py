@@ -319,7 +319,7 @@ def static_resources(url, state, output, name):
         result = send(route, expected=entry)
         assert result["cache-control"] == "public, max-age=0"
     send("/settings", {"Accept-Encoding": "gzip"}, expected=(frontend / "index.html.gz").read_bytes())
-    for route in ("/api/not-a-resource", "/download/not-a-resource", "/share/not-a-resource"):
+    for route in ("/api/not-a-resource", "/download/not-a-route/missing/extra/segment", "/share/not-a-resource"):
         send(route, status=404, expected=b"")
     replacement = gzip.compress(b'console.log("replacement chunk is visible")', mtime=0)
     (frontend / (path.lstrip("/") + ".gz")).write_bytes(replacement)
