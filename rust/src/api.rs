@@ -4,7 +4,8 @@ use hyper::{Method, Response, body::Bytes};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::io;
+use std::mem::MaybeUninit;
 
 pub type Reply = Response<Full<Bytes>>;
 const COMPONENT: &AsciiSet = &NON_ALPHANUMERIC
@@ -58,12 +59,47 @@ fn pending(message: &str) -> Reply {
     )
 }
 
+fn invalid_backup() -> Reply {
+    text(
+        500,
+        "application/json; charset=utf-8",
+        json!({"status":"failed", "error":{
+            "code":"INVALID_BACKUP_DATA", "type":"RequestInvalidError",
+            "message":"Invalid backup data, failed to restore!",
+            "details":"Reason: 备份文件校验失败, 无法还原"
+        }})
+        .to_string(),
+    )
+}
+
 fn download(value: &Value, name: &str) -> Reply {
-    // shortcut: local-calendar filename timestamps remain an M2 export-format gate.
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+    let mut local = MaybeUninit::<libc::tm>::uninit();
+    // SAFETY: each reentrant CRT call initializes this tm on success; time accepts null.
+    let local = unsafe {
+        let now = libc::time(std::ptr::null_mut());
+        #[cfg(unix)]
+        let valid = !libc::localtime_r(&now, local.as_mut_ptr()).is_null();
+        #[cfg(windows)]
+        let valid = libc::localtime_s(local.as_mut_ptr(), &now) == 0;
+        if !valid {
+            return failure(
+                500,
+                "DATE_FORMAT_FAILED",
+                "InternalServerError",
+                "Failed to read local time",
+            );
+        }
+        local.assume_init()
+    };
+    let stamp = format!(
+        "{:04}-{:02}-{:02}_{:02}-{:02}-{:02}",
+        local.tm_year + 1900,
+        local.tm_mon + 1,
+        local.tm_mday,
+        local.tm_hour,
+        local.tm_min,
+        local.tm_sec
+    );
     let filename = format!("{name}_{stamp}.json");
     let disposition = format!(
         "attachment; filename=\"{}\"",
@@ -81,7 +117,11 @@ fn download(value: &Value, name: &str) -> Reply {
 }
 
 fn publish(store: &mut Store, next: Value, response: Reply) -> Reply {
-    match store.commit(next) {
+    persisted(store.commit(next), response)
+}
+
+fn persisted(result: io::Result<()>, response: Reply) -> Reply {
+    match result {
         Ok(()) => response,
         Err(error) => {
             eprintln!("State write failed: {error}");
@@ -347,6 +387,12 @@ pub fn dispatch(
     body: Value,
     store: &mut Store,
 ) -> Reply {
+    if path == "/api/utils/refresh" && method == Method::GET {
+        if truthy(&store.data["settings"]["gistToken"]) {
+            return pending("Gist refresh is not implemented yet");
+        }
+        return persisted(store.clear_resource_cache(), success(None, 200));
+    }
     if path == "/api/storage" {
         if method == Method::GET {
             return download(&store.data, "sub-store_data");
@@ -357,19 +403,14 @@ pub fn dispatch(
                 .ok_or_else(|| "Missing content".to_owned())
                 .and_then(decode);
             let Ok(mut next) = restored else {
-                return invalid(
-                    "INVALID_BACKUP_DATA",
-                    "Invalid backup data, failed to restore!",
-                );
+                return invalid_backup();
             };
+            let original = next.clone();
             if !next["settings"].is_object() || migrate(&mut next).is_err() || !valid_records(&next)
             {
-                return invalid(
-                    "INVALID_BACKUP_DATA",
-                    "Invalid backup data, failed to restore!",
-                );
+                return invalid_backup();
             }
-            return publish(store, next, success(None, 200));
+            return persisted(store.restore(next, original), success(None, 200));
         }
     }
     if path == "/api/settings" {

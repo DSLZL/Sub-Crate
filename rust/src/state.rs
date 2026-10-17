@@ -30,6 +30,7 @@ impl Store {
     pub fn open(directory: &Path) -> io::Result<Self> {
         fs::create_dir_all(directory)?;
         let path = directory.join("sub-store.json");
+        recover_restore(&path)?;
         let original = fs::read(&path).or_else(|e| {
             if e.kind() == io::ErrorKind::NotFound {
                 Ok(b"{}".to_vec())
@@ -86,9 +87,112 @@ impl Store {
     }
 
     pub fn commit(&mut self, next: Value) -> io::Result<()> {
+        recover_restore(&self.path)?;
         atomic_write(&self.path, &serde_json::to_vec_pretty(&next)?)?;
         self.data = next;
         Ok(())
+    }
+
+    pub fn restore(&mut self, next: Value, original: Value) -> io::Result<()> {
+        recover_restore(&self.path)?;
+        let root_path = self.path.with_file_name("root.json");
+        let previous_data = fs::read(&self.path)?;
+        let previous_root = fs::read(&root_path)?;
+        let mut root: Value = serde_json::from_slice(&previous_root)?;
+        let root = root
+            .as_object_mut()
+            .ok_or_else(|| io::Error::other("root.json must be an object"))?;
+        root.insert(
+            "sub-store".to_owned(),
+            json!(serde_json::to_string_pretty(&legacy_object_order(original))?),
+        );
+        let pending = self.path.with_file_name(".sub-store-restore.pending.json");
+        let previous = json!({
+            "data": general_purpose::STANDARD.encode(previous_data),
+            "root": general_purpose::STANDARD.encode(previous_root)
+        });
+        atomic_write(&pending, &serde_json::to_vec(&previous)?)?;
+        let result = (|| {
+            atomic_write(&root_path, &serde_json::to_vec_pretty(root)?)?;
+            atomic_write(&self.path, &serde_json::to_vec_pretty(&next)?)?;
+            fs::remove_file(&pending)
+        })();
+        if let Err(error) = result {
+            recover_restore(&self.path).map_err(|recovery| {
+                io::Error::other(format!("{error}; restore recovery failed: {recovery}"))
+            })?;
+            return Err(error);
+        }
+        self.data = next;
+        Ok(())
+    }
+
+    pub fn clear_resource_cache(&mut self) -> io::Result<()> {
+        recover_restore(&self.path)?;
+        let path = self.path.with_file_name("root.json");
+        let mut root: Value = serde_json::from_slice(&fs::read(&path)?)?;
+        let root = root
+            .as_object_mut()
+            .ok_or_else(|| io::Error::other("root.json must be an object"))?;
+        for key in [
+            "sub-store-cached-resource",
+            "sub-store-cached-headers-resource",
+            "sub-store-cached-script-resource",
+        ] {
+            root.insert(key.to_owned(), json!("{}"));
+        }
+        atomic_write(&path, &serde_json::to_vec_pretty(root)?)
+    }
+}
+
+fn recover_restore(path: &Path) -> io::Result<()> {
+    let pending = path.with_file_name(".sub-store-restore.pending.json");
+    let bytes = match fs::read(&pending) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    let previous: Value = serde_json::from_slice(&bytes)?;
+    let saved = |field| {
+        let encoded = previous[field]
+            .as_str()
+            .ok_or_else(|| io::Error::other("Invalid restore recovery record"))?;
+        general_purpose::STANDARD
+            .decode(encoded)
+            .map_err(io::Error::other)
+    };
+    let data = saved("data")?;
+    let root = saved("root")?;
+    decode(std::str::from_utf8(&data).map_err(io::Error::other)?).map_err(io::Error::other)?;
+    if !serde_json::from_slice::<Value>(&root)?.is_object() {
+        return Err(io::Error::other("Invalid root restore recovery record"));
+    }
+    atomic_write(&path.with_file_name("root.json"), &root)?;
+    atomic_write(path, &data)?;
+    fs::remove_file(pending)
+}
+
+fn array_index(key: &str) -> u32 {
+    key.parse::<u32>()
+        .ok()
+        .filter(|index| index.to_string() == key)
+        .unwrap_or(u32::MAX)
+}
+
+fn legacy_object_order(value: Value) -> Value {
+    match value {
+        Value::Object(fields) => {
+            let mut fields: Vec<_> = fields.into_iter().collect();
+            fields.sort_by_key(|(key, _)| array_index(key));
+            Value::Object(
+                fields
+                    .into_iter()
+                    .map(|(key, value)| (key, legacy_object_order(value)))
+                    .collect(),
+            )
+        }
+        Value::Array(items) => Value::Array(items.into_iter().map(legacy_object_order).collect()),
+        value => value,
     }
 }
 
@@ -190,12 +294,7 @@ pub fn migrate(data: &mut Value) -> io::Result<()> {
                 Value::Object(items) => {
                     let mut entries: Vec<_> = items.into_iter().collect();
                     // Object.values visits canonical array indices before other keys.
-                    entries.sort_by_key(|(key, _)| {
-                        key.parse::<u32>()
-                            .ok()
-                            .filter(|index| index.to_string() == *key)
-                            .unwrap_or(u32::MAX)
-                    });
+                    entries.sort_by_key(|(key, _)| array_index(key));
                     entries.into_iter().map(|(_, value)| value).collect()
                 }
                 Value::Array(items) => items,

@@ -7,6 +7,7 @@ RUN cargo build --manifest-path rust/Cargo.toml --locked --release --bin sub-sto
 FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
 COPY --from=build /work/rust/target/release/sub-store-rust /usr/local/bin/sub-store-rust
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=build /usr/share/zoneinfo /usr/share/zoneinfo
 RUN ! command -v node && ! command -v nodejs && ! command -v npm
 WORKDIR /data
 ENV SUB_STORE_DATA_BASE_PATH=/data SUB_STORE_BACKEND_API_HOST=0.0.0.0 SUB_STORE_BACKEND_API_PORT=3000

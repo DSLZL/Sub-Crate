@@ -2,16 +2,18 @@
 import argparse
 import base64
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import socket
 import subprocess
 import time
+from urllib.parse import quote, unquote
 
 from reference import BACKEND, HERE, ROOT, execute, oracle, source_provenance
 from runner import check_json, load_cases, request, run_cases
@@ -35,7 +37,7 @@ def listener(binary, environment, output, report, log_prefix="rust", image=None)
                 "-p", f"127.0.0.1:{port}:3000",
                 "--mount", f"type=bind,source={environment['SUB_STORE_DATA_BASE_PATH']},target=/data"]
         for key, value in environment.items():
-            if key.startswith("SUB_STORE_"):
+            if key.startswith("SUB_STORE_") or key == "TZ":
                 value = {"SUB_STORE_DATA_BASE_PATH": "/data", "SUB_STORE_BACKEND_API_PORT": "3000",
                          "SUB_STORE_BACKEND_API_HOST": "0.0.0.0"}.get(key, value)
                 argv.extend(["--env", f"{key}={value}"])
@@ -143,6 +145,78 @@ def state_edges(url, state, keys, output, name):
         assert (state / "sub-store.json").read_bytes() == before, "Rejected bulk replacement changed state"
         send("PUT", f"/api/{plural}", [{"name": f"bulk-{index}", "age-public-key": [key], "previewLanguage": "bad"}
                                        for index, key in enumerate(keys["valid"])], 200)
+    (output / f"{name}.json").write_text(json.dumps(observations, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return observations
+
+
+def backup_edges(url, state, output, name, offset=None):
+    observations = []
+    local_zone = datetime.now().astimezone().tzinfo if offset is None else timezone(timedelta(minutes=offset))
+
+    def send(method, path, body=None, status=200, filename=None):
+        before = datetime.now(timezone.utc)
+        response = request(url, {"method": method, "path": path, **({"body": body} if body is not None else {})})
+        after = datetime.now(timezone.utc)
+        stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+        root = json.loads((state / "root.json").read_text(encoding="utf-8"))
+        with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
+            evidence.write(json.dumps({"method": method, "path": path, "body": body, "response": response,
+                                       "before": before.isoformat(), "after": after.isoformat(),
+                                       "state": stored, "root": root}, ensure_ascii=False) + "\n")
+        assert response["status"] == status, f"{name} {path}: {response}"
+        parsed = json.loads(response["body"])
+        assert root["opaque"] == {"text": "根缓存🙂\r\n", "zero": 0, "flag": False, "nil": None}
+        if filename is not None:
+            assert response["headers"]["content-type"] == "application/json; charset=utf-8"
+            assert response["headers"]["access-control-expose-headers"] == "content-disposition"
+            disposition = response["headers"]["content-disposition"]
+            match = re.fullmatch(r'attachment; filename="([^"\r\n]+)"', disposition)
+            assert match, f"Invalid disposition: {disposition}"
+            decoded = unquote(match[1])
+            assert quote(decoded, safe="-_.!~*'()") == match[1], "Filename is not encodeURIComponent encoded"
+            stamp = re.fullmatch(re.escape(filename) + r"_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.json", decoded)
+            assert stamp, f"Invalid calendar filename: {decoded}"
+            instant = datetime.strptime(stamp[1], "%Y-%m-%d_%H-%M-%S").replace(tzinfo=local_zone)
+            assert before - timedelta(seconds=1) <= instant <= after, "Filename does not use server local time"
+        observations.append({"method": method, "path": path, "status": status, "json": parsed, "state": stored,
+                             "root": {key: root.get(key) for key in ("opaque", "sub-store", "sub-store-cached-resource",
+                                                                     "sub-store-cached-headers-resource", "sub-store-cached-script-resource")}})
+        return parsed
+
+    resource = "导出 name!()'*🙂"
+    for plural, singular in (("subs", "sub"), ("collections", "collection")):
+        item = {"name": resource, "custom": {"zero": 0, "false": False, "nil": None}, "content": "保留🙂\r\nrequire('node:fs')"}
+        created = send("POST", f"/api/{plural}", item, 201)["data"]
+        exported = send("GET", f"/api/{singular}/{quote(resource, safe='')}?raw=1", filename=f"sub-store_{'subscription' if singular == 'sub' else 'collection'}_{resource}")
+        check_json(exported, created)
+    before = {name: (state / name).read_bytes() for name in ("sub-store.json", "root.json")}
+    check_json(send("GET", "/api/storage", filename="sub-store_data"), json.loads(before["sub-store.json"]))
+    assert all((state / name).read_bytes() == content for name, content in before.items()), "Export changed persisted files"
+    for content in ("invalid backup", json.dumps({"unknown": "missing settings"})):
+        result = send("POST", "/api/storage", {"content": content}, 500)
+        assert result["error"]["code"] == "INVALID_BACKUP_DATA"
+        assert all((state / name).read_bytes() == value for name, value in before.items()), "Invalid import changed persisted files"
+    backup = json.loads((HERE / "fixtures/frontend-backup.json").read_text(encoding="utf-8"))
+    legacy = {**backup, "subs": {"10": {"name": "ten"}, "2": {"name": "two", "display-name": "旧名字🙂"}},
+              "collections": {"c": {"name": "legacy-col", "subscriptions": ["two"], "ua": "old"}},
+              "files": {}, "artifacts": {}, "tokens": {}}
+    del legacy["schemaVersion"]
+    for original in (backup, legacy):
+        for encoded in (False, True):
+            content = json.dumps(original, ensure_ascii=False)
+            if encoded:
+                content = base64.b64encode(content.encode("utf-8")).decode("ascii")
+            send("POST", "/api/storage", {"content": content})
+            root = json.loads((state / "root.json").read_text(encoding="utf-8"))
+            check_json(json.loads(root["sub-store"]), original)
+            exported = send("GET", "/api/storage", filename="sub-store_data")
+            check_json(exported, json.loads((state / "sub-store.json").read_text(encoding="utf-8")))
+            assert "opaque" not in exported and "sub-store" not in exported, "Export included root cache"
+    prior_data = (state / "sub-store.json").read_bytes()
+    send("GET", "/api/utils/refresh")
+    root = json.loads((state / "root.json").read_text(encoding="utf-8"))
+    assert all(root[key] == "{}" for key in ("sub-store-cached-resource", "sub-store-cached-headers-resource", "sub-store-cached-script-resource"))
+    assert (state / "sub-store.json").read_bytes() == prior_data, "No-Gist refresh changed main state"
     (output / f"{name}.json").write_text(json.dumps(observations, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return observations
 
@@ -260,6 +334,79 @@ def main():
                 report["phases"].append({"name": f"{kind}-edges", "requests": len(edges[kind])})
         check_json(edges["rust"], edges["node"])
         report["settings_and_recipient_http_state_equal"] = True
+        backup = json.loads((HERE / "fixtures/frontend-backup.json").read_text(encoding="utf-8"))
+        root = {"opaque": {"text": "根缓存🙂\r\n", "zero": 0, "flag": False, "nil": None}, "sub-store": "previous backup"}
+        for key in ("sub-store-cached-resource", "sub-store-cached-headers-resource", "sub-store-cached-script-resource"):
+            root[key] = json.dumps({"fixture": {"time": 4102444800000, "data": "cached"}})
+        zones = [("local", {}, None)]
+        if os.name != "nt":
+            zones.append(("tokyo", {"TZ": "Asia/Tokyo"}, 540))
+        report["backup_fixture_sha256"] = hashlib.sha256((HERE / "fixtures/frontend-backup.json").read_bytes()).hexdigest()
+        for zone, overrides, offset in zones:
+            restored = {}
+            for kind in ("node", "rust"):
+                state = output / f"{kind}-backup-{zone}"
+                state.mkdir()
+                (state / "sub-store.json").write_text(json.dumps(backup, ensure_ascii=False), encoding="utf-8")
+                (state / "root.json").write_text(json.dumps(root, ensure_ascii=False), encoding="utf-8")
+                env = {**environment, **overrides, "SUB_STORE_DATA_BASE_PATH": str(state)}
+                prefix = f"{kind}-backup-{zone}"
+                manager = oracle(args.node, env, output, report, prefix) if kind == "node" else listener(args.binary, env, output, report, prefix, image)
+                with manager as url:
+                    restored[kind] = backup_edges(url, state, output, prefix, offset)
+                    report["phases"].append({"name": prefix, "requests": len(restored[kind])})
+                    if kind == "rust" and zone == "local":
+                        for filename in ("root.json", "sub-store.json"):
+                            before = {key: (state / key).read_bytes() for key in ("root.json", "sub-store.json")}
+                            saved = state / (filename + ".saved")
+                            (state / filename).rename(saved)
+                            (state / filename).mkdir()
+                            try:
+                                failed = request(url, {"method": "POST", "path": "/api/storage", "body": {"content": json.dumps(backup)}})
+                                unchanged = request(url, {"path": "/api/storage"})
+                                (output / f"restore-write-failure-{filename}").write_text(json.dumps({"failure": failed, "after": unchanged}, indent=2) + "\n", encoding="utf-8")
+                                assert failed["status"] == 500 and json.loads(failed["body"])["error"]["code"] == "STATE_WRITE_FAILED"
+                                check_json(json.loads(unchanged["body"]), json.loads(before["sub-store.json"]))
+                            finally:
+                                (state / filename).rmdir()
+                                saved.rename(state / filename)
+                            assert all((state / key).read_bytes() == value for key, value in before.items())
+                            assert not (state / ".sub-store-restore.pending.json").exists()
+                        report["restore_write_failure_preserved_both_files"] = True
+                prefix += "-restart"
+                manager = oracle(args.node, env, output, report, prefix) if kind == "node" else listener(args.binary, env, output, report, prefix, image)
+                with manager as url:
+                    check_json(json.loads(request(url, {"path": "/api/storage"})["body"]), restored[kind][-1]["state"])
+                    check_json(json.loads((state / "root.json").read_text(encoding="utf-8"))["sub-store"], restored[kind][-1]["root"]["sub-store"])
+            check_json(restored["rust"], restored["node"])
+        report["backup_http_and_root_state_equal"] = True
+        report["calendar_filename_timezones_checked"] = [zone for zone, _, _ in zones]
+        old_data = (output / "rust-backup-local/sub-store.json").read_bytes()
+        old_root = (output / "rust-backup-local/root.json").read_bytes()
+        for phase in ("root-only", "both"):
+            state = output / f"restore-interrupted-{phase}"
+            state.mkdir()
+            (state / "sub-store.json").write_bytes(b'{"settings":{}}' if phase == "both" else old_data)
+            (state / "root.json").write_bytes(b'{"partially_restored":true}')
+            pending = state / ".sub-store-restore.pending.json"
+            pending.write_text(json.dumps({"data": base64.b64encode(old_data).decode("ascii"), "root": base64.b64encode(old_root).decode("ascii")}), encoding="utf-8")
+            with listener(args.binary, {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}, output, report, phase, image) as url:
+                response = request(url, {"path": "/api/storage"})
+                (output / f"restore-recovery-{phase}.json").write_text(json.dumps(response, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                assert response["status"] == 200
+                check_json(json.loads(response["body"]), json.loads(old_data))
+                assert (state / "root.json").read_bytes() == old_root
+                assert (state / "sub-store.pre-rust.json").read_bytes() == old_data
+                assert not pending.exists()
+        report["interrupted_restore_recovered_both_files"] = True
+        restored_rollback = output / "restored-node-rollback"
+        restored_rollback.mkdir()
+        for filename in ("sub-store.json", "root.json"):
+            shutil.copyfile(output / "rust-backup-local" / filename, restored_rollback / filename)
+        with oracle(args.node, {**environment, "SUB_STORE_DATA_BASE_PATH": str(restored_rollback)}, output, report, "restored-node-rollback") as url:
+            check_json(json.loads(request(url, {"path": "/api/storage"})["body"]), json.loads(old_data))
+            check_json(json.loads((restored_rollback / "root.json").read_text(encoding="utf-8"))["sub-store"], json.loads(old_root)["sub-store"])
+        report["node_reads_restored_rust_data_and_root"] = True
         rollback = output / "node-rollback"
         rollback.mkdir()
         shutil.copyfile(output / "rust-state/sub-store.json", rollback / "sub-store.json")
@@ -274,6 +421,18 @@ def main():
             result = execute([args.binary], ROOT, {**environment, "SUB_STORE_DATA_BASE_PATH": str(corrupt)}, output, "corrupt-startup", timeout=10)
             assert result.returncode != 0 and (corrupt / "sub-store.json").read_bytes() == b"invalid backup \xff"
             report["corrupt_state_not_reset"] = True
+            corrupt_restore = output / "corrupt-restore"
+            corrupt_restore.mkdir()
+            (corrupt_restore / "sub-store.json").write_bytes(old_data)
+            (corrupt_restore / "root.json").write_bytes(old_root)
+            pending = corrupt_restore / ".sub-store-restore.pending.json"
+            invalid_record = json.dumps({"data": base64.b64encode(old_data).decode("ascii"), "root": "invalid!"}).encode("utf-8")
+            pending.write_bytes(invalid_record)
+            result = execute([args.binary], ROOT, {**environment, "SUB_STORE_DATA_BASE_PATH": str(corrupt_restore)}, output, "corrupt-restore-startup", timeout=10)
+            assert result.returncode != 0 and pending.read_bytes() == invalid_record
+            assert (corrupt_restore / "sub-store.json").read_bytes() == old_data
+            assert (corrupt_restore / "root.json").read_bytes() == old_root
+            report["corrupt_restore_not_reset"] = True
         report["exit_code"] = 0
     except Exception as error:
         report["error"] = f"{type(error).__name__}: {error}"
