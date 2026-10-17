@@ -104,7 +104,9 @@ impl Store {
             .ok_or_else(|| io::Error::other("root.json must be an object"))?;
         root.insert(
             "sub-store".to_owned(),
-            json!(serde_json::to_string_pretty(&legacy_object_order(original))?),
+            json!(serde_json::to_string_pretty(&legacy_object_order(
+                original
+            ))?),
         );
         let pending = self.path.with_file_name(".sub-store-restore.pending.json");
         let previous = json!({
