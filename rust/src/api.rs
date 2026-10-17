@@ -666,7 +666,7 @@ pub fn dispatch(
             next[key].as_array_mut().unwrap().remove(position);
             if subscription {
                 for collection in next["collections"].as_array_mut().into_iter().flatten() {
-                    if let Some(names) = collection["subscriptions"].as_array_mut() {
+                    if let Some(names) = collection.get_mut("subscriptions").and_then(Value::as_array_mut) {
                         names.retain(|value| value != name);
                     }
                 }
@@ -695,7 +695,7 @@ pub fn dispatch(
         if new_name != name {
             if subscription {
                 for collection in next["collections"].as_array_mut().into_iter().flatten() {
-                    if let Some(names) = collection["subscriptions"].as_array_mut()
+                    if let Some(names) = collection.get_mut("subscriptions").and_then(Value::as_array_mut)
                         && let Some(index) = names.iter().position(|value| value == name)
                     {
                         names[index] = new_name.clone();
