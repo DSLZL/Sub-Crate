@@ -97,7 +97,12 @@ pub async fn read(request: Request<Incoming>, json_limit: usize) -> Result<Body,
     let form = media == "application/x-www-form-urlencoded";
     if (json
         && ![
-            "utf-8", "utf-16le", "utf-16", "utf-16be", "utf-7", "utf-7imap",
+            "utf-8",
+            "utf-16le",
+            "utf-16",
+            "utf-16be",
+            "utf-7",
+            "utf-7imap",
         ]
         .contains(&charset.as_str()))
         || (form && charset != "utf-8")

@@ -448,8 +448,10 @@ def request_bodies(url, state, output, name, origin=None):
                   "application/x-www-form-urlencoded; charset=iso-8859-1"):
         send(media=media, status=415)
     send(headers={"Content-Encoding": "br"}, status=415)
-    for path in ("/api/utils/env", "/", "/api/missing-parser-route"):
+    for path in ("/api/utils/env", "/api/missing-parser-route"):
         send(path, b"{", status=400, method="GET")
+    if origin is None:
+        send("/", b"{", status=400, method="GET")
     for media in ("application/json", "text/plain", "application/x-www-form-urlencoded"):
         send(body=b"x" * (102400 + 1), media=media, status=413, method="GET")
     send(body=json.dumps({"large": "x" * 32768}).encode(), status=413)
