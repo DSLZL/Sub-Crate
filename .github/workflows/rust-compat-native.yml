@@ -1,4 +1,4 @@
-name: Rust compatibility native baseline
+name: Rust service and compatibility
 
 on:
   workflow_dispatch:
@@ -54,7 +54,35 @@ jobs:
           rustup override set 1.98.0
       - name: Runner self-checks
         run: python -m unittest discover -s tests/compat -p test_runner.py
+      - name: Rust service formatting (preserve CI formatting output)
+        run: |
+          mkdir -p tests/compat/evidence/service-format
+          cargo fmt --manifest-path rust/Cargo.toml --all
+          cp -R rust/src tests/compat/evidence/service-format/src
+          git diff --exit-code -- rust
+      - name: Rust service lint, tests and release binary
+        id: service-build
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p tests/compat/evidence/service-build
+          cargo clippy --manifest-path rust/Cargo.toml --locked --all-targets -- -D warnings 2>&1 | tee tests/compat/evidence/service-build/clippy.log
+          cargo test --manifest-path rust/Cargo.toml --locked --all-targets 2>&1 | tee tests/compat/evidence/service-build/tests.log
+          cargo build --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust 2>&1 | tee tests/compat/evidence/service-build/release.log
+      - name: Actual Rust service HTTP, state, restart and rollback contracts
+        if: ${{ !cancelled() }}
+        run: python tests/compat/service.py --node "$(node -p 'process.execPath')"
+      - name: Preserve native service binary
+        if: ${{ !cancelled() && steps.service-build.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: m2-service-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            rust/target/release/sub-store-rust
+            rust/target/release/sub-store-rust.exe
+          if-no-files-found: error
+          retention-days: 30
       - name: Build general JS helpers
+        if: ${{ !cancelled() }}
         run: python tests/compat/reference.py --node "$(node -p 'process.execPath')" --mode helpers
       - name: Native Rust JS probe
         if: ${{ !cancelled() }}
@@ -111,6 +139,18 @@ jobs:
           python tests/compat/frontend.py --node "$(node -p 'process.execPath')" \
             --frontend "$GITHUB_WORKSPACE/.compat-frontend" \
             --browser "$(npm root --global)/agent-browser/bin/agent-browser-linux-x64"
+      - name: Build the Rust service on the GitHub runner
+        if: ${{ !cancelled() }}
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal
+          cargo +1.98.0 build --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust 2>&1 | tee tests/compat/evidence/frontend-setup/rust-build.log
+      - name: Unchanged frontend CRUD, settings and backup restore against Rust
+        if: ${{ !cancelled() }}
+        run: |
+          python tests/compat/frontend.py --node "$(node -p 'process.execPath')" \
+            --frontend "$GITHUB_WORKSPACE/.compat-frontend" \
+            --browser "$(npm root --global)/agent-browser/bin/agent-browser-linux-x64" \
+            --rust-binary "$GITHUB_WORKSPACE/rust/target/release/sub-store-rust"
       - name: Preserve browser evidence, including failures
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -155,6 +195,9 @@ jobs:
         run: python tests/compat/reference.py --node "$(node -p 'process.execPath')" --mode helpers
       - name: Container release binary, HTTP, persistence and restart contracts
         run: python tests/compat/probe.py --node "$(node -p 'process.execPath')" --docker
+      - name: Actual Node-free Rust service container contracts
+        if: ${{ !cancelled() }}
+        run: python tests/compat/service.py --node "$(node -p 'process.execPath')" --docker
       - name: Preserve container evidence, including failures
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

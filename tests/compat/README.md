@@ -4,12 +4,13 @@ The 2026-10-17 [history audit](HISTORY-CLEANUP.md) removes speculative standalon
 Web API conformance work. The retained host proves actual Sub-Store helper and
 age dependencies; it is not a full browser/Node Web API implementation. General
 standards coverage is not a gate before implementing the Rust HTTP/state service.
-The unchanged frontend tests still exercise the Node reference until that
-service exists.
+The unchanged frontend has separate Node-baseline and initial Rust-service CRUD
+runs in GitHub Actions. The Rust service and remaining M2 gates are documented
+in [rust/README.md](../../rust/README.md).
 
 This directory tests the Node reference with approved RF01/RF02 fixes, builds development-only JS helpers,
-and captures native rquickjs feasibility evidence. It does **not** contain a
-replacement Rust server or demonstrate complete frontend/backend parity.
+and captures native rquickjs feasibility evidence. `service.py` validates the
+actual independent Rust listener; complete frontend/backend parity is pending.
 
 - Backend base: `9cc6b5fac966993364ae33da8797f446bbf7f571` (2.42.4), plus the exact `approved-reference-fixes.patch`.
 - Unchanged frontend: `4bd7b0acbe65466b933ccea14fc61dbebe036ead` (2.34.0).
@@ -21,7 +22,9 @@ confirmed in [nodejs/node#63620](https://github.com/nodejs/node/issues/63620).
 The local native dump matches that failure path; failed 24.15.0 evidence remains
 under its original version. This pin changes only the development oracle.
 
-Run from the repository root, after `pnpm --dir backend install --frozen-lockfile`
+All builds and tests run in GitHub Actions per the user's 2026-10-17 instruction.
+The commands below document CI runner entry points; do not execute them locally.
+Run on the GitHub runner from the repository root, after `pnpm --dir backend install --frozen-lockfile`
 and `pnpm --dir tests/compat install --frozen-lockfile`.
 Replace `/absolute/path/to/node` with the pinned Node executable; the harness
 checks its exact version. On Windows use native paths and Python 3.

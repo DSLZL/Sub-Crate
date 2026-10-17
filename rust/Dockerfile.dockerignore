@@ -1,0 +1,6 @@
+**
+!rust/
+!rust/Cargo.toml
+!rust/Cargo.lock
+!rust/src/
+!rust/src/**

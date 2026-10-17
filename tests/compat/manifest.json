@@ -2,6 +2,11 @@
   "backend_commit": "9cc6b5fac966993364ae33da8797f446bbf7f571",
   "frontend_commit": "4bd7b0acbe65466b933ccea14fc61dbebe036ead",
   "suites": {
+    "service-state": [
+      "D01-backup-seed", "C01-subscription-crud", "C02-rename-references",
+      "D02-export-preserves-unknown", "C01-invalid-input",
+      "S01-settings-merge-and-validation", "D03-excluded-script-import-export"
+    ],
     "smoke": [
       "E01-env-basic-share-sequence",
       "D01-backup-seed",
