@@ -1,12 +1,14 @@
 //! Raw DNS transport for the contained script host; packets stay in dns-packet.
+use hyper_util::client::legacy::connect::HttpConnector;
 use rquickjs::{Ctx, Exception};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use serde_json::json;
 use std::{error::Error, io, sync::Arc, time::Duration};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::net::{TcpStream, UdpSocket};
+use tokio::net::UdpSocket;
 use tokio_rustls::{TlsConnector, rustls};
+use tower_service::Service;
 
 pub fn parse_url(ctx: Ctx<'_>, raw: String) -> rquickjs::Result<String> {
     let parsed = reqwest::Url::parse(&raw)
@@ -157,9 +159,34 @@ pub async fn query<'js>(
             }
             "tcp" | "tls" => {
                 let name = if protocol == "tls" { "TLS" } else { "TCP" };
-                let socket = tokio::time::timeout(timeout, TcpStream::connect((host, port)))
+                let connect_started = std::time::Instant::now();
+                let mut connector = HttpConnector::new();
+                // Match the pinned Node default without waiting for a failed address family.
+                connector.set_happy_eyeballs_timeout(Some(Duration::from_millis(250)));
+                let authority = if host.contains(':') {
+                    format!("[{host}]:{port}")
+                } else {
+                    format!("{host}:{port}")
+                };
+                let destination = hyper::Uri::builder()
+                    .scheme("http")
+                    .authority(authority)
+                    .path_and_query("/")
+                    .build()?;
+                let socket = tokio::time::timeout(timeout, connector.call(destination))
                     .await
-                    .map_err(|_| format!("DNS {name} query timeout"))??;
+                    .map_err(|_| format!("DNS {name} query timeout"))?
+                    .map_err(|error| {
+                        error
+                            .source()
+                            .map_or_else(|| error.to_string(), ToString::to_string)
+                    })?
+                    .into_inner();
+                eprintln!(
+                    "COMPAT_DNS_CONNECT {}",
+                    json!({"host": host,
+                    "elapsed_us": connect_started.elapsed().as_micros(), "peer": socket.peer_addr().ok()})
+                );
                 if protocol == "tls" {
                     let verifier: Arc<dyn ServerCertVerifier> =
                         Arc::new(rustls_platform_verifier::Verifier::new(Arc::new(

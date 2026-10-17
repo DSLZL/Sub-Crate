@@ -169,6 +169,7 @@ def expected_native_dns_requests():
     queries = [
         ("udp", "udp-a.fixture", 1, "203.0.113.99"), ("udp", "udp-hostname.fixture"),
         ("udp6", "udp6-aaaa.fixture", 28, "2001:db8:1234:5678::99"),
+        ("tcp", "hostname-tcp.fixture"),
         ("tcp", "fragment-tcp.fixture"), ("tcp6", "extra-tcp6.fixture", 28),
         ("tcp", "end-header-tcp.fixture"), ("tcp", "end-body-tcp.fixture"),
         ("udp", "malformed-udp.fixture"), ("tcp", "malformed-tcp.fixture"),
@@ -188,7 +189,7 @@ def expected_native_dns_requests():
 
 def expected_dns_connections():
     return [{"transport": transport, "handshake": handshake, "server_name": server_name} for transport, handshake, server_name in [
-        ("tcp", None, None), ("tcp6", None, None), *[("tcp", None, None)] * 4,
+        ("tcp", None, None), ("tcp", None, None), ("tcp6", None, None), *[("tcp", None, None)] * 4,
         ("tls", False, "localhost"), ("tls", False, "localhost"), ("tls", True, "localhost"),
         *[("tls", True, None)] * 4, ("tcp", None, None),
         ("tls", True, "localhost"), ("tls", False, "localhost"), ("tcp", None, None),
@@ -200,7 +201,7 @@ def check_native_dns(requests, connections, errors):
     expected = expected_native_dns_requests()
     check_json([{key: item[key] for key in ("transport", "domain", "packet", "frame")} for item in requests], expected)
     check_json([{key: item[key] for key in ("transport", "handshake", "server_name")} for item in connections], expected_dns_connections())
-    check_json([item["closed"] for item in connections if item["handshake"] is not False], [True] * 14)
+    check_json([item["closed"] for item in connections if item["handshake"] is not False], [True] * 15)
     for item in requests:
         if item["domain"].startswith("fragment-"):
             size = len(response_bytes(bytes(item["packet"]), "good")) + 2

@@ -48,10 +48,13 @@ globalThis.runNativeDnsContracts = async function(check, host, operator, assert,
   });
 
   await check('PC55-tcp-fragments-inactivity-and-first-frame', async () => {
+    // The caller deadline must permit fallback when localhost's first family is unavailable.
+    const hostname = await query('hostname-tcp.fixture','tcpName',{timeout:1000});
+    equal(hostname.answers.filter(record => record.type === 'A').map(record => record.data), ipv4, 'TCP hostname fallback within caller deadline');
     const fragmented = await query('fragment-tcp.fixture','tcp',{timeout:200});
     const ipv6 = await query('extra-tcp6.fixture','tcp6',{type:'AAAA'});
     assert(fragmented.answers.length === 3 && ipv6.answers.length === 2, 'split prefix/body and invalid second frame');
-    return {fragmented,ipv6};
+    return {hostname,fragmented,ipv6};
   });
 
   await check('PC56-tcp-premature-header-and-body-eof', async () => {

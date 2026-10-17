@@ -187,6 +187,7 @@ class ControlledDns:
                 self.servers.append((server, thread))
                 self.urls[transport] = f"{protocol}://{'[' + host + ']' if ':' in host else host}:{server.server_address[1]}"
             self.urls["tlsName"] = self.urls["tls"].replace("127.0.0.1", "localhost")
+            self.urls["tcpName"] = self.urls["tcp"].replace("127.0.0.1", "localhost")
             self.urls["udpName"] = self.urls["udp"].replace("127.0.0.1", "localhost")
             return self
         except Exception:

@@ -19,6 +19,7 @@ rustls-platform-verifier = "=0.7.1"
 serde_json = "1.0"
 tokio = { version = "1", features = ["macros", "rt", "time", "net", "io-util"] }
 tokio-rustls = { version = "=0.26.6", default-features = false, features = ["tls12", "aws-lc-rs"] }
+tower-service = "=0.3.3"
 
 # The interpreter must execute crypto fixtures within the same 15s host budget.
 [profile.dev.package.rquickjs-sys]

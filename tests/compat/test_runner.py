@@ -264,17 +264,18 @@ class RunnerTests(unittest.TestCase):
         check_native_dns(requests, connections, [])
         for mutation in ("packet", "frame", "missing", "extra", "transport", "sni", "certificate", "open", "fragment", "deadline", "typed-deadline", "error"):
             actual, peers, errors = copy.deepcopy(requests), copy.deepcopy(connections), []
+            fragment = next(item for item in actual if item["domain"] == "fragment-tcp.fixture")
             if mutation == "packet": actual[0]["packet"][2] = 0
-            elif mutation == "frame": actual[3]["frame"][1] += 1
+            elif mutation == "frame": fragment["frame"][1] += 1
             elif mutation == "missing": actual.pop()
             elif mutation == "extra": actual.append(actual[-1])
             elif mutation == "transport": actual[0]["transport"] = "tcp"
-            elif mutation == "sni": peers[8]["server_name"] = None
-            elif mutation == "certificate": peers[6]["handshake"] = True
+            elif mutation == "sni": next(peer for peer in peers if peer["handshake"] is True and peer["server_name"] == "localhost")["server_name"] = None
+            elif mutation == "certificate": next(peer for peer in peers if peer["handshake"] is False)["handshake"] = True
             elif mutation == "open": peers[0]["closed"] = False
-            elif mutation == "fragment": actual[3]["response_chunks"] = [999]
-            elif mutation == "deadline": actual[3]["response_elapsed"] = 0.1
-            elif mutation == "typed-deadline": actual[3]["response_elapsed"] = True
+            elif mutation == "fragment": fragment["response_chunks"] = [999]
+            elif mutation == "deadline": fragment["response_elapsed"] = 0.1
+            elif mutation == "typed-deadline": fragment["response_elapsed"] = True
             else: errors.append("fixture failure")
             with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
                 check_native_dns(actual, peers, errors)
