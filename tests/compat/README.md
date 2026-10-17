@@ -1,5 +1,12 @@
 # Rust rewrite compatibility baseline (M1, in progress)
 
+The 2026-10-17 [history audit](HISTORY-CLEANUP.md) removes speculative standalone
+Web API conformance work. The retained host proves actual Sub-Store helper and
+age dependencies; it is not a full browser/Node Web API implementation. General
+standards coverage is not a gate before implementing the Rust HTTP/state service.
+The unchanged frontend tests still exercise the Node reference until that
+service exists.
+
 This directory tests the Node reference with approved RF01/RF02 fixes, builds development-only JS helpers,
 and captures native rquickjs feasibility evidence. It does **not** contain a
 replacement Rust server or demonstrate complete frontend/backend parity.
