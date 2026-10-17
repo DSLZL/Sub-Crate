@@ -591,7 +591,7 @@ def api_entities(url, state, output, name, origin=None):
             attachment = re.fullmatch(r'attachment; filename=".*_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.json"', actual["content-disposition"])
             assert attachment and actual["access-control-expose-headers"] == "content-disposition"
             instant = datetime.strptime(attachment[1], "%Y-%m-%d_%H-%M-%S").replace(tzinfo=before.tzinfo)
-            assert before - timedelta(seconds=1) <= instant <= datetime.fromisoformat(raw["after"])
+            assert before - timedelta(seconds=1) <= instant <= datetime.fromisoformat(raw["after"]), f"Export timestamp {instant.isoformat()} outside request bounds {before.isoformat()}..{raw['after']}"
         if headers.get("Origin") and status != 403:
             assert actual["access-control-allow-origin"] == headers["Origin"]
         observations.append({"method": method, "path": path, "status": status,
@@ -604,6 +604,9 @@ def api_entities(url, state, output, name, origin=None):
     item = "/api/collection/" + quote("entity-保留🙂", safe="")
     send("/api/settings", method="PATCH", body=b'{"entityValidator":"before"}')
     before_reads = {filename: (state / filename).read_bytes() for filename in ("sub-store.json", "root.json")}
+    for _ in range(3):
+        time.sleep(1 - time.time() % 1)
+        send("/api/storage")
     for path in ("/api/settings", "/api/subs", "/api/collections", item, item + "?raw=1", "/api/storage"):
         normal, content = send(path)
         head, _ = send(path, method="HEAD", expected=b"")
@@ -1273,6 +1276,7 @@ def main():
         report["standalone_configurations_checked"] = ["prefixed", "unprefixed", "root", "static-only"]
         report["api_entity_validators_and_head_checked"] = True
         report["api_entity_error_and_mutation_boundaries_checked"] = True
+        report["export_second_boundary_clock_checked"] = True
         report["api_entity_configurations_checked"] = ["merged-prefix", "merged-root", "standalone-prefixed", "standalone-unprefixed", "standalone-root"]
         report["exit_code"] = 0
     except Exception as error:

@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::io;
 use std::mem::MaybeUninit;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub type Reply = Response<Full<Bytes>>;
 const COMPONENT: &AsciiSet = &NON_ALPHANUMERIC
@@ -124,13 +125,17 @@ fn invalid_backup() -> Reply {
 
 fn download(value: &Value, name: &str) -> Reply {
     let mut local = MaybeUninit::<libc::tm>::uninit();
-    // SAFETY: each reentrant CRT call initializes this tm on success; time accepts null.
+    // Linux time() can lag behind the precise wall clock at a second boundary.
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|instant| libc::time_t::try_from(instant.as_secs()).ok());
+    // SAFETY: each reentrant CRT call initializes this tm on success.
     let local = unsafe {
-        let now = libc::time(std::ptr::null_mut());
         #[cfg(unix)]
-        let valid = !libc::localtime_r(&now, local.as_mut_ptr()).is_null();
+        let valid = now.is_some_and(|now| !libc::localtime_r(&now, local.as_mut_ptr()).is_null());
         #[cfg(windows)]
-        let valid = libc::localtime_s(local.as_mut_ptr(), &now) == 0;
+        let valid = now.is_some_and(|now| libc::localtime_s(local.as_mut_ptr(), &now) == 0);
         if !valid {
             return failure(
                 500,
