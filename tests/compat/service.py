@@ -680,8 +680,10 @@ def api_entities(url, state, output, name, origin=None):
             assert json.loads(content)["data"] == item
         _, content = send(f"/api/{singular}/route%2fpart")
         assert json.loads(content)["data"]["name"] == "route/part"
-        for path in (f"/api/{singular}/", f"/api/{singular}/route/part", f"/api/{singular}/route-created//"):
+        for path in (f"/api/{singular}/", f"/api/{singular}/route/part"):
             send(path, status=404, tagged=False, expected=b"")
+        send(f"/api/{singular}/route-created//", status=200 if origin else 404,
+             tagged=bool(origin), expected=None if origin else b"")
         assert all((state / filename).read_bytes() == data for filename, data in before_routes.items())
         target = f"/api/{singular.upper()}/{quote(names[0], safe='')}/"
         send(target, method="PATCH", body=b'{"marker":"patched"}')
@@ -691,8 +693,9 @@ def api_entities(url, state, output, name, origin=None):
         _, content = send(f"/api/{plural.upper()}/")
         assert [item["name"] for item in json.loads(content)["data"]] == names[1:] + [created["name"]]
     before_routes = {filename: (state / filename).read_bytes() for filename in ("sub-store.json", "root.json")}
-    for path in ("/api/%73ettings", "/api/utils/%65nv", "/api/settings//"):
+    for path in ("/api/%73ettings", "/api/utils/%65nv"):
         send(path, status=404, tagged=False, expected=b"")
+    send("/api/settings//", status=200 if origin else 404, tagged=bool(origin), expected=None if origin else b"")
     for escape in ("%", "%0", "%GG", "%FF", "%E0%A4"):
         for method in ("GET", "PATCH"):
             headers, content = send(f"/api/sub/{escape}", method=method, status=400, tagged=False)

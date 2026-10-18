@@ -589,6 +589,13 @@ async fn frontend_handle(
                 let suffix = &path[prefix.len()..];
                 let suffix = if suffix.is_empty() { "/" } else { suffix };
                 let mut target = format!("{backend_prefix}/{namespace}{suffix}");
+                // The legacy proxy joins paths with collapsed slashes, preserving the query.
+                let mut slash = false;
+                target.retain(|ch| {
+                    let keep = ch != '/' || !slash;
+                    slash = ch == '/';
+                    keep
+                });
                 if let Some(query) = request.uri().query() {
                     target.push('?');
                     target.push_str(query);

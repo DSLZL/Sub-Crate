@@ -92,6 +92,8 @@ their case and decode once after raw segment matching, including encoded slashes
 and percent signs. Extra segments remain unregistered; invalid escapes/UTF-8
 return production HTML 400 without changing durable data. Prefix admission keeps
 the legacy raw path policy.
+Standalone forwarding collapses repeated path slashes before backend matching,
+matching the old proxy, while preserving the query and encoded name characters.
 Node development stack bodies and broader HTTP/API edge cases remain M2
 acceptance work.
 Stored excluded Node scripts remain intact.
