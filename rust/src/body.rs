@@ -49,8 +49,7 @@ fn content_type(value: &str) -> Option<(String, String)> {
         return None;
     }
     let (subtype, suffix) = subtype.rsplit_once('+').unwrap_or((subtype, ""));
-    if !restricted(subtype, b"!#$&^_.-")
-        || (!suffix.is_empty() && !restricted(suffix, b"!#$&^_-"))
+    if !restricted(subtype, b"!#$&^_.-") || (!suffix.is_empty() && !restricted(suffix, b"!#$&^_-"))
     {
         return None;
     }
@@ -134,7 +133,12 @@ pub async fn read(request: Request<Incoming>, json_limit: usize) -> Result<Body,
     let headers = request.headers();
     let media = headers
         .get("content-type")
-        .map(|v| v.as_bytes().iter().map(|&b| char::from(b)).collect::<String>())
+        .map(|v| {
+            v.as_bytes()
+                .iter()
+                .map(|&b| char::from(b))
+                .collect::<String>()
+        })
         .and_then(|v| content_type(&v));
     let Some((media, charset)) = media.filter(|_| {
         headers.contains_key("content-length") || headers.contains_key("transfer-encoding")
