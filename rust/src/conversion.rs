@@ -108,8 +108,7 @@ fn normalized_port(raw: &str) -> Value {
             if raw.bytes().all(|byte| byte.is_ascii_digit())
                 && (raw.len() <= 4
                     || (raw.len() == 5
-                        && (!raw.starts_with('0')
-                            || raw.bytes().all(|byte| byte <= b'5')))) =>
+                        && (!raw.starts_with('0') || raw.bytes().all(|byte| byte <= b'5')))) =>
         {
             json!(number)
         }
@@ -155,9 +154,7 @@ fn proxy_uri(line: &str) -> Result<Option<Value>, Error> {
     };
     let (server, port) = address
         .rsplit_once(':')
-        .filter(|(_, port)| {
-            !port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit())
-        })
+        .filter(|(_, port)| !port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit()))
         .map_or((address, None), |(server, port)| (server, Some(port)));
     let tls = matches!(scheme, "https" | "socks5+tls");
     let port = if let Some(port) = port {
@@ -194,7 +191,8 @@ fn proxy_uri(line: &str) -> Result<Option<Value>, Error> {
             }
         } else {
             let (username, password) = auth.split_once(':').unwrap();
-            let (Some(username), Some(password)) = (component(username), component(password)) else {
+            let (Some(username), Some(password)) = (component(username), component(password))
+            else {
                 return Ok(None);
             };
             proxy["username"] = json!(username);
@@ -340,19 +338,21 @@ fn preprocess(raw: &str) -> String {
     };
     if (alphabet(b"+/") || alphabet(b"-_"))
         && let Some(text) = decoded(raw)
-        && text.split(['\r', '\n', '\u{2028}', '\u{2029}']).any(|line| {
-            let word = |c: u8| c.is_ascii_alphanumeric() || c == b'_';
-            let prefix = line.bytes().take_while(|byte| word(*byte)).count();
-            if prefix == 0 {
-                return false;
-            }
-            let tail = &line[prefix..];
-            tail.strip_prefix("://")
-                .is_some_and(|tail| tail.bytes().next().is_some_and(word))
-                || codec::trim(tail).strip_prefix('=').is_some_and(|tail| {
-                    codec::trim(tail).bytes().next().is_some_and(word)
-                })
-        })
+        && text
+            .split(['\r', '\n', '\u{2028}', '\u{2029}'])
+            .any(|line| {
+                let word = |c: u8| c.is_ascii_alphanumeric() || c == b'_';
+                let prefix = line.bytes().take_while(|byte| word(*byte)).count();
+                if prefix == 0 {
+                    return false;
+                }
+                let tail = &line[prefix..];
+                tail.strip_prefix("://")
+                    .is_some_and(|tail| tail.bytes().next().is_some_and(word))
+                    || codec::trim(tail)
+                        .strip_prefix('=')
+                        .is_some_and(|tail| codec::trim(tail).bytes().next().is_some_and(word))
+            })
     {
         return text;
     }
@@ -1004,7 +1004,7 @@ fn uri(proxy: &Value) -> Option<String> {
             return Some(format!("ssr://{}", STANDARD.encode(output)));
         }
         "ss" => {}
-        _ => return None,
+        _ => return Some(String::new()),
     }
     let cipher = proxy["cipher"].as_str().unwrap_or("undefined");
     let password = proxy["password"].as_str().unwrap_or("undefined");
@@ -1294,10 +1294,11 @@ pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str) -> Result<Valu
             json!(String::from_utf8(codec::pretty(&value)).unwrap())
         });
     }
-    let lines: Vec<_> = proxies.iter().filter_map(uri).collect();
+    let mut lines: Vec<_> = proxies.iter().filter_map(uri).collect();
     if matches!(target, "v2" | "v2ray" | "V2Ray") {
         return Ok(json!(STANDARD.encode(lines.join("\n"))));
     }
+    lines.retain(|line| !line.is_empty());
     Ok(if kind == "internal" {
         json!(lines)
     } else {
