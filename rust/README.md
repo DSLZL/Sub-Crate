@@ -72,6 +72,10 @@ Raw JSON exports retain the legacy local-calendar filenames and escaped resource
 names. Manual restore keeps the pre-migration backup in `root.json`'s `sub-store`
 key and preserves unrelated root entries. A private undo record protects the two
 files during restore; startup recovers an interrupted restore before serving.
+Legacy Base64 imports and startup data retain the old decoder's URL-safe symbols,
+padding/noise cleanup, permissive final bits and UTF-8 replacement behavior.
+Decoded data must still pass JSON, settings and record validation; rejected
+imports preserve both files. Private restore undo-record fields remain strict.
 Object and array settings survive plain/Base64 restore and restart; settings
 PATCH preserves an imported array's numbered fields when merging its changes.
 Legacy migration treats falsy lists as empty maps, matching the old backend.

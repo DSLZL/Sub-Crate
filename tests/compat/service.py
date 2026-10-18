@@ -315,20 +315,43 @@ def crud_edges(url, state, output, name):
     return observations
 
 
+def backup_encodings(document):
+    raw = json.dumps(document, ensure_ascii=False).encode("utf-8")
+    padded = raw + b" " * ((1 - len(raw)) % 3)
+    encoded = base64.b64encode(padded).decode("ascii")
+    urlsafe = base64.urlsafe_b64encode(padded).decode("ascii")
+    variants = {"urlsafe-padded": urlsafe, "urlsafe-unpadded": urlsafe.rstrip("="),
+                "separated-urlsafe": "\r\n!☃=".join(urlsafe[index:index + 17] for index in range(0, len(urlsafe), 17)),
+                "interior-padding": "==".join(encoded[index:index + 11] for index in range(0, len(encoded), 11)),
+                "orphan-sextet": base64.b64encode(raw + b" " * (-len(raw) % 3)).decode("ascii") + "Z"}
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    for remainder, unused in ((1, 15), (2, 3)):
+        payload = raw + b" " * ((remainder - len(raw)) % 3)
+        canonical = base64.b64encode(payload).decode("ascii").rstrip("=")
+        last = alphabet[alphabet.index(canonical[-1]) | unused]
+        assert last != canonical[-1], "Trailing-bit fixture is canonical"
+        variants[f"trailing-bits-{remainder}"] = canonical[:-1] + last
+    return variants
+
+
 def backup_edges(url, state, output, name, offset=None):
     observations = []
     local_zone = datetime.now().astimezone().tzinfo if offset is None else timezone(timedelta(minutes=offset))
 
     def send(method, path, body=None, status=200, filename=None):
+        previous = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")} if status >= 400 else None
         before = datetime.now(timezone.utc)
         response = request(url, {"method": method, "path": path, **({"body": body} if body is not None else {})})
         after = datetime.now(timezone.utc)
         stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
         root = json.loads((state / "root.json").read_text(encoding="utf-8"))
+        record = {"method": method, "path": path, "body": body, "response": response,
+                  "before": before.isoformat(), "after": after.isoformat(), "state": stored, "root": root}
+        if previous is not None:
+            record["files_before_base64"] = {key: base64.b64encode(value).decode("ascii") for key, value in previous.items()}
+            record["files_after_base64"] = {key: base64.b64encode((state / key).read_bytes()).decode("ascii") for key in previous}
         with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
-            evidence.write(json.dumps({"method": method, "path": path, "body": body, "response": response,
-                                       "before": before.isoformat(), "after": after.isoformat(),
-                                       "state": stored, "root": root}, ensure_ascii=False) + "\n")
+            evidence.write(json.dumps(record, ensure_ascii=False) + "\n")
         assert response["status"] == status, f"{name} {path}: {response}"
         parsed = json.loads(response["body"])
         assert response["headers"]["content-type"] == ("application/json; charset=utf-8" if filename is not None else "text/plain; charset=utf-8")
@@ -358,7 +381,8 @@ def backup_edges(url, state, output, name, offset=None):
     before = {name: (state / name).read_bytes() for name in ("sub-store.json", "root.json")}
     check_json(send("GET", "/api/storage", filename="sub-store_data"), json.loads(before["sub-store.json"]))
     assert all((state / name).read_bytes() == content for name, content in before.items()), "Export changed persisted files"
-    for content in ("invalid backup", json.dumps({"unknown": "missing settings"}), json.dumps({"settings": None})):
+    for content in ("invalid backup", json.dumps({"unknown": "missing settings"}), json.dumps({"settings": None}),
+                    "!W!==", "!W10=", backup_encodings({"settings": None})["separated-urlsafe"]):
         result = send("POST", "/api/storage", {"content": content}, 500)
         assert result["error"]["code"] == "INVALID_BACKUP_DATA"
         assert all((state / name).read_bytes() == value for name, value in before.items()), "Invalid import changed persisted files"
@@ -394,6 +418,18 @@ def backup_edges(url, state, output, name, offset=None):
                 check_json(json.loads((state / "sub-store.json").read_text(encoding="utf-8"))["settings"], expected)
             if original is empty_legacy:
                 assert all(exported[key] == [] for key in ("subs", "collections", "artifacts", "rules", "files", "tokens"))
+    codec_backup = {**backup, "codecText": "ÿÿÿ🙂\r\n", "codecOpaque": {"nil": None, "flag": False, "zero": 0}}
+    encodings = backup_encodings(codec_backup)
+    assert any(char in encodings["urlsafe-padded"] for char in "-_"), "URL-safe fixture has no alternate symbols"
+    lossy_backup = {**codec_backup, "codecText": "\ufffd\ufffd(\ufffd"}
+    lossy_bytes = json.dumps({**codec_backup, "codecText": "INVALID_UTF8"}, ensure_ascii=False).encode("utf-8")
+    encodings["lossy-utf8"] = base64.b64encode(lossy_bytes.replace(b"INVALID_UTF8", b"\xff\xc3(\xf0\x9f")).decode("ascii")
+    for encoding, content in encodings.items():
+        expected = lossy_backup if encoding == "lossy-utf8" else codec_backup
+        send("POST", "/api/storage", {"content": content})
+        check_json(json.loads((state / "root.json").read_text(encoding="utf-8"))["sub-store"], expected)
+        check_json(send("GET", "/api/storage", filename="sub-store_data"), expected)
+        check_json(send("GET", "/api/settings")["data"], expected["settings"])
     send("POST", "/api/storage", {"content": json.dumps(array_backup, ensure_ascii=False)})
     check_json(send("GET", "/api/settings")["data"], array_settings)
     prior_data = (state / "sub-store.json").read_bytes()
@@ -1164,13 +1200,14 @@ def main():
         legacy = {"settings": {}, "subs": {"z-last": {"name": "z-last", "display-name": "旧数据🙂", "process": [{"type": "Useless Filter"}, {"type": "Set Property Operator", "args": {"key": "udp", "value": False}}, {"type": "Flag Operator", "args": False}, {"type": "Script Operator", "args": {"content": "require('node:fs')\r\n"}}]}, "a-first": {"name": "a-first"}}, "collections": {"c": {"name": "c", "ua": "old", "subscriptions": ["z-last"], "extra": False}}, "unknown": {"nil": None, "zero": 0, "flag": False}}
         for key in ("10", "2", "01", "0", "4294967295", "4294967294"):
             legacy["subs"][key] = {"name": "index-" + key}
-        original = json.dumps(legacy, ensure_ascii=False).encode("utf-8")
+        original = backup_encodings(legacy)["separated-urlsafe"].encode("utf-8")
+        (output / "migration-base64-input.json").write_text(json.dumps({"encoded": original.decode("utf-8"), "decoded": legacy}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         root = {"opaque": {"text": "cache🙂", "zero": 0, "flag": False}, "sub-store-cached-resource": "{}"}
         migrated = {}
         for kind in ("node", "rust"):
             state = output / f"{kind}-migration"
             state.mkdir()
-            (state / "sub-store.json").write_bytes(base64.b64encode(original))
+            (state / "sub-store.json").write_bytes(original)
             (state / "root.json").write_text(json.dumps(root, ensure_ascii=False), encoding="utf-8")
             env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}
             manager = oracle(args.node, env, output, report, "node-migrate") if kind == "node" else listener(args.binary, env, output, report, "rust-migrate", image)
@@ -1180,12 +1217,13 @@ def main():
                 migrated[kind] = json.loads(response["body"])
                 (output / f"{kind}-migration.json").write_text(json.dumps(migrated[kind], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
                 if kind == "rust":
-                    assert (state / "sub-store.pre-rust.json").read_bytes() == base64.b64encode(original)
+                    assert (state / "sub-store.pre-rust.json").read_bytes() == original
                     check_json(json.loads((state / "root.json").read_text(encoding="utf-8")), root)
             for key in ("subs", "collections", "artifacts", "rules", "files", "tokens", "schemaVersion", "unknown"):
                 if kind == "rust":
                     check_json(migrated[kind][key], migrated["node"][key])
         report["legacy_base64_migration_and_snapshots_checked"] = True
+        report["legacy_base64_noisy_startup_checked"] = True
         report["legacy_numeric_key_order_checked"] = True
         generated = execute([args.node, HERE / "fixtures/service-recipient-keys.mjs"], BACKEND, environment, output, "recipient-oracle", timeout=30)
         assert generated.returncode == 0, "Could not generate pinned recipient fixtures"
@@ -1320,6 +1358,7 @@ def main():
                     check_json(json.loads(request(url, {"path": "/api/settings"})["body"])["data"], restored[kind][-1]["state"]["settings"])
             check_json(restored["rust"], restored["node"])
         report["backup_http_and_root_state_equal"] = True
+        report["backup_base64_decoder_variants_checked"] = True
         report["array_settings_restore_patch_and_restart_checked"] = True
         report["legacy_falsy_lists_migration_checked"] = True
         report["calendar_filename_timezones_checked"] = [zone for zone, _, _ in zones]

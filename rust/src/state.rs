@@ -12,13 +12,28 @@ pub struct Store {
 
 pub fn decode(text: &str) -> Result<Value, String> {
     let value: Value = serde_json::from_str(text).or_else(|_| {
-        let encoded: String = text.chars().filter(|c| !c.is_whitespace()).collect();
-        let bytes = general_purpose::STANDARD
-            .decode(&encoded)
-            .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(&encoded))
-            .or_else(|_| general_purpose::URL_SAFE_NO_PAD.decode(encoded))
+        // js-base64 removes padding/noise before Buffer decodes the remaining sextets.
+        let mut encoded: String = text
+            .chars()
+            .filter_map(|c| match c {
+                '-' => Some('+'),
+                '_' => Some('/'),
+                c if c.is_ascii_alphanumeric() || matches!(c, '+' | '/') => Some(c),
+                _ => None,
+            })
+            .collect();
+        if encoded.len() % 4 == 1 {
+            encoded.pop();
+        }
+        let decoder = general_purpose::GeneralPurpose::new(
+            &base64::alphabet::STANDARD,
+            general_purpose::NO_PAD.with_decode_allow_trailing_bits(true),
+        );
+        let bytes = decoder
+            .decode(encoded)
             .map_err(|_| "Invalid JSON or Base64 backup".to_owned())?;
-        serde_json::from_slice(&bytes).map_err(|_| "Invalid backup JSON".to_owned())
+        serde_json::from_str(&String::from_utf8_lossy(&bytes))
+            .map_err(|_| "Invalid backup JSON".to_owned())
     })?;
     if !value.is_object() {
         return Err("State must be a JSON object".to_owned());
