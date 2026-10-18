@@ -37,7 +37,7 @@ jobs:
           persist-credentials: false
       - name: Verify approved reference fixes
         run: |
-          git diff --no-ext-diff --binary --no-color --unified=0 9cc6b5fac966993364ae33da8797f446bbf7f571 -- backend scripts/ip-flag-node.js > "$RUNNER_TEMP/reference-fixes.patch"
+          git diff --no-ext-diff --binary --no-color --full-index --unified=0 9cc6b5fac966993364ae33da8797f446bbf7f571 -- backend scripts/ip-flag-node.js > "$RUNNER_TEMP/reference-fixes.patch"
           diff --strip-trailing-cr -u tests/compat/approved-reference-fixes.patch "$RUNNER_TEMP/reference-fixes.patch"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:

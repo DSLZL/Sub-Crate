@@ -1,12 +1,12 @@
 diff --git a/backend/src/restful/artifacts.js b/backend/src/restful/artifacts.js
-index 65dbfd3..6383fdc 100644
+index 65dbfd3d7473ef64067844400a658f6eb57c55c6..6383fdcc6b0deb28a4eae500d03415a4b9521636 100644
 --- a/backend/src/restful/artifacts.js
 +++ b/backend/src/restful/artifacts.js
 @@ -69 +69 @@ async function restoreArtifacts(_, res) {
 -            return Promise.reject('未设置 GitHub Token！');
 +            throw new Error('未设置 GitHub Token！');
 diff --git a/backend/src/test/runtime/runtime-manifest.spec.js b/backend/src/test/runtime/runtime-manifest.spec.js
-index b97608a..579980d 100644
+index b97608a1f13659faafa41bdfb8697414141124e3..579980d51ea78826a806d211a373c7587715dfb2 100644
 --- a/backend/src/test/runtime/runtime-manifest.spec.js
 +++ b/backend/src/test/runtime/runtime-manifest.spec.js
 @@ -13,0 +14 @@ function createFixture() {
@@ -18,7 +18,7 @@ index b97608a..579980d 100644
 -        'dir',
 +        directoryLinkType,
 diff --git a/backend/src/test/utils/download.spec.js b/backend/src/test/utils/download.spec.js
-index f5e729f..ee40fe5 100644
+index f5e729f76edc0e5b7de1716776e65a7d8e9cb5d0..ee40fe5660f57d9629c50077c6c766ae8fa32370 100644
 --- a/backend/src/test/utils/download.spec.js
 +++ b/backend/src/test/utils/download.spec.js
 @@ -162,0 +163,36 @@ describe('download github proxy regex', function () {
@@ -59,7 +59,7 @@ index f5e729f..ee40fe5 100644
 +    });
 +
 diff --git a/backend/src/utils/download.js b/backend/src/utils/download.js
-index 167892a..6ce908b 100644
+index 167892a37c1cbaf722a01569004a714dfa1e8a5a..6ce908bedfea5c3b084739cf42a5f35891585193 100644
 --- a/backend/src/utils/download.js
 +++ b/backend/src/utils/download.js
 @@ -19,0 +20 @@ import getFs from '@/runtime/fs';

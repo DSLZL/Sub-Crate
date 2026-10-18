@@ -412,6 +412,39 @@ class RunnerTests(unittest.TestCase):
             with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
                 check_host(actual, expected)
 
+    def test_reference_source_guard_uses_stable_full_blob_ids(self):
+        import os
+        import reference
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "backend").mkdir()
+            source = root / "backend/source.txt"
+            source.write_text("original\n", encoding="utf-8")
+            environment = {**os.environ, "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.abbrev", "GIT_CONFIG_VALUE_0": "40"}
+
+            def git(*arguments):
+                result = reference.execute(["git", *arguments], root, environment, root, "git-fixture")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                return result.stdout
+
+            git("init")
+            git("add", "backend")
+            git("-c", "user.name=compat-fixture", "-c", "user.email=fixture@example.invalid", "commit", "--no-gpg-sign", "-m", "baseline")
+            revision = git("rev-parse", "HEAD").strip()
+            source.write_text("approved\n", encoding="utf-8")
+            expected = git("diff", "--no-ext-diff", "--binary", "--no-color", "--full-index", "--unified=0", revision, "--", "backend", "scripts/ip-flag-node.js")
+            (root / "approved-reference-fixes.patch").write_text(expected, encoding="utf-8")
+            with patch.multiple(reference, ROOT=root, HERE=root, BACKEND_BASE_COMMIT=revision):
+                for abbreviation in ("7", "12"):
+                    environment["GIT_CONFIG_VALUE_0"] = abbreviation
+                    with self.subTest(abbreviation=abbreviation):
+                        result = reference.source_provenance(environment, root)
+                        self.assertEqual(result["backend_commit"], revision)
+                        self.assertTrue(result["backend_worktree_changed"])
+                source.write_text("approved\nunapproved\n", encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "approved RF01/RF02 patch"):
+                    reference.source_provenance(environment, root)
+
     def test_reference_rejects_an_unapproved_backend_patch(self):
         import reference
         import subprocess

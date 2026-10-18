@@ -45,7 +45,7 @@ def execute(argv, directory, environment, output_dir, name, timeout=None, direct
 
 def source_provenance(environment, output_dir):
     revision = execute(["git", "rev-parse", "HEAD"], ROOT, environment, output_dir, "backend-revision")
-    patch = execute(["git", "diff", "--no-ext-diff", "--binary", "--no-color", "--unified=0", BACKEND_BASE_COMMIT,
+    patch = execute(["git", "diff", "--no-ext-diff", "--binary", "--no-color", "--full-index", "--unified=0", BACKEND_BASE_COMMIT,
                      "--", "backend", "scripts/ip-flag-node.js"], ROOT, environment, output_dir, "backend-source")
     expected = (HERE / "approved-reference-fixes.patch").read_text(encoding="utf-8")
     if revision.returncode or patch.returncode or patch.stdout != expected:
