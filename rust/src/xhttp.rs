@@ -30,9 +30,21 @@ const FIELDS: &[(&str, &str, Kind)] = &[
     ("seqKey", "seq-key", Kind::Text),
     ("uplinkDataPlacement", "uplink-data-placement", Kind::Text),
     ("uplinkDataKey", "uplink-data-key", Kind::Text),
-    ("uplinkChunkSize", "uplink-chunk-size", Kind::NonNegativeRange),
-    ("scMaxEachPostBytes", "sc-max-each-post-bytes", Kind::StrictRange),
-    ("scMinPostsIntervalMs", "sc-min-posts-interval-ms", Kind::PositiveRange),
+    (
+        "uplinkChunkSize",
+        "uplink-chunk-size",
+        Kind::NonNegativeRange,
+    ),
+    (
+        "scMaxEachPostBytes",
+        "sc-max-each-post-bytes",
+        Kind::StrictRange,
+    ),
+    (
+        "scMinPostsIntervalMs",
+        "sc-min-posts-interval-ms",
+        Kind::PositiveRange,
+    ),
 ];
 
 const REUSE: &[(&str, &str)] = &[
@@ -51,7 +63,10 @@ pub fn integer(value: &Value, negative: bool) -> Option<i64> {
             if !negative && raw.starts_with('-') {
                 return None;
             }
-            let digits = raw.strip_prefix('+').or_else(|| raw.strip_prefix('-')).unwrap_or(raw);
+            let digits = raw
+                .strip_prefix('+')
+                .or_else(|| raw.strip_prefix('-'))
+                .unwrap_or(raw);
             if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
                 return None;
             }
@@ -91,7 +106,9 @@ fn range(value: &Value, lower: i64, upper: i64, text_only: bool) -> Option<Value
 }
 
 fn nonblank(value: &Value) -> bool {
-    value.as_str().is_some_and(|raw| !codec::trim(raw).is_empty())
+    value
+        .as_str()
+        .is_some_and(|raw| !codec::trim(raw).is_empty())
 }
 
 fn parsed_field(value: &Value, kind: Kind) -> Option<Value> {
@@ -108,12 +125,15 @@ fn parsed_field(value: &Value, kind: Kind) -> Option<Value> {
 fn compact(value: Value) -> Option<Value> {
     match value {
         Value::Object(object) => {
-            let object: Map<_, _> = object.into_iter()
+            let object: Map<_, _> = object
+                .into_iter()
                 .filter_map(|(key, value)| compact(value).map(|value| (key, value)))
                 .collect();
             (!object.is_empty()).then_some(Value::Object(object))
         }
-        Value::Array(values) => Some(Value::Array(values.into_iter().filter_map(compact).collect())),
+        Value::Array(values) => Some(Value::Array(
+            values.into_iter().filter_map(compact).collect(),
+        )),
         value => Some(value),
     }
 }
@@ -126,8 +146,19 @@ fn reuse(value: &Value, output: bool) -> Option<Value> {
             result[if output { *wire } else { *node }] = json!(codec::js_string(&value));
         }
     }
-    if let Some(value) = integer(&value[if output { "h-keep-alive-period" } else { "hKeepAlivePeriod" }], true) {
-        result[if output { "hKeepAlivePeriod" } else { "h-keep-alive-period" }] = json!(value);
+    if let Some(value) = integer(
+        &value[if output {
+            "h-keep-alive-period"
+        } else {
+            "hKeepAlivePeriod"
+        }],
+        true,
+    ) {
+        result[if output {
+            "hKeepAlivePeriod"
+        } else {
+            "h-keep-alive-period"
+        }] = json!(value);
     }
     compact(result)
 }
@@ -139,16 +170,21 @@ fn unsupported_reuse(value: &Value) -> Option<Value> {
     let Some(object) = value.as_object() else {
         return Some(value.clone());
     };
-    compact(Value::Object(object.iter().filter_map(|(key, value)| {
-        let supported = if REUSE.iter().any(|(wire, _)| wire == key) {
-            range(value, 0, 0, false).is_some()
-        } else if key == "hKeepAlivePeriod" {
-            integer(value, true).is_some()
-        } else {
-            false
-        };
-        (!supported).then(|| (key.clone(), value.clone()))
-    }).collect()))
+    compact(Value::Object(
+        object
+            .iter()
+            .filter_map(|(key, value)| {
+                let supported = if REUSE.iter().any(|(wire, _)| wire == key) {
+                    range(value, 0, 0, false).is_some()
+                } else if key == "hKeepAlivePeriod" {
+                    integer(value, true).is_some()
+                } else {
+                    false
+                };
+                (!supported).then(|| (key.clone(), value.clone()))
+            })
+            .collect(),
+    ))
 }
 
 fn headers(value: &Value, unsupported: bool, exclude_host: bool) -> Option<Value> {
@@ -158,9 +194,16 @@ fn headers(value: &Value, unsupported: bool, exclude_host: bool) -> Option<Value
     let Some(object) = value.as_object() else {
         return unsupported.then(|| value.clone());
     };
-    compact(Value::Object(object.iter().filter(|(key, value)| {
-        value.is_string() != unsupported && !(exclude_host && key.eq_ignore_ascii_case("host"))
-    }).map(|(key, value)| (key.clone(), value.clone())).collect()))
+    compact(Value::Object(
+        object
+            .iter()
+            .filter(|(key, value)| {
+                value.is_string() != unsupported
+                    && !(exclude_host && key.eq_ignore_ascii_case("host"))
+            })
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect(),
+    ))
 }
 
 fn unsupported_extra(value: &Value) -> Option<Value> {
@@ -177,7 +220,9 @@ fn unsupported_extra(value: &Value) -> Option<Value> {
             "xmux" => unsupported_reuse(value),
             "sessionPlacement" | "sessionKey" => (!value.is_string()).then(|| value.clone()),
             _ => {
-                let supported = FIELDS.iter().find(|(wire, _, _)| *wire == key)
+                let supported = FIELDS
+                    .iter()
+                    .find(|(wire, _, _)| *wire == key)
                     .is_some_and(|(_, _, kind)| parsed_field(value, *kind).is_some());
                 (!supported).then(|| value.clone())
             }
@@ -245,7 +290,10 @@ pub fn ech_options(fields: &Value) -> Option<Value> {
             result["query-server-name"] = json!(parts[0]);
         }
     }
-    if matches!(fields["echForceQuery"].as_str(), Some("none" | "half" | "full")) {
+    if matches!(
+        fields["echForceQuery"].as_str(),
+        Some("none" | "half" | "full")
+    ) {
         result["_force-query"] = fields["echForceQuery"].clone();
     }
     if fields["echSockopt"].is_object() {
@@ -263,7 +311,9 @@ pub fn ech_fields(options: &Value, fallback: &Value) -> Value {
         return result;
     }
     let enabled = options["enable"] == true
-        || options["enable"].as_f64().is_some_and(|value| value.fract() == 0.0 && value != 0.0);
+        || options["enable"]
+            .as_f64()
+            .is_some_and(|value| value.fract() == 0.0 && value != 0.0);
     if !enabled {
         return result;
     }
@@ -286,7 +336,10 @@ pub fn ech_fields(options: &Value, fallback: &Value) -> Value {
         }
     }
     if result.get("echConfigList").is_some() {
-        if matches!(options["_force-query"].as_str(), Some("none" | "half" | "full")) {
+        if matches!(
+            options["_force-query"].as_str(),
+            Some("none" | "half" | "full")
+        ) {
             result["echForceQuery"] = options["_force-query"].clone();
         }
         if options["_sockopt"].is_object() {
@@ -297,14 +350,21 @@ pub fn ech_fields(options: &Value, fallback: &Value) -> Value {
 }
 
 fn valid_alpn(value: &Value) -> bool {
-    value.as_array().is_some_and(|values| !values.is_empty()
-        && values.iter().all(|value| value.as_str().is_some_and(|raw| !raw.is_empty())))
+    value.as_array().is_some_and(|values| {
+        !values.is_empty()
+            && values
+                .iter()
+                .all(|value| value.as_str().is_some_and(|raw| !raw.is_empty()))
+    })
 }
 
 fn parse_download(raw: &Value) -> Option<Value> {
     raw.as_object()?;
     let mut result = json!({});
-    if matches!(raw["network"].as_str().map(str::to_lowercase).as_deref(), Some("xhttp" | "splithttp")) {
+    if matches!(
+        raw["network"].as_str().map(str::to_lowercase).as_deref(),
+        Some("xhttp" | "splithttp")
+    ) {
         result["network"] = json!("xhttp");
     }
     if nonblank(&raw["address"]) {
@@ -313,13 +373,19 @@ fn parse_download(raw: &Value) -> Option<Value> {
     if let Some(port) = integer(&raw["port"], false) {
         result["port"] = json!(port);
     }
-    let security = raw["security"].as_str().map(str::to_lowercase).unwrap_or_default();
+    let security = raw["security"]
+        .as_str()
+        .map(str::to_lowercase)
+        .unwrap_or_default();
     if matches!(security.as_str(), "tls" | "reality") {
         result["tls"] = json!(true);
     }
     let tls = &raw["tlsSettings"];
     if tls.is_object() {
-        for (wire, node) in [("serverName", "servername"), ("fingerprint", "client-fingerprint")] {
+        for (wire, node) in [
+            ("serverName", "servername"),
+            ("fingerprint", "client-fingerprint"),
+        ] {
             if nonblank(&tls[wire]) {
                 result[node] = tls[wire].clone();
             }
@@ -342,7 +408,10 @@ fn parse_download(raw: &Value) -> Option<Value> {
                 options[node] = reality[wire].clone();
             }
         }
-        for (wire, node) in [("serverName", "servername"), ("fingerprint", "client-fingerprint")] {
+        for (wire, node) in [
+            ("serverName", "servername"),
+            ("fingerprint", "client-fingerprint"),
+        ] {
             if nonblank(&reality[wire]) {
                 result[node] = reality[wire].clone();
             }
@@ -376,8 +445,16 @@ fn unsupported_download(raw: &Value) -> Option<Value> {
         let unsupported = match key.as_str() {
             "address" => (!nonblank(value)).then(|| value.clone()),
             "port" => integer(value, false).is_none().then(|| value.clone()),
-            "security" => (!matches!(value.as_str().map(str::to_lowercase).as_deref(), Some("tls" | "reality"))).then(|| value.clone()),
-            "network" => (!matches!(value.as_str().map(str::to_lowercase).as_deref(), Some("xhttp" | "splithttp"))).then(|| value.clone()),
+            "security" => (!matches!(
+                value.as_str().map(str::to_lowercase).as_deref(),
+                Some("tls" | "reality")
+            ))
+            .then(|| value.clone()),
+            "network" => (!matches!(
+                value.as_str().map(str::to_lowercase).as_deref(),
+                Some("xhttp" | "splithttp")
+            ))
+            .then(|| value.clone()),
             "tlsSettings" | "realitySettings" => {
                 if let Some(fields) = value.as_object() {
                     let mut unsupported = json!({});
@@ -387,14 +464,20 @@ fn unsupported_download(raw: &Value) -> Option<Value> {
                             match field.as_str() {
                                 "serverName" | "fingerprint" => nonblank(entry),
                                 "echConfigList" => valid_ech,
-                                "echForceQuery" => valid_ech && matches!(entry.as_str(), Some("none" | "half" | "full")),
+                                "echForceQuery" => {
+                                    valid_ech
+                                        && matches!(entry.as_str(), Some("none" | "half" | "full"))
+                                }
                                 "echSockopt" => valid_ech && entry.is_object(),
                                 "alpn" => valid_alpn(entry),
                                 "allowInsecure" => entry == true,
                                 _ => false,
                             }
                         } else {
-                            matches!(field.as_str(), "publicKey" | "shortId" | "serverName" | "fingerprint") && nonblank(entry)
+                            matches!(
+                                field.as_str(),
+                                "publicKey" | "shortId" | "serverName" | "fingerprint"
+                            ) && nonblank(entry)
                         };
                         if !supported {
                             unsupported[field] = entry.clone();
@@ -462,9 +545,15 @@ pub fn parse_extra(proxy: &mut Value, extra: &str, mode: &Value) {
     }
     if let Some(object) = raw.as_object() {
         let mut inline = Value::Object(object.clone());
-        inline.as_object_mut().unwrap().shift_remove("downloadSettings");
+        inline
+            .as_object_mut()
+            .unwrap()
+            .shift_remove("downloadSettings");
         let mut unsupported = unsupported_extra(&inline).unwrap_or_else(|| json!({}));
-        if let Some(download) = object.get("downloadSettings").and_then(unsupported_download) {
+        if let Some(download) = object
+            .get("downloadSettings")
+            .and_then(unsupported_download)
+        {
             unsupported["downloadSettings"] = download;
         }
         if let Some(value) = compact(unsupported) {
@@ -475,11 +564,26 @@ pub fn parse_extra(proxy: &mut Value, extra: &str, mode: &Value) {
 
 pub fn transport_host<'a>(network: &str, options: &'a Value) -> &'a Value {
     let values = match network {
-        "h2" => [&options["host"], &options["headers"]["host"], &options["headers"]["Host"]],
-        "xhttp" => [&options["host"], &options["headers"]["Host"], &options["headers"]["host"]],
-        _ => [&options["headers"]["Host"], &options["headers"]["host"], &options["host"]],
+        "h2" => [
+            &options["host"],
+            &options["headers"]["host"],
+            &options["headers"]["Host"],
+        ],
+        "xhttp" => [
+            &options["host"],
+            &options["headers"]["Host"],
+            &options["headers"]["host"],
+        ],
+        _ => [
+            &options["headers"]["Host"],
+            &options["headers"]["host"],
+            &options["host"],
+        ],
     };
-    values.into_iter().find(|value| !value.is_null()).unwrap_or(&options["host"])
+    values
+        .into_iter()
+        .find(|value| !value.is_null())
+        .unwrap_or(&options["host"])
 }
 
 fn emit_extra(target: &mut Value, options: &Value, nested: bool) {
@@ -490,7 +594,9 @@ fn emit_extra(target: &mut Value, options: &Value, nested: bool) {
         let raw = &options[*node];
         let value = match kind {
             Kind::StrictTextRange if *wire == "sessionIDLength" => range(raw, 1, 1, false),
-            Kind::StrictRange | Kind::PositiveRange | Kind::NonNegativeRange => parsed_field(raw, *kind),
+            Kind::StrictRange | Kind::PositiveRange | Kind::NonNegativeRange => {
+                parsed_field(raw, *kind)
+            }
             Kind::AnyText => raw.as_str().map(|_| raw.clone()),
             Kind::True => (raw == true).then(|| raw.clone()),
             _ => truthy(raw).then(|| raw.clone()),
@@ -525,7 +631,10 @@ fn emit_download(raw: &Value, outer: &Value) -> Option<Value> {
         result["security"] = json!("tls");
     }
     let mut tls = json!({});
-    for (node, wire) in [("servername", "serverName"), ("client-fingerprint", "fingerprint")] {
+    for (node, wire) in [
+        ("servername", "serverName"),
+        ("client-fingerprint", "fingerprint"),
+    ] {
         if truthy(&raw[node]) {
             tls[wire] = raw[node].clone();
         }
@@ -534,9 +643,16 @@ fn emit_download(raw: &Value, outer: &Value) -> Option<Value> {
         tls["allowInsecure"] = json!(true);
     }
     if truthy(&raw["alpn"]) {
-        tls["alpn"] = if raw["alpn"].is_array() { raw["alpn"].clone() } else { json!([raw["alpn"]]) };
+        tls["alpn"] = if raw["alpn"].is_array() {
+            raw["alpn"].clone()
+        } else {
+            json!([raw["alpn"]])
+        };
     }
-    for (key, value) in ech_fields(&raw["ech-opts"], &Value::Null).as_object().unwrap() {
+    for (key, value) in ech_fields(&raw["ech-opts"], &Value::Null)
+        .as_object()
+        .unwrap()
+    {
         tls[key] = value.clone();
     }
     if !tls.as_object().unwrap().is_empty() {
@@ -544,7 +660,10 @@ fn emit_download(raw: &Value, outer: &Value) -> Option<Value> {
     }
     if reality {
         let mut fields = json!({});
-        for (source, key) in [("servername", "serverName"), ("client-fingerprint", "fingerprint")] {
+        for (source, key) in [
+            ("servername", "serverName"),
+            ("client-fingerprint", "fingerprint"),
+        ] {
             if truthy(&raw[source]) {
                 fields[key] = raw[source].clone();
             }
@@ -562,7 +681,11 @@ fn emit_download(raw: &Value, outer: &Value) -> Option<Value> {
     for key in ["path", "host", "mode"] {
         let value = if key == "host" {
             let host = transport_host("xhttp", raw);
-            if host.is_null() { transport_host("xhttp", outer) } else { host }
+            if host.is_null() {
+                transport_host("xhttp", outer)
+            } else {
+                host
+            }
         } else if raw[key].is_null() {
             &outer[key]
         } else {
@@ -576,7 +699,10 @@ fn emit_download(raw: &Value, outer: &Value) -> Option<Value> {
     if !settings.as_object().unwrap().is_empty() {
         result["xhttpSettings"] = settings;
     }
-    let explicit_network = matches!(raw["network"].as_str().map(str::to_lowercase).as_deref(), Some("xhttp" | "splithttp"));
+    let explicit_network = matches!(
+        raw["network"].as_str().map(str::to_lowercase).as_deref(),
+        Some("xhttp" | "splithttp")
+    );
     (explicit_network || result.as_object().unwrap().len() > 1).then_some(result)
 }
 

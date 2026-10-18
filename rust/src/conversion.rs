@@ -296,11 +296,17 @@ fn vmess_security(value: &Value) -> Value {
 fn uri_params(raw: &str, rest: bool) -> Option<Value> {
     let mut result = json!({});
     for part in raw.split('&').filter(|part| !part.is_empty()) {
-        let (key, value) = part.split_once('=').unwrap_or((part, if rest { "" } else { "undefined" }));
+        let (key, value) = part
+            .split_once('=')
+            .unwrap_or((part, if rest { "" } else { "undefined" }));
         if key == "__proto__" {
             continue;
         }
-        let value = if rest { value } else { value.split('=').next().unwrap_or("") };
+        let value = if rest {
+            value
+        } else {
+            value.split('=').next().unwrap_or("")
+        };
         result[codec::encode(key)] = json!(component(value)?);
     }
     Some(result)
@@ -308,14 +314,21 @@ fn uri_params(raw: &str, rest: bool) -> Option<Value> {
 
 fn uri_hosts(value: &Value) -> Option<Value> {
     if let Some(values) = value.as_array() {
-        let values: Vec<_> = values.iter().filter_map(uri_hosts)
-            .flat_map(|value| value.as_array().cloned().unwrap_or_default()).collect();
+        let values: Vec<_> = values
+            .iter()
+            .filter_map(uri_hosts)
+            .flat_map(|value| value.as_array().cloned().unwrap_or_default())
+            .collect();
         return (!values.is_empty()).then(|| json!(values));
     }
     let Some(raw) = value.as_str() else {
         return (!value.is_null()).then(|| json!([value]));
     };
-    let values: Vec<_> = raw.split(',').map(codec::trim).filter(|raw| !raw.is_empty()).collect();
+    let values: Vec<_> = raw
+        .split(',')
+        .map(codec::trim)
+        .filter(|raw| !raw.is_empty())
+        .collect();
     (!values.is_empty()).then(|| json!(values))
 }
 
@@ -352,7 +365,11 @@ fn vless(line: &str, protocol: &str) -> Result<Option<Value>, Error> {
     let Some((server, port)) = endpoint.rsplit_once(':') else {
         return Ok(None);
     };
-    let Some(uuid) = component(if shadowrocket { auth.rsplit(':').next().unwrap_or(auth) } else { auth }) else {
+    let Some(uuid) = component(if shadowrocket {
+        auth.rsplit(':').next().unwrap_or(auth)
+    } else {
+        auth
+    }) else {
         return Ok(None);
     };
     let name = match fragment.map(component) {
@@ -364,10 +381,21 @@ fn vless(line: &str, protocol: &str) -> Result<Option<Value>, Error> {
         return Ok(None);
     };
     let port = finite_int(port)?;
-    let name = name.map(Value::String)
+    let name = name
+        .map(Value::String)
         .or_else(|| params.get("remarks").cloned())
         .or_else(|| params.get("remark").cloned())
-        .unwrap_or_else(|| json!(format!("{} {server}:{}", if protocol == "vmess" { "VMess" } else { "VLESS" }, codec::js_string(&port))));
+        .unwrap_or_else(|| {
+            json!(format!(
+                "{} {server}:{}",
+                if protocol == "vmess" {
+                    "VMess"
+                } else {
+                    "VLESS"
+                },
+                codec::js_string(&port)
+            ))
+        });
     let mut proxy = json!({
         "type":protocol, "name":name, "server":codec::encode(server),
         "port":port, "uuid":uuid, "udp":true,
@@ -375,7 +403,11 @@ fn vless(line: &str, protocol: &str) -> Result<Option<Value>, Error> {
         "skip-cert-verify":false, "_echConfigList":null
     });
     if let Some(security) = params.get("security") {
-        proxy["tls"] = if truthy(security) { json!(security != "none") } else { security.clone() };
+        proxy["tls"] = if truthy(security) {
+            json!(security != "none")
+        } else {
+            security.clone()
+        };
     }
     if truthy(&params["pbk"]) {
         params["security"] = json!("reality");
@@ -386,7 +418,11 @@ fn vless(line: &str, protocol: &str) -> Result<Option<Value>, Error> {
             params["security"] = json!("reality");
         }
     }
-    let sni = if truthy(&params["sni"]) { params.get("sni") } else { params.get("peer") };
+    let sni = if truthy(&params["sni"]) {
+        params.get("sni")
+    } else {
+        params.get("peer")
+    };
     if let Some(value) = sni {
         proxy["sni"] = value.clone();
     }
@@ -404,7 +440,13 @@ fn vless(line: &str, protocol: &str) -> Result<Option<Value>, Error> {
         proxy["client-fingerprint"] = value.clone();
     }
     if truthy(&params["alpn"]) {
-        proxy["alpn"] = json!(params["alpn"].as_str().unwrap().split(',').collect::<Vec<_>>());
+        proxy["alpn"] = json!(
+            params["alpn"]
+                .as_str()
+                .unwrap()
+                .split(',')
+                .collect::<Vec<_>>()
+        );
     }
     proxy["skip-cert-verify"] = json!(flag(&params["allowInsecure"]));
     if let Some(value) = params.get("ech") {
@@ -420,14 +462,23 @@ fn vless(line: &str, protocol: &str) -> Result<Option<Value>, Error> {
         proxy["tls-fingerprint"] = value.clone();
     }
     if let Some(raw) = params["vcn"].as_str() {
-        let values: Vec<_> = raw.split(',').map(codec::trim).filter(|raw| !raw.is_empty()).collect();
+        let values: Vec<_> = raw
+            .split(',')
+            .map(codec::trim)
+            .filter(|raw| !raw.is_empty())
+            .collect();
         proxy["_vcn"] = json!(values);
         if let Some(name) = values.first() {
             proxy["name-cert-verify"] = json!(name);
         }
     }
     proxy["_h2"] = json!(flag(&params["h2"]));
-    proxy["packet-encoding"] = json!(match params["packetEncoding"].as_str().map(codec::trim).map(str::to_lowercase).as_deref() {
+    proxy["packet-encoding"] = json!(match params["packetEncoding"]
+        .as_str()
+        .map(codec::trim)
+        .map(str::to_lowercase)
+        .as_deref()
+    {
         Some("none") => "",
         Some("packet") => "packetaddr",
         _ => "xudp",
@@ -436,7 +487,10 @@ fn vless(line: &str, protocol: &str) -> Result<Option<Value>, Error> {
         let mut options = json!({});
         if truthy(&params["pbk"]) {
             options["public-key"] = params["pbk"].clone();
-            if matches!(params["support-x25519mlkem768"].as_str(), Some("1" | "t" | "T" | "true" | "TRUE" | "True")) {
+            if matches!(
+                params["support-x25519mlkem768"].as_str(),
+                Some("1" | "t" | "T" | "true" | "TRUE" | "True")
+            ) {
                 options["support-x25519mlkem768"] = json!(true);
             }
         }
@@ -449,14 +503,18 @@ fn vless(line: &str, protocol: &str) -> Result<Option<Value>, Error> {
             proxy["reality-opts"] = options;
         }
     }
-    let raw_network = params["type"].as_str().filter(|raw| !raw.is_empty()).unwrap_or("tcp");
+    let raw_network = params["type"]
+        .as_str()
+        .filter(|raw| !raw.is_empty())
+        .unwrap_or("tcp");
     let upgrade = raw_network == "httpupgrade";
     let mut network = match raw_network {
         "tcp" if params["headerType"] == "http" => "http",
         "http" => "h2",
         "httpupgrade" => "ws",
         other => other,
-    }.to_owned();
+    }
+    .to_owned();
     if !truthy(&params["type"]) && shadowrocket && truthy(&params["obfs"]) {
         network = field_text(&params, "obfs");
         if network == "none" {
@@ -472,23 +530,32 @@ fn vless(line: &str, protocol: &str) -> Result<Option<Value>, Error> {
         let host = params.get("host").unwrap_or(&params["obfsParam"]);
         if truthy(host) {
             options["headers"] = if truthy(&params["obfsParam"]) {
-                host.as_str().and_then(|raw| codec::parse(&codec::text(raw)).ok())
+                host.as_str()
+                    .and_then(|raw| codec::parse(&codec::text(raw)).ok())
                     .unwrap_or_else(|| json!({"Host":host}))
             } else {
                 json!({"Host":host})
             };
             if !options["headers"].is_null() && !options["headers"].is_object() {
                 // shortcut: non-object headers need the production script/value bridge.
-                return Err(Error::Pending("Non-object transport headers are not implemented yet"));
+                return Err(Error::Pending(
+                    "Non-object transport headers are not implemented yet",
+                ));
             }
             if network == "xhttp" && truthy(&options["headers"]["Host"]) {
                 options["host"] = options["headers"]["Host"].clone();
-                options["headers"].as_object_mut().unwrap().shift_remove("Host");
+                options["headers"]
+                    .as_object_mut()
+                    .unwrap()
+                    .shift_remove("Host");
                 if options["headers"].as_object().is_some_and(Map::is_empty) {
                     options.as_object_mut().unwrap().shift_remove("headers");
                 }
             }
-            let h2_host = options["headers"].get("Host").unwrap_or(&options["headers"]["host"]).clone();
+            let h2_host = options["headers"]
+                .get("Host")
+                .unwrap_or(&options["headers"]["host"])
+                .clone();
             if network == "h2" && truthy(&h2_host) {
                 if let Some(hosts) = uri_hosts(&h2_host) {
                     options["host"] = hosts;
@@ -507,7 +574,10 @@ fn vless(line: &str, protocol: &str) -> Result<Option<Value>, Error> {
             if network == "grpc" && truthy(&params["authority"]) {
                 options["_grpc-authority"] = params["authority"].clone();
             }
-        } else if shadowrocket && truthy(&params["path"]) && !["ws", "http", "h2"].contains(&network.as_str()) {
+        } else if shadowrocket
+            && truthy(&params["path"])
+            && !["ws", "http", "h2"].contains(&network.as_str())
+        {
             options[format!("{network}-service-name")] = params["path"].clone();
             params.as_object_mut().unwrap().shift_remove("path");
         }
@@ -527,12 +597,21 @@ fn vless(line: &str, protocol: &str) -> Result<Option<Value>, Error> {
             options["method"] = params["method"].clone();
         }
         if network == "grpc" {
-            options["_grpc-type"] = if truthy(&params["mode"]) { params["mode"].clone() } else { json!("gun") };
+            options["_grpc-type"] = if truthy(&params["mode"]) {
+                params["mode"].clone()
+            } else {
+                json!("gun")
+            };
         }
         if upgrade {
             options["v2ray-http-upgrade"] = json!(true);
         }
-        let early = path_early.or_else(|| params["ed"].as_str().filter(|raw| !raw.is_empty()).map(str::to_owned));
+        let early = path_early.or_else(|| {
+            params["ed"]
+                .as_str()
+                .filter(|raw| !raw.is_empty())
+                .map(str::to_owned)
+        });
         if let Some(raw) = early {
             if upgrade {
                 options["v2ray-http-upgrade-fast-open"] = json!(true);
@@ -543,7 +622,11 @@ fn vless(line: &str, protocol: &str) -> Result<Option<Value>, Error> {
                 }
                 let max = finite_int(&raw)?;
                 options["max-early-data"] = max;
-                options["early-data-header-name"] = if truthy(&params["eh"]) { params["eh"].clone() } else { json!("Sec-WebSocket-Protocol") };
+                options["early-data-header-name"] = if truthy(&params["eh"]) {
+                    params["eh"].clone()
+                } else {
+                    json!("Sec-WebSocket-Protocol")
+                };
             }
         }
         if network == "ws" && truthy(&params["eh"]) {
@@ -556,10 +639,17 @@ fn vless(line: &str, protocol: &str) -> Result<Option<Value>, Error> {
             if truthy(&params["seed"]) {
                 proxy["seed"] = params["seed"].clone();
             }
-            proxy["headerType"] = if truthy(&params["headerType"]) { params["headerType"].clone() } else { json!("none") };
+            proxy["headerType"] = if truthy(&params["headerType"]) {
+                params["headerType"].clone()
+            } else {
+                json!("none")
+            };
         }
         if network == "xhttp" {
-            let extra = params["extra"].as_str().map(codec::text).unwrap_or_default();
+            let extra = params["extra"]
+                .as_str()
+                .map(codec::text)
+                .unwrap_or_default();
             crate::xhttp::parse_extra(&mut proxy, &extra, &params["mode"]);
         } else {
             for (param, field) in [("extra", "_extra"), ("mode", "_mode")] {
@@ -580,7 +670,9 @@ fn vless(line: &str, protocol: &str) -> Result<Option<Value>, Error> {
         proxy["_pqv"] = params["pqv"].clone();
     }
     if let Some(raw) = params["fm"].as_str().filter(|raw| !raw.is_empty()) {
-        proxy["_finalmask"] = codec::parse(&codec::text(raw)).ok().filter(Value::is_object)
+        proxy["_finalmask"] = codec::parse(&codec::text(raw))
+            .ok()
+            .filter(Value::is_object)
             .unwrap_or_else(|| json!(raw));
     }
     Ok(Some(proxy))
@@ -602,10 +694,15 @@ fn anytls(line: &str) -> Result<Option<Value>, Error> {
         return Ok(None);
     };
     let name = if let Some(raw) = fragment {
-        let Some(value) = component(raw) else { return Ok(None); };
+        let Some(value) = component(raw) else {
+            return Ok(None);
+        };
         value
     } else {
-        codec::encode(&format!("AnyTLS {server}:{}", codec::js_string(&proxy["port"])))
+        codec::encode(&format!(
+            "AnyTLS {server}:{}",
+            codec::js_string(&proxy["port"])
+        ))
     };
     proxy["uuid"] = Value::Null;
     proxy["type"] = json!("anytls");
@@ -633,7 +730,11 @@ fn anytls(line: &str) -> Result<Option<Value>, Error> {
             "insecure" => proxy["skip-cert-verify"] = json!(flag(&json!(value))),
             "udp" => proxy["udp"] = json!(flag(&json!(value))),
             _ => {
-                proxy.as_object_mut().unwrap().entry(key).or_insert(json!(value));
+                proxy
+                    .as_object_mut()
+                    .unwrap()
+                    .entry(key)
+                    .or_insert(json!(value));
             }
         }
     }
@@ -646,15 +747,23 @@ fn anytls(line: &str) -> Result<Option<Value>, Error> {
 
 fn vmess(line: &str) -> Result<Option<Value>, Error> {
     let raw = line.strip_prefix("vmess://").unwrap();
-    if raw.find('@').is_some_and(|at| !raw[..at].contains(['/', '?', '#'])) {
+    if raw
+        .find('@')
+        .is_some_and(|at| !raw[..at].contains(['/', '?', '#']))
+    {
         let Some(mut proxy) = vless(line, "vmess")? else {
             return Ok(None);
         };
         normalize_endpoint(&mut proxy)?;
-        proxy.as_object_mut().unwrap().retain(|_, value| !value.is_null());
+        proxy
+            .as_object_mut()
+            .unwrap()
+            .retain(|_, value| !value.is_null());
         return Ok(Some(proxy));
     }
-    let (without_fragment, fragment) = raw.split_once('#').map_or((raw, None), |(raw, name)| (raw, Some(name)));
+    let (without_fragment, fragment) = raw
+        .split_once('#')
+        .map_or((raw, None), |(raw, name)| (raw, Some(name)));
     let fragment = match fragment.map(component) {
         Some(Some(name)) => Some(name),
         Some(None) => return Ok(None),
@@ -663,18 +772,26 @@ fn vmess(line: &str) -> Result<Option<Value>, Error> {
     let Some(content) = decoded(without_fragment.split('?').next().unwrap_or("")) else {
         return Ok(None);
     };
-    if content.split_once('=').is_some_and(|(_, rest)| rest.trim_start().starts_with("vmess")) {
+    if content
+        .split_once('=')
+        .is_some_and(|(_, rest)| rest.trim_start().starts_with("vmess"))
+    {
         let parts: Vec<_> = content.split(',').map(codec::trim).collect();
         if parts.len() < 5 {
             return Ok(None);
         }
-        let Some(uuid) = parts[4].strip_prefix('"').and_then(|raw| raw.strip_suffix('"')) else {
+        let Some(uuid) = parts[4]
+            .strip_prefix('"')
+            .and_then(|raw| raw.strip_suffix('"'))
+        else {
             return Ok(None);
         };
         let mut params = json!({});
         for part in &parts {
             if let Some((key, value)) = part.split_once('=') {
-                params[codec::encode(codec::trim(key))] = json!(codec::encode(codec::trim(value.split('=').next().unwrap_or(""))));
+                params[codec::encode(codec::trim(key))] = json!(codec::encode(codec::trim(
+                    value.split('=').next().unwrap_or("")
+                )));
             }
         }
         // The frozen Quantumult branch rejects obfs before it can build ws-opts.
@@ -699,7 +816,10 @@ fn vmess(line: &str) -> Result<Option<Value>, Error> {
             proxy["name"] = json!(name);
         }
         normalize_endpoint(&mut proxy)?;
-        proxy.as_object_mut().unwrap().retain(|_, value| !value.is_null());
+        proxy
+            .as_object_mut()
+            .unwrap()
+            .retain(|_, value| !value.is_null());
         return Ok(Some(proxy));
     }
     let params = codec::parse(&content);
@@ -742,13 +862,28 @@ fn vmess(line: &str) -> Result<Option<Value>, Error> {
         params
     };
     let port = finite_int(&field_text(&params, "port"))?;
-    let name = ["ps", "remarks", "remark"].iter().find_map(|key| params.get(*key).filter(|value| !value.is_null()).cloned())
-        .unwrap_or_else(|| json!(format!("VMess {}:{}", field_text(&params, "add"), codec::js_string(&port))));
-    let alter_id = finite_int(&params.get("aid").filter(|value| !value.is_null())
-        .or_else(|| params.get("alterId").filter(|value| !value.is_null()))
-        .map(codec::js_string).unwrap_or_else(|| "0".to_owned()))?;
-    let tls = params["tls"] == "tls" || params["tls"] == true
-        || params["tls"] == "1" || params["tls"].as_f64() == Some(1.0);
+    let name = ["ps", "remarks", "remark"]
+        .iter()
+        .find_map(|key| params.get(*key).filter(|value| !value.is_null()).cloned())
+        .unwrap_or_else(|| {
+            json!(format!(
+                "VMess {}:{}",
+                field_text(&params, "add"),
+                codec::js_string(&port)
+            ))
+        });
+    let alter_id = finite_int(
+        &params
+            .get("aid")
+            .filter(|value| !value.is_null())
+            .or_else(|| params.get("alterId").filter(|value| !value.is_null()))
+            .map(codec::js_string)
+            .unwrap_or_else(|| "0".to_owned()),
+    )?;
+    let tls = params["tls"] == "tls"
+        || params["tls"] == true
+        || params["tls"] == "1"
+        || params["tls"].as_f64() == Some(1.0);
     let mut proxy = json!({"name":name,"type":"vmess","server":null});
     if let Some(value) = params.get("add") {
         proxy["server"] = value.clone();
@@ -765,10 +900,10 @@ fn vmess(line: &str) -> Result<Option<Value>, Error> {
     if let Some(value) = params.get("verify_cert").filter(|value| !value.is_null()) {
         proxy["skip-cert-verify"] = json!(!truthy(value));
     }
-    if !truthy(&proxy["skip-cert-verify"]) {
-        if let Some(value) = params.get("allowInsecure").filter(|value| !value.is_null()) {
-            proxy["skip-cert-verify"] = json!(flag(value));
-        }
+    if !truthy(&proxy["skip-cert-verify"])
+        && let Some(value) = params.get("allowInsecure").filter(|value| !value.is_null())
+    {
+        proxy["skip-cert-verify"] = json!(flag(value));
     }
     if truthy(&proxy["tls"]) {
         if truthy(&params["sni"]) {
@@ -793,10 +928,12 @@ fn vmess(line: &str) -> Result<Option<Value>, Error> {
     if let Some(network) = network {
         proxy["network"] = json!(network);
         let mut host = params.get("host").unwrap_or(&params["obfsParam"]).clone();
-        if let Some(parsed) = host.as_str().and_then(|raw| codec::parse(&codec::text(raw)).ok()) {
-            if truthy(&parsed["Host"]) {
-                host = parsed["Host"].clone();
-            }
+        if let Some(parsed) = host
+            .as_str()
+            .and_then(|raw| codec::parse(&codec::text(raw)).ok())
+            && truthy(&parsed["Host"])
+        {
+            host = parsed["Host"].clone();
         }
         let mut path = params["path"].clone();
         let mut early = None;
@@ -835,7 +972,8 @@ fn vmess(line: &str) -> Result<Option<Value>, Error> {
                     }
                 }
             } else if ["kcp", "quic"].contains(&network) {
-                for (field, value) in [("type", &params["type"]), ("host", &host), ("path", &path)] {
+                for (field, value) in [("type", &params["type"]), ("host", &host), ("path", &path)]
+                {
                     if let Some(value) = nonblank(value) {
                         options[format!("_{network}-{field}")] = value;
                     }
@@ -856,16 +994,21 @@ fn vmess(line: &str) -> Result<Option<Value>, Error> {
                 }
                 if upgrade {
                     options["v2ray-http-upgrade"] = json!(true);
-                    let early = early.or_else(|| params["ed"].as_str().filter(|raw| safe_integer(raw).is_some()).map(str::to_owned));
+                    let early = early.or_else(|| {
+                        params["ed"]
+                            .as_str()
+                            .filter(|raw| safe_integer(raw).is_some())
+                            .map(str::to_owned)
+                    });
                     if let Some(raw) = early {
                         options["v2ray-http-upgrade-fast-open"] = json!(true);
                         options["_v2ray-http-upgrade-ed"] = json!(raw);
                     }
-                } else if network == "ws" {
-                    if let Some(raw) = early {
-                        options["max-early-data"] = finite_int(&raw)?;
-                        options["early-data-header-name"] = json!("Sec-WebSocket-Protocol");
-                    }
+                } else if network == "ws"
+                    && let Some(raw) = early
+                {
+                    options["max-early-data"] = finite_int(&raw)?;
+                    options["early-data-header-name"] = json!("Sec-WebSocket-Protocol");
                 }
             }
             proxy[format!("{network}-opts")] = options;
@@ -886,10 +1029,15 @@ fn vmess(line: &str) -> Result<Option<Value>, Error> {
     }
     normalize_endpoint(&mut proxy)?;
     for (field, source) in [
-        ("server", "add"), ("uuid", "id"), ("client-fingerprint", "fp"),
-        ("alpn", "alpn"), ("skip-cert-verify", ""),
+        ("server", "add"),
+        ("uuid", "id"),
+        ("client-fingerprint", "fp"),
+        ("alpn", "alpn"),
+        ("skip-cert-verify", ""),
     ] {
-        if proxy[field].is_null() && (source.is_empty() || !params.as_object().unwrap().contains_key(source)) {
+        if proxy[field].is_null()
+            && (source.is_empty() || !params.as_object().unwrap().contains_key(source))
+        {
             proxy.as_object_mut().unwrap().shift_remove(field);
         }
     }
@@ -2073,7 +2221,11 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
         let format_path = |value: &Value| {
             if let Some(path) = value.as_str() {
                 let path = codec::trim(path);
-                json!(if path.starts_with('/') { path.to_owned() } else { format!("/{path}") })
+                json!(if path.starts_with('/') {
+                    path.to_owned()
+                } else {
+                    format!("/{path}")
+                })
             } else {
                 value.clone()
             }
@@ -2085,11 +2237,15 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
                 format_path(path)
             };
         }
-        if network != "h2" && truthy(&proxy[&key]["headers"]["host"])
+        if network != "h2"
+            && truthy(&proxy[&key]["headers"]["host"])
             && !truthy(&proxy[&key]["headers"]["Host"])
         {
             proxy[&key]["headers"]["Host"] = proxy[&key]["headers"]["host"].clone();
-            proxy[&key]["headers"].as_object_mut().unwrap().shift_remove("host");
+            proxy[&key]["headers"]
+                .as_object_mut()
+                .unwrap()
+                .shift_remove("host");
         }
         if network == "h2" {
             let host = crate::xhttp::transport_host("h2", &proxy[&key]).clone();
@@ -2112,12 +2268,14 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
                 }
             }
         }
-        let http_array = matches!(proxy["type"].as_str(), Some("vmess" | "vless"))
-            && network == "http";
+        let http_array =
+            matches!(proxy["type"].as_str(), Some("vmess" | "vless")) && network == "http";
         if !truthy(&proxy["tls"])
             && ["ws", "http"].contains(&network.as_str())
             && !truthy(&proxy[&key]["headers"]["Host"])
-            && proxy["server"].as_str().is_some_and(|server| !is_ip(server))
+            && proxy["server"]
+                .as_str()
+                .is_some_and(|server| !is_ip(server))
         {
             proxy[&key]["headers"]["Host"] = if http_array {
                 json!([proxy["server"]])
@@ -2141,7 +2299,10 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
             } else {
                 &proxy[&key]["headers"]["Host"]
             };
-            let host = host.as_array().and_then(|hosts| hosts.first()).unwrap_or(host);
+            let host = host
+                .as_array()
+                .and_then(|hosts| hosts.first())
+                .unwrap_or(host);
             if truthy(host) {
                 proxy["sni"] = host.clone();
             }
@@ -2149,8 +2310,10 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
         if ["ws", "h2"].contains(&network.as_str()) && !truthy(&proxy[&key]["path"]) {
             proxy[&key]["path"] = json!("/");
         }
-        if network == "http" && proxy[&key]["path"].as_array()
-            .is_none_or(|paths| paths.iter().all(|path| !truthy(path)))
+        if network == "http"
+            && proxy[&key]["path"]
+                .as_array()
+                .is_none_or(|paths| paths.iter().all(|path| !truthy(path)))
         {
             proxy[&key]["path"] = json!(["/"]);
         }
@@ -2208,7 +2371,8 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
             }
         }
         if (!truthy(&proxy["reality-opts"]) && !truthy(&proxy["flow"]))
-            || proxy["flow"].is_null() || proxy["flow"] == "null"
+            || proxy["flow"].is_null()
+            || proxy["flow"] == "null"
         {
             proxy.as_object_mut().unwrap().shift_remove("flow");
         }
@@ -2221,15 +2385,34 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
         if !raw.is_empty() && raw.bytes().all(|byte| byte.is_ascii_digit()) {
             proxy["name"] = json!(raw);
         } else {
-            let value = if truthy(&proxy["name"]["data"]) { &proxy["name"]["data"] } else { &proxy["name"] };
-            let decoded = value.as_array().map(|values| {
-                let bytes: Vec<_> = values.iter().map(|value| {
-                    let number = codec::to_number(value);
-                    if number.is_finite() { number.trunc().rem_euclid(256.0) as u8 } else { 0 }
-                }).collect();
-                codec::encode(&String::from_utf8_lossy(&bytes))
-            }).or_else(|| value.as_str().map(str::to_owned));
-            proxy["name"] = json!(decoded.unwrap_or_else(|| format!("{} {}:{}", field_text(proxy,"type"), field_text(proxy,"server"), field_text(proxy,"port"))));
+            let value = if truthy(&proxy["name"]["data"]) {
+                &proxy["name"]["data"]
+            } else {
+                &proxy["name"]
+            };
+            let decoded = value
+                .as_array()
+                .map(|values| {
+                    let bytes: Vec<_> = values
+                        .iter()
+                        .map(|value| {
+                            let number = codec::to_number(value);
+                            if number.is_finite() {
+                                number.trunc().rem_euclid(256.0) as u8
+                            } else {
+                                0
+                            }
+                        })
+                        .collect();
+                    codec::encode(&String::from_utf8_lossy(&bytes))
+                })
+                .or_else(|| value.as_str().map(str::to_owned));
+            proxy["name"] = json!(decoded.unwrap_or_else(|| format!(
+                "{} {}:{}",
+                field_text(proxy, "type"),
+                field_text(proxy, "server"),
+                field_text(proxy, "port")
+            )));
         }
     }
     Ok(())
@@ -2270,7 +2453,10 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
             };
             if let Some(mut proxy) = parsed {
                 normalize_endpoint(&mut proxy)?;
-                proxy.as_object_mut().unwrap().retain(|_, value| !value.is_null());
+                proxy
+                    .as_object_mut()
+                    .unwrap()
+                    .retain(|_, value| !value.is_null());
                 proxies.push(proxy);
             }
         } else if line.starts_with("ssr://") {
@@ -2302,18 +2488,7 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
             if let Some(proxy) = proxy_uri(line)? {
                 proxies.push(proxy);
             }
-        } else if line.split_once("://").is_some_and(|(scheme, _)| {
-            [
-                "juicity",
-                "trusttunnel",
-                "h2-connect",
-                "naive",
-                "masque",
-                "shadowquic",
-                "snell",
-            ]
-            .contains(&scheme)
-        }) || line.contains("proxies:")
+        } else if line.contains("proxies:")
             || line.starts_with('[')
             || line.starts_with('{')
             || line.contains(" = ")
@@ -2372,18 +2547,25 @@ pub fn tag(proxies: &mut [Value], sub: &Value, preview: bool) {
 fn transport_path(proxy: &Value, embed_ws: bool) -> Option<String> {
     let network = proxy["network"].as_str()?;
     let options = &proxy[format!("{network}-opts")];
-    let path_value = options["path"].as_array().and_then(|items| items.first()).unwrap_or(&options["path"]);
+    let path_value = options["path"]
+        .as_array()
+        .and_then(|items| items.first())
+        .unwrap_or(&options["path"]);
     let mut path = path_value.as_str().map(str::to_owned);
     if network != "ws" {
         return path;
     }
     let upgrade = truthy(&options["v2ray-http-upgrade"]);
     let early = if upgrade && truthy(&options["v2ray-http-upgrade-fast-open"]) {
-        options.get("_v2ray-http-upgrade-ed").map(codec::js_string).filter(|raw| safe_integer(raw).is_some())
+        options
+            .get("_v2ray-http-upgrade-ed")
+            .map(codec::js_string)
+            .filter(|raw| safe_integer(raw).is_some())
             .or_else(|| path.as_deref().and_then(|raw| path_ed(raw).1))
             .or_else(|| Some("2560".to_owned()))
     } else if !upgrade && embed_ws {
-        let custom_header = options["early-data-header-name"].as_str()
+        let custom_header = options["early-data-header-name"]
+            .as_str()
             .is_some_and(|raw| !raw.is_empty() && raw != "Sec-WebSocket-Protocol");
         if custom_header {
             if let Some(raw) = path.as_mut() {
@@ -2391,13 +2573,16 @@ fn transport_path(proxy: &Value, embed_ws: bool) -> Option<String> {
             }
             None
         } else {
-            options.get("max-early-data").map(codec::js_string).filter(|raw| safe_integer(raw).is_some())
+            options
+                .get("max-early-data")
+                .map(codec::js_string)
+                .filter(|raw| safe_integer(raw).is_some())
         }
     } else {
-        if !upgrade && options.get("max-early-data").is_some() {
-            if let Some(raw) = path.as_mut() {
-                *raw = path_ed(raw).0;
-            }
+        if !upgrade && options.get("max-early-data").is_some()
+            && let Some(raw) = path.as_mut()
+        {
+            *raw = path_ed(raw).0;
         }
         None
     };
@@ -2405,7 +2590,13 @@ fn transport_path(proxy: &Value, embed_ws: bool) -> Option<String> {
         let raw = path.as_deref().unwrap_or("/");
         let (raw, _) = path_ed(raw);
         let raw = if raw.is_empty() { "/".to_owned() } else { raw };
-        let separator = if raw.ends_with(['?', '&']) { "" } else if raw.contains('?') { "&" } else { "?" };
+        let separator = if raw.ends_with(['?', '&']) {
+            ""
+        } else if raw.contains('?') {
+            "&"
+        } else {
+            "?"
+        };
         path = Some(format!("{raw}{separator}ed={early}"));
     }
     path
@@ -2414,25 +2605,47 @@ fn transport_path(proxy: &Value, embed_ws: bool) -> Option<String> {
 fn vless_query(proxy: &Value) -> Option<Vec<(String, String)>> {
     let mut query = Vec::new();
     let mut push = |key: &str, value: &Value| -> Option<()> {
-        query.push((key.to_owned(), codec::uri_component(&codec::js_string(value)).ok()?));
+        query.push((
+            key.to_owned(),
+            codec::uri_component(&codec::js_string(value)).ok()?,
+        ));
         Some(())
     };
     let reality = truthy(&proxy["reality-opts"]);
-    push("security", &json!(if reality { "reality" } else if truthy(&proxy["tls"]) { "tls" } else { "none" }))?;
+    push(
+        "security",
+        &json!(if reality {
+            "reality"
+        } else if truthy(&proxy["tls"]) {
+            "tls"
+        } else {
+            "none"
+        }),
+    )?;
     let network = proxy["network"].as_str().unwrap_or("tcp");
     let options = &proxy[format!("{network}-opts")];
     let upgrade = network == "ws" && truthy(&options["v2ray-http-upgrade"]);
-    push("type", &json!(match network {
-        "ws" if upgrade => "httpupgrade",
-        "http" => "tcp",
-        "h2" => "http",
-        other => other,
-    }))?;
+    push(
+        "type",
+        &json!(match network {
+            "ws" if upgrade => "httpupgrade",
+            "http" => "tcp",
+            "h2" => "http",
+            other => other,
+        }),
+    )?;
     if network == "http" {
         push("headerType", &json!("http"))?;
     }
     if network == "grpc" {
-        push("mode", &if truthy(&options["_grpc-type"]) { options["_grpc-type"].clone() } else { json!("gun") })?;
+        push(
+            "mode",
+            &if truthy(&options["_grpc-type"]) {
+                options["_grpc-type"].clone()
+            } else {
+                json!("gun")
+            },
+        )?;
         if truthy(&options["_grpc-authority"]) {
             push("authority", &options["_grpc-authority"])?;
         }
@@ -2441,7 +2654,10 @@ fn vless_query(proxy: &Value) -> Option<Vec<(String, String)>> {
         push("path", &json!(path))?;
     }
     let host = crate::xhttp::transport_host(network, options);
-    let host = host.as_array().and_then(|items| items.first()).unwrap_or(host);
+    let host = host
+        .as_array()
+        .and_then(|items| items.first())
+        .unwrap_or(host);
     if truthy(host) {
         push("host", host)?;
     }
@@ -2459,14 +2675,21 @@ fn vless_query(proxy: &Value) -> Option<Vec<(String, String)>> {
             }
         }
     }
-    let early = proxy["ws-opts"].get("max-early-data").map(codec::js_string).filter(|raw| safe_integer(raw).is_some());
-    if network == "ws" && !upgrade {
-        if let Some(value) = early {
-            push("ed", &json!(value))?;
-        }
+    let early = proxy["ws-opts"]
+        .get("max-early-data")
+        .map(codec::js_string)
+        .filter(|raw| safe_integer(raw).is_some());
+    if network == "ws" && !upgrade
+        && let Some(value) = early
+    {
+        push("ed", &json!(value))?;
     }
     let header = &proxy["ws-opts"]["early-data-header-name"];
-    if truthy(header) && (upgrade || proxy["ws-opts"]["max-early-data"].is_null() || header != "Sec-WebSocket-Protocol") {
+    if truthy(header)
+        && (upgrade
+            || proxy["ws-opts"]["max-early-data"].is_null()
+            || header != "Sec-WebSocket-Protocol")
+    {
         push("eh", header)?;
     }
     let encoding = if !proxy["packet-encoding"].is_null() {
@@ -2500,7 +2723,11 @@ fn vless_query(proxy: &Value) -> Option<Vec<(String, String)>> {
     if truthy(&proxy["tls-fingerprint"]) {
         push("pcs", &proxy["tls-fingerprint"])?;
     }
-    let cert_names = if proxy["_vcn"].is_array() { &proxy["_vcn"] } else { &proxy["name-cert-verify"] };
+    let cert_names = if proxy["_vcn"].is_array() {
+        &proxy["_vcn"]
+    } else {
+        &proxy["name-cert-verify"]
+    };
     if proxy["_vcn"].is_array() || truthy(cert_names) {
         push("vcn", cert_names)?;
     }
@@ -2511,17 +2738,29 @@ fn vless_query(proxy: &Value) -> Option<Vec<(String, String)>> {
     if truthy(&proxy["_h2"]) {
         push("h2", &json!(1))?;
     }
-    for (field, param) in [("sni", "sni"), ("client-fingerprint", "fp"), ("flow", "flow")] {
+    for (field, param) in [
+        ("sni", "sni"),
+        ("client-fingerprint", "fp"),
+        ("flow", "flow"),
+    ] {
         if truthy(&proxy[field]) {
             push(param, &proxy[field])?;
         }
     }
     if reality {
-        for (field, param) in [("short-id", "sid"), ("_spider-x", "spx"), ("public-key", "pbk")] {
+        for (field, param) in [
+            ("short-id", "sid"),
+            ("_spider-x", "spx"),
+            ("public-key", "pbk"),
+        ] {
             if truthy(&proxy["reality-opts"][field]) {
                 push(param, &proxy["reality-opts"][field])?;
-                if field == "public-key" && truthy(&proxy["reality-opts"]["support-x25519mlkem768"]) {
-                    push("support-x25519mlkem768", &proxy["reality-opts"]["support-x25519mlkem768"])?;
+                if field == "public-key" && truthy(&proxy["reality-opts"]["support-x25519mlkem768"])
+                {
+                    push(
+                        "support-x25519mlkem768",
+                        &proxy["reality-opts"]["support-x25519mlkem768"],
+                    )?;
                 }
             }
         }
@@ -2553,7 +2792,10 @@ fn vless_query(proxy: &Value) -> Option<Vec<(String, String)>> {
 }
 
 fn vless_output(proxy: &Value, server: &str, port: &str, anytls: bool) -> Option<String> {
-    let mut query: Map<String, Value> = vless_query(proxy)?.into_iter().map(|(key, value)| (key, json!(value))).collect();
+    let mut query: Map<String, Value> = vless_query(proxy)?
+        .into_iter()
+        .map(|(key, value)| (key, json!(value)))
+        .collect();
     if anytls {
         for (key, value) in proxy.as_object()? {
             if ["name", "type", "password", "server", "port", "tls"].contains(&key.as_str()) {
@@ -2562,13 +2804,21 @@ fn vless_output(proxy: &Value, server: &str, port: &str, anytls: bool) -> Option
             let param = key.replace('-', "_");
             let encoded = match key.as_str() {
                 "alpn" if truthy(value) => {
-                    let value = value.as_array().and_then(|items| items.first()).unwrap_or(value);
+                    let value = value
+                        .as_array()
+                        .and_then(|items| items.first())
+                        .unwrap_or(value);
                     Some((param, codec::uri_component(&codec::js_string(value)).ok()?))
                 }
-                "skip-cert-verify" if truthy(value) => Some(("insecure".to_owned(), "1".to_owned())),
+                "skip-cert-verify" if truthy(value) => {
+                    Some(("insecure".to_owned(), "1".to_owned()))
+                }
                 "udp" if truthy(value) => Some(("udp".to_owned(), "1".to_owned())),
-                _ if truthy(value) && !key.starts_with('_') && !key.to_lowercase().contains("client-fingerprint")
-                    && (value.is_string() || value.is_number() || value.is_boolean()) => {
+                _ if truthy(value)
+                    && !key.starts_with('_')
+                    && !key.to_lowercase().contains("client-fingerprint")
+                    && (value.is_string() || value.is_number() || value.is_boolean()) =>
+                {
                     Some((param, codec::uri_component(&codec::js_string(value)).ok()?))
                 }
                 _ => None,
@@ -2579,23 +2829,32 @@ fn vless_output(proxy: &Value, server: &str, port: &str, anytls: bool) -> Option
         }
     }
     let scheme = if anytls { "anytls" } else { "vless" };
-    Some(format!("{scheme}://{}@{server}:{port}?{}#{}",
+    Some(format!(
+        "{scheme}://{}@{server}:{port}?{}#{}",
         codec::text(&field_text(proxy, if anytls { "password" } else { "uuid" })),
-        query.iter().map(|(key, value)| format!("{key}={}", value.as_str().unwrap())).collect::<Vec<_>>().join("&"),
-        codec::uri_component(&field_text(proxy, "name")).ok()?))
+        query
+            .iter()
+            .map(|(key, value)| format!("{key}={}", value.as_str().unwrap()))
+            .collect::<Vec<_>>()
+            .join("&"),
+        codec::uri_component(&field_text(proxy, "name")).ok()?
+    ))
 }
 
 fn vmess_output(proxy: &Value, server: &str, port: &str) -> Option<String> {
     if truthy(&proxy["reality-opts"]) || truthy(&proxy["_finalmask"]) {
         if proxy["aead"] == false
-            || (proxy["aead"] != true && truthy(&proxy["alterId"]) && codec::to_number(&proxy["alterId"]) != 0.0)
+            || (proxy["aead"] != true
+                && truthy(&proxy["alterId"])
+                && codec::to_number(&proxy["alterId"]) != 0.0)
         {
             return None;
         }
         let mut query_proxy = proxy.clone();
         query_proxy["encryption"] = vmess_security(&proxy["cipher"]);
         query_proxy.as_object_mut().unwrap().shift_remove("flow");
-        return vless_output(&query_proxy, server, port, false).map(|raw| raw.replacen("vless://", "vmess://", 1));
+        return vless_output(&query_proxy, server, port, false)
+            .map(|raw| raw.replacen("vless://", "vmess://", 1));
     }
     let network = proxy["network"].as_str().unwrap_or("tcp");
     let options = &proxy[format!("{network}-opts")];
@@ -2604,13 +2863,27 @@ fn vmess_output(proxy: &Value, server: &str, port: &str) -> Option<String> {
     if let Some(value) = proxy.get("uuid") {
         output["id"] = value.clone();
     }
-    output["aid"] = json!(if truthy(&proxy["alterId"]) { field_text(proxy,"alterId") } else { "0".to_owned() });
+    output["aid"] = json!(if truthy(&proxy["alterId"]) {
+        field_text(proxy, "alterId")
+    } else {
+        "0".to_owned()
+    });
     output["scy"] = vmess_security(&proxy["cipher"]);
-    output["net"] = json!(if network == "http" { "tcp" } else if upgrade { "httpupgrade" } else { network });
+    output["net"] = json!(if network == "http" {
+        "tcp"
+    } else if upgrade {
+        "httpupgrade"
+    } else {
+        network
+    });
     output["type"] = json!(if network == "http" { "http" } else { "" });
     output["tls"] = json!(if truthy(&proxy["tls"]) { "tls" } else { "" });
     if let Some(value) = proxy.get("alpn") {
-        output["alpn"] = if value.is_array() { json!(codec::js_string(value)) } else { value.clone() };
+        output["alpn"] = if value.is_array() {
+            json!(codec::js_string(value))
+        } else {
+            value.clone()
+        };
     }
     if let Some(value) = proxy.get("client-fingerprint") {
         output["fp"] = value.clone();
@@ -2621,13 +2894,25 @@ fn vmess_output(proxy: &Value, server: &str, port: &str) -> Option<String> {
     if truthy(&proxy["network"]) {
         if network == "grpc" || ["kcp", "quic"].contains(&network) {
             let fields = if network == "grpc" {
-                vec![("path".to_owned(), "grpc-service-name".to_owned()), ("type".to_owned(), "_grpc-type".to_owned()), ("host".to_owned(), "_grpc-authority".to_owned())]
+                vec![
+                    ("path".to_owned(), "grpc-service-name".to_owned()),
+                    ("type".to_owned(), "_grpc-type".to_owned()),
+                    ("host".to_owned(), "_grpc-authority".to_owned()),
+                ]
             } else {
-                vec![("type".to_owned(), format!("_{network}-type")), ("host".to_owned(), format!("_{network}-host")), ("path".to_owned(), format!("_{network}-path"))]
+                vec![
+                    ("type".to_owned(), format!("_{network}-type")),
+                    ("host".to_owned(), format!("_{network}-host")),
+                    ("path".to_owned(), format!("_{network}-path")),
+                ]
             };
             for (key, field) in fields {
                 if key == "type" {
-                    output[&key] = if truthy(&options[&field]) { options[&field].clone() } else { json!(if network == "grpc" { "gun" } else { "none" }) };
+                    output[&key] = if truthy(&options[&field]) {
+                        options[&field].clone()
+                    } else {
+                        json!(if network == "grpc" { "gun" } else { "none" })
+                    };
                 } else if let Some(value) = options.get(&field) {
                     output[&key] = value.clone();
                 }
@@ -2637,13 +2922,19 @@ fn vmess_output(proxy: &Value, server: &str, port: &str) -> Option<String> {
                 output["path"] = json!(path);
             }
             let host = crate::xhttp::transport_host(network, options);
-            let host = host.as_array().and_then(|items| items.first()).unwrap_or(host);
+            let host = host
+                .as_array()
+                .and_then(|items| items.first())
+                .unwrap_or(host);
             if truthy(host) {
                 output["host"] = host.clone();
             }
         }
     }
-    Some(format!("vmess://{}", STANDARD.encode(codec::stringify(&output))))
+    Some(format!(
+        "vmess://{}",
+        STANDARD.encode(codec::stringify(&output))
+    ))
 }
 
 fn modern_output(proxy: &Value, server: &str, port: &str) -> Option<String> {

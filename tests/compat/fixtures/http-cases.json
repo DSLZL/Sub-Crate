@@ -2516,7 +2516,7 @@
         "method": "POST",
         "path": "/api/proxy/parse",
         "body": {
-          "data": "vmess://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:443?security=tls&encryption=chacha20-ietf-poly1305&type=grpc&serviceName=svc&authority=grpc.example&mode=multi&flow=ignored#AEAD\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@bad.example#NoPort\nvless://bad%GG@bad.example:443#Bad\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@bad.example:443?type=ws&ed=invalid\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@bad.example:443?bad=%GG\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443#Basic",
+          "data": "vmess://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:443?security=tls&encryption=chacha20-ietf-poly1305&type=grpc&serviceName=svc&authority=grpc.example&mode=multi&flow=ignored#AEAD\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@bad.example#NoPort\nvless://bad%GG@bad.example:443#Bad\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@bad.example:443?type=ws&ed=invalid\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@bad.example:443?bad=%GG\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443#Basic\njuicity://u:p@127.0.0.1:443#Unregistered\ntrusttunnel://u:p@127.0.0.1:443#Unregistered\nsnell://p@127.0.0.1:443#Unregistered",
           "client": "JSON",
           "type": "internal"
         },
@@ -2565,7 +2565,7 @@
                 {
                   "name": "XHTTP",
                   "network": "xhttp",
-                  "sni": "outer.example",
+                  "sni": "extra.example",
                   "xhttp-opts": {
                     "host": "outer.cdn",
                     "path": "/up",
