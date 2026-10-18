@@ -78,7 +78,9 @@ pub fn options(path: &str) -> Reply {
         _ => "GET,HEAD",
     };
     let mut response = send(200, "text/plain; charset=utf-8", methods);
-    response.headers_mut().insert("allow", methods.parse().unwrap());
+    response
+        .headers_mut()
+        .insert("allow", methods.parse().unwrap());
     response
 }
 
