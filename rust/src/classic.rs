@@ -316,7 +316,7 @@ fn loon_line(line: &str, non_finite: &mut bool) -> Option<Value> {
     if kind == "shadowsocks"
         && let Some(tail) = comma(rest)
         && let Some((mode, after)) = tail.split_once(',')
-        && let Some(mode) = fixed_token(mode, &["http", "tls"])?
+        && let Some(mode) = fixed_token(mode, &["http", "tls"]).flatten()
     {
         obfs["type"] = json!(mode);
         let after = space(after);
