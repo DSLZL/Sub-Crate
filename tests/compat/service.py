@@ -1742,7 +1742,7 @@ def main():
                 if kind == "rust":
                     before_pending = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")}
                     pending_steps = [
-                        {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443#later", "client": "JSON"}},
+                        {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "juicity://b831381d-6324-4d53-ad4f-8cda48b30811:password@127.0.0.1:443#later", "client": "JSON"}},
                         {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://none:p@127.0.0.1:443?plugin=shadow-tls%3Bversion%3Dbad", "client": "URI"}},
                         {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ssr://aG9zdDo6b3JpZ2luOmFlcy0xMjgtY2ZiOnBsYWluOmNBLz8=", "client": "URI"}},
                         {"method": "POST", "path": "/api/preview/sub", "body": {"name": "later", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#later", "process": [{"type": "Script Operator", "args": {"mode": "script", "content": "$substore.write('must-not-write', true);"}}]}},

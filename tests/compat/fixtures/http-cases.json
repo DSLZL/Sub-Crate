@@ -1957,6 +1957,1230 @@
     ]
   },
   {
+    "id": "P02-input-vmess-native",
+    "source": "backend/src/test/proxy-parsers/v2ray-and-platforms.spec.js::VMess URIs; parsers/index.js::URI_VMess; vmess-security.js::normalizeVmessSecurity",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://eyJ2IjoiMiIsInBzIjoiQmFzaWMiLCJhZGQiOiIxMjcuMC4wLjEiLCJwb3J0IjoiNDQzIiwiaWQiOiJiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTEiLCJhaWQiOiIwIiwic2N5IjoiYXV0byIsIm5ldCI6InRjcCIsInR5cGUiOiIiLCJ0bHMiOiIifQ==",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Basic",
+                  "type": "vmess",
+                  "server": "127.0.0.1",
+                  "port": 443,
+                  "cipher": "auto",
+                  "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+                  "alterId": 0,
+                  "tls": false,
+                  "udp": true,
+                  "network": "tcp"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://eyJ2IjoiMiIsInBzIjoiVk1lc3MgV1MiLCJhZGQiOiJ2bWVzcy13cy5leGFtcGxlLmNvbSIsInBvcnQiOiI0NDMiLCJpZCI6ImI4MzEzODFkLTYzMjQtNGQ1My1hZDRmLThjZGE0OGIzMDgxMSIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0Ijoid3MiLCJob3N0IjoiY2RuLmV4YW1wbGUuY29tIiwicGF0aCI6Ii9zb2NrZXQiLCJ0bHMiOiJ0bHMiLCJzbmkiOiJzbmkuZXhhbXBsZS5jb20iLCJhbGxvd0luc2VjdXJlIjoiMSIsImZwIjoiY2hyb21lIiwiYWxwbiI6ImgyIn0=",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "VMess WS",
+                  "type": "vmess",
+                  "server": "vmess-ws.example.com",
+                  "port": 443,
+                  "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+                  "alterId": 0,
+                  "tls": true,
+                  "sni": "sni.example.com",
+                  "skip-cert-verify": true,
+                  "client-fingerprint": "chrome",
+                  "alpn": [
+                    "h2"
+                  ],
+                  "network": "ws",
+                  "ws-opts": {
+                    "path": "/socket",
+                    "headers": {
+                      "Host": "cdn.example.com"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://eyJ2IjoiMiIsInBzIjoiSW5uZXIiLCJhZGQiOiJ2bWVzcy13cy5leGFtcGxlLmNvbSIsInBvcnQiOiI0NDMiLCJpZCI6ImI4MzEzODFkLTYzMjQtNGQ1My1hZDRmLThjZGE0OGIzMDgxMSIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0Ijoid3MiLCJob3N0IjoiY2RuLmV4YW1wbGUuY29tIiwicGF0aCI6Ii93cz9hPTEmZWQ9MjA0OCZiPTIiLCJ0bHMiOiJ0bHMiLCJzbmkiOiIiLCJhbGxvd0luc2VjdXJlIjoiMCIsImZwIjoiY2hyb21lIiwiYWxwbiI6ImgyIiwidmVyaWZ5X2NlcnQiOnRydWV9#Outer%20%23%20Remark",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Outer # Remark",
+                  "ws-opts": {
+                    "path": "/ws?a=1&b=2",
+                    "max-early-data": 2048,
+                    "early-data-header-name": "Sec-WebSocket-Protocol"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://UVggVk1lc3MgPSB2bWVzcyx2bWVzcy1xeC5leGFtcGxlLmNvbSw0NDMsYXV0bywiYjgzMTM4MWQtNjMyNC00ZDUzLWFkNGYtOGNkYTQ4YjMwODExIix1ZHAtcmVsYXk9dHJ1ZSxmYXN0LW9wZW49dHJ1ZSx0bHMtdmVyaWZpY2F0aW9uPWZhbHNl",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "QX VMess",
+                  "type": "vmess",
+                  "port": 443,
+                  "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+                  "udp": true,
+                  "tfo": "true",
+                  "skip-cert-verify": false
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://QmFkID0gdm1lc3MsYmFkLmV4YW1wbGUsNDQzLGF1dG8sImI4MzEzODFkLTYzMjQtNGQ1My1hZDRmLThjZGE0OGIzMDgxMSIsb2Jmcz13cw==\nvmess://eyJ2IjoiMiIsInBzIjoiQmFzaWMiLCJhZGQiOiIxMjcuMC4wLjEiLCJwb3J0IjoiNDQzIiwiaWQiOiJiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTEiLCJhaWQiOiIwIiwic2N5IjoiYXV0byIsIm5ldCI6InRjcCIsInR5cGUiOiIiLCJ0bHMiOiIifQ==",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Basic"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNTpiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTFAcm9ja2V0LmV4YW1wbGU6ODQ0Mw==?remarks=Rocket&obfs=websocket&obfsParam=cdn.example&path=%2Fsocket&tls=1&allowInsecure=1",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Rocket",
+                  "server": "rocket.example",
+                  "port": 8443,
+                  "cipher": "chacha20-poly1305",
+                  "network": "ws",
+                  "tls": true,
+                  "skip-cert-verify": true
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://eyJ2IjoiMiIsInBzIjoiSFRUUCIsImFkZCI6Imh0dHAuZXhhbXBsZSIsInBvcnQiOiI0NDMiLCJpZCI6ImI4MzEzODFkLTYzMjQtNGQ1My1hZDRmLThjZGE0OGIzMDgxMSIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0IjoidGNwIiwidHlwZSI6Imh0dHAiLCJ0bHMiOiIiLCJob3N0Ijoib25lLmV4YW1wbGUsIHR3by5leGFtcGxlIiwicGF0aCI6WyJvbmUiLCJ0d28iXX0=\nvmess://eyJ2IjoiMiIsInBzIjoiSDIiLCJhZGQiOiIxMjcuMC4wLjEiLCJwb3J0IjoiNDQzIiwiaWQiOiJiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTEiLCJhaWQiOiIwIiwic2N5IjoiYXV0byIsIm5ldCI6ImgyIiwidHlwZSI6IiIsInRscyI6IiIsImhvc3QiOiJvbmUuZXhhbXBsZSwgdHdvLmV4YW1wbGUiLCJwYXRoIjoiaDIifQ==\nvmess://eyJ2IjoiMiIsInBzIjoiR1JQQyIsImFkZCI6IjEyNy4wLjAuMSIsInBvcnQiOiI0NDMiLCJpZCI6ImI4MzEzODFkLTYzMjQtNGQ1My1hZDRmLThjZGE0OGIzMDgxMSIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0IjoiZ3JwYyIsInR5cGUiOiJtdWx0aSIsInRscyI6IiIsInBhdGgiOiJzdmMiLCJhdXRob3JpdHkiOiJncnBjLmV4YW1wbGUifQ==\nvmess://eyJ2IjoiMiIsInBzIjoiS0NQIiwiYWRkIjoiMTI3LjAuMC4xIiwicG9ydCI6IjQ0MyIsImlkIjoiYjgzMTM4MWQtNjMyNC00ZDUzLWFkNGYtOGNkYTQ4YjMwODExIiwiYWlkIjoiMCIsInNjeSI6ImF1dG8iLCJuZXQiOiJrY3AiLCJ0eXBlIjoic3J0cCIsInRscyI6IiIsInBhdGgiOiJzZWVkIn0=\nvmess://eyJ2IjoiMiIsInBzIjoiUVVJQyIsImFkZCI6IjEyNy4wLjAuMSIsInBvcnQiOiI0NDMiLCJpZCI6ImI4MzEzODFkLTYzMjQtNGQ1My1hZDRmLThjZGE0OGIzMDgxMSIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0IjoicXVpYyIsInR5cGUiOiJub25lIiwidGxzIjoiIiwiaG9zdCI6ImFlcyIsInBhdGgiOiJrZXkifQ==",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "HTTP",
+                  "network": "http",
+                  "http-opts": {
+                    "path": [
+                      "/one"
+                    ],
+                    "headers": {
+                      "Host": [
+                        "one.example"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "H2",
+                  "network": "h2",
+                  "h2-opts": {
+                    "host": [
+                      "one.example",
+                      "two.example"
+                    ],
+                    "path": "/h2"
+                  }
+                },
+                {
+                  "name": "GRPC",
+                  "network": "grpc",
+                  "grpc-opts": {
+                    "grpc-service-name": "svc",
+                    "_grpc-type": "multi",
+                    "_grpc-authority": "grpc.example"
+                  }
+                },
+                {
+                  "name": "KCP",
+                  "network": "kcp"
+                },
+                {
+                  "name": "QUIC",
+                  "network": "quic"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://eyJ2IjoiMiIsInBzIjoiVXBncmFkZSIsImFkZCI6IjEyNy4wLjAuMSIsInBvcnQiOiI0NDMiLCJpZCI6ImI4MzEzODFkLTYzMjQtNGQ1My1hZDRmLThjZGE0OGIzMDgxMSIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0IjoiaHR0cHVwZ3JhZGUiLCJ0eXBlIjoiIiwidGxzIjoiIiwiaG9zdCI6ImNkbi5leGFtcGxlIiwicGF0aCI6Ii91cD9lZD0xMDI0In0=",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Upgrade",
+                  "network": "ws",
+                  "ws-opts": {
+                    "path": "/up",
+                    "v2ray-http-upgrade": true,
+                    "v2ray-http-upgrade-fast-open": true,
+                    "_v2ray-http-upgrade-ed": "1024"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://eyJ2IjoiMiIsInBzIjo0MiwiYWRkIjoiMTI3LjAuMC4xIiwicG9ydCI6IjQ0MyIsImlkIjoiYjgzMTM4MWQtNjMyNC00ZDUzLWFkNGYtOGNkYTQ4YjMwODExIiwiYWlkIjoiMCIsInNjeSI6ImF1dG8iLCJuZXQiOiJ0Y3AiLCJ0eXBlIjoiIiwidGxzIjoiIn0=\nvmess://eyJ2IjoiMiIsInBzIjp7InR5cGUiOiJCdWZmZXIiLCJkYXRhIjpbNjUsNjZdfSwiYWRkIjoiMTI3LjAuMC4xIiwicG9ydCI6IjQ0MyIsImlkIjoiYjgzMTM4MWQtNjMyNC00ZDUzLWFkNGYtOGNkYTQ4YjMwODExIiwiYWlkIjoiMCIsInNjeSI6ImF1dG8iLCJuZXQiOiJ0Y3AiLCJ0eXBlIjoiIiwidGxzIjoiIn0=\nvmess://eyJ2IjoiMiIsInBzIjoiQ2lwaGVyIiwiYWRkIjoiMTI3LjAuMC4xIiwicG9ydCI6IjQ0MyIsImlkIjoiYjgzMTM4MWQtNjMyNC00ZDUzLWFkNGYtOGNkYTQ4YjMwODExIiwiYWlkIjoiMCIsInNjeSI6ImludmFsaWQiLCJuZXQiOiJ0Y3AiLCJ0eXBlIjoiIiwidGxzIjoiIn0=\nvmess://broken\nvmess://eyJ2IjoiMiIsInBzIjoiQmFzaWMiLCJhZGQiOiIxMjcuMC4wLjEiLCJwb3J0IjoiNDQzIiwiaWQiOiJiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTEiLCJhaWQiOiIwIiwic2N5IjoiYXV0byIsIm5ldCI6InRjcCIsInR5cGUiOiIiLCJ0bHMiOiIifQ==#bad%GG",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "42"
+                },
+                {
+                  "name": "AB"
+                },
+                {
+                  "name": "Cipher",
+                  "cipher": "auto"
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-input-vless-native",
+    "source": "backend/src/test/proxy-parsers/v2ray-and-platforms.spec.js::VLESS; parsers/index.js::URI_VLESS; index.js::lastParse",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443#Basic",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "type": "vless",
+                  "name": "Basic",
+                  "server": "127.0.0.1",
+                  "port": 443,
+                  "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+                  "udp": true,
+                  "skip-cert-verify": false,
+                  "_h2": false,
+                  "packet-encoding": "xudp",
+                  "network": "tcp"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@vless.example:443?security=tls&type=ws&host=cdn.example&path=%2Fws%3Fa%3D1%26ed%3D2048%26b%3D2&eh=X-Early&fp=chrome&alpn=h2,http/1.1&allowInsecure=1&pcs=sha256&vcn=one%2C%20two%20&h2=1#WS",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "WS",
+                  "tls": true,
+                  "sni": "cdn.example",
+                  "packet-encoding": "xudp",
+                  "ws-opts": {
+                    "path": "/ws?a=1&b=2",
+                    "max-early-data": 2048,
+                    "early-data-header-name": "X-Early"
+                  },
+                  "tls-fingerprint": "sha256",
+                  "_vcn": [
+                    "one",
+                    "two"
+                  ],
+                  "name-cert-verify": "one",
+                  "_h2": true
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@[2001:db8::1]:8443?security=reality&pbk=key%3D&sid=08&spx=%2F&support-x25519mlkem768=True&flow=xtls-rprx-vision&type=grpc&serviceName=svc&authority=grpc.example&mode=multi&packetEncoding=packet&encryption=none&pqv=pq&fm=%7B%22tcp%22%3Atrue%7D#Reality",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Reality",
+                  "server": "2001:db8::1",
+                  "port": 8443,
+                  "flow": "xtls-rprx-vision",
+                  "packet-encoding": "packetaddr",
+                  "reality-opts": {
+                    "public-key": "key=",
+                    "short-id": "08",
+                    "_spider-x": "/",
+                    "support-x25519mlkem768": true
+                  },
+                  "grpc-opts": {
+                    "grpc-service-name": "svc",
+                    "_grpc-authority": "grpc.example",
+                    "_grpc-type": "multi"
+                  },
+                  "encryption": "none",
+                  "_pqv": "pq",
+                  "_finalmask": {
+                    "tcp": true
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:443?pbk=key&support-x25519mlkem768=TrUe#KeyOnly\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:443?security=reality&flow=null#EmptyReality\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:443?security=&type=tcp&packetEncoding=none#EmptySecurity",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "KeyOnly",
+                  "reality-opts": {
+                    "public-key": "key"
+                  }
+                },
+                {
+                  "name": "EmptyReality",
+                  "tls": true
+                },
+                {
+                  "name": "EmptySecurity",
+                  "tls": "",
+                  "packet-encoding": ""
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@http.example:80?type=tcp&headerType=http&method=POST&host=cdn.example&path=first#HTTP\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@h2.example:443?security=tls&type=http&host=one.example,%20two.example&path=h2#H2\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?type=kcp&seed=test&headerType=srtp#KCP",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "HTTP",
+                  "network": "http",
+                  "http-opts": {
+                    "method": "POST",
+                    "path": [
+                      "/first"
+                    ],
+                    "headers": {
+                      "Host": [
+                        "cdn.example"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "H2",
+                  "network": "h2",
+                  "sni": "one.example",
+                  "h2-opts": {
+                    "path": "/h2",
+                    "host": [
+                      "one.example",
+                      "two.example"
+                    ]
+                  }
+                },
+                {
+                  "name": "KCP",
+                  "seed": "test",
+                  "headerType": "srtp"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@upgrade.example:443?security=tls&type=httpupgrade&path=%2Fup&ed=2560&eh=X-Early#Upgrade",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Upgrade",
+                  "network": "ws",
+                  "ws-opts": {
+                    "v2ray-http-upgrade": true,
+                    "v2ray-http-upgrade-fast-open": true,
+                    "_v2ray-http-upgrade-ed": "2560",
+                    "early-data-header-name": "X-Early"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://bm9uZTpiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTFAcm9ja2V0LmV4YW1wbGU6NDQz?tls=1&obfs=websocket&obfsParam=cdn.example&path=%2Frocket&xtls=2&remarks=Rocket",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Rocket",
+                  "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+                  "network": "ws",
+                  "tls": true,
+                  "flow": "xtls-rprx-vision"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:443?security=tls&encryption=chacha20-ietf-poly1305&type=grpc&serviceName=svc&authority=grpc.example&mode=multi&flow=ignored#AEAD\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@bad.example#NoPort\nvless://bad%GG@bad.example:443#Bad\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@bad.example:443?type=ws&ed=invalid\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@bad.example:443?bad=%GG\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443#Basic",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "AEAD",
+                  "type": "vmess",
+                  "cipher": "chacha20-poly1305",
+                  "alterId": 0,
+                  "network": "grpc"
+                },
+                {
+                  "name": "Basic",
+                  "type": "vless"
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-input-vless-xhttp-native",
+    "source": "parsers/index.js::URI_VLESS/applyXhttpExtraFields/collectUnsupportedRootXhttpExtra/parseDownloadSettings; producers/uri.js::buildVlessExtra/buildXhttpDownloadSettings; xhttp-utils.js; ech-utils.js",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@outer.example:443?security=tls&type=xhttp&host=outer.cdn&path=%2Fup&mode=packet-up&extra=%7B%22headers%22%3A%7B%22Host%22%3A%22extra.example%22%2C%22X-Token%22%3A%22abc%22%2C%22Bad%22%3A7%7D%2C%22noGRPCHeader%22%3Atrue%2C%22xPaddingBytes%22%3A%221-8%22%2C%22xPaddingObfsMode%22%3Atrue%2C%22xPaddingKey%22%3A%22pad%22%2C%22uplinkHTTPMethod%22%3A%22POST%22%2C%22sessionPlacement%22%3A%22header%22%2C%22sessionKey%22%3A%22sid%22%2C%22sessionIDTable%22%3A%22%22%2C%22sessionIDLength%22%3A%222-4%22%2C%22seqPlacement%22%3A%22query%22%2C%22seqKey%22%3A%22seq%22%2C%22uplinkDataPlacement%22%3A%22body%22%2C%22uplinkDataKey%22%3A%22data%22%2C%22uplinkChunkSize%22%3A%220-4%22%2C%22scMaxEachPostBytes%22%3A%2210-10%22%2C%22scMinPostsIntervalMs%22%3A%220-2%22%2C%22xmux%22%3A%7B%22maxConnections%22%3A%221-4%22%2C%22maxConcurrency%22%3A2%2C%22hKeepAlivePeriod%22%3A-1%2C%22future%22%3A%22keep%22%7D%2C%22downloadSettings%22%3A%7B%22address%22%3A%22down.example%22%2C%22network%22%3A%22splithttp%22%2C%22port%22%3A%228443%22%2C%22security%22%3A%22reality%22%2C%22tlsSettings%22%3A%7B%22serverName%22%3A%22tls.example%22%2C%22fingerprint%22%3A%22chrome%22%2C%22alpn%22%3A%5B%22h2%22%5D%2C%22allowInsecure%22%3Atrue%2C%22echConfigList%22%3A%22query.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query%22%2C%22echForceQuery%22%3A%22full%22%2C%22echSockopt%22%3A%7B%22mark%22%3A1%7D%2C%22future%22%3Atrue%7D%2C%22realitySettings%22%3A%7B%22publicKey%22%3A%22key%22%2C%22shortId%22%3A%2208%22%2C%22serverName%22%3A%22reality.example%22%2C%22fingerprint%22%3A%22firefox%22%2C%22future%22%3A2%7D%2C%22xhttpSettings%22%3A%7B%22path%22%3A%22%2Fdown%22%2C%22host%22%3A%22down.cdn%22%2C%22mode%22%3A%22stream-one%22%2C%22extra%22%3A%7B%22headers%22%3A%7B%22X-Down%22%3A%22b%22%7D%2C%22sessionIDTable%22%3A%22%22%2C%22xmux%22%3A%7B%22maxConnections%22%3A%222-2%22%7D%7D%2C%22future%22%3Atrue%7D%2C%22future%22%3Atrue%7D%2C%22futureRoot%22%3A%7B%22empty%22%3A%7B%7D%2C%22list%22%3A%5B%7B%7D%2Cnull%2C%7B%22x%22%3A1%7D%5D%7D%7D#XHTTP",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "XHTTP",
+                  "network": "xhttp",
+                  "sni": "outer.example",
+                  "xhttp-opts": {
+                    "host": "outer.cdn",
+                    "path": "/up",
+                    "mode": "packet-up",
+                    "headers": {
+                      "Host": "extra.example",
+                      "X-Token": "abc"
+                    },
+                    "no-grpc-header": true,
+                    "x-padding-bytes": "1-8",
+                    "session-placement": "header",
+                    "session-key": "sid",
+                    "session-table": "",
+                    "session-length": "2-4",
+                    "sc-max-each-post-bytes": 10,
+                    "sc-min-posts-interval-ms": "0-2",
+                    "reuse-settings": {
+                      "max-connections": "1-4",
+                      "max-concurrency": "2",
+                      "h-keep-alive-period": -1
+                    },
+                    "download-settings": {
+                      "network": "xhttp",
+                      "server": "down.example",
+                      "port": 8443,
+                      "tls": true,
+                      "servername": "reality.example",
+                      "client-fingerprint": "firefox",
+                      "reality-opts": {
+                        "public-key": "key",
+                        "short-id": "08"
+                      },
+                      "ech-opts": {
+                        "enable": true,
+                        "_dns": "https://dns.example/dns-query",
+                        "query-server-name": "query.example",
+                        "_force-query": "full",
+                        "_sockopt": {
+                          "mark": 1
+                        }
+                      },
+                      "path": "/down",
+                      "host": "down.cdn",
+                      "mode": "stream-one",
+                      "session-table": "",
+                      "reuse-settings": {
+                        "max-connections": "2"
+                      }
+                    }
+                  },
+                  "_extra_unsupported": {
+                    "headers": {
+                      "Bad": 7
+                    },
+                    "xmux": {
+                      "future": "keep"
+                    },
+                    "downloadSettings": {
+                      "tlsSettings": {
+                        "future": true
+                      },
+                      "realitySettings": {
+                        "future": 2
+                      },
+                      "xhttpSettings": {
+                        "future": true
+                      },
+                      "future": true
+                    },
+                    "futureRoot": {
+                      "list": [
+                        null,
+                        {
+                          "x": 1
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?type=xhttp&host=cdn.example&path=%2Fx&mode=stream-one&extra=%7B%22noGRPCHeader%22%3Atrue%2C%22xPaddingBytes%22%3A%221-8%22%2C%22xmux%22%3A%7B%22maxConnections%22%3A%222-2%22%7D%2C%22unknown%22%3A%22keep%22%7D#X",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=none&type=xhttp&path=%2Fx&host=cdn.example&packetEncoding=xudp&mode=stream-one&extra=%7B%22noGRPCHeader%22%3Atrue%2C%22xPaddingBytes%22%3A%221-8%22%2C%22xmux%22%3A%7B%22maxConnections%22%3A%222%22%7D%2C%22unknown%22%3A%22keep%22%7D#X"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?type=xhttp&extra=not-json#Raw",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=none&type=xhttp&packetEncoding=xudp&extra=not-json#Raw"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?type=xhttp&extra=%7B%22headers%22%3A%7B%22Bad%22%3A7%7D%2C%22noGRPCHeader%22%3Afalse%2C%22xPaddingBytes%22%3A%220-2%22%2C%22sessionIDLength%22%3A3%2C%22sessionIDKey%22%3A%22%22%2C%22uplinkChunkSize%22%3A%224-2%22%2C%22xmux%22%3A%7B%22maxConnections%22%3A%22-1%22%7D%2C%22downloadSettings%22%3A%7B%22network%22%3A%22bad%22%2C%22port%22%3A%22-0%22%2C%22tlsSettings%22%3A%7B%22allowInsecure%22%3Afalse%2C%22alpn%22%3A%5B%5D%7D%2C%22xhttpSettings%22%3A%7B%22path%22%3A%22%22%2C%22extra%22%3A%7B%22xPaddingObfsMode%22%3Afalse%7D%7D%7D%7D#Unsupported",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Unsupported",
+                  "_extra_unsupported": {
+                    "headers": {
+                      "Bad": 7
+                    },
+                    "noGRPCHeader": false,
+                    "xPaddingBytes": "0-2",
+                    "sessionIDLength": 3,
+                    "uplinkChunkSize": "4-2",
+                    "xmux": {
+                      "maxConnections": "-1"
+                    },
+                    "downloadSettings": {
+                      "network": "bad",
+                      "port": "-0",
+                      "tlsSettings": {
+                        "allowInsecure": false,
+                        "alpn": []
+                      },
+                      "xhttpSettings": {
+                        "path": "",
+                        "extra": {
+                          "xPaddingObfsMode": false
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=tls&ech=query.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&fm=%7B%22a%22%3Atrue%7D&pqv=pq#ECH",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=tls&type=tcp&packetEncoding=xudp&ech=query.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&fm=%7B%22a%22%3Atrue%7D&pqv=pq#ECH"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?type=xhttp&extra=%7B%22downloadSettings%22%3A%7B%22security%22%3A%22reality%22%2C%22realitySettings%22%3A%7B%7D%2C%22xhttpSettings%22%3A%7B%22path%22%3A%22%2F%22%7D%7D%7D#RealityMarker",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "RealityMarker",
+                  "xhttp-opts": {
+                    "download-settings": {
+                      "tls": true,
+                      "reality-opts": {},
+                      "path": "/"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-input-anytls-native",
+    "source": "backend/src/test/proxy-parsers/uri.spec.js:424; parsers/index.js::URI_AnyTLS; producers/uri.js::anytls",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "anytls://top-secret@anytls.example.com:443?type=tcp&alpn=h2,http/1.1&insecure=1&udp=1#AnyTLS",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "type": "anytls",
+                  "name": "AnyTLS",
+                  "server": "anytls.example.com",
+                  "port": 443,
+                  "password": "top-secret",
+                  "tls": true,
+                  "sni": "anytls.example.com",
+                  "alpn": [
+                    "h2",
+                    "http/1.1"
+                  ],
+                  "udp": true,
+                  "skip-cert-verify": true
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "anytls://p%253Aq@127.0.0.1:443?udp=0&disable_reuse=1&idle_session_check_interval=10&alpn=#Double",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Double",
+                  "password": "p:q",
+                  "udp": false,
+                  "disable-reuse": "1",
+                  "reuse": false,
+                  "idle-session-check-interval": "10"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "anytls://p@127.0.0.1:443#Basic\nanytls://p@127.0.0.1#MissingPort\nanytls://bad%GG@127.0.0.1:443#Bad",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Basic",
+                  "type": "anytls",
+                  "password": "p"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "anytls://p@127.0.0.1:443#Basic",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "anytls://p@127.0.0.1:443?security=tls&type=tcp&packetEncoding=xudp&udp=1&packet_encoding=xudp#Basic"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "anytls://p@any.example:443?security=reality&pbk=key&sid=08&type=grpc&serviceName=svc&mode=multi&alpn=h2,http/1.1&insecure=1#Reality",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Reality",
+                  "network": "grpc",
+                  "reality-opts": {
+                    "public-key": "key",
+                    "short-id": "08"
+                  },
+                  "alpn": [
+                    "h2",
+                    "http/1.1"
+                  ],
+                  "skip-cert-verify": true
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-output-vmess-vless-anytls-native",
+    "source": "producers/uri.js::vless/VMess/anytls; producers/v2ray.js; actual proxy parser HTTP owner",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://eyJ2IjoiMiIsInBzIjoiQmFzaWMiLCJhZGQiOiIxMjcuMC4wLjEiLCJwb3J0IjoiNDQzIiwiaWQiOiJiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTEiLCJhaWQiOiIwIiwic2N5IjoiYXV0byIsIm5ldCI6InRjcCIsInR5cGUiOiIiLCJ0bHMiOiIifQ==",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "vmess://eyJ2IjoiMiIsInBzIjoiQmFzaWMiLCJhZGQiOiIxMjcuMC4wLjEiLCJwb3J0IjoiNDQzIiwiaWQiOiJiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTEiLCJhaWQiOiIwIiwic2N5IjoiYXV0byIsIm5ldCI6InRjcCIsInR5cGUiOiIiLCJ0bHMiOiIifQ=="
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443#Basic",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=none&type=tcp&packetEncoding=xudp#Basic"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=reality&pbk=key&sid=08&type=tcp&encryption=aes-128-gcm&fm=%7B%22tcp%22%3Atrue%7D#AEAD",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "vmess://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=reality&type=tcp&packetEncoding=xudp&sid=08&pbk=key&fm=%7B%22tcp%22%3Atrue%7D&encryption=aes-128-gcm#AEAD"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=tls&type=ws&host=cdn.example&path=%2Fws%3Fa%3D1%26ed%3D2048&eh=X-Early#WS",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=tls&type=ws&path=%2Fws%3Fa%3D1&host=cdn.example&ed=2048&eh=X-Early&packetEncoding=xudp&sni=cdn.example#WS"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://eyJ2IjoiMiIsInBzIjoiVXBncmFkZSIsImFkZCI6IjEyNy4wLjAuMSIsInBvcnQiOiI0NDMiLCJpZCI6ImI4MzEzODFkLTYzMjQtNGQ1My1hZDRmLThjZGE0OGIzMDgxMSIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0IjoiaHR0cHVwZ3JhZGUiLCJ0eXBlIjoiIiwidGxzIjoiIiwiaG9zdCI6ImNkbi5leGFtcGxlIiwicGF0aCI6Ii91cD9lZD0xMDI0In0=",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "vmess://eyJ2IjoiMiIsInBzIjoiVXBncmFkZSIsImFkZCI6IjEyNy4wLjAuMSIsInBvcnQiOiI0NDMiLCJpZCI6ImI4MzEzODFkLTYzMjQtNGQ1My1hZDRmLThjZGE0OGIzMDgxMSIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0IjoiaHR0cHVwZ3JhZGUiLCJ0eXBlIjoiIiwidGxzIjoiIiwicGF0aCI6Ii91cD9lZD0xMDI0IiwiaG9zdCI6ImNkbi5leGFtcGxlIn0="
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://eyJ2IjoiMiIsInBzIjoiQmFzaWMiLCJhZGQiOiIxMjcuMC4wLjEiLCJwb3J0IjoiNDQzIiwiaWQiOiJiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTEiLCJhaWQiOiIwIiwic2N5IjoiYXV0byIsIm5ldCI6InRjcCIsInR5cGUiOiIiLCJ0bHMiOiIifQ==\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443#Basic\nanytls://p@127.0.0.1:443#Basic",
+          "client": "V2Ray",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": "dm1lc3M6Ly9leUoySWpvaU1pSXNJbkJ6SWpvaVFtRnphV01pTENKaFpHUWlPaUl4TWpjdU1DNHdMakVpTENKd2IzSjBJam9pTkRReklpd2lhV1FpT2lKaU9ETXhNemd4WkMwMk16STBMVFJrTlRNdFlXUTBaaTA0WTJSaE5EaGlNekE0TVRFaUxDSmhhV1FpT2lJd0lpd2ljMk41SWpvaVlYVjBieUlzSW01bGRDSTZJblJqY0NJc0luUjVjR1VpT2lJaUxDSjBiSE1pT2lJaWZRPT0Kdmxlc3M6Ly9iODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTFAMTI3LjAuMC4xOjQ0Mz9zZWN1cml0eT1ub25lJnR5cGU9dGNwJnBhY2tldEVuY29kaW5nPXh1ZHAjQmFzaWMKYW55dGxzOi8vcEAxMjcuMC4wLjE6NDQzP3NlY3VyaXR5PXRscyZ0eXBlPXRjcCZwYWNrZXRFbmNvZGluZz14dWRwJnVkcD0xJnBhY2tldF9lbmNvZGluZz14dWRwI0Jhc2lj"
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P05-local-vmess-vless-anytls-paths",
+    "source": "restful/parser.js, preview.js, download.js and products/index.js::produceArtifact; shared native local conversion owner",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/preview/sub",
+        "body": {
+          "name": "modern-preview",
+          "source": "local",
+          "content": "vmess://eyJ2IjoiMiIsInBzIjoiQmFzaWMiLCJhZGQiOiIxMjcuMC4wLjEiLCJwb3J0IjoiNDQzIiwiaWQiOiJiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTEiLCJhaWQiOiIwIiwic2N5IjoiYXV0byIsIm5ldCI6InRjcCIsInR5cGUiOiIiLCJ0bHMiOiIifQ==\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443#Basic\nanytls://p@127.0.0.1:443#Basic",
+          "process": []
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "original": [
+                {
+                  "type": "vmess",
+                  "id": 0,
+                  "name": "Basic",
+                  "_subName": "modern-preview"
+                },
+                {
+                  "type": "vless",
+                  "id": 1,
+                  "name": "Basic",
+                  "_subName": "modern-preview"
+                },
+                {
+                  "type": "anytls",
+                  "id": 2,
+                  "name": "Basic",
+                  "_subName": "modern-preview"
+                }
+              ],
+              "processed": [
+                {
+                  "type": "vmess",
+                  "id": 0,
+                  "name": "Basic",
+                  "_subName": "modern-preview"
+                },
+                {
+                  "type": "vless",
+                  "id": 1,
+                  "name": "Basic",
+                  "_subName": "modern-preview"
+                },
+                {
+                  "type": "anytls",
+                  "id": 2,
+                  "name": "Basic",
+                  "_subName": "modern-preview"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/sub",
+        "body": {
+          "name": "native-modern",
+          "source": "local",
+          "content": "vmess://eyJ2IjoiMiIsInBzIjoiQmFzaWMiLCJhZGQiOiIxMjcuMC4wLjEiLCJwb3J0IjoiNDQzIiwiaWQiOiJiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTEiLCJhaWQiOiIwIiwic2N5IjoiYXV0byIsIm5ldCI6InRjcCIsInR5cGUiOiIiLCJ0bHMiOiIifQ==\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443#Basic\nanytls://p@127.0.0.1:443#Basic",
+          "process": [],
+          "unknown": {
+            "retained": true
+          }
+        },
+        "expect": {
+          "status": 201
+        }
+      },
+      {
+        "path": "/download/native-modern/URI",
+        "expect": {
+          "status": 200,
+          "body": "vmess://eyJ2IjoiMiIsInBzIjoiQmFzaWMiLCJhZGQiOiIxMjcuMC4wLjEiLCJwb3J0IjoiNDQzIiwiaWQiOiJiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTEiLCJhaWQiOiIwIiwic2N5IjoiYXV0byIsIm5ldCI6InRjcCIsInR5cGUiOiIiLCJ0bHMiOiIifQ==\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=none&type=tcp&packetEncoding=xudp#Basic\nanytls://p@127.0.0.1:443?security=tls&type=tcp&packetEncoding=xudp&udp=1&packet_encoding=xudp#Basic"
+        }
+      },
+      {
+        "path": "/download/native-modern/JSON",
+        "expect": {
+          "status": 200,
+          "json_contains": [
+            {
+              "type": "vmess",
+              "name": "Basic",
+              "_subName": "native-modern"
+            },
+            {
+              "type": "vless",
+              "name": "Basic",
+              "_subName": "native-modern"
+            },
+            {
+              "type": "anytls",
+              "name": "Basic",
+              "_subName": "native-modern"
+            }
+          ]
+        }
+      },
+      {
+        "path": "/download/native-modern/V2Ray",
+        "expect": {
+          "status": 200,
+          "body": "dm1lc3M6Ly9leUoySWpvaU1pSXNJbkJ6SWpvaVFtRnphV01pTENKaFpHUWlPaUl4TWpjdU1DNHdMakVpTENKd2IzSjBJam9pTkRReklpd2lhV1FpT2lKaU9ETXhNemd4WkMwMk16STBMVFJrTlRNdFlXUTBaaTA0WTJSaE5EaGlNekE0TVRFaUxDSmhhV1FpT2lJd0lpd2ljMk41SWpvaVlYVjBieUlzSW01bGRDSTZJblJqY0NJc0luUjVjR1VpT2lJaUxDSjBiSE1pT2lJaWZRPT0Kdmxlc3M6Ly9iODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTFAMTI3LjAuMC4xOjQ0Mz9zZWN1cml0eT1ub25lJnR5cGU9dGNwJnBhY2tldEVuY29kaW5nPXh1ZHAjQmFzaWMKYW55dGxzOi8vcEAxMjcuMC4wLjE6NDQzP3NlY3VyaXR5PXRscyZ0eXBlPXRjcCZwYWNrZXRFbmNvZGluZz14dWRwJnVkcD0xJnBhY2tldF9lbmNvZGluZz14dWRwI0Jhc2lj"
+        }
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/sub/native-modern?mode=permanent",
+        "expect": {
+          "status": 200
+        }
+      }
+    ]
+  },
+  {
     "id": "P02-output-v2ray-native-tls-uris",
     "source": "backend/src/core/proxy-utils/producers/v2ray.js:10-20; URI_Producer Trojan/Hysteria1/Hysteria2/TUIC/WireGuard",
     "steps": [
