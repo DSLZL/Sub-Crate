@@ -186,6 +186,26 @@ pub fn stringify(value: &Value) -> String {
     serialized(&value.to_string())
 }
 
+pub fn js_string(value: &Value) -> String {
+    match value {
+        Value::String(value) => value.clone(),
+        Value::Array(items) => items
+            .iter()
+            .map(|item| {
+                if item.is_null() {
+                    String::new()
+                } else {
+                    js_string(item)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+        Value::Object(_) => "[object Object]".to_owned(),
+        Value::Number(value) => number(value),
+        _ => value.to_string(),
+    }
+}
+
 pub fn pretty(value: &Value) -> Vec<u8> {
     serialized(&serde_json::to_string_pretty(value).expect("JSON value serialization")).into_bytes()
 }

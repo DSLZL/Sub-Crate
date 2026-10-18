@@ -1,6 +1,6 @@
 use crate::body::Body;
 use crate::conversion::{self, Error as ConversionError};
-use crate::json as codec;
+use crate::json::{self as codec, js_string};
 use crate::state::{Store, decode, legacy_object_order, migrate, truthy, valid_records};
 use base64::Engine;
 use http_body_util::Full;
@@ -552,26 +552,6 @@ fn cannot_coerce(value: &Value) -> bool {
         Value::Object(fields) => fields.contains_key("toString"),
         Value::Array(items) => items.iter().any(cannot_coerce),
         _ => false,
-    }
-}
-
-fn js_string(value: &Value) -> String {
-    match value {
-        Value::String(value) => value.clone(),
-        Value::Array(items) => items
-            .iter()
-            .map(|item| {
-                if item.is_null() {
-                    String::new()
-                } else {
-                    js_string(item)
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(","),
-        Value::Object(_) => "[object Object]".to_owned(),
-        Value::Number(value) => codec::number(value),
-        _ => value.to_string(),
     }
 }
 

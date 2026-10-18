@@ -1727,6 +1727,7 @@ def main():
         _, conversion_contracts = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "conversion")
         ssd_input = next(case for case in conversion_contracts if case["id"] == "P02-input-ssd")["steps"][0]["body"]
         conversion_state = {}
+        conversion_responses = {}
         for kind in ("node", "rust"):
             state = output / f"{kind}-conversion-local"
             state.mkdir()
@@ -1737,6 +1738,7 @@ def main():
             manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
             with manager as url:
                 results = check_cases(url, state, conversion_cases, output, label)
+                conversion_responses[kind] = list(results)
                 report["phases"].append({"name": label, "cases": len(results), "requests": sum(len(case["steps"]) for case in results)})
                 conversion_state[kind] = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
                 if kind == "rust":
@@ -1756,9 +1758,16 @@ def main():
             label += "-restart"
             manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
             with manager as url:
-                check_cases(url, state, conversion_restart, output, label)
+                conversion_responses[kind].extend(check_cases(url, state, conversion_restart, output, label))
                 assert (state / "sub-store.json").read_bytes() == before, "Read-only conversion changed durable state"
                 report["phases"].append({"name": label, "cases": len(conversion_restart)})
+        for rust_case, node_case in zip(conversion_responses["rust"], conversion_responses["node"], strict=True):
+            assert rust_case["id"] == node_case["id"]
+            for rust_step, node_step in zip(rust_case["steps"], node_case["steps"], strict=True):
+                actual, expected = rust_step["response"], node_step["response"]
+                assert actual["status"] == expected["status"] and actual["body"] == expected["body"], (rust_case["id"], actual, expected)
+                for key in ("content-type", "content-length", "etag", "allow"):
+                    assert actual["headers"].get(key) == expected["headers"].get(key), (rust_case["id"], key, actual, expected)
         check_json(conversion_state["rust"], conversion_state["node"])
         report["native_local_ss_conversion_checked"] = True
         configurations = [
