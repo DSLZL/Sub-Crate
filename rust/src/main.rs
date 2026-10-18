@@ -750,7 +750,9 @@ async fn route(
                 if method == Method::GET {
                     return match percent_decode_str(&raw_path).decode_utf8() {
                         Ok(path) => static_file(root, &path, &headers, true),
-                        Err(_) => api::text(400, "text/plain; charset=utf-8", "Invalid URL encoding"),
+                        Err(_) => {
+                            api::text(400, "text/plain; charset=utf-8", "Invalid URL encoding")
+                        }
                     };
                 }
                 return if raw_path == "/" {
