@@ -1,5 +1,7 @@
+use crate::json as codec;
 use base64::{Engine, engine::general_purpose};
 use serde_json::{Value, json};
+use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -8,17 +10,32 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub struct Store {
     path: PathBuf,
     pub data: Value,
+    live_buffers: HashSet<&'static str>,
 }
 
 pub fn decode(text: &str) -> Result<Value, String> {
-    let value: Value = serde_json::from_str(text).or_else(|_| {
-        let encoded: String = text.chars().filter(|c| !c.is_whitespace()).collect();
-        let bytes = general_purpose::STANDARD
-            .decode(&encoded)
-            .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(&encoded))
-            .or_else(|_| general_purpose::URL_SAFE_NO_PAD.decode(encoded))
+    let value: Value = codec::parse(text).or_else(|_| {
+        // js-base64 removes padding/noise before Buffer decodes the remaining sextets.
+        let mut encoded: String = text
+            .chars()
+            .filter_map(|c| match c {
+                '-' => Some('+'),
+                '_' => Some('/'),
+                c if c.is_ascii_alphanumeric() || matches!(c, '+' | '/') => Some(c),
+                _ => None,
+            })
+            .collect();
+        if encoded.len() % 4 == 1 {
+            encoded.pop();
+        }
+        let decoder = general_purpose::GeneralPurpose::new(
+            &base64::alphabet::STANDARD,
+            general_purpose::NO_PAD.with_decode_allow_trailing_bits(true),
+        );
+        let bytes = decoder
+            .decode(encoded)
             .map_err(|_| "Invalid JSON or Base64 backup".to_owned())?;
-        serde_json::from_slice(&bytes).map_err(|_| "Invalid backup JSON".to_owned())
+        codec::parse(&String::from_utf8_lossy(&bytes)).map_err(|_| "Invalid backup JSON".to_owned())
     })?;
     if !value.is_object() {
         return Err("State must be a JSON object".to_owned());
@@ -42,7 +59,9 @@ impl Store {
         let mut data = decode(text).map_err(io::Error::other)?;
         let root_path = directory.join("root.json");
         if root_path.exists() {
-            let root: Value = serde_json::from_slice(&fs::read(&root_path)?)?;
+            let root = codec::parse(
+                std::str::from_utf8(&fs::read(&root_path)?).map_err(io::Error::other)?,
+            )?;
             if !root.is_object() {
                 return Err(io::Error::other("root.json must be a JSON object"));
             }
@@ -66,7 +85,7 @@ impl Store {
             if !truthy(&data[key]) {
                 data[key] = json!([]);
             }
-            if !data[key].is_array() {
+            if !data[key].is_array() && !stored_buffer(key, &data[key]) {
                 return Err(io::Error::other(format!(
                     "{key} must be an array after migration"
                 )));
@@ -75,21 +94,41 @@ impl Store {
         if !truthy(&data["settings"]) {
             data["settings"] = json!({});
         }
-        if !data["settings"].is_object() {
-            return Err(io::Error::other("settings must be an object"));
-        }
         if !valid_records(&data) {
             return Err(io::Error::other("Invalid state records"));
         }
-        let store = Self { path, data };
-        atomic_write(&store.path, &serde_json::to_vec_pretty(&store.data)?)?;
+        let store = Self {
+            path,
+            data,
+            live_buffers: HashSet::new(),
+        };
+        atomic_write(&store.path, &codec::pretty(&store.data))?;
         Ok(store)
     }
 
     pub fn commit(&mut self, next: Value) -> io::Result<()> {
         recover_restore(&self.path)?;
-        atomic_write(&self.path, &serde_json::to_vec_pretty(&next)?)?;
+        atomic_write(&self.path, &codec::pretty(&next))?;
         self.data = next;
+        Ok(())
+    }
+
+    pub fn list(&self, key: &str) -> Option<&[Value]> {
+        let value = if self.live_buffers.contains(key) {
+            &self.data[key]["data"]
+        } else {
+            &self.data[key]
+        };
+        value.as_array().map(Vec::as_slice)
+    }
+
+    pub fn commit_list(&mut self, next: Value, key: &'static str, raw: bool) -> io::Result<()> {
+        self.commit(next)?;
+        if raw {
+            self.live_buffers.insert(key);
+        } else {
+            self.live_buffers.remove(key);
+        }
         Ok(())
     }
 
@@ -98,16 +137,14 @@ impl Store {
         let root_path = self.path.with_file_name("root.json");
         let previous_data = fs::read(&self.path)?;
         let previous_root = fs::read(&root_path)?;
-        let mut root: Value = serde_json::from_slice(&previous_root)?;
-        let root = root
+        let mut root =
+            codec::parse(std::str::from_utf8(&previous_root).map_err(io::Error::other)?)?;
+        let original = String::from_utf8(codec::pretty(&legacy_object_order(original)))
+            .expect("serialized JSON is UTF-8");
+        let root_fields = root
             .as_object_mut()
             .ok_or_else(|| io::Error::other("root.json must be an object"))?;
-        root.insert(
-            "sub-store".to_owned(),
-            json!(serde_json::to_string_pretty(&legacy_object_order(
-                original
-            ))?),
-        );
+        root_fields.insert("sub-store".to_owned(), json!(codec::encode(&original)));
         let pending = self.path.with_file_name(".sub-store-restore.pending.json");
         let previous = json!({
             "data": general_purpose::STANDARD.encode(previous_data),
@@ -115,8 +152,8 @@ impl Store {
         });
         atomic_write(&pending, &serde_json::to_vec(&previous)?)?;
         let result = (|| {
-            atomic_write(&root_path, &serde_json::to_vec_pretty(root)?)?;
-            atomic_write(&self.path, &serde_json::to_vec_pretty(&next)?)?;
+            atomic_write(&root_path, &codec::pretty(&root))?;
+            atomic_write(&self.path, &codec::pretty(&next))?;
             fs::remove_file(&pending)
         })();
         if let Err(error) = result {
@@ -126,14 +163,16 @@ impl Store {
             return Err(error);
         }
         self.data = next;
+        self.live_buffers.clear();
         Ok(())
     }
 
     pub fn clear_resource_cache(&mut self) -> io::Result<()> {
         recover_restore(&self.path)?;
         let path = self.path.with_file_name("root.json");
-        let mut root: Value = serde_json::from_slice(&fs::read(&path)?)?;
-        let root = root
+        let mut root =
+            codec::parse(std::str::from_utf8(&fs::read(&path)?).map_err(io::Error::other)?)?;
+        let root_fields = root
             .as_object_mut()
             .ok_or_else(|| io::Error::other("root.json must be an object"))?;
         for key in [
@@ -141,9 +180,9 @@ impl Store {
             "sub-store-cached-headers-resource",
             "sub-store-cached-script-resource",
         ] {
-            root.insert(key.to_owned(), json!("{}"));
+            root_fields.insert(key.to_owned(), json!("{}"));
         }
-        atomic_write(&path, &serde_json::to_vec_pretty(root)?)
+        atomic_write(&path, &codec::pretty(&root))
     }
 }
 
@@ -166,7 +205,7 @@ fn recover_restore(path: &Path) -> io::Result<()> {
     let data = saved("data")?;
     let root = saved("root")?;
     decode(std::str::from_utf8(&data).map_err(io::Error::other)?).map_err(io::Error::other)?;
-    if !serde_json::from_slice::<Value>(&root)?.is_object() {
+    if !codec::parse(std::str::from_utf8(&root).map_err(io::Error::other)?)?.is_object() {
         return Err(io::Error::other("Invalid root restore recovery record"));
     }
     atomic_write(&path.with_file_name("root.json"), &root)?;
@@ -181,7 +220,7 @@ fn array_index(key: &str) -> u32 {
         .unwrap_or(u32::MAX)
 }
 
-fn legacy_object_order(value: Value) -> Value {
+pub fn legacy_object_order(value: Value) -> Value {
     match value {
         Value::Object(fields) => {
             let mut fields: Vec<_> = fields.into_iter().collect();
@@ -198,6 +237,17 @@ fn legacy_object_order(value: Value) -> Value {
     }
 }
 
+fn stored_buffer(key: &str, value: &Value) -> bool {
+    matches!(key, "subs" | "collections")
+        && value.as_object().is_some_and(|object| object.len() == 2)
+        && value["type"] == "Buffer"
+        && value["data"].as_array().is_some_and(|bytes| {
+            bytes
+                .iter()
+                .all(|byte| byte.as_u64().is_some_and(|byte| byte <= 255))
+        })
+}
+
 pub fn valid_records(data: &Value) -> bool {
     [
         "subs",
@@ -211,9 +261,11 @@ pub fn valid_records(data: &Value) -> bool {
     .iter()
     .all(|key| {
         data.get(key).is_none_or(|items| {
-            items
-                .as_array()
-                .is_some_and(|items| items.iter().all(Value::is_object))
+            stored_buffer(key, items)
+                || items.as_array().is_some_and(|items| {
+                    // Versioned CRUD accepts mixed entries in these two lists.
+                    matches!(*key, "subs" | "collections") || items.iter().all(Value::is_object)
+                })
         })
     })
 }
@@ -293,6 +345,7 @@ pub fn migrate(data: &mut Value) -> io::Result<()> {
                 .remove(key)
                 .unwrap_or(Value::Null);
             let mut items: Vec<Value> = match previous {
+                value if !truthy(&value) => Vec::new(),
                 Value::Object(items) => {
                     let mut entries: Vec<_> = items.into_iter().collect();
                     // Object.values visits canonical array indices before other keys.
@@ -300,7 +353,6 @@ pub fn migrate(data: &mut Value) -> io::Result<()> {
                     entries.into_iter().map(|(_, value)| value).collect()
                 }
                 Value::Array(items) => items,
-                Value::Null => Vec::new(),
                 _ => return Err(io::Error::other(format!("Invalid legacy {key}"))),
             };
             if key == "subs" || key == "collections" {
@@ -318,21 +370,43 @@ pub fn migrate(data: &mut Value) -> io::Result<()> {
                         let name = object.remove("display-name").unwrap();
                         object.insert("displayName".to_owned(), name);
                     }
-                    if let Some(processes) = object.get_mut("process").and_then(Value::as_array_mut)
-                        && !processes.is_empty()
+                    if let Some(processes) = object.get_mut("process")
+                        && truthy(processes)
+                        && !processes.as_array().is_some_and(Vec::is_empty)
+                        && processes["length"].as_f64() != Some(0.0)
                     {
+                        let items = match std::mem::take(processes) {
+                            Value::Array(items) => items,
+                            Value::String(_) => Vec::new(),
+                            _ => return Err(io::Error::other("Invalid legacy processes")),
+                        };
                         let mut quick = json!({"type":"Quick Setting Operator", "args":{
                             "udp":"DEFAULT", "tfo":"DEFAULT", "scert":"DEFAULT",
                             "vmess aead":"DEFAULT", "useless":"DEFAULT"
                         }});
                         let mut next = Vec::new();
-                        for mut process in std::mem::take(processes) {
-                            let Some(kind) = process["type"].as_str() else {
+                        for mut process in items {
+                            if process.is_null() {
+                                return Err(io::Error::other("Invalid legacy process"));
+                            }
+                            if !truthy(&process["type"]) {
                                 continue;
+                            }
+                            if let Some(kinds) = process["type"].as_array() {
+                                if !kinds.iter().any(|kind| kind == "Keyword") {
+                                    next.push(process);
+                                }
+                                continue;
+                            }
+                            let Some(kind) = process["type"].as_str() else {
+                                return Err(io::Error::other("Invalid legacy process type"));
                             };
                             if kind == "Useless Filter" {
                                 quick["args"]["useless"] = json!("ENABLED");
                             } else if kind == "Set Property Operator" {
+                                if process["args"].is_null() {
+                                    return Err(io::Error::other("Missing legacy operator args"));
+                                }
                                 let field = match process["args"]["key"].as_str() {
                                     Some("udp") => "udp",
                                     Some("tfo") => "tfo",
@@ -358,7 +432,7 @@ pub fn migrate(data: &mut Value) -> io::Result<()> {
                             }
                         }
                         next.insert(0, quick);
-                        *processes = next;
+                        *processes = Value::Array(next);
                     }
                 }
             }

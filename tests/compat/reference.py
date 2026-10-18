@@ -45,7 +45,7 @@ def execute(argv, directory, environment, output_dir, name, timeout=None, direct
 
 def source_provenance(environment, output_dir):
     revision = execute(["git", "rev-parse", "HEAD"], ROOT, environment, output_dir, "backend-revision")
-    patch = execute(["git", "diff", "--no-ext-diff", "--binary", "--no-color", "--unified=0", BACKEND_BASE_COMMIT,
+    patch = execute(["git", "diff", "--no-ext-diff", "--binary", "--no-color", "--full-index", "--unified=0", BACKEND_BASE_COMMIT,
                      "--", "backend", "scripts/ip-flag-node.js"], ROOT, environment, output_dir, "backend-source")
     expected = (HERE / "approved-reference-fixes.patch").read_text(encoding="utf-8")
     if revision.returncode or patch.returncode or patch.stdout != expected:
@@ -61,9 +61,11 @@ def source_provenance(environment, output_dir):
 
 @contextmanager
 def oracle(node, environment, output_dir, summary, log_prefix="server"):
-    with socket.socket() as reserved:
-        reserved.bind(("127.0.0.1", 0))
-        port = reserved.getsockname()[1]
+    port = int(environment.get("SUB_STORE_BACKEND_API_PORT", "0"))
+    if not port:
+        with socket.socket() as reserved:
+            reserved.bind(("127.0.0.1", 0))
+            port = reserved.getsockname()[1]
     environment = {**environment, "SUB_STORE_BACKEND_API_PORT": str(port)}
     origin = f"http://127.0.0.1:{port}"
     if environment.get("SUB_STORE_FRONTEND_PATH"):

@@ -86,7 +86,7 @@ const frontendCommit = execFileSync('rtk', ['proxy', 'git', '-C', frontend, 'rev
 assert.equal(frontendCommit, '4bd7b0acbe65466b933ccea14fc61dbebe036ead');
 execFileSync('rtk', ['proxy', 'git', '-C', frontend, 'diff', '--exit-code', 'HEAD'], {stdio: 'pipe'});
 const backendBaseCommit = '9cc6b5fac966993364ae33da8797f446bbf7f571';
-const backendPatch = execFileSync('rtk', ['proxy', 'git', '-C', root, 'diff', '--no-ext-diff', '--binary', '--no-color', '--unified=0', backendBaseCommit, '--',
+const backendPatch = execFileSync('rtk', ['proxy', 'git', '-C', root, 'diff', '--no-ext-diff', '--binary', '--no-color', '--full-index', '--unified=0', backendBaseCommit, '--',
   'backend', 'scripts/ip-flag-node.js'], {encoding: 'utf8'});
 assert.equal(backendPatch, fs.readFileSync(path.join(__dirname, 'approved-reference-fixes.patch'), 'utf8').replace(/\r\n/g, '\n'),
   'Backend source differs from the frozen base plus approved RF01/RF02 patch');

@@ -1,7 +1,8 @@
 mod api;
+mod body;
+mod json;
 mod state;
 
-use http_body_util::{BodyExt, Limited};
 use hyper::body::{Body, Incoming};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -10,7 +11,6 @@ use hyper_util::rt::TokioIo;
 use percent_encoding::percent_decode_str;
 use serde_json::{Value, json};
 use std::cmp::Reverse;
-use std::collections::HashMap;
 use std::convert::Infallible;
 use std::env;
 use std::io;
@@ -39,10 +39,51 @@ fn configured(name: &str, default: &str) -> String {
 }
 
 fn origin(value: &str) -> String {
-    let value = value.trim().trim_matches(['\'', '"']);
+    let value = json::trim(value).trim_matches(['\'', '"']);
     reqwest::Url::parse(value)
         .map(|url| url.origin().ascii_serialization())
         .unwrap_or_else(|_| value.to_owned())
+}
+
+fn json_limit(raw: &str) -> io::Result<usize> {
+    let raw = raw.to_ascii_lowercase();
+    let scaled = ["kb", "mb", "gb", "tb", "pb"]
+        .iter()
+        .enumerate()
+        .find_map(|(index, unit)| {
+            let number = raw.strip_suffix(*unit)?.trim_end_matches(' ');
+            let unsigned = number.trim_start_matches(['+', '-']);
+            let mut parts = unsigned.split('.');
+            let whole = parts.next().unwrap();
+            let fraction = parts.next();
+            let digits = |s: &str| !s.is_empty() && s.bytes().all(|c| c.is_ascii_digit());
+            if !digits(whole) || !fraction.is_none_or(digits) || parts.next().is_some() {
+                return None;
+            }
+            number
+                .parse::<f64>()
+                .ok()
+                .map(|n| n * 1024f64.powi(index as i32 + 1))
+        });
+    let bytes = scaled.or_else(|| {
+        let text = json::trim(&raw);
+        let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
+        let end = unsigned
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(unsigned.len());
+        let number = unsigned[..end].parse::<f64>().ok()?;
+        Some(if text.starts_with('-') {
+            -number
+        } else {
+            number
+        })
+    });
+    match bytes {
+        Some(bytes) if bytes.is_finite() && bytes >= 0.0 && bytes <= usize::MAX as f64 => {
+            Ok(bytes.floor() as usize)
+        }
+        _ => Err(io::Error::other("Invalid SUB_STORE_BODY_JSON_LIMIT")),
+    }
 }
 
 impl Config {
@@ -64,7 +105,7 @@ impl Config {
         }
         let allowed = configured("SUB_STORE_CORS_ALLOWED_ORIGINS", "");
         let mut cors: Vec<_> = allowed
-            .split(|c: char| c == ',' || c == '，' || c.is_whitespace())
+            .split(|c: char| c == ',' || c == '，' || json::trim(&c.to_string()).is_empty())
             .filter(|s| !s.is_empty())
             .map(origin)
             .collect();
@@ -78,24 +119,11 @@ impl Config {
             .map(str::to_owned)
             .to_vec();
         }
-        let raw_limit = configured("SUB_STORE_BODY_JSON_LIMIT", "1mb").to_lowercase();
-        let (number, multiplier) = if let Some(number) = raw_limit.strip_suffix("mb") {
-            (number, 1024.0 * 1024.0)
-        } else if let Some(number) = raw_limit.strip_suffix("kb") {
-            (number, 1024.0)
-        } else if let Some(number) = raw_limit.strip_suffix('b') {
-            (number, 1.0)
-        } else {
-            (raw_limit.as_str(), 1.0)
-        };
-        let bytes = number.trim().parse::<f64>().unwrap_or(f64::NAN) * multiplier;
-        if !bytes.is_finite() || bytes < 1.0 || bytes > usize::MAX as f64 {
-            return Err(io::Error::other("Invalid SUB_STORE_BODY_JSON_LIMIT"));
-        }
+        let body_limit = json_limit(&configured("SUB_STORE_BODY_JSON_LIMIT", "1mb"))?;
         let environment = Value::Object(
             env::vars()
                 .filter(|(key, _)| key.starts_with("SUB_STORE_"))
-                .map(|(key, value)| (key, json!(value)))
+                .map(|(key, value)| (json::encode(&key), json!(json::encode(&value))))
                 .collect(),
         );
         Ok(Self {
@@ -106,7 +134,7 @@ impl Config {
             cors,
             local_origins: default_cors
                 && !configured("SUB_STORE_BACKEND_CUSTOM_NAME", "").is_empty(),
-            body_limit: bytes as usize,
+            body_limit,
             environment,
             powered_by: configured("SUB_STORE_X_POWERED_BY", "Sub-Store"),
         })
@@ -228,17 +256,17 @@ fn gzip_preferred(headers: &HeaderMap) -> bool {
     gzip.0 > 0.0 && gzip >= priority("identity")
 }
 
-fn static_etag_match(raw: &str, etag: &str) -> bool {
+fn etag_match(raw: &str, etag: &str) -> bool {
     raw == "*"
         || raw.split(',').any(|part| {
-            let part = part.trim();
+            let part = part.trim_matches(' ');
             part == etag
                 || part.strip_prefix("W/") == Some(etag)
                 || etag.strip_prefix("W/") == Some(part)
         })
 }
 
-fn static_fresh(headers: &HeaderMap, etag: &str, modified: std::time::SystemTime) -> bool {
+fn fresh(headers: &HeaderMap, etag: &str, modified: Option<std::time::SystemTime>) -> bool {
     let matched = header(headers, "if-none-match");
     let since = header(headers, "if-modified-since");
     if (matched.is_empty() && since.is_empty())
@@ -248,10 +276,13 @@ fn static_fresh(headers: &HeaderMap, etag: &str, modified: std::time::SystemTime
     {
         return false;
     }
-    if !matched.is_empty() && !static_etag_match(matched, etag) {
+    if !matched.is_empty() && !etag_match(matched, etag) {
         return false;
     }
-    since.is_empty() || httpdate::parse_http_date(since).is_ok_and(|date| modified <= date)
+    since.is_empty()
+        || modified
+            .zip(httpdate::parse_http_date(since).ok())
+            .is_some_and(|(modified, date)| modified <= date)
 }
 
 fn static_range(
@@ -378,12 +409,12 @@ fn static_file(root: &Path, path: &str, headers: &HeaderMap, fallback: bool) -> 
     );
     let matched = header(headers, "if-match");
     let precondition_failed = if !matched.is_empty() {
-        !static_etag_match(matched, &etag)
+        !etag_match(matched, &etag)
     } else {
         httpdate::parse_http_date(header(headers, "if-unmodified-since"))
             .is_ok_and(|date| modified > date)
     };
-    let fresh = !precondition_failed && static_fresh(headers, &etag, modified);
+    let fresh = !precondition_failed && fresh(headers, &etag, Some(modified));
     let range = if precondition_failed || fresh {
         Ok(None)
     } else {
@@ -406,6 +437,12 @@ fn static_file(root: &Path, path: &str, headers: &HeaderMap, fallback: bool) -> 
         } else {
             "Range Not Satisfiable"
         };
+        let kind = if status == 412 {
+            "PreconditionFailedError"
+        } else {
+            "RangeNotSatisfiableError"
+        };
+        let message = api::diagnostic(status, &format!("{kind}: {message}"));
         format!("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>{message}</pre>\n</body>\n</html>\n").into_bytes()
     } else if fresh {
         Vec::new()
@@ -529,15 +566,25 @@ async fn handle(
         .unwrap_or("")
         .to_owned();
     let head = request.method() == Method::HEAD;
+    let read = head || request.method() == Method::GET;
+    let headers = request.headers().clone();
     let response = if !config.allowed(&raw_origin) {
         api::text(403, "text/plain;charset=UTF-8", "CORS origin not allowed")
-    } else if request.method() == Method::OPTIONS {
+    } else if request.method() == Method::OPTIONS && !raw_origin.is_empty() {
         api::text(200, "text/plain;charset=UTF-8", "")
     } else {
         route(request, &config, &store).await
     };
     let mut response = response;
     config.headers(&mut response, &raw_origin);
+    let etag = header(response.headers(), "etag");
+    if read && response.status().is_success() && !etag.is_empty() && fresh(&headers, etag, None) {
+        *response.status_mut() = hyper::StatusCode::NOT_MODIFIED;
+        for name in ["content-type", "content-length", "transfer-encoding"] {
+            response.headers_mut().remove(name);
+        }
+        *response.body_mut() = http_body_util::Full::new(hyper::body::Bytes::new());
+    }
     if head {
         strip_head_body(&mut response);
     }
@@ -576,6 +623,13 @@ async fn frontend_handle(
                 let suffix = &path[prefix.len()..];
                 let suffix = if suffix.is_empty() { "/" } else { suffix };
                 let mut target = format!("{backend_prefix}/{namespace}{suffix}");
+                // The legacy proxy joins paths with collapsed slashes, preserving the query.
+                let mut slash = false;
+                target.retain(|ch| {
+                    let keep = ch != '/' || !slash;
+                    slash = ch == '/';
+                    keep
+                });
                 if let Some(query) = request.uri().query() {
                     target.push('?');
                     target.push_str(query);
@@ -622,27 +676,7 @@ async fn frontend_handle(
         }
     }
     if response.status().as_u16() == 404 {
-        let escaped = path
-            .replace('&', "&amp;")
-            .replace('<', "&lt;")
-            .replace('>', "&gt;")
-            .replace('"', "&quot;")
-            .replace('\'', "&#39;");
-        response = api::text(
-            404,
-            "text/html; charset=utf-8",
-            format!(
-                "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Cannot {} {escaped}</pre>\n</body>\n</html>\n",
-                request.method()
-            ),
-        );
-        response.headers_mut().insert(
-            "content-security-policy",
-            "default-src 'none'".parse().unwrap(),
-        );
-        response
-            .headers_mut()
-            .insert("x-content-type-options", "nosniff".parse().unwrap());
+        response = api::route_not_found(request.method(), &path);
     }
     response
         .headers_mut()
@@ -651,6 +685,45 @@ async fn frontend_handle(
         strip_head_body(&mut response);
     }
     Ok(response)
+}
+
+fn api_path(raw: &str) -> Result<Option<String>, ()> {
+    if raw.as_bytes().iter().enumerate().any(|(index, byte)| {
+        *byte == b'%'
+            && !raw
+                .as_bytes()
+                .get(index + 1..index + 3)
+                .is_some_and(|pair| pair.iter().all(u8::is_ascii_hexdigit))
+    }) {
+        return Err(());
+    }
+    percent_decode_str(raw).decode_utf8().map_err(|_| ())?;
+    if raw == "/" {
+        return Ok(Some(raw.to_owned()));
+    }
+    let parts = raw
+        .strip_suffix('/')
+        .unwrap_or(raw)
+        .split('/')
+        .collect::<Vec<_>>();
+    let path = match parts.as_slice() {
+        ["", api, resource] if api.eq_ignore_ascii_case("api") => {
+            Some(format!("/api/{}", resource.to_ascii_lowercase()))
+        }
+        ["", api, resource, name] if api.eq_ignore_ascii_case("api") && !name.is_empty() => {
+            let resource = resource.to_ascii_lowercase();
+            match resource.as_str() {
+                "sub" | "collection" => Some(format!(
+                    "/api/{resource}/{}",
+                    json::encode(&percent_decode_str(name).decode_utf8().map_err(|_| ())?)
+                )),
+                "utils" => Some(format!("/api/utils/{}", name.to_ascii_lowercase())),
+                _ => None,
+            }
+        }
+        _ => None,
+    };
+    Ok(path)
 }
 
 async fn route(
@@ -664,9 +737,20 @@ async fn route(
         request.method().clone()
     };
     let raw_path = request.uri().path().to_owned();
-    let decoded = match percent_decode_str(&raw_path).decode_utf8() {
-        Ok(path) => path,
-        Err(_) => return api::text(400, "text/plain; charset=utf-8", "Invalid URL encoding"),
+    let headers = request.headers().clone();
+    let raw_query = request.uri().query().unwrap_or("").to_owned();
+    let body = match body::read(request, config.body_limit).await {
+        Ok(body) => body,
+        Err(error) => return api::uncaught_error(error.status, &error.detail),
+    };
+    let not_found = || {
+        if method == Method::GET {
+            api::not_found()
+        } else if method == Method::OPTIONS {
+            api::options("")
+        } else {
+            api::route_not_found(&method, &raw_path)
+        }
     };
     let path = if let Some(prefix) = &config.prefix {
         let matches = if prefix == "/" {
@@ -677,72 +761,73 @@ async fn route(
         };
         if matches {
             let stripped = if prefix == "/" {
-                decoded.as_ref()
+                raw_path.as_str()
             } else {
-                decoded.strip_prefix(prefix).unwrap_or("")
+                raw_path.strip_prefix(prefix).unwrap_or("")
             };
             if stripped.is_empty() { "/" } else { stripped }
         } else {
             if let Some(root) = &config.frontend
                 && config.merge
                 && !backend_route(&raw_path)
-                && method == Method::GET
             {
-                return static_file(root, &decoded, request.headers(), true);
+                if method == Method::GET {
+                    return match percent_decode_str(&raw_path).decode_utf8() {
+                        Ok(path) => static_file(root, &path, &headers, true),
+                        Err(_) => {
+                            api::text(400, "text/plain; charset=utf-8", "Invalid URL encoding")
+                        }
+                    };
+                }
+                return if raw_path == "/" {
+                    api::greeting()
+                } else {
+                    not_found()
+                };
             }
             return api::not_found();
         }
     } else {
-        decoded.as_ref()
+        raw_path.as_str()
     };
-    let query = reqwest::Url::parse(&format!(
-        "http://localhost/?{}",
-        request.uri().query().unwrap_or("")
-    ))
-    .unwrap()
-    .query_pairs()
-    .into_owned()
-    .collect::<HashMap<_, _>>();
-    if (path == "/" || path == "/api/utils/env") && method == Method::GET {
-        return api::text(200, "application/json;charset=UTF-8", json!({
-            "status":"success", "data":{
-                "backend":"Node", "version":env!("CARGO_PKG_VERSION"),
-                "feature":{"archive":false},
-                "meta":{"node":{"env":config.environment},"rust":{"version":env!("CARGO_PKG_VERSION"),"milestone":"M2","complete":false}}
-            }
-        }).to_string());
-    }
-    let bytes = match Limited::new(request.into_body(), config.body_limit)
-        .collect()
-        .await
-    {
-        Ok(body) => body.to_bytes(),
-        Err(_) => {
-            return api::failure(
-                413,
-                "INVALID_BODY",
-                "RequestInvalidError",
-                "Request body is invalid or exceeds the configured limit",
+    let path = match api_path(path) {
+        Ok(Some(path)) => path,
+        Ok(None) => return not_found(),
+        Err(()) => {
+            let parameter = path.rsplit('/').next().unwrap_or("");
+            return api::uncaught_error(
+                400,
+                &format!("URIError: Failed to decode param '{parameter}'"),
             );
         }
     };
-    let body = if bytes.is_empty() {
-        json!({})
-    } else {
-        match serde_json::from_slice(&bytes) {
-            Ok(body) => body,
-            Err(_) => {
-                return api::failure(
-                    400,
-                    "INVALID_JSON",
-                    "RequestInvalidError",
-                    "Invalid JSON body",
-                );
-            }
-        }
-    };
+    if path == "/" && method != Method::GET {
+        return api::greeting();
+    }
+    if method == Method::OPTIONS {
+        return api::options(&path);
+    }
+    let query = body::query(&raw_query);
+    if (path == "/" || path == "/api/utils/env") && method == Method::GET {
+        return api::send(
+            200,
+            "application/json; charset=utf-8",
+            json::stringify(&json!({
+                "status":"success", "data":{
+                    "backend":"Node", "version":env!("CARGO_PKG_VERSION"),
+                    "feature":{"archive":false},
+                    "meta":{"node":{"env":config.environment},"rust":{"version":env!("CARGO_PKG_VERSION"),"milestone":"M2","complete":false}}
+                }
+            })),
+        );
+    }
     let mut store = store.lock().unwrap();
-    api::dispatch(&method, path, &query, body, &mut store)
+    let response = api::dispatch(&method, &path, &query, body, &mut store);
+    if response.status().as_u16() == 404 && response.body().size_hint().exact() == Some(0) {
+        not_found()
+    } else {
+        response
+    }
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -811,5 +896,32 @@ async fn serve(
                 eprintln!("HTTP connection error: {error}");
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::json_limit;
+
+    #[test]
+    fn json_limits_use_legacy_binary_units_and_integer_prefixes() {
+        for (text, expected) in [
+            ("0", 0),
+            ("+1KB", 1024),
+            ("1.5 kb", 1536),
+            ("1mb", 1048576),
+            ("1GB", 1073741824),
+            ("1tb", 1099511627776),
+            ("1pb", 1125899906842624),
+            ("64junk", 64),
+            ("1e3", 1),
+            ("1kb ", 1),
+            ("\u{feff}32b", 32),
+        ] {
+            assert_eq!(json_limit(text).unwrap(), expected, "{text}");
+        }
+        for text in ["-1kb", "unbounded", "NaN", "Infinity"] {
+            assert!(json_limit(text).is_err(), "{text}");
+        }
     }
 }

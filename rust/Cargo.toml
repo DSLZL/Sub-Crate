@@ -7,13 +7,16 @@ license = "AGPL-3.0-only"
 publish = false
 
 [dependencies]
+aws-lc-rs = { version = "=1.18.2", default-features = false }
 base64 = "=0.23.1"
+flate2 = { version = "=1.1.10", default-features = false, features = ["zlib-rs"] }
 getrandom = "=0.4.3"
 http-body-util = "=0.1.5"
 httpdate = "=1.0.3"
 hyper = { version = "=1.12.0", features = ["client", "server", "http1"] }
 hyper-rustls = { version = "=0.27.10", default-features = false, features = ["http1", "tls12", "rustls-platform-verifier", "aws-lc-rs"] }
 hyper-util = { version = "=0.1.21", features = ["client-legacy", "http1", "tokio"] }
+jiff = "=0.2.38"
 libc = "=0.2.190"
 maxminddb = "=0.32.0"
 percent-encoding = "=2.3.2"

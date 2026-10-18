@@ -1,11 +1,12 @@
-use crate::state::{Store, decode, migrate, truthy, valid_records};
+use crate::body::Body;
+use crate::json as codec;
+use crate::state::{Store, decode, legacy_object_order, migrate, truthy, valid_records};
+use base64::Engine;
 use http_body_util::Full;
 use hyper::{Method, Response, body::Bytes};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde_json::{Value, json};
-use std::collections::HashMap;
 use std::io;
-use std::mem::MaybeUninit;
 
 pub type Reply = Response<Full<Bytes>>;
 const COMPONENT: &AsciiSet = &NON_ALPHANUMERIC
@@ -27,27 +28,138 @@ pub fn text(status: u16, content_type: &str, body: impl Into<Bytes>) -> Reply {
         .unwrap()
 }
 
+pub fn send(status: u16, content_type: &str, body: impl Into<Bytes>) -> Reply {
+    let body = body.into();
+    let length = body.len();
+    let digest = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA1_FOR_LEGACY_USE_ONLY, &body);
+    let hash = base64::engine::general_purpose::STANDARD_NO_PAD.encode(digest.as_ref());
+    let etag = format!("W/\"{length:x}-{hash}\"");
+    let mut response = text(status, content_type, body);
+    response.headers_mut().insert("etag", etag.parse().unwrap());
+    response
+        .headers_mut()
+        .insert("content-length", length.into());
+    response
+}
+
 pub fn not_found() -> Reply {
     text(404, "text/plain;charset=UTF-8", "")
+}
+
+pub fn route_not_found(method: &Method, path: &str) -> Reply {
+    html_error(404, &escape_html(&format!("Cannot {method} {path}")))
+}
+
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+pub fn greeting() -> Reply {
+    send(
+        200,
+        "text/plain; charset=utf-8",
+        "Hello from sub-store, made with ❤️ by Peng-YM",
+    )
+}
+
+pub fn options(path: &str) -> Reply {
+    let methods = match path {
+        "/api/settings" => "GET,PATCH,HEAD",
+        "/api/storage" => "GET,POST,HEAD",
+        "/api/subs" | "/api/collections" => "GET,POST,PUT,HEAD",
+        _ if path.starts_with("/api/sub/") || path.starts_with("/api/collection/") => {
+            "GET,PATCH,DELETE,HEAD"
+        }
+        // shortcut: remaining route families gain their method inventories with M4.
+        _ => "GET,HEAD",
+    };
+    let mut response = send(200, "text/plain; charset=utf-8", methods);
+    response
+        .headers_mut()
+        .insert("allow", methods.parse().unwrap());
+    response
+}
+
+pub fn html_error(status: u16, message: &str) -> Reply {
+    let mut response = text(
+        status,
+        "text/html; charset=utf-8",
+        format!(
+            "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>{message}</pre>\n</body>\n</html>\n"
+        ),
+    );
+    response.headers_mut().insert(
+        "content-security-policy",
+        "default-src 'none'".parse().unwrap(),
+    );
+    response
+        .headers_mut()
+        .insert("x-content-type-options", "nosniff".parse().unwrap());
+    response
+}
+
+pub fn diagnostic(status: u16, detail: &str) -> String {
+    if std::env::var("NODE_ENV").as_deref() == Ok("production") {
+        return hyper::StatusCode::from_u16(status)
+            .unwrap()
+            .canonical_reason()
+            .unwrap()
+            .to_owned();
+    }
+    let trace = std::backtrace::Backtrace::force_capture();
+    escape_html(&format!("{detail}\n{trace}"))
+        .replace('\n', "<br>")
+        .replace("  ", " &nbsp;")
+}
+
+pub fn uncaught_error(status: u16, detail: &str) -> Reply {
+    html_error(status, &diagnostic(status, detail))
+}
+
+fn caught_error(message: &str) -> Reply {
+    send(
+        500,
+        "text/plain; charset=utf-8",
+        codec::stringify(&json!({"status":"failed", "error":{"message":message}})),
+    )
+}
+
+fn null_name_error(caught: bool) -> Reply {
+    if caught {
+        caught_error("Cannot read properties of null (reading 'name')")
+    } else {
+        uncaught_error(
+            500,
+            "TypeError: Cannot read properties of null (reading 'name')",
+        )
+    }
 }
 
 fn success(data: Option<Value>, status: u16) -> Reply {
     let mut value = json!({"status":"success"});
     if let Some(data) = data {
-        value["data"] = data;
+        value["data"] = legacy_object_order(data);
     }
     // The legacy middleware sets text/plain before Express serializes JSON.
-    text(status, "text/plain; charset=utf-8", value.to_string())
+    send(
+        status,
+        "text/plain; charset=utf-8",
+        codec::stringify(&value),
+    )
 }
 
 pub fn failure(status: u16, code: &str, kind: &str, message: &str) -> Reply {
-    text(
+    send(
         status,
         "text/plain; charset=utf-8",
-        json!({
+        codec::stringify(&json!({
             "status":"failed", "error":{"code":code, "type":kind, "message":message}
-        })
-        .to_string(),
+        })),
     )
 }
 
@@ -65,52 +177,32 @@ fn pending(message: &str) -> Reply {
 }
 
 fn invalid_backup() -> Reply {
-    text(
+    send(
         500,
         "text/plain; charset=utf-8",
-        json!({"status":"failed", "error":{
+        codec::stringify(&json!({"status":"failed", "error":{
             "code":"INVALID_BACKUP_DATA", "type":"RequestInvalidError",
             "message":"Invalid backup data, failed to restore!",
             "details":"Reason: 备份文件校验失败, 无法还原"
-        }})
-        .to_string(),
+        }})),
     )
 }
 
 fn download(value: &Value, name: &str) -> Reply {
-    let mut local = MaybeUninit::<libc::tm>::uninit();
-    // SAFETY: each reentrant CRT call initializes this tm on success; time accepts null.
-    let local = unsafe {
-        let now = libc::time(std::ptr::null_mut());
-        #[cfg(unix)]
-        let valid = !libc::localtime_r(&now, local.as_mut_ptr()).is_null();
-        #[cfg(windows)]
-        let valid = libc::localtime_s(local.as_mut_ptr(), &now) == 0;
-        if !valid {
-            return failure(
-                500,
-                "DATE_FORMAT_FAILED",
-                "InternalServerError",
-                "Failed to read local time",
-            );
-        }
-        local.assume_init()
+    let Ok(name) = String::from_utf16(&codec::units(name)) else {
+        return uncaught_error(500, "URIError: URI malformed");
     };
-    let stamp = format!(
-        "{:04}-{:02}-{:02}_{:02}-{:02}-{:02}",
-        local.tm_year + 1900,
-        local.tm_mon + 1,
-        local.tm_mday,
-        local.tm_hour,
-        local.tm_min,
-        local.tm_sec
-    );
+    let stamp = jiff::Zoned::now().strftime("%Y-%m-%d_%H-%M-%S");
     let filename = format!("{name}_{stamp}.json");
     let disposition = format!(
         "attachment; filename=\"{}\"",
         utf8_percent_encode(&filename, COMPONENT)
     );
-    let mut response = text(200, "application/json; charset=utf-8", value.to_string());
+    let mut response = send(
+        200,
+        "application/json; charset=utf-8",
+        codec::stringify(&legacy_object_order(value.clone())),
+    );
     response.headers_mut().insert(
         "access-control-expose-headers",
         "content-disposition".parse().unwrap(),
@@ -157,19 +249,22 @@ fn editor_languages(value: &mut Value) {
 }
 
 fn normalize_item(item: &mut Value, subscription: bool) -> Result<(), &'static str> {
+    let Some(object) = item.as_object_mut() else {
+        return Ok(());
+    };
     if subscription {
-        item.as_object_mut().unwrap().remove("subscriptions");
+        object.remove("subscriptions");
     }
-    let key = item
+    let key = object
         .get("age-public-key")
         .filter(|key| !key.is_null())
         .map(js_string)
         .unwrap_or_default();
-    let key = js_trim(&key);
+    let key = codec::trim(&key);
     if key.is_empty() {
-        item.as_object_mut().unwrap().remove("age-public-key");
+        object.remove("age-public-key");
     } else if valid_recipient(key) {
-        item["age-public-key"] = json!(key);
+        object.insert("age-public-key".to_owned(), json!(key));
     } else {
         return Err("age-public-key 仅支持 X25519(age1...) 或 MLKEM768-X25519(age1pq1...) 公钥");
     }
@@ -236,23 +331,14 @@ fn valid_recipient(key: &str) -> bool {
     checksum == 1
 }
 
-fn js_trim(value: &str) -> &str {
-    value.trim_matches(|c| {
-        matches!(
-            c,
-            '\u{0009}'..='\u{000d}'
-                | ' '
-                | '\u{00a0}'
-                | '\u{1680}'
-                | '\u{2000}'..='\u{200a}'
-                | '\u{2028}'
-                | '\u{2029}'
-                | '\u{202f}'
-                | '\u{205f}'
-                | '\u{3000}'
-                | '\u{feff}'
-        )
-    })
+const PRIMITIVE_ERROR: &str = "Cannot convert object to primitive value";
+
+fn cannot_coerce(value: &Value) -> bool {
+    match value {
+        Value::Object(fields) => fields.contains_key("toString"),
+        Value::Array(items) => items.iter().any(cannot_coerce),
+        _ => false,
+    }
 }
 
 fn js_string(value: &Value) -> String {
@@ -270,6 +356,7 @@ fn js_string(value: &Value) -> String {
             .collect::<Vec<_>>()
             .join(","),
         Value::Object(_) => "[object Object]".to_owned(),
+        Value::Number(value) => codec::number(value),
         _ => value.to_string(),
     }
 }
@@ -286,7 +373,7 @@ fn number(value: &Value) -> f64 {
         }
         Value::Number(value) => value.as_f64().unwrap_or(f64::NAN),
         Value::String(value) => {
-            let value = js_trim(value);
+            let value = codec::trim(value);
             if value.is_empty() {
                 return 0.0;
             }
@@ -319,10 +406,8 @@ fn number(value: &Value) -> f64 {
     }
 }
 
-fn settings(store: &mut Store, body: Value) -> Reply {
-    let Some(patch) = body.as_object() else {
-        return invalid("INVALID_SETTINGS", "Settings must be an object");
-    };
+fn settings(store: &mut Store, body: Body) -> Reply {
+    let patch = body.fields();
     if patch
         .get("gistDownloadTokenStrategy")
         .is_some_and(|v| ![json!("ask"), json!("overwrite"), json!("keep")].contains(v))
@@ -339,7 +424,7 @@ fn settings(store: &mut Store, body: Value) -> Reply {
         return pending("Gist and age settings integration is pending");
     }
     let mut next = store.data.clone();
-    let mut settings = next["settings"].as_object().cloned().unwrap_or_default();
+    let mut settings = Body::Json(next["settings"].clone()).fields();
     let previous_appearance = settings
         .get("appearanceSetting")
         .and_then(Value::as_object)
@@ -364,6 +449,17 @@ fn settings(store: &mut Store, body: Value) -> Reply {
         "backendRequestConcurrencyWaitTime",
     ] {
         if let Some(raw) = settings.get(key) {
+            if cannot_coerce(raw) {
+                return send(
+                    500,
+                    "text/plain; charset=utf-8",
+                    codec::stringify(&json!({"status":"failed", "error":{
+                        "code":"FAILED_TO_UPDATE_SETTINGS", "type":"InternalServerError",
+                        "message":"Failed to update settings",
+                        "details":format!("Reason: {PRIMITIVE_ERROR}")
+                    }})),
+                );
+            }
             let value = number(raw);
             let valid = match key {
                 "logsMaxCount" => !raw.is_null() && raw != "" && value >= 0.0,
@@ -397,11 +493,68 @@ fn reference_name_matches(value: &Value, name: &str, subscription: bool) -> bool
         }
 }
 
+fn collection_references(
+    store: &Store,
+    next: &mut Value,
+    name: &str,
+    renamed: Option<&Value>,
+) -> Result<(), &'static str> {
+    if !truthy(&next["collections"]) {
+        return Ok(());
+    }
+    let collections = if next["collections"].is_array() {
+        &mut next["collections"]
+    } else if store.list("collections").is_some() {
+        &mut next["collections"]["data"]
+    } else {
+        return Err(if renamed.is_some() {
+            "a is not iterable"
+        } else {
+            "n is not iterable"
+        });
+    };
+    for collection in collections.as_array_mut().unwrap() {
+        if renamed.is_some() && collection["subscriptions"].is_string() {
+            // The frozen CJS bundle silently ignores assignment to a string index.
+            continue;
+        }
+        let error = if collection.is_null() {
+            "Cannot read properties of null (reading 'subscriptions')"
+        } else if renamed.is_some() {
+            match collection.get("subscriptions") {
+                None => "Cannot read properties of undefined (reading 'indexOf')",
+                Some(Value::Null) => "Cannot read properties of null (reading 'indexOf')",
+                _ => "i.subscriptions.indexOf is not a function",
+            }
+        } else {
+            match collection.get("subscriptions") {
+                None => "Cannot read properties of undefined (reading 'filter')",
+                Some(Value::Null) => "Cannot read properties of null (reading 'filter')",
+                _ => "i.subscriptions.filter is not a function",
+            }
+        };
+        let Some(names) = collection
+            .get_mut("subscriptions")
+            .and_then(Value::as_array_mut)
+        else {
+            return Err(error);
+        };
+        if let Some(renamed) = renamed {
+            if let Some(index) = names.iter().position(|value| value == name) {
+                names[index] = renamed.clone();
+            }
+        } else {
+            names.retain(|value| value != name);
+        }
+    }
+    Ok(())
+}
+
 pub fn dispatch(
     method: &Method,
     path: &str,
-    query: &HashMap<String, String>,
-    body: Value,
+    query: &Value,
+    body: Body,
     store: &mut Store,
 ) -> Reply {
     if path == "/api/utils/refresh" && method == Method::GET {
@@ -415,16 +568,15 @@ pub fn dispatch(
             return download(&store.data, "sub-store_data");
         }
         if method == Method::POST {
-            let restored = body["content"]
+            let restored = body.into_json()["content"]
                 .as_str()
                 .ok_or_else(|| "Missing content".to_owned())
-                .and_then(decode);
+                .and_then(|text| decode(&codec::text(text)));
             let Ok(mut next) = restored else {
                 return invalid_backup();
             };
             let original = next.clone();
-            if !next["settings"].is_object() || migrate(&mut next).is_err() || !valid_records(&next)
-            {
+            if next["settings"].is_null() || migrate(&mut next).is_err() || !valid_records(&next) {
                 return invalid_backup();
             }
             return persisted(store.restore(next, original), success(None, 200));
@@ -432,6 +584,11 @@ pub fn dispatch(
     }
     if path == "/api/settings" {
         if method == Method::GET {
+            if !truthy(&store.data["settings"]) {
+                let mut next = store.data.clone();
+                next["settings"] = json!({});
+                return publish(store, next, success(Some(json!({})), 200));
+            }
             return success(Some(store.data["settings"].clone()), 200);
         }
         if method == Method::PATCH {
@@ -441,7 +598,7 @@ pub fn dispatch(
     if method == Method::GET {
         let key = match path {
             "/api/artifacts" => Some("artifacts"),
-            "/api/wholeFiles" | "/api/files" => Some("files"),
+            "/api/wholefiles" | "/api/files" => Some("files"),
             "/api/modules" => Some("modules"),
             "/api/tokens" => Some("tokens"),
             "/api/archives" => Some("archives"),
@@ -478,10 +635,28 @@ pub fn dispatch(
         return success(store.data.get(key).cloned(), 200);
     }
     let name = path.strip_prefix(singular).unwrap_or("");
-    let position = store.data[key]
-        .as_array()
-        .and_then(|items| items.iter().position(|item| item["name"] == name));
+    let mut position = None;
+    let mut null_record = false;
+    let lookup_failed = path != plural && store.list(key).is_none();
+    if path != plural {
+        for (index, item) in store.list(key).into_iter().flatten().enumerate() {
+            if item.is_null() {
+                null_record = true;
+                break;
+            }
+            if item.get("name").is_some_and(|value| value == name) {
+                position = Some(index);
+                break;
+            }
+        }
+    }
     if path != plural && method == Method::GET {
+        if lookup_failed {
+            return uncaught_error(500, "TypeError: e.find is not a function");
+        }
+        if null_record {
+            return null_name_error(false);
+        }
         return if let Some(position) = position {
             if subscription {
                 // Legacy GET cleans the live object; its next write persists the change.
@@ -491,7 +666,7 @@ pub fn dispatch(
                     .remove("subscriptions");
             }
             let item = store.data[key][position].clone();
-            if query.get("raw").is_some_and(|s| !s.is_empty()) {
+            if truthy(&query["raw"]) {
                 download(
                     &item,
                     &format!(
@@ -507,22 +682,16 @@ pub fn dispatch(
                 success(Some(item), 200)
             }
         } else if !subscription {
-            text(
+            send(
                 500,
                 "text/plain; charset=utf-8",
-                json!({"status":"failed", "error":{
+                codec::stringify(&json!({"status":"failed", "error":{
                     "code":"SUBSCRIPTION_NOT_FOUND", "type":"ResourceNotFoundError",
                     "message":format!("{label} {name} does not exist"), "details":404
-                }})
-                .to_string(),
+                }})),
             )
         } else {
-            failure(
-                404,
-                "SUBSCRIPTION_NOT_FOUND",
-                "ResourceNotFoundError",
-                &format!("{label} {name} does not exist"),
-            )
+            uncaught_error(500, "TypeError: Cannot convert undefined or null to object")
         };
     }
     let mut next = store.data.clone();
@@ -530,27 +699,38 @@ pub fn dispatch(
         next[key] = json!([]);
     }
     if path == plural && method == Method::PUT {
-        let Some(mut items) = body.as_array().cloned() else {
-            return invalid("INVALID_DATA", "Expected an array");
-        };
-        if items.iter().any(|item| !item.is_object()) {
-            return invalid("INVALID_DATA", "Expected object items");
-        }
-        for item in &mut items {
-            if let Err(message) = normalize_item(item, false) {
-                return invalid("INVALID_AGE_PUBLIC_KEY", message);
+        let raw = matches!(body, Body::Raw(_));
+        let mut items = body.into_json();
+        if let Some(items) = items.as_array_mut() {
+            for item in items {
+                if cannot_coerce(&item["age-public-key"]) {
+                    return caught_error(PRIMITIVE_ERROR);
+                }
+                if let Err(message) = normalize_item(item, false) {
+                    return invalid("INVALID_AGE_PUBLIC_KEY", message);
+                }
             }
+        } else if !raw {
+            // The frozen minified Node bundle names this local variable r on both routes.
+            return caught_error("r.forEach is not a function");
         }
-        next[key] = Value::Array(items);
-        return publish(store, next, success(None, 200));
+        next[key] = items;
+        return persisted(store.commit_list(next, key, raw), success(None, 200));
     }
     if path == plural && method == Method::POST {
-        let mut item = body;
-        if !item.is_object() {
-            return invalid("INVALID_DATA", "Expected an object");
+        let mut item = if subscription {
+            Value::Object(body.fields())
+        } else {
+            body.into_json()
+        };
+        if cannot_coerce(&item["age-public-key"]) {
+            return caught_error(PRIMITIVE_ERROR);
         }
         if let Err(message) = normalize_item(&mut item, subscription) {
             return invalid("INVALID_AGE_PUBLIC_KEY", message);
+        }
+        if cannot_coerce(&item["name"]) {
+            return caught_error(PRIMITIVE_ERROR);
         }
         let item_name = item
             .get("name")
@@ -559,22 +739,38 @@ pub fn dispatch(
         if item_name.contains('/') {
             return invalid("INVALID_NAME", &format!("{label} {item_name} is invalid"));
         }
-        if next[key].as_array().unwrap().iter().any(|old| {
-            match (old.get("name"), item.get("name")) {
+        let Some(items) = store.list(key) else {
+            return caught_error("e.find is not a function");
+        };
+        for old in items {
+            if old.is_null() {
+                return null_name_error(true);
+            }
+            let duplicate = match (old.get("name"), item.get("name")) {
                 (Some(Value::Number(old)), Some(Value::Number(new))) => {
                     old.as_f64() == new.as_f64()
                 }
                 (_, Some(Value::Array(_) | Value::Object(_))) => false,
                 (old, new) => old == new,
+            };
+            if duplicate {
+                if truthy(old) {
+                    return invalid(
+                        "DUPLICATE_KEY",
+                        &format!("{label} {item_name} already exists."),
+                    );
+                }
+                break;
             }
-        }) {
-            return invalid(
-                "DUPLICATE_KEY",
-                &format!("{label} {item_name} already exists."),
-            );
         }
         let top = next["settings"]["appearanceSetting"]["createItemPosition"] == "top";
-        let items = next[key].as_array_mut().unwrap();
+        let Some(items) = next[key].as_array_mut() else {
+            return caught_error(if top {
+                "e.unshift is not a function"
+            } else {
+                "e.push is not a function"
+            });
+        };
         if top {
             items.insert(0, item.clone());
         } else {
@@ -589,12 +785,25 @@ pub fn dispatch(
             if mode == "archive" {
                 return pending("Archive deletion is pending");
             }
-            if !mode.is_empty() && mode != "permanent" {
+            if mode != "" && mode != "permanent" {
+                if cannot_coerce(mode) {
+                    return caught_error(PRIMITIVE_ERROR);
+                }
                 return invalid(
                     "INVALID_DELETE_MODE",
-                    &format!("Unsupported delete mode: {mode}"),
+                    &format!("Unsupported delete mode: {}", js_string(mode)),
                 );
             }
+        }
+        if lookup_failed {
+            return if method == Method::DELETE {
+                caught_error("e.find is not a function")
+            } else {
+                uncaught_error(500, "TypeError: e.find is not a function")
+            };
+        }
+        if null_record {
+            return null_name_error(method == Method::DELETE);
         }
         let Some(position) = position else {
             return failure(
@@ -606,18 +815,14 @@ pub fn dispatch(
         };
         if method == Method::DELETE {
             next[key].as_array_mut().unwrap().remove(position);
-            if subscription {
-                for collection in next["collections"].as_array_mut().into_iter().flatten() {
-                    if let Some(names) = collection["subscriptions"].as_array_mut() {
-                        names.retain(|value| value != name);
-                    }
-                }
+            if subscription
+                && let Err(message) = collection_references(store, &mut next, name, None)
+            {
+                return caught_error(message);
             }
             return publish(store, next, success(None, 200));
         }
-        let Some(mut patch) = body.as_object().cloned() else {
-            return invalid("INVALID_DATA", "Expected an object");
-        };
+        let mut patch = body.fields();
         if subscription {
             patch.remove("subscriptions");
         }
@@ -626,21 +831,12 @@ pub fn dispatch(
         }
         let mut item = next[key][position].clone();
         item.as_object_mut().unwrap().extend(patch);
+        if cannot_coerce(&item["age-public-key"]) {
+            return uncaught_error(500, &format!("TypeError: {PRIMITIVE_ERROR}"));
+        }
         if normalize_item(&mut item, false).is_err() {
             // The legacy PATCH handler lets this error reach Express's HTML handler.
-            let mut response = text(
-                500,
-                "text/html; charset=utf-8",
-                "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>[object Object]</pre>\n</body>\n</html>\n",
-            );
-            response.headers_mut().insert(
-                "content-security-policy",
-                "default-src 'none'".parse().unwrap(),
-            );
-            response
-                .headers_mut()
-                .insert("x-content-type-options", "nosniff".parse().unwrap());
-            return response;
+            return html_error(500, "[object Object]");
         }
         let new_name = item["name"].clone();
         let source_type = if subscription {
@@ -649,16 +845,18 @@ pub fn dispatch(
             "collection"
         };
         if new_name != name {
-            if subscription {
-                for collection in next["collections"].as_array_mut().into_iter().flatten() {
-                    if let Some(names) = collection["subscriptions"].as_array_mut()
-                        && let Some(index) = names.iter().position(|value| value == name)
-                    {
-                        names[index] = new_name.clone();
-                    }
-                }
+            if subscription
+                && let Err(message) = collection_references(store, &mut next, name, Some(&new_name))
+            {
+                return uncaught_error(500, &format!("TypeError: {message}"));
             }
             for artifact in next["artifacts"].as_array_mut().into_iter().flatten() {
+                if subscription
+                    && artifact["type"] == source_type
+                    && cannot_coerce(&artifact["source"])
+                {
+                    return uncaught_error(500, &format!("TypeError: {PRIMITIVE_ERROR}"));
+                }
                 if artifact["type"] == source_type
                     && reference_name_matches(&artifact["source"], name, subscription)
                 {
@@ -666,6 +864,12 @@ pub fn dispatch(
                 }
             }
             for file in next["files"].as_array_mut().into_iter().flatten() {
+                if subscription
+                    && file["sourceType"] == source_type
+                    && cannot_coerce(&file["sourceName"])
+                {
+                    return uncaught_error(500, &format!("TypeError: {PRIMITIVE_ERROR}"));
+                }
                 if file["sourceType"] == source_type
                     && reference_name_matches(&file["sourceName"], name, subscription)
                 {
