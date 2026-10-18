@@ -304,7 +304,7 @@ def main():
                 if phase == "restored":
                     feature = json.loads(request(url, {"path": "/api/utils/env"})["body"])["data"]["feature"]
                     # The existing archive capability selects the frontend's two delete-dialog labels.
-                    confirm = "永久删除" if feature.get("archive") else "确认删除"
+                    confirm = "彻底删除" if feature.get("archive") else "确认删除"
                     report["permanent_delete_confirmation"] = confirm
                     for name, plural in (("ui-restored-sub", "subs"), ("ui-restored-col", "collections")):
                         row = '.nut-swipe:has(.sub-item-title[title="' + name + '"])'

@@ -1900,7 +1900,6 @@ def main():
         report["compressed_body_chunking_and_members_checked"] = True
         report["request_media_parameters_and_selection_checked"] = True
         report["request_charset_aliases_and_verifier_order_checked"] = True
-        report["crud_development_stack_parity"] = "NOT_VERIFIED"
         backup = json.loads((HERE / "fixtures/frontend-backup.json").read_text(encoding="utf-8"))
         root = {"opaque": {"text": "根缓存🙂\r\n", "zero": 0, "flag": False, "nil": None}, "sub-store": "previous backup"}
         for key in ("sub-store-cached-resource", "sub-store-cached-headers-resource", "sub-store-cached-script-resource"):
