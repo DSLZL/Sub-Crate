@@ -2,8 +2,16 @@
 
 This branch now includes an independent Rust HTTP server in `src/`. It serves
 subscription/collection/settings CRUD and legacy JSON storage without Node.
-The JavaScript feasibility example remains separate. Conversion, script execution
-inside the application, archive actions, Gist/age and remaining integrations are
+Local subscriptions share native Rust parsing and JSON/URI/V2Ray output through
+`/api/proxy/parse`, subscription preview and subscription download. Native input
+includes SS/SSR, HTTP/SOCKS, Trojan, Hysteria1/2, TUIC, WireGuard, VMess, VLESS and
+AnyTLS, with Base64/SSD preprocessing and transport/TLS normalization. V2Ray also
+serves the default download target and its three legacy aliases. These protocol
+slices remain partial while the complete source-branch inventory is verified.
+Raw input starting `<!DOCTYPE html>` is discarded before parsing. Other formats,
+processors, remote sources and unported value branches return a pending error.
+The JavaScript feasibility example remains separate. Remaining conversion,
+script execution inside the application, archive actions, Gist/age and integrations are
 still under development; this is not a complete replacement release.
 
 All builds and tests run in the **Rust service and compatibility** GitHub Actions

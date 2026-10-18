@@ -1722,6 +1722,53 @@ def main():
         check_json(final["rust"], final["node"])
         report["full_document_equal_after_shared_suite"] = True
         baseline_root = json.loads((output / "node-state/root.json").read_text(encoding="utf-8"))
+        _, conversion_cases = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "conversion-local")
+        _, conversion_restart = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "conversion-local-restart")
+        conversion_state = {}
+        conversion_responses = {}
+        for kind in ("node", "rust"):
+            state = output / f"{kind}-conversion-local"
+            state.mkdir()
+            (state / "sub-store.json").write_text(json.dumps(final["node"], ensure_ascii=False), encoding="utf-8")
+            (state / "root.json").write_text(json.dumps(baseline_root, ensure_ascii=False), encoding="utf-8")
+            env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}
+            label = kind + "-conversion-local"
+            manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
+            with manager as url:
+                results = check_cases(url, state, conversion_cases, output, label)
+                conversion_responses[kind] = list(results)
+                report["phases"].append({"name": label, "cases": len(results), "requests": sum(len(case["steps"]) for case in results)})
+                conversion_state[kind] = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+                if kind == "rust":
+                    before_pending = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")}
+                    pending_steps = [
+                        {"method": "POST", "path": "/api/proxy/parse", "body": {"data": '{"type":"ss","name":"later","server":"127.0.0.1","port":443,"cipher":"none","password":"password"}', "client": "JSON"}},
+                        {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://none:p@127.0.0.1:443?plugin=shadow-tls%3Bversion%3Dbad", "client": "URI"}},
+                        {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ssr://aG9zdDo6b3JpZ2luOmFlcy0xMjgtY2ZiOnBsYWluOmNBLz8=", "client": "URI"}},
+                        {"method": "POST", "path": "/api/preview/sub", "body": {"name": "later", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#later", "process": [{"type": "Script Operator", "args": {"mode": "script", "content": "$substore.write('must-not-write', true);"}}]}},
+                        {"path": "/download/native-local/URI?$options=response-hook"},
+                    ]
+                    pending_responses = [{"request": step, "response": request(url, step)} for step in pending_steps]
+                    (output / "rust-conversion-pending.json").write_text(json.dumps(pending_responses, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                    assert all(item["response"]["status"] == 501 and json.loads(item["response"]["body"])["error"]["code"] == "FEATURE_NOT_IMPLEMENTED" for item in pending_responses)
+                    assert all((state / key).read_bytes() == value for key, value in before_pending.items())
+                    assert request(url, {"path": "/download/native-local/URI"})["status"] == 200
+            before = (state / "sub-store.json").read_bytes()
+            label += "-restart"
+            manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
+            with manager as url:
+                conversion_responses[kind].extend(check_cases(url, state, conversion_restart, output, label))
+                assert (state / "sub-store.json").read_bytes() == before, "Read-only conversion changed durable state"
+                report["phases"].append({"name": label, "cases": len(conversion_restart)})
+        for rust_case, node_case in zip(conversion_responses["rust"], conversion_responses["node"], strict=True):
+            assert rust_case["id"] == node_case["id"]
+            for rust_step, node_step in zip(rust_case["steps"], node_case["steps"], strict=True):
+                actual, expected = rust_step["response"], node_step["response"]
+                assert actual["status"] == expected["status"] and actual["body"] == expected["body"], (rust_case["id"], actual, expected)
+                for key in ("content-type", "content-length", "etag", "allow"):
+                    assert actual["headers"].get(key) == expected["headers"].get(key), (rust_case["id"], key, actual, expected)
+        check_json(conversion_state["rust"], conversion_state["node"])
+        report["native_local_ss_conversion_checked"] = True
         configurations = [
             ("default", {}, 1048576, [("https://sub-store.vercel.app", "https://sub-store.vercel.app")], "https://denied.invalid", False),
             ("custom-name", {"SUB_STORE_BACKEND_CUSTOM_NAME": "configuration-fixture", "SUB_STORE_BODY_JSON_LIMIT": "+1GB"}, 1073741824,

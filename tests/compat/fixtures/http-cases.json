@@ -1,5 +1,131 @@
 [
   {
+    "id": "P02-input-proxy-ssr-uris",
+    "source": "backend/src/core/proxy-utils/parsers/index.js:151-238,550-615; backend/src/core/proxy-utils/producers/uri.js:833-839,1015-1030; backend/src/core/proxy-utils/index.js:lastParse; backend/src/core/proxy-utils/producers/v2ray.js:10-20",
+    "steps": [
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"http://u%40:p%3Aa@plain.example/#http%20%23#tail\nhttps://alice:pa%24%24@https.example.com#HTTPS%20Default\nsocks5+tls://tls.example#TLS%20Node\nsocks5://bob:secret@127.0.0.1:01080#SOCKS5\nsocks://dXNlcjpwYXNzOmV4dHJh@[2001:db8::2]:00080?ignored=1#IPv6\nhttp://localhost\nhttp://[2001:db8::1]:8080#","client":"JSON","type":"internal"},"expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"name":"http ##tail","type":"http","tls":false,"server":"plain.example","port":80,"username":"u@","password":"p:a","udp":true},{"name":"HTTPS Default","type":"http","tls":true,"server":"https.example.com","port":443,"username":"alice","password":"pa$$","udp":true,"sni":"https.example.com"},{"name":"TLS Node","type":"socks5","tls":true,"server":"tls.example","port":443,"udp":true,"sni":"tls.example"},{"name":"SOCKS5","type":"socks5","tls":false,"server":"127.0.0.1","port":1080,"username":"bob","password":"secret","udp":true},{"name":"IPv6","type":"socks5","server":"2001:db8::2","port":80,"username":"user","password":"pass","udp":true},{"name":"http localhost:80","type":"http","tls":false,"server":"localhost","port":80,"udp":true},{"name":"http 2001:db8::1:8080","type":"http","tls":false,"server":"2001:db8::1","port":8080,"udp":true}]}}}},
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"http://u%40:p%3Aa@plain.example/#http%20%23#tail\nhttps://alice:pa%24%24@https.example.com#HTTPS%20Default\nsocks5+tls://tls.example#TLS%20Node\nsocks5://bob:secret@127.0.0.1:01080#SOCKS5\nsocks://dXNlcjpwYXNzOmV4dHJh@[2001:db8::2]:00080?ignored=1#IPv6\nhttp://localhost\nhttp://[2001:db8::1]:8080#","client":"URI","type":"internal"},"expect":{"status":200,"json":{"status":"success","data":{"par_res":["socks://Og%3D%3D@tls.example:443#TLS Node","socks://Ym9iOnNlY3JldA%3D%3D@127.0.0.1:1080#SOCKS5","socks://dXNlcjpwYXNz@[2001:db8::2]:80#IPv6"]}}}},
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"http://u%40:p%3Aa@plain.example/#http%20%23#tail\nhttps://alice:pa%24%24@https.example.com#HTTPS%20Default\nsocks5+tls://tls.example#TLS%20Node\nsocks5://bob:secret@127.0.0.1:01080#SOCKS5\nsocks://dXNlcjpwYXNzOmV4dHJh@[2001:db8::2]:00080?ignored=1#IPv6\nhttp://localhost\nhttp://[2001:db8::1]:8080#","client":"v2","type":""},"expect":{"status":200,"json":{"status":"success","data":{"par_res":"Cgpzb2NrczovL09nJTNEJTNEQHRscy5leGFtcGxlOjQ0MyNUTFMgTm9kZQpzb2NrczovL1ltOWlPbk5sWTNKbGRBJTNEJTNEQDEyNy4wLjAuMToxMDgwI1NPQ0tTNQpzb2NrczovL2RYTmxjanB3WVhOekBbMjAwMTpkYjg6OjJdOjgwI0lQdjYKCg=="}}}},
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"ssr://WzIwMDE6ZGI4OjozXTowODM4ODphdXRoX3NoYTFfdjQ6QUVTLTEyOC1DRkI6aHR0cF9zaW1wbGU6Y0RybnA1amxyNFk9Lz9yZW1hcmtzPVUxTlNJRTV2WkdVajVMaUEmb2Jmc3BhcmFtPUlHTmtiaUF1WlhoaGJYQnNaU0FKJnByb3RvcGFyYW09SURReUlEb2dhMlY1SUE9PQ==\nssr://MTk4LjUxLjEwMC4yOjY1NTM1Om9yaWdpbjpyYzQtbWQ1OnBsYWluOi8/cmVtYXJrcz1hV2R1YjNKbFpBPT0=","client":"JSON","type":"internal"},"expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"type":"ssr","server":"2001:db8::3","port":"08388","protocol":"auth_sha1_v4","cipher":"aes-128-cfb","obfs":"http_simple","password":"p:秘密","name":"SSR Node#一","protocol-param":"42:key","obfs-param":"cdn.example","udp":true},{"type":"ssr","server":"198.51.100.2","port":65535,"protocol":"origin","cipher":"rc4-md5","obfs":"plain","password":"","name":"198.51.100.2","udp":true}]}}}},
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"ssr://WzIwMDE6ZGI4OjozXTowODM4ODphdXRoX3NoYTFfdjQ6QUVTLTEyOC1DRkI6aHR0cF9zaW1wbGU6Y0RybnA1amxyNFk9Lz9yZW1hcmtzPVUxTlNJRTV2WkdVajVMaUEmb2Jmc3BhcmFtPUlHTmtiaUF1WlhoaGJYQnNaU0FKJnByb3RvcGFyYW09SURReUlEb2dhMlY1SUE9PQ==\nssr://MTk4LjUxLjEwMC4yOjY1NTM1Om9yaWdpbjpyYzQtbWQ1OnBsYWluOi8/cmVtYXJrcz1hV2R1YjNKbFpBPT0=","client":"URI","type":"internal"},"expect":{"status":200,"json":{"status":"success","data":{"par_res":["ssr://WzIwMDE6ZGI4OjozXTowODM4ODphdXRoX3NoYTFfdjQ6YWVzLTEyOC1jZmI6aHR0cF9zaW1wbGU6Y0RybnA1amxyNFk9Lz9yZW1hcmtzPVUxTlNJRTV2WkdVajVMaUEmb2Jmc3BhcmFtPVkyUnVMbVY0WVcxd2JHVT0mcHJvdG9wYXJhbT1OREk2YTJWNQ==","ssr://MTk4LjUxLjEwMC4yOjY1NTM1Om9yaWdpbjpyYzQtbWQ1OnBsYWluOi8/cmVtYXJrcz1NVGs0TGpVeExqRXdNQzR5"]}}}},
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"socks5://no-port\nsocks://no-port\nhttp://u%GG:pass@bad:80\nhttps://bad/#bad%GG\nssr://YmFkOjgwOm9yaWdpbjphOmI6Y0EvP3JlbWFya3M9WVEmYmFk\nhttp://kept:80#keep","client":"JSON","type":"internal"},"expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"name":"keep","type":"http","tls":false,"server":"kept","port":80,"udp":true}]}}}},
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"https://https.example:8443#HTTP","client":"URI","type":"internal"},"expect":{"status":200,"json":{"status":"success","data":{"par_res":[]}}}},
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"http://one:80\nhttps://two:443","client":"V2Ray","type":"internal"},"expect":{"status":200,"json":{"status":"success","data":{"par_res":"Cg=="}}}},
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"http://one:80\nss://none:p@original.example:80?gost=eyJyb3V0ZSI6IndzIn0=\nsocks5://bob:secret@127.0.0.1:1080#SOCKS5","client":"v2ray"},"expect":{"status":200,"json":{"status":"success","data":{"par_res":"CnNvY2tzOi8vWW05aU9uTmxZM0psZEElM0QlM0RAMTI3LjAuMC4xOjEwODAjU09DS1M1"}}}}
+    ]
+  },
+  {
+    "id": "P05-local-uri-paths",
+    "source": "backend/src/restful/preview.js:79; backend/src/restful/download.js:45,85; backend/src/restful/sync.js:271; backend/src/core/proxy-utils/parsers/index.js:151-238",
+    "steps": [
+      {"method":"POST","path":"/api/preview/sub","body":{"name":"uri-preview","source":"local","content":"http://u%40:p%3Aa@plain.example/#http%20%23#tail\nhttps://alice:pa%24%24@https.example.com#HTTPS%20Default\nsocks5+tls://tls.example#TLS%20Node\nsocks5://bob:secret@127.0.0.1:01080#SOCKS5\nsocks://dXNlcjpwYXNzOmV4dHJh@[2001:db8::2]:00080?ignored=1#IPv6\nhttp://localhost\nhttp://[2001:db8::1]:8080#","process":[]},"expect":{"status":200,"json":{"status":"success","data":{"original":[{"name":"http ##tail","type":"http","tls":false,"server":"plain.example","port":80,"username":"u@","password":"p:a","udp":true,"id":0,"_subName":"uri-preview"},{"name":"HTTPS Default","type":"http","tls":true,"server":"https.example.com","port":443,"username":"alice","password":"pa$$","udp":true,"sni":"https.example.com","id":1,"_subName":"uri-preview"},{"name":"TLS Node","type":"socks5","tls":true,"server":"tls.example","port":443,"udp":true,"sni":"tls.example","id":2,"_subName":"uri-preview"},{"name":"SOCKS5","type":"socks5","tls":false,"server":"127.0.0.1","port":1080,"username":"bob","password":"secret","udp":true,"id":3,"_subName":"uri-preview"},{"name":"IPv6","type":"socks5","server":"2001:db8::2","port":80,"username":"user","password":"pass","udp":true,"id":4,"_subName":"uri-preview"},{"name":"http localhost:80","type":"http","tls":false,"server":"localhost","port":80,"udp":true,"id":5,"_subName":"uri-preview"},{"name":"","type":"http","tls":false,"server":"2001:db8::1","port":8080,"udp":true,"id":6,"_subName":"uri-preview"}],"processed":[{"name":"http ##tail","type":"http","tls":false,"server":"plain.example","port":80,"username":"u@","password":"p:a","udp":true,"id":0,"_subName":"uri-preview"},{"name":"HTTPS Default","type":"http","tls":true,"server":"https.example.com","port":443,"username":"alice","password":"pa$$","udp":true,"sni":"https.example.com","id":1,"_subName":"uri-preview"},{"name":"TLS Node","type":"socks5","tls":true,"server":"tls.example","port":443,"udp":true,"sni":"tls.example","id":2,"_subName":"uri-preview"},{"name":"SOCKS5","type":"socks5","tls":false,"server":"127.0.0.1","port":1080,"username":"bob","password":"secret","udp":true,"id":3,"_subName":"uri-preview"},{"name":"IPv6","type":"socks5","server":"2001:db8::2","port":80,"username":"user","password":"pass","udp":true,"id":4,"_subName":"uri-preview"},{"name":"http localhost:80","type":"http","tls":false,"server":"localhost","port":80,"udp":true,"id":5,"_subName":"uri-preview"},{"name":"","type":"http","tls":false,"server":"2001:db8::1","port":8080,"udp":true,"id":6,"_subName":"uri-preview"}]}}}},
+      {"method":"POST","path":"/api/subs","body":{"name":"native-uri","source":"local","content":"http://u%40:p%3Aa@plain.example/#http%20%23#tail\nhttps://alice:pa%24%24@https.example.com#HTTPS%20Default\nsocks5+tls://tls.example#TLS%20Node\nsocks5://bob:secret@127.0.0.1:01080#SOCKS5\nsocks://dXNlcjpwYXNzOmV4dHJh@[2001:db8::2]:00080?ignored=1#IPv6\nhttp://localhost\nhttp://[2001:db8::1]:8080#","process":[]},"expect":{"status":201}},
+      {"path":"/download/native-uri/URI","expect":{"status":200,"body":"socks://Og%3D%3D@tls.example:443#TLS Node\nsocks://Ym9iOnNlY3JldA%3D%3D@127.0.0.1:1080#SOCKS5\nsocks://dXNlcjpwYXNz@[2001:db8::2]:80#IPv6"}},
+      {"path":"/download/native-uri/JSON","expect":{"status":200,"headers":{"content-type":"application/json; charset=utf-8"},"json":[{"name":"http ##tail","type":"http","tls":false,"server":"plain.example","port":80,"username":"u@","password":"p:a","udp":true,"_subName":"native-uri"},{"name":"HTTPS Default","type":"http","tls":true,"server":"https.example.com","port":443,"username":"alice","password":"pa$$","udp":true,"sni":"https.example.com","_subName":"native-uri"},{"name":"TLS Node","type":"socks5","tls":true,"server":"tls.example","port":443,"udp":true,"sni":"tls.example","_subName":"native-uri"},{"name":"SOCKS5","type":"socks5","tls":false,"server":"127.0.0.1","port":1080,"username":"bob","password":"secret","udp":true,"_subName":"native-uri"},{"name":"IPv6","type":"socks5","server":"2001:db8::2","port":80,"username":"user","password":"pass","udp":true,"_subName":"native-uri"},{"name":"http localhost:80","type":"http","tls":false,"server":"localhost","port":80,"udp":true,"_subName":"native-uri"},{"name":"http 2001:db8::1:8080","type":"http","tls":false,"server":"2001:db8::1","port":8080,"udp":true,"_subName":"native-uri"}]}},
+      {"method":"DELETE","path":"/api/sub/native-uri?mode=permanent","expect":{"status":200}}
+    ]
+  },
+  {
+    "id": "P02-input-base64-ssd-boundary",
+    "source": "backend/src/core/proxy-utils/preprocessors/index.js:48-107,139-181,197-204; js-base64 3.7.8 base64.ts:isValid; backend/src/core/proxy-utils/index.js:51-68",
+    "steps": [
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"aHR0cDovL2Jhc2UuZXhhbXBsZTo4MCNiYXNl","client":"JSON","type":"internal"},"expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"name":"base","type":"http","tls":false,"server":"base.example","port":80,"udp":true}]}}}},
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"aHR0cDovL2Jhc2UuZXhhbXBsZTo4MCNiYXNl\n ﻿","client":"JSON","type":"internal"},"expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"name":"base","type":"http","tls":false,"server":"base.example","port":80,"udp":true}]}}}},
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"aHR0cDovL2Jhc2UxLmV4YW1wbGU6ODAj8J-Zgg","client":"JSON","type":"internal"},"expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"name":"🙂","type":"http","tls":false,"server":"base1.example","port":80,"udp":true}]}}}},
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"aHR0cDovL2Jhc2UuZXhhbXBsZTo4MCNiYXNl+_","client":"JSON","type":"internal"},"expect":{"status":200,"json":{"status":"success","data":{"par_res":[]}}}},
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"aHR0cDovL2Jhc2UuZXhhbXBsZTo4MCNiYXNl===","client":"JSON","type":"internal"},"expect":{"status":200,"json":{"status":"success","data":{"par_res":[]}}}},
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"ICBodHRwOi8vYmFzZS5leGFtcGxlOjgwI2Jhc2U=","client":"JSON","type":"internal"},"expect":{"status":200,"json":{"status":"success","data":{"par_res":[]}}}},
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"PCFET0NUWVBFIGh0bWw+Cmh0dHA6Ly9iYXNlLmV4YW1wbGU6ODAjYmFzZQ==","client":"JSON","type":"internal"},"expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"name":"base","type":"http","tls":false,"server":"base.example","port":80,"udp":true}]}}}},
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"c3NkOi8vZXlKd2IzSjBJam80TXpnNExDSmxibU55ZVhCMGFXOXVJam9pWVdWekxURXlPQzFuWTIwaUxDSndZWE56ZDI5eVpDSTZJbVJsWm1GMWJIUWlMQ0p6WlhKMlpYSnpJanBiZXlKelpYSjJaWElpT2lKdmJtVXVaWGhoYlhCc1pTSXNJbkJ2Y25RaU9qZzBORE1zSW1WdVkzSjVjSFJwYjI0aU9pSmhaWE10TWpVMkxXZGpiU0lzSW5CaGMzTjNiM0prSWpvaVptbHljM1FpTENKeVpXMWhjbXR6SWpvaVJtbHljM1FsTWpCT2IyUmxJbjBzZXlKelpYSjJaWElpT2lKMGQyOHVaWGhoYlhCc1pTSXNJbVZ1WTNKNWNIUnBiMjRpT2lJaUxDSndZWE56ZDI5eVpDSTZJaUlzSW5CdmNuUWlPakFzSW5KbGJXRnlhM01pT2lJaWZTeDdJbk5sY25abGNpSTZJbUpoWkM1bGVHRnRjR3hsSWl3aWNtVnRZWEpyY3lJNkltSmhaQ1ZIUnlKOVhYMD0=","client":"JSON","type":"internal"},"expect":{"status":200,"json":{"status":"success","data":{"par_res":[]}}}},
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"ssd://eyJwb3J0Ijo4Mzg4LCJlbmNyeXB0aW9uIjoiYWVzLTEyOC1nY20iLCJwYXNzd29yZCI6ImRlZmF1bHQiLCJzZXJ2ZXJzIjpbeyJzZXJ2ZXIiOiJvbmUuZXhhbXBsZSIsInBvcnQiOjg0NDMsImVuY3J5cHRpb24iOiJhZXMtMjU2LWdjbSIsInBhc3N3b3JkIjoiZmlyc3QiLCJyZW1hcmtzIjoiRmlyc3QlMjBOb2RlIn0seyJzZXJ2ZXIiOiJ0d28uZXhhbXBsZSIsImVuY3J5cHRpb24iOiIiLCJwYXNzd29yZCI6IiIsInBvcnQiOjAsInJlbWFya3MiOiIifSx7InNlcnZlciI6ImJhZC5leGFtcGxlIiwicmVtYXJrcyI6ImJhZCVHRyJ9XX0=","client":"JSON","type":"internal"},"expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"type":"ss","skip-cert-verify":false,"udp":true,"server":"one.example","port":8443,"cipher":"aes-256-gcm","password":"first","name":"First Node"},{"type":"ss","skip-cert-verify":false,"udp":true,"server":"two.example","port":8443,"cipher":"aes-256-gcm","password":"first","name":"1"}]}}}},
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"\nssd://eyJwb3J0Ijo4Mzg4LCJlbmNyeXB0aW9uIjoiYWVzLTEyOC1nY20iLCJwYXNzd29yZCI6ImRlZmF1bHQiLCJzZXJ2ZXJzIjpbeyJzZXJ2ZXIiOiJvbmUuZXhhbXBsZSIsInBvcnQiOjg0NDMsImVuY3J5cHRpb24iOiJhZXMtMjU2LWdjbSIsInBhc3N3b3JkIjoiZmlyc3QiLCJyZW1hcmtzIjoiRmlyc3QlMjBOb2RlIn0seyJzZXJ2ZXIiOiJ0d28uZXhhbXBsZSIsImVuY3J5cHRpb24iOiIiLCJwYXNzd29yZCI6IiIsInBvcnQiOjAsInJlbWFya3MiOiIifSx7InNlcnZlciI6ImJhZC5leGFtcGxlIiwicmVtYXJrcyI6ImJhZCVHRyJ9XX0=","client":"JSON","type":"internal"},"expect":{"status":200,"json":{"status":"success","data":{"par_res":[]}}}},
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"ssd://bm90IGpzb24=","client":"JSON","type":"internal"},"expect":{"status":200,"json":{"status":"success","data":{"par_res":[]}}}},
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"ssd://eyJzZXJ2ZXJzIjpbXX0=","client":"JSON","type":"internal"},"expect":{"status":200,"json":{"status":"success","data":{"par_res":[]}}}},
+      {"method":"POST","path":"/api/proxy/parse","body":{"data":"Cmh0dHA6Ly9iYXNlLmV4YW1wbGU6ODAjYmFzZQ==","client":"JSON","type":"internal"},"expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"name":"base","type":"http","tls":false,"server":"base.example","port":80,"udp":true}]}}}}
+    ]
+  },
+  {
+    "id": "P02-input-ss-extensions",
+    "source": "backend/src/core/proxy-utils/parsers/index.js:241-547; backend/src/core/proxy-utils/index.js:432-467,756; backend/src/core/proxy-utils/producers/uri.js:840-1014",
+    "steps": [
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"ss://none:p@plugin.example:443/?plugin=v2ray-plugin%3Btls%3Bhost%3Dcdn.example%3Bpath%3D%2Fsocket%3Bmux%3D0%3Bskip-cert-verify%3Dfalse#plugin", "client":"JSON", "type":"internal"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"type":"ss","skip-cert-verify":false,"udp":true,"server":"plugin.example","port":443,"cipher":"none","password":"p","plugin":"v2ray-plugin","plugin-opts":{"mode":"websocket","host":"cdn.example","path":"/socket","tls":true,"skip-cert-verify":false,"mux":0},"name":"plugin"}]}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"ss://none:p@plugin.example:443/?plugin=v2ray-plugin%3Btls%3Bhost%3Dcdn.example%3Bpath%3D%2Fsocket%3Bmux%3D0%3Bskip-cert-verify%3Dfalse#plugin", "client":"URI"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":"ss://bm9uZTpw@plugin.example:443/?plugin=v2ray-plugin%3Bobfs%3Dwebsocket%3Bmode%3Dwebsocket%3Bobfs-host%3Dcdn.example%3Bhost%3Dcdn.example%3Bpath%3D%2Fsocket%3Btls%3Bmux%3D0&udp=1#plugin"}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"ss://none:p@ws.example:443?security=tls&allowInsecure=0&type=ws&path=chat%3Fed%3D0128%26x%3D1%26ed%3D2&host=cdn.example&alpn=h2%2Chttp%252F1.1&fp=chrome#ws", "client":"JSON", "type":"internal"}, "expect":{"status":200,"json_contains":{"status":"success","data":{"par_res":[{"type":"ss","tls":true,"skip-cert-verify":true,"sni":"cdn.example","client-fingerprint":"chrome","alpn":["h2","http/1.1"],"network":"ws","ws-opts":{"path":"/chat?x=1","headers":{"Host":"cdn.example"},"max-early-data":128,"early-data-header-name":"Sec-WebSocket-Protocol"},"udp":true,"server":"ws.example","port":443,"cipher":"none","password":"p","name":"ws"}]}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"ss://none:p@ws.example:443?security=tls&allowInsecure=0&type=ws&path=chat%3Fed%3D0128%26x%3D1%26ed%3D2&host=cdn.example&alpn=h2%2Chttp%252F1.1&fp=chrome#ws", "client":"URI"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":"ss://bm9uZTpw@ws.example:443?udp=1&sni=cdn.example&allowInsecure=1&type=ws&path=%2Fchat%3Fx%3D1%26ed%3D128&host=cdn.example&alpn=h2%2Chttp%2F1.1&fp=chrome&security=tls#ws"}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"ss://none:p@upgrade.example:80?type=httpupgrade&path=%2Fs%3Fed%3D0#upgrade", "client":"URI"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":"ss://bm9uZTpw@upgrade.example:80?udp=1&type=httpupgrade&path=%2Fs%3Fed%3D0&host=upgrade.example#upgrade"}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"ss://none:p@grpc.example:443?type=grpc&security=reality&serviceName=svc&authority=auth.example&mode=multi&pbk=pub&sid=01&spx=%2F&extra=%7B%7D&fp=firefox#grpc", "client":"URI"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":"ss://bm9uZTpw@grpc.example:443?udp=1&sni=grpc.example&type=grpc&serviceName=svc&authority=auth.example&mode=multi&fp=firefox&security=reality&sid=01&pbk=pub&spx=%2F&mode=multi&extra=%7B%7D#grpc"}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"ss://none:p@st.example:443?plugin=shadow-tls%3Bhost%3Dcdn.example%3Bpassword%3Dst%3Bversion%3D3&alpn=h2#st", "client":"JSON", "type":"internal"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"type":"ss","skip-cert-verify":false,"udp":true,"server":"st.example","port":443,"cipher":"none","password":"p","plugin":"shadow-tls","plugin-opts":{"host":"cdn.example","password":"st","version":3,"alpn":["h2"]},"name":"st"}]}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"ss://none:p@st.example:443?plugin=shadow-tls%3Bhost%3Dcdn.example%3Bpassword%3Dst%3Bversion%3D3&alpn=h2#st", "client":"URI"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":"ss://bm9uZTpw@st.example:443/?plugin=shadow-tls%3Bhost%3Dcdn.example%3Bpassword%3Dst%3Bversion%3D3&udp=1#st"}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"ss://none:p@skip.example:80?plugin=unknown%3Btls#skip\nss://none:p@keep.example:80?ignored=value#kept", "client":"JSON", "type":"internal"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"type":"ss","skip-cert-verify":false,"udp":true,"server":"keep.example","port":80,"cipher":"none","password":"p","name":"kept"}]}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"ss://none:p@tls.example:443?security=tls#filtered", "client":"JSON", "type":"internal"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":[]}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"ss://none:p@original.example:80?gost=eyJyb3V0ZSI6IndzcyIsImhvc3QiOiJjZG4uZXhhbXBsZSIsInBhdGgiOiIvc29ja2V0IiwiYWRkcmVzcyI6ImFsdC5leGFtcGxlIiwicG9ydCI6IjA4NDQzIn0=", "client":"JSON", "type":"internal"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"type":"ss","skip-cert-verify":false,"udp":true,"server":"alt.example","port":8443,"cipher":"none","password":"p","plugin":"gost-plugin","plugin-opts":{"mode":"websocket","host":"cdn.example","path":"/socket","tls":true},"name":"SS alt.example:8443"}]}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"ss://none:p@original.example:80?gost=eyJyb3V0ZSI6IndzcyIsImhvc3QiOiJjZG4uZXhhbXBsZSIsInBhdGgiOiIvc29ja2V0IiwiYWRkcmVzcyI6ImFsdC5leGFtcGxlIiwicG9ydCI6IjA4NDQzIn0=", "client":"URI"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":""}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"ss://none:p@original.example:80?shadow-tls=eyJob3N0IjoiY2RuLmV4YW1wbGUiLCJwYXNzd29yZCI6InN0IiwidmVyc2lvbiI6IjMiLCJhZGRyZXNzIjoiYWx0LmV4YW1wbGUiLCJwb3J0IjoiODQ0MyJ9&alpn=h2", "client":"JSON", "type":"internal"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"type":"ss","skip-cert-verify":false,"udp":true,"server":"alt.example","port":8443,"cipher":"none","password":"p","plugin":"shadow-tls","plugin-opts":{"host":"cdn.example","password":"st","version":3,"alpn":["h2"]},"name":"SS alt.example:8443"}]}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"ss://bm9uZTpwQGxlZ2FjeS5leGFtcGxlOjQ0Mw==?v2ray-plugin=eyJtb2RlIjoid2Vic29ja2V0IiwiaG9zdCI6ImNkbi5leGFtcGxlIiwidGxzIjp0cnVlLCJtdXgiOmZhbHNlfQ==#legacy", "client":"JSON", "type":"internal"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"type":"ss","plugin":"v2ray-plugin","plugin-opts":{"mode":"websocket","host":"cdn.example","tls":true,"mux":false},"skip-cert-verify":false,"udp":true,"server":"legacy.example","port":443,"cipher":"none","password":"p","name":"legacy"}]}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"ss://bm9uZTpwQGxlZ2FjeS5leGFtcGxlOjQ0Mw==?v2ray-plugin=eyJtb2RlIjoid2Vic29ja2V0IiwiaG9zdCI6ImNkbi5leGFtcGxlIiwidGxzIjp0cnVlLCJtdXgiOmZhbHNlfQ==#legacy", "client":"URI"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":"ss://bm9uZTpw@legacy.example:443/?plugin=v2ray-plugin%3Bobfs%3Dwebsocket%3Bmode%3Dwebsocket%3Bobfs-host%3Dcdn.example%3Bhost%3Dcdn.example%3Btls%3Bmux%3D0&udp=1#legacy"}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"ss://bm9uZTpwQGxlZ2FjeS5leGFtcGxlOjQ0Mw==?v2ray-plugin=eyJNT0RFIjoid2Vic29ja2V0IiwiaG9zdCI6Imxvd2VyLmV4YW1wbGUiLCJIT1NUIjoiaWdub3JlZC5leGFtcGxlIiwidGxzIjpmYWxzZX0=#keys", "client":"JSON", "type":"internal"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"type":"ss","plugin":"v2ray-plugin","plugin-opts":{"host":"lower.example","tls":false,"mode":"websocket"},"skip-cert-verify":false,"udp":true,"server":"legacy.example","port":443,"cipher":"none","password":"p","name":"keys"}]}}}}
+    ]
+  },
+  {
+    "id": "P02-input-html-boundary",
+    "source": "backend/src/core/proxy-utils/preprocessors/index.js:40-46; backend/src/core/proxy-utils/index.js:51-68",
+    "steps": [
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"<!DOCTYPE html>\nss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client":"JSON", "type":"internal"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":[]}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"\n<!DOCTYPE html>\nss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client":"JSON", "type":"internal"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"type":"ss","skip-cert-verify":false,"udp":true,"server":"127.0.0.1","port":8388,"cipher":"aes-128-gcm","password":"pass","name":"fixture"}]}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"<!doctype html>\nss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client":"JSON", "type":"internal"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"type":"ss","skip-cert-verify":false,"udp":true,"server":"127.0.0.1","port":8388,"cipher":"aes-128-gcm","password":"pass","name":"fixture"}]}}}}
+    ]
+  },
+  {
+    "id": "P02-output-v2ray-shapes",
+    "source": "backend/src/core/proxy-utils/producers/v2ray.js:8-23; backend/src/core/proxy-utils/producers/index.js:40-42",
+    "steps": [
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client":"V2Ray", "type":"internal"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":"c3M6Ly9ZV1Z6TFRFeU9DMW5ZMjA2Y0dGemN3PT1AMTI3LjAuMC4xOjgzODg/dWRwPTEjZml4dHVyZQ=="}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"invalid://missing", "client":"v2ray", "type":"internal"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":""}}}}
+    ]
+  },
+  {
+    "id": "P02-input-ss-unicode-ipv6",
+    "source": "backend/src/core/proxy-utils/parsers/index.js:49,57,241; backend/src/core/proxy-utils/index.js:65,756; backend/src/core/proxy-utils/producers/uri.js:800",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"content": "ss://%%%\ninvalid://missing\nss://AES-128-GCM:p%3Aa%40ss@[2001:db8::1]:0443?udp=OFF&uot=1&tfo=true#%E4%B8%AD%E6%96%87%F0%9F%99%82\nss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#%GG", "platform": "JSON", "type": "internal"}, "expect": {"status": 200, "json": {"status": "success", "data": {"par_res": [{"type":"ss", "skip-cert-verify":false, "udp":false, "server":"2001:db8::1", "port":443, "cipher":"aes-128-gcm", "password":"p:a@ss", "udp-over-tcp":true, "tfo":true, "name":"中文🙂"}]}}}},
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://AES-128-GCM:p%3Aa%40ss@[2001:db8::1]:0443?udp=OFF&uot=1&tfo=true#%E4%B8%AD%E6%96%87%F0%9F%99%82", "client": "URI"}, "expect": {"status": 200, "json": {"status": "success", "data": {"par_res": "ss://YWVzLTEyOC1nY206cDphQHNz@[2001:db8::1]:443?uot=1&tfo=1&udp=0#%E4%B8%AD%E6%96%87%F0%9F%99%82"}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"ss://none:@zero.example:00000?uot=%31&tfo=%74rue\nss://none:@zero.example:09999", "client":"JSON", "type":"internal"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"type":"ss","skip-cert-verify":false,"udp":true,"server":"zero.example","port":0,"cipher":"none","password":"","name":"SS zero.example:00000"},{"type":"ss","skip-cert-verify":false,"udp":true,"server":"zero.example","port":"09999","cipher":"none","password":"","name":"SS zero.example:09999"}]}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"ss://2022-blake3-aes-128-gcm:a%2Bb%3D@127.0.0.1:0#2022", "client":"URI"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":"ss://2022-blake3-aes-128-gcm:a%2Bb%3D@127.0.0.1:0?udp=1#2022"}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"ss://none:@zero.example:09999#", "client":"JSON", "type":"internal"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"type":"ss","skip-cert-verify":false,"udp":true,"server":"zero.example","port":"09999","cipher":"none","password":"","name":"ss zero.example:09999"}]}}}}
+    ]
+  },
+  {
+    "id": "P05-local-subscription-paths",
+    "source": "backend/src/restful/preview.js:79; backend/src/restful/download.js:45,85; backend/src/restful/sync.js:271; backend/src/restful/response.js:8",
+    "steps": [
+      {"method": "POST", "path": "/api/subs", "body": {"name":"native-local", "displayName":"本地🙂", "source":"local", "content":"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#export-fixture", "process":[], "kept":{"zero":0,"flag":false,"excludedScript":"require('node:fs')\r\n"}}, "expect": {"status":201, "json_contains":{"status":"success", "data":{"name":"native-local", "kept":{"zero":0,"flag":false,"excludedScript":"require('node:fs')\r\n"}}}}},
+      {"path":"/download/native-local/URI?target=Clash", "expect":{"status":200, "headers":{"content-type":"text/plain; charset=utf-8"}, "body":"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388?udp=1#export-fixture"}},
+      {"path":"/download/native-local", "expect":{"status":200,"headers":{"content-type":"text/plain; charset=utf-8"},"body":"c3M6Ly9ZV1Z6TFRFeU9DMW5ZMjA2Y0dGemN3PT1AMTI3LjAuMC4xOjgzODg/dWRwPTEjZXhwb3J0LWZpeHR1cmU="}},
+      {"path":"/download/native-local", "headers":{"User-Agent":"v2ray", "Accept":"application/json"}, "expect":{"status":200,"headers":{"content-type":"text/plain; charset=utf-8"},"body":"c3M6Ly9ZV1Z6TFRFeU9DMW5ZMjA2Y0dGemN3PT1AMTI3LjAuMC4xOjgzODg/dWRwPTEjZXhwb3J0LWZpeHR1cmU="}},
+      {"method":"HEAD", "path":"/download/native-local", "expect":{"status":200,"headers":{"content-type":"text/plain; charset=utf-8"},"body":""}},
+      {"path":"/download/native-local/URI?platform=JSON", "expect":{"status":200, "headers":{"content-type":"application/json; charset=utf-8"}, "body":"[\n  {\n    \"type\": \"ss\",\n    \"skip-cert-verify\": false,\n    \"udp\": true,\n    \"server\": \"127.0.0.1\",\n    \"port\": 8388,\n    \"cipher\": \"aes-128-gcm\",\n    \"password\": \"pass\",\n    \"name\": \"export-fixture\",\n    \"_subName\": \"native-local\",\n    \"_subDisplayName\": \"本地🙂\"\n  }\n]"}},
+      {"method":"POST", "path":"/API/PrEvIeW/SuB/?target=URI", "body":{"name":"native-local", "displayName":"本地🙂", "source":"local", "content":"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#export-fixture", "process":[]}, "expect":{"status":200, "json":{"status":"success", "data":{"original":[{"type":"ss","skip-cert-verify":false,"udp":true,"server":"127.0.0.1","port":8388,"cipher":"aes-128-gcm","password":"pass","name":"export-fixture","id":0,"_subName":"native-local","_subDisplayName":"本地🙂"}], "processed":[{"type":"ss","skip-cert-verify":false,"udp":true,"server":"127.0.0.1","port":8388,"cipher":"aes-128-gcm","password":"pass","name":"export-fixture","id":0,"_subName":"native-local","_subDisplayName":"本地🙂"}]}}}},
+      {"method":"OPTIONS", "path":"/API/PROXY/PARSE", "expect":{"status":200,"headers":{"allow":"POST,GET,HEAD"},"body":"POST,GET,HEAD"}},
+      {"method":"OPTIONS", "path":"/api/preview/sub", "expect":{"status":200,"headers":{"allow":"POST,GET,HEAD"},"body":"POST,GET,HEAD"}},
+      {"method":"HEAD", "path":"/DOWNLOAD/native-local/URI/", "expect":{"status":200,"body":""}},
+      {"path":"/download/name%2Fpart/URI?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect":{"status":200,"body":"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388?udp=1#fixture"}},
+      {"path":"/download/native-local?target=unsupported", "expect":{"status":500,"json":{"status":"failed","error":{"code":"INTERNAL_SERVER_ERROR","type":"InternalServerError","message":"Failed to download subscription: native-local","details":"Reason: Target platform: unsupported is not supported!"}}}},
+      {"path":"/download/missing/URI", "expect":{"status":404,"json":{"status":"failed","error":{"code":"RESOURCE_NOT_FOUND","type":"ResourceNotFoundError","message":"Subscription missing does not exist!"}}}},
+      {"method":"POST", "path":"/api/subs", "body":{"name":"native-empty","source":"local","content":""}, "expect":{"status":201}},
+      {"path":"/download/native-empty/JSON", "expect":{"status":500,"json":{"status":"failed","error":{"code":"INTERNAL_SERVER_ERROR","type":"InternalServerError","message":"Failed to download subscription: native-empty","details":"Reason: 订阅 native-empty 中不含有效节点"}}}},
+      {"method":"DELETE", "path":"/api/sub/native-empty?mode=permanent", "expect":{"status":200}}
+    ]
+  },
+  {
+    "id": "P05-local-subscription-restart",
+    "source": "backend/src/restful/download.js:85; backend/src/restful/subscriptions.js:180; backend/src/restful/sync.js:271",
+    "steps": [
+      {"path":"/download/native-local/URI", "expect":{"status":200,"body":"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388?udp=1#export-fixture"}},
+      {"path":"/download/native-local", "expect":{"status":200,"body":"c3M6Ly9ZV1Z6TFRFeU9DMW5ZMjA2Y0dGemN3PT1AMTI3LjAuMC4xOjgzODg/dWRwPTEjZXhwb3J0LWZpeHR1cmU="}},
+      {"path":"/api/sub/native-local", "expect":{"status":200,"json_contains":{"status":"success","data":{"name":"native-local","displayName":"本地🙂","kept":{"zero":0,"flag":false,"excludedScript":"require('node:fs')\r\n"}}}}}
+    ]
+  },
+  {
     "id": "E01-env-basic-share-sequence",
     "source": "backend/src/restful/miscs.js:125; backend/src/utils/env.js; frontend/src/api/env/index.ts",
     "steps": [
@@ -1105,6 +1231,2002 @@
     "steps": [
       {"method": "POST", "path": "/api/utils/node-info", "body": {}, "expect": {"status": 500, "json": {"status": "failed", "error": {"code": "FAILED_TO_GET_NODE_INFO", "type": "NetworkError", "message": "Failed to get node info", "details": "Reason: Error: fixture address missing"}}}, "upstream": [{"method": "GET", "path": "http://ip-api.com/json/undefined?lang=zh-CN", "headers": {"host": "ip-api.com", "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.4 Safari/605.1.15"}, "body": ""}], "state": {"nodeInfoMarker": false, "settings": {}, "subs": []}},
       {"path": "/api/utils/env", "expect": {"status": 200, "json_contains": {"status": "success", "data": {"backend": "Node", "version": "2.42.4"}}}, "state": {"nodeInfoMarker": false, "settings": {}, "subs": []}}
+    ]
+  },
+  {
+    "id": "P02-input-trojan-native",
+    "source": "backend/src/test/proxy-parsers/uri.spec.js:650-826; parsers/peggy/trojan-uri.js:50-298; parsers/index.js::URI_Trojan; producers/uri.js:1153-1280",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "trojan://p%3Aa@trojan.example?udp=0&tfo=1#Basic",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "type": "trojan",
+                  "password": "p:a",
+                  "server": "trojan.example",
+                  "port": 443,
+                  "name": "Basic",
+                  "sni": "trojan.example",
+                  "udp": false,
+                  "tfo": true,
+                  "network": "tcp",
+                  "tls": true
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "trojan://p%3Aa@trojan.example?udp=0&tfo=1#Basic",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "trojan://p:a@trojan.example:443?sni=trojan.example&type=tcp#Basic"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "trojan://trojan-pass@trojan-ws.example.com?type=ws&host=ws.example.com&path=%2Fws%3Fed%3D1024%26a%3D1%26b%3D2&pcs=fingerprint&fp=chrome&alpn=h2,http%2F1.1&vcn=first.example.com%2C%20second.example.com#Trojan%20WS\ntrojan://trojan-pass@trojan-grpc.example.com?type=grpc&serviceName=grpc-service&authority=grpc.example.com&mode=multi&security=reality&pbk=pubkey==&sid=08&spx=%2Fspider&extra=%7B%22x%22%3A1%7D&udp=1&tfo=1#Trojan%20Reality",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "type": "trojan",
+                  "name": "Trojan WS",
+                  "network": "ws",
+                  "ws-opts": {
+                    "path": "/ws?a=1&b=2",
+                    "headers": {
+                      "Host": "ws.example.com"
+                    },
+                    "max-early-data": 1024,
+                    "early-data-header-name": "Sec-WebSocket-Protocol"
+                  },
+                  "tls-fingerprint": "fingerprint",
+                  "client-fingerprint": "chrome",
+                  "alpn": [
+                    "h2",
+                    "http/1.1"
+                  ],
+                  "_vcn": [
+                    "first.example.com",
+                    "second.example.com"
+                  ],
+                  "name-cert-verify": "first.example.com"
+                },
+                {
+                  "name": "Trojan Reality",
+                  "network": "grpc",
+                  "grpc-opts": {
+                    "grpc-service-name": "grpc-service",
+                    "_grpc-type": "multi",
+                    "_grpc-authority": "grpc.example.com"
+                  },
+                  "reality-opts": {
+                    "public-key": "pubkey==",
+                    "short-id": "08",
+                    "_spider-x": "/spider"
+                  },
+                  "_mode": "multi",
+                  "_extra": "{\"x\":1}"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "trojan://trojan-pass@trojan-ws.example.com?type=ws&host=ws.example.com&path=%2Fws%3Fed%3D1024%26a%3D1%26b%3D2&pcs=fingerprint&fp=chrome&alpn=h2,http%2F1.1&vcn=first.example.com%2C%20second.example.com#Trojan%20WS\ntrojan://trojan-pass@trojan-grpc.example.com?type=grpc&serviceName=grpc-service&authority=grpc.example.com&mode=multi&security=reality&pbk=pubkey==&sid=08&spx=%2Fspider&extra=%7B%22x%22%3A1%7D&udp=1&tfo=1#Trojan%20Reality",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "trojan://trojan-pass@trojan-ws.example.com:443?sni=ws.example.com&type=ws&path=%2Fws%3Fa%3D1%26b%3D2%26ed%3D1024&host=ws.example.com&alpn=h2%2Chttp%2F1.1&fp=chrome&pcs=fingerprint&vcn=first.example.com%2Csecond.example.com#Trojan%20WS",
+                "trojan://trojan-pass@trojan-grpc.example.com:443?sni=trojan-grpc.example.com&type=grpc&serviceName=grpc-service&authority=grpc.example.com&mode=multi&security=reality&sid=08&pbk=pubkey%3D%3D&spx=%2Fspider&mode=multi&extra=%7B%22x%22%3A1%7D#Trojan%20Reality"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "trojan://p@[2001:db8::1]:443?udp&tfo&ws&wspath=%2Fws#IPv6\ntrojan://p@2001:db8::1:443#Bare",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "server": "2001:db8::1",
+                  "port": 443,
+                  "name": "IPv6",
+                  "udp": true,
+                  "tfo": true,
+                  "network": "ws",
+                  "ws-opts": {
+                    "path": "/ws"
+                  }
+                },
+                {
+                  "server": "2001:db8::1",
+                  "port": 443,
+                  "name": "Bare:443"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "trojan://p@host:0#invalid\ntrojan://p@host:65536#invalid\ntrojan://p@host:123:443#invalid\ntrojan://p@host:443?type=__proto__.ws&path=%2Fx#bad\ntrojan://p@host:443?type=constructor.prototype.ws&path=%2Fx#bad\ntrojan://p%3Aa@trojan.example?udp=0&tfo=1#Basic",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Basic",
+                  "server": "trojan.example"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "trojan://bad%GG@trojan.example:443?path=%GG&udp=false#bad%GG",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "password": "bad%GG",
+                  "name": "trojan.example:443",
+                  "udp": false
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "trojan://p@host:8443#tag\ntrojan://p@missing#skip\ntrojan://p@host?type=httpupgrade&host=cdn.example&path=%2Fu%3Fed%3D64&ed=128#Upgrade",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "server": "host",
+                  "port": 8443,
+                  "name": "tag:443"
+                },
+                {
+                  "name": "Upgrade",
+                  "network": "ws",
+                  "ws-opts": {
+                    "path": "/u",
+                    "headers": {
+                      "Host": "cdn.example"
+                    },
+                    "v2ray-http-upgrade": true,
+                    "v2ray-http-upgrade-fast-open": true,
+                    "_v2ray-http-upgrade-ed": "64"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-input-hysteria-native",
+    "source": "backend/src/test/proxy-parsers/uri.spec.js:450-570; parsers/index.js::URI_Hysteria/URI_Hysteria2; proxy-utils/index.js::lastParse; producers/uri.js:1281-1444",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "hy://hysteria.example.com:8443?auth=token&peer=sni.example.com&alpn=h3,h2&mport=2000,3000&obfsParam=mask&upmbps=10&downmbps=20&insecure=1#Hysteria",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "type": "hysteria",
+                  "name": "Hysteria",
+                  "server": "hysteria.example.com",
+                  "port": 8443,
+                  "protocol": "udp",
+                  "auth-str": "token",
+                  "sni": "sni.example.com",
+                  "alpn": [
+                    "h3",
+                    "h2"
+                  ],
+                  "ports": "2000,3000",
+                  "obfs": "mask",
+                  "up": "10",
+                  "down": "20",
+                  "skip-cert-verify": true,
+                  "tls": true,
+                  "udp": true
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "hy://hysteria.example.com:8443?auth=token&peer=sni.example.com&alpn=h3,h2&mport=2000,3000&obfsParam=mask&upmbps=10&downmbps=20&insecure=1#Hysteria",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "hysteria://hysteria.example.com:8443?auth=token&alpn=h3&mport=2000,3000&obfsParam=mask&upmbps=10&downmbps=20&insecure=1&peer=sni.example.com&protocol=udp&udp=true#Hysteria"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "hy2://hy2-secret@hy2.example.com:8443-8443?peer=peer.example.com&obfs=salamander&obfs-password=mask&insecure=1&fastopen=1&pinSHA256=fingerprint&hop-interval=15-30&keepalive=15&upmbps=50&downmbps=100#Hy2%20Range",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "type": "hysteria2",
+                  "name": "Hy2 Range",
+                  "server": "hy2.example.com",
+                  "port": 8443,
+                  "ports": "8443-8443",
+                  "password": "hy2-secret",
+                  "sni": "peer.example.com",
+                  "obfs": "salamander",
+                  "obfs-password": "mask",
+                  "skip-cert-verify": true,
+                  "tfo": true,
+                  "tls-fingerprint": "fingerprint",
+                  "hop-interval": 15,
+                  "hop-interval-max": 30,
+                  "keepalive": 15,
+                  "up": "50",
+                  "down": "100",
+                  "tls": true,
+                  "udp": true
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "hy2://hy2-secret@hy2.example.com:8443-8443?peer=peer.example.com&obfs=salamander&obfs-password=mask&insecure=1&fastopen=1&pinSHA256=fingerprint&hop-interval=15-30&keepalive=15&upmbps=50&downmbps=100#Hy2%20Range",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "hysteria2://hy2-secret@hy2.example.com:8443?hop-interval=15&keepalive=15&insecure=1&obfs=salamander&obfs-password=mask&sni=peer.example.com&mport=8443-8443&pinSHA256=fingerprint&fastopen=1#Hy2%20Range"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "hysteria2://p@ech.example?ech=ECHCONFIG&hop-interval=30-15#Config\nhy2://p@dns.example?ech=cover.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&obfs=secret#moved\nhy2://p@127.0.0.1?obfs=salamander#skip",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Config",
+                  "ech-opts": {
+                    "enable": true,
+                    "config": "ECHCONFIG"
+                  }
+                },
+                {
+                  "name": "moved",
+                  "ech-opts": {
+                    "enable": true,
+                    "_dns": "https://dns.example/dns-query",
+                    "query-server-name": "cover.example"
+                  },
+                  "obfs": "salamander",
+                  "obfs-password": "secret"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "hy://127.0.0.1?alpn=&fast-open=1&udp=off&custom_key_one=v&protocol=faketcp#HY\nhy2://p@127.0.0.1?insecure=unTRUEish&fastopen=1&hop_interval=7&keepalive=01#HY2",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "HY",
+                  "udp": false,
+                  "protocol": "faketcp",
+                  "custom-key_one": "v"
+                },
+                {
+                  "name": "HY2",
+                  "skip-cert-verify": true,
+                  "tfo": true,
+                  "hop-interval": 7,
+                  "keepalive": 1
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-input-tuic-native",
+    "source": "backend/src/test/proxy-parsers/uri.spec.js:571-591; parsers/index.js::URI_TUIC; proxy-utils/index.js::lastParse/produce; producers/uri.js::tuic",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "tuic://b831381d-6324-4d53-ad4f-8cda48b30811:pass%3Aword@tuic.example.com?alpn=h3,hq-29&allow-insecure=1&fast-open=0&disable-sni=1&reduce-rtt=1&congestion-control=bbr#TUIC",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "type": "tuic",
+                  "name": "TUIC",
+                  "server": "tuic.example.com",
+                  "port": 443,
+                  "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+                  "password": "pass:word",
+                  "alpn": [
+                    "h3",
+                    "hq-29"
+                  ],
+                  "skip-cert-verify": true,
+                  "tfo": true,
+                  "disable-sni": true,
+                  "reduce-rtt": true,
+                  "congestion-controller": "bbr",
+                  "sni": "tuic.example.com",
+                  "udp-relay-mode": "native",
+                  "udp": true,
+                  "tls": true
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "tuic://b831381d-6324-4d53-ad4f-8cda48b30811:pass%3Aword@tuic.example.com?alpn=h3,hq-29&allow-insecure=1&fast-open=0&disable-sni=1&reduce-rtt=1&congestion-control=bbr#TUIC",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "tuic://b831381d-6324-4d53-ad4f-8cda48b30811:pass%3Aword@tuic.example.com:443?alpn=h3&allow_insecure=1&fast_open=1&disable_sni=1&reduce_rtt=1&congestion_control=bbr&udp=true&sni=tuic.example.com&udp_relay_mode=native#TUIC"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "tuic://u:p%253Aq@127.0.0.1#Double\ntuic://only@default.example?alpn=&udp=off&token=old&congestion_control=&udp_relay_mode=quic#Token",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Double",
+                  "uuid": "u",
+                  "password": "p:q",
+                  "alpn": [
+                    "h3"
+                  ],
+                  "congestion-controller": "cubic",
+                  "udp-relay-mode": "native"
+                },
+                {
+                  "name": "Token",
+                  "uuid": "only",
+                  "password": "",
+                  "alpn": [
+                    "h3"
+                  ],
+                  "udp": false,
+                  "token": "old",
+                  "congestion-controller": "cubic",
+                  "udp-relay-mode": "quic"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "tuic://u:p@127.0.0.1#Basic",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "tuic://u:p@127.0.0.1:443?udp=true&alpn=h3&congestion_control=cubic&udp_relay_mode=native#Basic"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "tuic://only@default.example?token=old#Token",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": []
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-input-wireguard-native",
+    "source": "backend/src/test/proxy-parsers/uri.spec.js:592-649; parsers/index.js::URI_WireGuard/parseWireGuardURIAddressValue; producers/utils.js::normalizeWireGuardInterface/getWireGuardAddressWithCIDR; producers/uri.js::wireguard",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "wg://120.233.41.77:19368?publicKey=N+K9fXobvy0vy3VFbn8a7tPRgUNcQbGRwjlyOMx4WHc=&privateKey=QJjrFqqqpbIqfI5qhbYWrPXhaBFmFq71jCj8mMaQE04=&ip=10.0.20.45/16,fd10:10:10:0:10:0:20:45/64&mtu=1420&udp=1#HK-%E5%A4%A7%E5%B8%A6%E5%AE%BD4",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "type": "wireguard",
+                  "name": "HK-大带宽4",
+                  "server": "120.233.41.77",
+                  "port": 19368,
+                  "public-key": "N+K9fXobvy0vy3VFbn8a7tPRgUNcQbGRwjlyOMx4WHc=",
+                  "private-key": "QJjrFqqqpbIqfI5qhbYWrPXhaBFmFq71jCj8mMaQE04=",
+                  "ip": "10.0.20.45",
+                  "ip-cidr": 16,
+                  "ipv6": "fd10:10:10:0:10:0:20:45",
+                  "ipv6-cidr": 64,
+                  "mtu": 1420,
+                  "udp": true
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "wg://private-key@wg.example.com?publickey=public-key&privatekey=override-key&address=10.0.0.2/32,[fd00::2]/128&reserved=1,2,bad,3&mtu=1280tail&udp=0#WG\nwireguard://key@[2001:db8::4]?address=10.0.0.2/99,[fd00::2]/999&flag=no&reserved=1,2#Defaults",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "WG",
+                  "private-key": "override-key",
+                  "public-key": "public-key",
+                  "ip": "10.0.0.2",
+                  "ipv6": "fd00::2",
+                  "ip-cidr": 32,
+                  "ipv6-cidr": 128,
+                  "reserved": [
+                    1,
+                    2,
+                    3
+                  ],
+                  "mtu": 1280,
+                  "udp": false
+                },
+                {
+                  "name": "Defaults",
+                  "port": 51820,
+                  "server": "2001:db8::4",
+                  "ip": "10.0.0.2",
+                  "ip-cidr": 32,
+                  "ipv6": "fd00::2",
+                  "ipv6-cidr": 128
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "wg://key@127.0.0.1?publickey=abc%3D&address=10.1.1.1/24,[fd00::1]/64&reserved=1,2,3&mtu=1420#WG",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "wireguard://key@127.0.0.1:51820/?udp=1&publickey=abc%3D&reserved=1%2C2%2C3&mtu=1420&address=10.1.1.1%2F24%2Cfd00%3A%3A1%2F64#WG"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "wg://127.0.0.1?publicKey=abc+def==&address=bad,10.0.0.1/24,10.0.0.2&reserved=x&mtu=oops#NoKey",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "NoKey",
+                  "private-key": "undefined",
+                  "public-key": "abc+def==",
+                  "ip": "10.0.0.2",
+                  "ip-cidr": 24
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-input-vmess-native",
+    "source": "backend/src/test/proxy-parsers/v2ray-and-platforms.spec.js::VMess URIs; parsers/index.js::URI_VMess; vmess-security.js::normalizeVmessSecurity",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://eyJ2IjoiMiIsInBzIjoiQmFzaWMiLCJhZGQiOiIxMjcuMC4wLjEiLCJwb3J0IjoiNDQzIiwiaWQiOiJiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTEiLCJhaWQiOiIwIiwic2N5IjoiYXV0byIsIm5ldCI6InRjcCIsInR5cGUiOiIiLCJ0bHMiOiIifQ==",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Basic",
+                  "type": "vmess",
+                  "server": "127.0.0.1",
+                  "port": 443,
+                  "cipher": "auto",
+                  "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+                  "alterId": 0,
+                  "tls": false,
+                  "udp": true,
+                  "network": "tcp"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://eyJ2IjoiMiIsInBzIjoiVk1lc3MgV1MiLCJhZGQiOiJ2bWVzcy13cy5leGFtcGxlLmNvbSIsInBvcnQiOiI0NDMiLCJpZCI6ImI4MzEzODFkLTYzMjQtNGQ1My1hZDRmLThjZGE0OGIzMDgxMSIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0Ijoid3MiLCJob3N0IjoiY2RuLmV4YW1wbGUuY29tIiwicGF0aCI6Ii9zb2NrZXQiLCJ0bHMiOiJ0bHMiLCJzbmkiOiJzbmkuZXhhbXBsZS5jb20iLCJhbGxvd0luc2VjdXJlIjoiMSIsImZwIjoiY2hyb21lIiwiYWxwbiI6ImgyIn0=",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "VMess WS",
+                  "type": "vmess",
+                  "server": "vmess-ws.example.com",
+                  "port": 443,
+                  "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+                  "alterId": 0,
+                  "tls": true,
+                  "sni": "sni.example.com",
+                  "skip-cert-verify": true,
+                  "client-fingerprint": "chrome",
+                  "alpn": [
+                    "h2"
+                  ],
+                  "network": "ws",
+                  "ws-opts": {
+                    "path": "/socket",
+                    "headers": {
+                      "Host": "cdn.example.com"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://eyJ2IjoiMiIsInBzIjoiSW5uZXIiLCJhZGQiOiJ2bWVzcy13cy5leGFtcGxlLmNvbSIsInBvcnQiOiI0NDMiLCJpZCI6ImI4MzEzODFkLTYzMjQtNGQ1My1hZDRmLThjZGE0OGIzMDgxMSIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0Ijoid3MiLCJob3N0IjoiY2RuLmV4YW1wbGUuY29tIiwicGF0aCI6Ii93cz9hPTEmZWQ9MjA0OCZiPTIiLCJ0bHMiOiJ0bHMiLCJzbmkiOiIiLCJhbGxvd0luc2VjdXJlIjoiMCIsImZwIjoiY2hyb21lIiwiYWxwbiI6ImgyIiwidmVyaWZ5X2NlcnQiOnRydWV9#Outer%20%23%20Remark",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Outer # Remark",
+                  "ws-opts": {
+                    "path": "/ws?a=1&b=2",
+                    "max-early-data": 2048,
+                    "early-data-header-name": "Sec-WebSocket-Protocol"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://UVggVk1lc3MgPSB2bWVzcyx2bWVzcy1xeC5leGFtcGxlLmNvbSw0NDMsYXV0bywiYjgzMTM4MWQtNjMyNC00ZDUzLWFkNGYtOGNkYTQ4YjMwODExIix1ZHAtcmVsYXk9dHJ1ZSxmYXN0LW9wZW49dHJ1ZSx0bHMtdmVyaWZpY2F0aW9uPWZhbHNl",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "QX VMess",
+                  "type": "vmess",
+                  "port": 443,
+                  "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+                  "udp": true,
+                  "tfo": "true",
+                  "skip-cert-verify": false
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://QmFkID0gdm1lc3MsYmFkLmV4YW1wbGUsNDQzLGF1dG8sImI4MzEzODFkLTYzMjQtNGQ1My1hZDRmLThjZGE0OGIzMDgxMSIsb2Jmcz13cw==\nvmess://eyJ2IjoiMiIsInBzIjoiQmFzaWMiLCJhZGQiOiIxMjcuMC4wLjEiLCJwb3J0IjoiNDQzIiwiaWQiOiJiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTEiLCJhaWQiOiIwIiwic2N5IjoiYXV0byIsIm5ldCI6InRjcCIsInR5cGUiOiIiLCJ0bHMiOiIifQ==",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Basic"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNTpiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTFAcm9ja2V0LmV4YW1wbGU6ODQ0Mw==?remarks=Rocket&obfs=websocket&obfsParam=cdn.example&path=%2Fsocket&tls=1&allowInsecure=1",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Rocket",
+                  "server": "rocket.example",
+                  "port": 8443,
+                  "cipher": "chacha20-poly1305",
+                  "network": "ws",
+                  "tls": true,
+                  "skip-cert-verify": true
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://eyJ2IjoiMiIsInBzIjoiSFRUUCIsImFkZCI6Imh0dHAuZXhhbXBsZSIsInBvcnQiOiI0NDMiLCJpZCI6ImI4MzEzODFkLTYzMjQtNGQ1My1hZDRmLThjZGE0OGIzMDgxMSIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0IjoidGNwIiwidHlwZSI6Imh0dHAiLCJ0bHMiOiIiLCJob3N0Ijoib25lLmV4YW1wbGUsIHR3by5leGFtcGxlIiwicGF0aCI6WyJvbmUiLCJ0d28iXX0=\nvmess://eyJ2IjoiMiIsInBzIjoiSDIiLCJhZGQiOiIxMjcuMC4wLjEiLCJwb3J0IjoiNDQzIiwiaWQiOiJiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTEiLCJhaWQiOiIwIiwic2N5IjoiYXV0byIsIm5ldCI6ImgyIiwidHlwZSI6IiIsInRscyI6IiIsImhvc3QiOiJvbmUuZXhhbXBsZSwgdHdvLmV4YW1wbGUiLCJwYXRoIjoiaDIifQ==\nvmess://eyJ2IjoiMiIsInBzIjoiR1JQQyIsImFkZCI6IjEyNy4wLjAuMSIsInBvcnQiOiI0NDMiLCJpZCI6ImI4MzEzODFkLTYzMjQtNGQ1My1hZDRmLThjZGE0OGIzMDgxMSIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0IjoiZ3JwYyIsInR5cGUiOiJtdWx0aSIsInRscyI6IiIsInBhdGgiOiJzdmMiLCJhdXRob3JpdHkiOiJncnBjLmV4YW1wbGUifQ==\nvmess://eyJ2IjoiMiIsInBzIjoiS0NQIiwiYWRkIjoiMTI3LjAuMC4xIiwicG9ydCI6IjQ0MyIsImlkIjoiYjgzMTM4MWQtNjMyNC00ZDUzLWFkNGYtOGNkYTQ4YjMwODExIiwiYWlkIjoiMCIsInNjeSI6ImF1dG8iLCJuZXQiOiJrY3AiLCJ0eXBlIjoic3J0cCIsInRscyI6IiIsInBhdGgiOiJzZWVkIn0=\nvmess://eyJ2IjoiMiIsInBzIjoiUVVJQyIsImFkZCI6IjEyNy4wLjAuMSIsInBvcnQiOiI0NDMiLCJpZCI6ImI4MzEzODFkLTYzMjQtNGQ1My1hZDRmLThjZGE0OGIzMDgxMSIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0IjoicXVpYyIsInR5cGUiOiJub25lIiwidGxzIjoiIiwiaG9zdCI6ImFlcyIsInBhdGgiOiJrZXkifQ==",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "HTTP",
+                  "network": "http",
+                  "http-opts": {
+                    "path": [
+                      "/one"
+                    ],
+                    "headers": {
+                      "Host": [
+                        "one.example"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "H2",
+                  "network": "h2",
+                  "h2-opts": {
+                    "host": [
+                      "one.example",
+                      "two.example"
+                    ],
+                    "path": "/h2"
+                  }
+                },
+                {
+                  "name": "GRPC",
+                  "network": "grpc",
+                  "grpc-opts": {
+                    "grpc-service-name": "svc",
+                    "_grpc-type": "multi",
+                    "_grpc-authority": "grpc.example"
+                  }
+                },
+                {
+                  "name": "KCP",
+                  "network": "kcp"
+                },
+                {
+                  "name": "QUIC",
+                  "network": "quic"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://eyJ2IjoiMiIsInBzIjoiVXBncmFkZSIsImFkZCI6IjEyNy4wLjAuMSIsInBvcnQiOiI0NDMiLCJpZCI6ImI4MzEzODFkLTYzMjQtNGQ1My1hZDRmLThjZGE0OGIzMDgxMSIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0IjoiaHR0cHVwZ3JhZGUiLCJ0eXBlIjoiIiwidGxzIjoiIiwiaG9zdCI6ImNkbi5leGFtcGxlIiwicGF0aCI6Ii91cD9lZD0xMDI0In0=",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Upgrade",
+                  "network": "ws",
+                  "ws-opts": {
+                    "path": "/up",
+                    "v2ray-http-upgrade": true,
+                    "v2ray-http-upgrade-fast-open": true,
+                    "_v2ray-http-upgrade-ed": "1024"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://eyJ2IjoiMiIsInBzIjo0MiwiYWRkIjoiMTI3LjAuMC4xIiwicG9ydCI6IjQ0MyIsImlkIjoiYjgzMTM4MWQtNjMyNC00ZDUzLWFkNGYtOGNkYTQ4YjMwODExIiwiYWlkIjoiMCIsInNjeSI6ImF1dG8iLCJuZXQiOiJ0Y3AiLCJ0eXBlIjoiIiwidGxzIjoiIn0=\nvmess://eyJ2IjoiMiIsInBzIjp7InR5cGUiOiJCdWZmZXIiLCJkYXRhIjpbNjUsNjZdfSwiYWRkIjoiMTI3LjAuMC4xIiwicG9ydCI6IjQ0MyIsImlkIjoiYjgzMTM4MWQtNjMyNC00ZDUzLWFkNGYtOGNkYTQ4YjMwODExIiwiYWlkIjoiMCIsInNjeSI6ImF1dG8iLCJuZXQiOiJ0Y3AiLCJ0eXBlIjoiIiwidGxzIjoiIn0=\nvmess://eyJ2IjoiMiIsInBzIjoiQ2lwaGVyIiwiYWRkIjoiMTI3LjAuMC4xIiwicG9ydCI6IjQ0MyIsImlkIjoiYjgzMTM4MWQtNjMyNC00ZDUzLWFkNGYtOGNkYTQ4YjMwODExIiwiYWlkIjoiMCIsInNjeSI6ImludmFsaWQiLCJuZXQiOiJ0Y3AiLCJ0eXBlIjoiIiwidGxzIjoiIn0=\nvmess://broken\nvmess://eyJ2IjoiMiIsInBzIjoiQmFzaWMiLCJhZGQiOiIxMjcuMC4wLjEiLCJwb3J0IjoiNDQzIiwiaWQiOiJiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTEiLCJhaWQiOiIwIiwic2N5IjoiYXV0byIsIm5ldCI6InRjcCIsInR5cGUiOiIiLCJ0bHMiOiIifQ==#bad%GG",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "42"
+                },
+                {
+                  "name": "AB"
+                },
+                {
+                  "name": "Cipher",
+                  "cipher": "auto"
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-input-vless-native",
+    "source": "backend/src/test/proxy-parsers/v2ray-and-platforms.spec.js::VLESS; parsers/index.js::URI_VLESS; index.js::lastParse",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443#Basic",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "type": "vless",
+                  "name": "Basic",
+                  "server": "127.0.0.1",
+                  "port": 443,
+                  "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+                  "udp": true,
+                  "skip-cert-verify": false,
+                  "_h2": false,
+                  "packet-encoding": "xudp",
+                  "network": "tcp"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@vless.example:443?security=tls&type=ws&host=cdn.example&path=%2Fws%3Fa%3D1%26ed%3D2048%26b%3D2&eh=X-Early&fp=chrome&alpn=h2,http/1.1&allowInsecure=1&pcs=sha256&vcn=one%2C%20two%20&h2=1#WS",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "WS",
+                  "tls": true,
+                  "sni": "cdn.example",
+                  "packet-encoding": "xudp",
+                  "ws-opts": {
+                    "path": "/ws?a=1&b=2",
+                    "max-early-data": 2048,
+                    "early-data-header-name": "X-Early"
+                  },
+                  "tls-fingerprint": "sha256",
+                  "_vcn": [
+                    "one",
+                    "two"
+                  ],
+                  "name-cert-verify": "one",
+                  "_h2": true
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@[2001:db8::1]:8443?security=reality&pbk=key%3D&sid=08&spx=%2F&support-x25519mlkem768=True&flow=xtls-rprx-vision&type=grpc&serviceName=svc&authority=grpc.example&mode=multi&packetEncoding=packet&encryption=none&pqv=pq&fm=%7B%22tcp%22%3Atrue%7D#Reality",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Reality",
+                  "server": "2001:db8::1",
+                  "port": 8443,
+                  "flow": "xtls-rprx-vision",
+                  "packet-encoding": "packetaddr",
+                  "reality-opts": {
+                    "public-key": "key=",
+                    "short-id": "08",
+                    "_spider-x": "/",
+                    "support-x25519mlkem768": true
+                  },
+                  "grpc-opts": {
+                    "grpc-service-name": "svc",
+                    "_grpc-authority": "grpc.example",
+                    "_grpc-type": "multi"
+                  },
+                  "encryption": "none",
+                  "_pqv": "pq",
+                  "_finalmask": {
+                    "tcp": true
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:443?pbk=key&support-x25519mlkem768=TrUe#KeyOnly\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:443?security=reality&flow=null#EmptyReality\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:443?security=&type=tcp&packetEncoding=none#EmptySecurity",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "KeyOnly",
+                  "reality-opts": {
+                    "public-key": "key"
+                  }
+                },
+                {
+                  "name": "EmptyReality",
+                  "tls": true
+                },
+                {
+                  "name": "EmptySecurity",
+                  "tls": "",
+                  "packet-encoding": ""
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@http.example:80?type=tcp&headerType=http&method=POST&host=cdn.example&path=first#HTTP\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@h2.example:443?security=tls&type=http&host=one.example,%20two.example&path=h2#H2\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?type=kcp&seed=test&headerType=srtp#KCP",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "HTTP",
+                  "network": "http",
+                  "http-opts": {
+                    "method": "POST",
+                    "path": [
+                      "/first"
+                    ],
+                    "headers": {
+                      "Host": [
+                        "cdn.example"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "H2",
+                  "network": "h2",
+                  "sni": "one.example",
+                  "h2-opts": {
+                    "path": "/h2",
+                    "host": [
+                      "one.example",
+                      "two.example"
+                    ]
+                  }
+                },
+                {
+                  "name": "KCP",
+                  "seed": "test",
+                  "headerType": "srtp"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@upgrade.example:443?security=tls&type=httpupgrade&path=%2Fup&ed=2560&eh=X-Early#Upgrade",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Upgrade",
+                  "network": "ws",
+                  "ws-opts": {
+                    "v2ray-http-upgrade": true,
+                    "v2ray-http-upgrade-fast-open": true,
+                    "_v2ray-http-upgrade-ed": "2560",
+                    "early-data-header-name": "X-Early"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://bm9uZTpiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTFAcm9ja2V0LmV4YW1wbGU6NDQz?tls=1&obfs=websocket&obfsParam=cdn.example&path=%2Frocket&xtls=2&remarks=Rocket",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Rocket",
+                  "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+                  "network": "ws",
+                  "tls": true,
+                  "flow": "xtls-rprx-vision"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:443?security=tls&encryption=chacha20-ietf-poly1305&type=grpc&serviceName=svc&authority=grpc.example&mode=multi&flow=ignored#AEAD\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@bad.example#NoPort\nvless://bad%GG@bad.example:443#Bad\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@bad.example:443?type=ws&ed=invalid\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@bad.example:443?bad=%GG\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443#Basic\njuicity://u:p@127.0.0.1:443#Unregistered\ntrusttunnel://u:p@127.0.0.1:443#Unregistered\nsnell://p@127.0.0.1:443#Unregistered",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "AEAD",
+                  "type": "vmess",
+                  "cipher": "chacha20-poly1305",
+                  "alterId": 0,
+                  "network": "grpc"
+                },
+                {
+                  "name": "Basic",
+                  "type": "vless"
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-input-vless-xhttp-native",
+    "source": "parsers/index.js::URI_VLESS/applyXhttpExtraFields/collectUnsupportedRootXhttpExtra/parseDownloadSettings; producers/uri.js::buildVlessExtra/buildXhttpDownloadSettings; xhttp-utils.js; ech-utils.js",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@outer.example:443?security=tls&type=xhttp&host=outer.cdn&path=%2Fup&mode=packet-up&extra=%7B%22headers%22%3A%7B%22Host%22%3A%22extra.example%22%2C%22X-Token%22%3A%22abc%22%2C%22Bad%22%3A7%7D%2C%22noGRPCHeader%22%3Atrue%2C%22xPaddingBytes%22%3A%221-8%22%2C%22xPaddingObfsMode%22%3Atrue%2C%22xPaddingKey%22%3A%22pad%22%2C%22uplinkHTTPMethod%22%3A%22POST%22%2C%22sessionPlacement%22%3A%22header%22%2C%22sessionKey%22%3A%22sid%22%2C%22sessionIDTable%22%3A%22%22%2C%22sessionIDLength%22%3A%222-4%22%2C%22seqPlacement%22%3A%22query%22%2C%22seqKey%22%3A%22seq%22%2C%22uplinkDataPlacement%22%3A%22body%22%2C%22uplinkDataKey%22%3A%22data%22%2C%22uplinkChunkSize%22%3A%220-4%22%2C%22scMaxEachPostBytes%22%3A%2210-10%22%2C%22scMinPostsIntervalMs%22%3A%220-2%22%2C%22xmux%22%3A%7B%22maxConnections%22%3A%221-4%22%2C%22maxConcurrency%22%3A2%2C%22hKeepAlivePeriod%22%3A-1%2C%22future%22%3A%22keep%22%7D%2C%22downloadSettings%22%3A%7B%22address%22%3A%22down.example%22%2C%22network%22%3A%22splithttp%22%2C%22port%22%3A%228443%22%2C%22security%22%3A%22reality%22%2C%22tlsSettings%22%3A%7B%22serverName%22%3A%22tls.example%22%2C%22fingerprint%22%3A%22chrome%22%2C%22alpn%22%3A%5B%22h2%22%5D%2C%22allowInsecure%22%3Atrue%2C%22echConfigList%22%3A%22query.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query%22%2C%22echForceQuery%22%3A%22full%22%2C%22echSockopt%22%3A%7B%22mark%22%3A1%7D%2C%22future%22%3Atrue%7D%2C%22realitySettings%22%3A%7B%22publicKey%22%3A%22key%22%2C%22shortId%22%3A%2208%22%2C%22serverName%22%3A%22reality.example%22%2C%22fingerprint%22%3A%22firefox%22%2C%22future%22%3A2%7D%2C%22xhttpSettings%22%3A%7B%22path%22%3A%22%2Fdown%22%2C%22host%22%3A%22down.cdn%22%2C%22mode%22%3A%22stream-one%22%2C%22extra%22%3A%7B%22headers%22%3A%7B%22X-Down%22%3A%22b%22%7D%2C%22sessionIDTable%22%3A%22%22%2C%22xmux%22%3A%7B%22maxConnections%22%3A%222-2%22%7D%7D%2C%22future%22%3Atrue%7D%2C%22future%22%3Atrue%7D%2C%22futureRoot%22%3A%7B%22empty%22%3A%7B%7D%2C%22list%22%3A%5B%7B%7D%2Cnull%2C%7B%22x%22%3A1%7D%5D%7D%7D#XHTTP",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "XHTTP",
+                  "network": "xhttp",
+                  "sni": "extra.example",
+                  "xhttp-opts": {
+                    "host": "outer.cdn",
+                    "path": "/up",
+                    "mode": "packet-up",
+                    "headers": {
+                      "Host": "extra.example",
+                      "X-Token": "abc"
+                    },
+                    "no-grpc-header": true,
+                    "x-padding-bytes": "1-8",
+                    "session-placement": "header",
+                    "session-key": "sid",
+                    "session-table": "",
+                    "session-length": "2-4",
+                    "sc-max-each-post-bytes": 10,
+                    "sc-min-posts-interval-ms": "0-2",
+                    "reuse-settings": {
+                      "max-connections": "1-4",
+                      "max-concurrency": "2",
+                      "h-keep-alive-period": -1
+                    },
+                    "download-settings": {
+                      "network": "xhttp",
+                      "server": "down.example",
+                      "port": 8443,
+                      "tls": true,
+                      "servername": "reality.example",
+                      "client-fingerprint": "firefox",
+                      "reality-opts": {
+                        "public-key": "key",
+                        "short-id": "08"
+                      },
+                      "ech-opts": {
+                        "enable": true,
+                        "_dns": "https://dns.example/dns-query",
+                        "query-server-name": "query.example",
+                        "_force-query": "full",
+                        "_sockopt": {
+                          "mark": 1
+                        }
+                      },
+                      "path": "/down",
+                      "host": "down.cdn",
+                      "mode": "stream-one",
+                      "session-table": "",
+                      "reuse-settings": {
+                        "max-connections": "2"
+                      }
+                    }
+                  },
+                  "_extra_unsupported": {
+                    "headers": {
+                      "Bad": 7
+                    },
+                    "xmux": {
+                      "future": "keep"
+                    },
+                    "downloadSettings": {
+                      "tlsSettings": {
+                        "future": true
+                      },
+                      "realitySettings": {
+                        "future": 2
+                      },
+                      "xhttpSettings": {
+                        "future": true
+                      },
+                      "future": true
+                    },
+                    "futureRoot": {
+                      "list": [
+                        null,
+                        {
+                          "x": 1
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?type=xhttp&host=cdn.example&path=%2Fx&mode=stream-one&extra=%7B%22noGRPCHeader%22%3Atrue%2C%22xPaddingBytes%22%3A%221-8%22%2C%22xmux%22%3A%7B%22maxConnections%22%3A%222-2%22%7D%2C%22unknown%22%3A%22keep%22%7D#X",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=none&type=xhttp&path=%2Fx&host=cdn.example&packetEncoding=xudp&mode=stream-one&extra=%7B%22noGRPCHeader%22%3Atrue%2C%22xPaddingBytes%22%3A%221-8%22%2C%22xmux%22%3A%7B%22maxConnections%22%3A%222%22%7D%2C%22unknown%22%3A%22keep%22%7D#X"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?type=xhttp&extra=not-json#Raw",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=none&type=xhttp&packetEncoding=xudp&extra=not-json#Raw"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?type=xhttp&extra=%7B%22headers%22%3A%7B%22Bad%22%3A7%7D%2C%22noGRPCHeader%22%3Afalse%2C%22xPaddingBytes%22%3A%220-2%22%2C%22sessionIDLength%22%3A3%2C%22sessionIDKey%22%3A%22%22%2C%22uplinkChunkSize%22%3A%224-2%22%2C%22xmux%22%3A%7B%22maxConnections%22%3A%22-1%22%7D%2C%22downloadSettings%22%3A%7B%22network%22%3A%22bad%22%2C%22port%22%3A%22-0%22%2C%22tlsSettings%22%3A%7B%22allowInsecure%22%3Afalse%2C%22alpn%22%3A%5B%5D%7D%2C%22xhttpSettings%22%3A%7B%22path%22%3A%22%22%2C%22extra%22%3A%7B%22xPaddingObfsMode%22%3Afalse%7D%7D%7D%7D#Unsupported",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Unsupported",
+                  "xhttp-opts": {
+                    "session-length": "3"
+                  },
+                  "_extra_unsupported": {
+                    "headers": {
+                      "Bad": 7
+                    },
+                    "noGRPCHeader": false,
+                    "xPaddingBytes": "0-2",
+                    "uplinkChunkSize": "4-2",
+                    "xmux": {
+                      "maxConnections": "-1"
+                    },
+                    "downloadSettings": {
+                      "network": "bad",
+                      "port": "-0",
+                      "tlsSettings": {
+                        "allowInsecure": false,
+                        "alpn": []
+                      },
+                      "xhttpSettings": {
+                        "path": "",
+                        "extra": {
+                          "xPaddingObfsMode": false
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=tls&ech=query.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&fm=%7B%22a%22%3Atrue%7D&pqv=pq#ECH",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=tls&type=tcp&packetEncoding=xudp&ech=query.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&fm=%7B%22a%22%3Atrue%7D&pqv=pq#ECH"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?type=xhttp&extra=%7B%22downloadSettings%22%3A%7B%22security%22%3A%22reality%22%2C%22realitySettings%22%3A%7B%7D%2C%22xhttpSettings%22%3A%7B%22path%22%3A%22%2F%22%7D%7D%7D#RealityMarker",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": []
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=reality&sid=08#MissingKey\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?type=xhttp&extra=%7B%22downloadSettings%22%3A%7B%22security%22%3A%22reality%22%7D%7D#MissingDownloadKey\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443#Recovered",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": ["vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=none&type=tcp&packetEncoding=xudp#Recovered"]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?type=xhttp&mode=stream-one&extra=%7B%22downloadSettings%22%3A%7B%22address%22%3A%22down.example%22%7D%7D#InvalidSplit",
+          "client": "V2Ray",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {"par_res": ""}
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-input-anytls-native",
+    "source": "backend/src/test/proxy-parsers/uri.spec.js:424; parsers/index.js::URI_AnyTLS; producers/uri.js::anytls",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "anytls://top-secret@anytls.example.com:443?type=tcp&alpn=h2,http/1.1&insecure=1&udp=1#AnyTLS",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "type": "anytls",
+                  "name": "AnyTLS",
+                  "server": "anytls.example.com",
+                  "port": 443,
+                  "password": "top-secret",
+                  "tls": true,
+                  "sni": "anytls.example.com",
+                  "alpn": [
+                    "h2",
+                    "http/1.1"
+                  ],
+                  "udp": true,
+                  "skip-cert-verify": true
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "anytls://p%253Aq@127.0.0.1:443?udp=0&disable_reuse=1&idle_session_check_interval=10&alpn=#Double",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Double",
+                  "password": "p:q",
+                  "udp": false,
+                  "disable-reuse": "1",
+                  "reuse": false,
+                  "idle-session-check-interval": "10"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "anytls://p@127.0.0.1:443#Basic\nanytls://p@127.0.0.1#MissingPort\nanytls://bad%GG@127.0.0.1:443#Bad",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Basic",
+                  "type": "anytls",
+                  "password": "p"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "anytls://p@127.0.0.1:443#Basic",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "anytls://p@127.0.0.1:443?security=tls&type=tcp&packetEncoding=xudp&udp=1&packet_encoding=xudp#Basic"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "anytls://p@any.example:443?security=reality&pbk=key&sid=08&type=grpc&serviceName=svc&mode=multi&alpn=h2,http/1.1&insecure=1#Reality",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Reality",
+                  "network": "grpc",
+                  "reality-opts": {
+                    "public-key": "key",
+                    "short-id": "08"
+                  },
+                  "alpn": [
+                    "h2",
+                    "http/1.1"
+                  ],
+                  "skip-cert-verify": true
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-output-vmess-vless-anytls-native",
+    "source": "producers/uri.js::vless/VMess/anytls; producers/v2ray.js; actual proxy parser HTTP owner",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://eyJ2IjoiMiIsInBzIjoiQmFzaWMiLCJhZGQiOiIxMjcuMC4wLjEiLCJwb3J0IjoiNDQzIiwiaWQiOiJiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTEiLCJhaWQiOiIwIiwic2N5IjoiYXV0byIsIm5ldCI6InRjcCIsInR5cGUiOiIiLCJ0bHMiOiIifQ==",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "vmess://eyJ2IjoiMiIsInBzIjoiQmFzaWMiLCJhZGQiOiIxMjcuMC4wLjEiLCJwb3J0IjoiNDQzIiwiaWQiOiJiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTEiLCJhaWQiOiIwIiwic2N5IjoiYXV0byIsIm5ldCI6InRjcCIsInR5cGUiOiIiLCJ0bHMiOiIifQ=="
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443#Basic",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=none&type=tcp&packetEncoding=xudp#Basic"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=reality&pbk=key&sid=08&type=tcp&encryption=aes-128-gcm&fm=%7B%22tcp%22%3Atrue%7D#AEAD",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "vmess://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=reality&type=tcp&packetEncoding=xudp&sid=08&pbk=key&fm=%7B%22tcp%22%3Atrue%7D&encryption=aes-128-gcm#AEAD"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=tls&type=ws&host=cdn.example&path=%2Fws%3Fa%3D1%26ed%3D2048&eh=X-Early#WS",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=tls&type=ws&path=%2Fws%3Fa%3D1&host=cdn.example&ed=2048&eh=X-Early&packetEncoding=xudp&sni=cdn.example#WS"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://eyJ2IjoiMiIsInBzIjoiVXBncmFkZSIsImFkZCI6IjEyNy4wLjAuMSIsInBvcnQiOiI0NDMiLCJpZCI6ImI4MzEzODFkLTYzMjQtNGQ1My1hZDRmLThjZGE0OGIzMDgxMSIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0IjoiaHR0cHVwZ3JhZGUiLCJ0eXBlIjoiIiwidGxzIjoiIiwiaG9zdCI6ImNkbi5leGFtcGxlIiwicGF0aCI6Ii91cD9lZD0xMDI0In0=",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "vmess://eyJ2IjoiMiIsInBzIjoiVXBncmFkZSIsImFkZCI6IjEyNy4wLjAuMSIsInBvcnQiOiI0NDMiLCJpZCI6ImI4MzEzODFkLTYzMjQtNGQ1My1hZDRmLThjZGE0OGIzMDgxMSIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0IjoiaHR0cHVwZ3JhZGUiLCJ0eXBlIjoiIiwidGxzIjoiIiwicGF0aCI6Ii91cD9lZD0xMDI0IiwiaG9zdCI6ImNkbi5leGFtcGxlIn0="
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vmess://eyJ2IjoiMiIsInBzIjoiQmFzaWMiLCJhZGQiOiIxMjcuMC4wLjEiLCJwb3J0IjoiNDQzIiwiaWQiOiJiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTEiLCJhaWQiOiIwIiwic2N5IjoiYXV0byIsIm5ldCI6InRjcCIsInR5cGUiOiIiLCJ0bHMiOiIifQ==\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443#Basic\nanytls://p@127.0.0.1:443#Basic",
+          "client": "V2Ray",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": "dm1lc3M6Ly9leUoySWpvaU1pSXNJbkJ6SWpvaVFtRnphV01pTENKaFpHUWlPaUl4TWpjdU1DNHdMakVpTENKd2IzSjBJam9pTkRReklpd2lhV1FpT2lKaU9ETXhNemd4WkMwMk16STBMVFJrTlRNdFlXUTBaaTA0WTJSaE5EaGlNekE0TVRFaUxDSmhhV1FpT2lJd0lpd2ljMk41SWpvaVlYVjBieUlzSW01bGRDSTZJblJqY0NJc0luUjVjR1VpT2lJaUxDSjBiSE1pT2lJaWZRPT0Kdmxlc3M6Ly9iODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTFAMTI3LjAuMC4xOjQ0Mz9zZWN1cml0eT1ub25lJnR5cGU9dGNwJnBhY2tldEVuY29kaW5nPXh1ZHAjQmFzaWMKYW55dGxzOi8vcEAxMjcuMC4wLjE6NDQzP3NlY3VyaXR5PXRscyZ0eXBlPXRjcCZwYWNrZXRFbmNvZGluZz14dWRwJnVkcD0xJnBhY2tldF9lbmNvZGluZz14dWRwI0Jhc2lj"
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P05-local-vmess-vless-anytls-paths",
+    "source": "restful/parser.js, preview.js, download.js and products/index.js::produceArtifact; shared native local conversion owner",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/preview/sub",
+        "body": {
+          "name": "modern-preview",
+          "source": "local",
+          "content": "vmess://eyJ2IjoiMiIsInBzIjoiQmFzaWMiLCJhZGQiOiIxMjcuMC4wLjEiLCJwb3J0IjoiNDQzIiwiaWQiOiJiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTEiLCJhaWQiOiIwIiwic2N5IjoiYXV0byIsIm5ldCI6InRjcCIsInR5cGUiOiIiLCJ0bHMiOiIifQ==\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443#Basic\nanytls://p@127.0.0.1:443#Basic",
+          "process": []
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "original": [
+                {
+                  "type": "vmess",
+                  "id": 0,
+                  "name": "Basic",
+                  "_subName": "modern-preview"
+                },
+                {
+                  "type": "vless",
+                  "id": 1,
+                  "name": "Basic",
+                  "_subName": "modern-preview"
+                },
+                {
+                  "type": "anytls",
+                  "id": 2,
+                  "name": "Basic",
+                  "_subName": "modern-preview"
+                }
+              ],
+              "processed": [
+                {
+                  "type": "vmess",
+                  "id": 0,
+                  "name": "Basic",
+                  "_subName": "modern-preview"
+                },
+                {
+                  "type": "vless",
+                  "id": 1,
+                  "name": "Basic",
+                  "_subName": "modern-preview"
+                },
+                {
+                  "type": "anytls",
+                  "id": 2,
+                  "name": "Basic",
+                  "_subName": "modern-preview"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/subs",
+        "body": {
+          "name": "native-modern",
+          "source": "local",
+          "content": "vmess://eyJ2IjoiMiIsInBzIjoiQmFzaWMiLCJhZGQiOiIxMjcuMC4wLjEiLCJwb3J0IjoiNDQzIiwiaWQiOiJiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTEiLCJhaWQiOiIwIiwic2N5IjoiYXV0byIsIm5ldCI6InRjcCIsInR5cGUiOiIiLCJ0bHMiOiIifQ==\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443#Basic\nanytls://p@127.0.0.1:443#Basic",
+          "process": [],
+          "unknown": {
+            "retained": true
+          }
+        },
+        "expect": {
+          "status": 201
+        }
+      },
+      {
+        "path": "/download/native-modern/URI",
+        "expect": {
+          "status": 200,
+          "body": "vmess://eyJ2IjoiMiIsInBzIjoiQmFzaWMiLCJhZGQiOiIxMjcuMC4wLjEiLCJwb3J0IjoiNDQzIiwiaWQiOiJiODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTEiLCJhaWQiOiIwIiwic2N5IjoiYXV0byIsIm5ldCI6InRjcCIsInR5cGUiOiIiLCJ0bHMiOiIifQ==\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=none&type=tcp&packetEncoding=xudp#Basic\nanytls://p@127.0.0.1:443?security=tls&type=tcp&packetEncoding=xudp&udp=1&packet_encoding=xudp#Basic"
+        }
+      },
+      {
+        "path": "/download/native-modern/JSON",
+        "expect": {
+          "status": 200,
+          "json_contains": [
+            {
+              "type": "vmess",
+              "name": "Basic",
+              "_subName": "native-modern"
+            },
+            {
+              "type": "vless",
+              "name": "Basic",
+              "_subName": "native-modern"
+            },
+            {
+              "type": "anytls",
+              "name": "Basic",
+              "_subName": "native-modern"
+            }
+          ]
+        }
+      },
+      {
+        "path": "/download/native-modern/V2Ray",
+        "expect": {
+          "status": 200,
+          "body": "dm1lc3M6Ly9leUoySWpvaU1pSXNJbkJ6SWpvaVFtRnphV01pTENKaFpHUWlPaUl4TWpjdU1DNHdMakVpTENKd2IzSjBJam9pTkRReklpd2lhV1FpT2lKaU9ETXhNemd4WkMwMk16STBMVFJrTlRNdFlXUTBaaTA0WTJSaE5EaGlNekE0TVRFaUxDSmhhV1FpT2lJd0lpd2ljMk41SWpvaVlYVjBieUlzSW01bGRDSTZJblJqY0NJc0luUjVjR1VpT2lJaUxDSjBiSE1pT2lJaWZRPT0Kdmxlc3M6Ly9iODMxMzgxZC02MzI0LTRkNTMtYWQ0Zi04Y2RhNDhiMzA4MTFAMTI3LjAuMC4xOjQ0Mz9zZWN1cml0eT1ub25lJnR5cGU9dGNwJnBhY2tldEVuY29kaW5nPXh1ZHAjQmFzaWMKYW55dGxzOi8vcEAxMjcuMC4wLjE6NDQzP3NlY3VyaXR5PXRscyZ0eXBlPXRjcCZwYWNrZXRFbmNvZGluZz14dWRwJnVkcD0xJnBhY2tldF9lbmNvZGluZz14dWRwI0Jhc2lj"
+        }
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/sub/native-modern?mode=permanent",
+        "expect": {
+          "status": 200
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-output-v2ray-native-tls-uris",
+    "source": "backend/src/core/proxy-utils/producers/v2ray.js:10-20; URI_Producer Trojan/Hysteria1/Hysteria2/TUIC/WireGuard",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "trojan://p@127.0.0.1?#Basic\nhy://127.0.0.1#Basic\nhy2://p@127.0.0.1#Basic\ntuic://u:p@127.0.0.1#Basic\nwg://key@127.0.0.1#Basic",
+          "client": "V2Ray",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": "dHJvamFuOi8vcEAxMjcuMC4wLjE6NDQzP3NuaT0xMjcuMC4wLjEmdHlwZT10Y3AjQmFzaWMKaHlzdGVyaWE6Ly8xMjcuMC4wLjE6NDQzP3Byb3RvY29sPXVkcCZ1ZHA9dHJ1ZSNCYXNpYwpoeXN0ZXJpYTI6Ly9wQDEyNy4wLjAuMTo0NDM/I0Jhc2ljCnR1aWM6Ly91OnBAMTI3LjAuMC4xOjQ0Mz91ZHA9dHJ1ZSZhbHBuPWgzJmNvbmdlc3Rpb25fY29udHJvbD1jdWJpYyZ1ZHBfcmVsYXlfbW9kZT1uYXRpdmUjQmFzaWMKd2lyZWd1YXJkOi8va2V5QDEyNy4wLjAuMTo1MTgyMC8/dWRwPTEjQmFzaWM="
+            }
+          }
+        }
+      }
     ]
   }
 ]

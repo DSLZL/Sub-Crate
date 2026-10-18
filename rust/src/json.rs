@@ -1,25 +1,66 @@
+use base64::{Engine, engine::general_purpose};
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde_json::Value;
+
+pub const COMPONENT: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'_')
+    .remove(b'.')
+    .remove(b'!')
+    .remove(b'~')
+    .remove(b'*')
+    .remove(b'\'')
+    .remove(b'(')
+    .remove(b')');
+
+pub fn uri_component(value: &str) -> Result<String, std::string::FromUtf16Error> {
+    let value = String::from_utf16(&units(value))?;
+    Ok(utf8_percent_encode(&value, COMPONENT).to_string())
+}
+
+pub fn decode_base64(text: &str) -> Result<Vec<u8>, base64::DecodeError> {
+    // js-base64 removes padding/noise before Buffer decodes the remaining sextets.
+    let mut encoded: String = text
+        .chars()
+        .filter_map(|c| match c {
+            '-' => Some('+'),
+            '_' => Some('/'),
+            c if c.is_ascii_alphanumeric() || matches!(c, '+' | '/') => Some(c),
+            _ => None,
+        })
+        .collect();
+    if encoded.len() % 4 == 1 {
+        encoded.pop();
+    }
+    general_purpose::GeneralPurpose::new(
+        &base64::alphabet::STANDARD,
+        general_purpose::NO_PAD.with_decode_allow_trailing_bits(true),
+    )
+    .decode(encoded)
+}
 
 // Escape this private marker too; the internal representation never reaches JSON.
 const MARKER: char = '\u{e000}';
 
 pub fn trim(value: &str) -> &str {
-    value.trim_matches(|c| {
-        matches!(
-            c,
-            '\u{0009}'..='\u{000d}'
-                | ' '
-                | '\u{00a0}'
-                | '\u{1680}'
-                | '\u{2000}'..='\u{200a}'
-                | '\u{2028}'
-                | '\u{2029}'
-                | '\u{202f}'
-                | '\u{205f}'
-                | '\u{3000}'
-                | '\u{feff}'
-        )
-    })
+    value.trim_matches(is_space)
+}
+
+pub fn is_space(c: char) -> bool {
+    matches!(
+        c,
+        '\u{0009}'..='\u{000d}'
+            | ' '
+            | '\u{00a0}'
+            | '\u{1680}'
+            | '\u{2000}'..='\u{200a}'
+            | '\u{2028}'
+            | '\u{2029}'
+            | '\u{202f}'
+            | '\u{205f}'
+            | '\u{3000}'
+            | '\u{feff}'
+    )
 }
 
 pub fn encode(text: &str) -> String {
@@ -147,8 +188,73 @@ pub fn stringify(value: &Value) -> String {
     serialized(&value.to_string())
 }
 
+pub fn js_string(value: &Value) -> String {
+    match value {
+        Value::String(value) => value.clone(),
+        Value::Array(items) => items
+            .iter()
+            .map(|item| {
+                if item.is_null() {
+                    String::new()
+                } else {
+                    js_string(item)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+        Value::Object(_) => "[object Object]".to_owned(),
+        Value::Number(value) => number(value),
+        _ => value.to_string(),
+    }
+}
+
 pub fn pretty(value: &Value) -> Vec<u8> {
     serialized(&serde_json::to_string_pretty(value).expect("JSON value serialization")).into_bytes()
+}
+
+pub fn to_number(value: &Value) -> f64 {
+    match value {
+        Value::Null => 0.0,
+        Value::Bool(value) => {
+            if *value {
+                1.0
+            } else {
+                0.0
+            }
+        }
+        Value::Number(value) => value.as_f64().unwrap_or(f64::NAN),
+        Value::String(value) => {
+            let value = trim(value);
+            if value.is_empty() {
+                return 0.0;
+            }
+            for (prefix, radix) in [
+                ("0x", 16),
+                ("0X", 16),
+                ("0b", 2),
+                ("0B", 2),
+                ("0o", 8),
+                ("0O", 8),
+            ] {
+                if let Some(digits) = value.strip_prefix(prefix) {
+                    if digits.is_empty() {
+                        return f64::NAN;
+                    }
+                    return digits
+                        .chars()
+                        .try_fold(0.0, |total, digit| {
+                            digit
+                                .to_digit(radix)
+                                .map(|digit| total * f64::from(radix) + f64::from(digit))
+                        })
+                        .unwrap_or(f64::NAN);
+                }
+            }
+            value.parse().unwrap_or(f64::NAN)
+        }
+        Value::Array(_) => to_number(&Value::String(js_string(value))),
+        _ => f64::NAN,
+    }
 }
 
 pub fn number(value: &serde_json::Number) -> String {
