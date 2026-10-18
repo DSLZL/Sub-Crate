@@ -529,9 +529,7 @@ fn parse_fields(text: &str, query: bool) -> Result<Value, u16> {
                 } else {
                     combine(json!([]), value, limit)
                 }
-            } else if bracket
-                && let Some(index) = numeric_index(key)
-            {
+            } else if bracket && let Some(index) = numeric_index(key) {
                 if index < limit as f64 {
                     let mut items = vec![Value::Null; index as usize + 1];
                     items[index as usize] = value;

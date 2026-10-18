@@ -7,8 +7,6 @@ use hyper::{Method, Response, body::Bytes};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde_json::{Value, json};
 use std::io;
-use std::mem::MaybeUninit;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 pub type Reply = Response<Full<Bytes>>;
 const COMPONENT: &AsciiSet = &NON_ALPHANUMERIC
@@ -170,37 +168,7 @@ fn download(value: &Value, name: &str) -> Reply {
     let Ok(name) = String::from_utf16(&codec::units(name)) else {
         return html_error(500, "Internal Server Error");
     };
-    let mut local = MaybeUninit::<libc::tm>::uninit();
-    // Linux time() can lag behind the precise wall clock at a second boundary.
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .and_then(|instant| libc::time_t::try_from(instant.as_secs()).ok());
-    // SAFETY: each reentrant CRT call initializes this tm on success.
-    let local = unsafe {
-        #[cfg(unix)]
-        let valid = now.is_some_and(|now| !libc::localtime_r(&now, local.as_mut_ptr()).is_null());
-        #[cfg(windows)]
-        let valid = now.is_some_and(|now| libc::localtime_s(local.as_mut_ptr(), &now) == 0);
-        if !valid {
-            return failure(
-                500,
-                "DATE_FORMAT_FAILED",
-                "InternalServerError",
-                "Failed to read local time",
-            );
-        }
-        local.assume_init()
-    };
-    let stamp = format!(
-        "{:04}-{:02}-{:02}_{:02}-{:02}-{:02}",
-        local.tm_year + 1900,
-        local.tm_mon + 1,
-        local.tm_mday,
-        local.tm_hour,
-        local.tm_min,
-        local.tm_sec
-    );
+    let stamp = jiff::Zoned::now().strftime("%Y-%m-%d_%H-%M-%S");
     let filename = format!("{name}_{stamp}.json");
     let disposition = format!(
         "attachment; filename=\"{}\"",

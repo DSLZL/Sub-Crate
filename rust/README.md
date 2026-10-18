@@ -75,7 +75,8 @@ corrupt/truncated streams return 400 and expanded overflow returns 413 without
 publishing data. Form/query array overflow retains the locked decoders' separate
 limits and merge rules; its private bookkeeping never enters user JSON.
 Raw JSON exports retain the legacy local-calendar filenames and escaped resource
-names. Manual restore keeps the pre-migration backup in `root.json`'s `sub-store`
+names. Jiff resolves the local zone and IANA `TZ` overrides on Windows and Linux;
+Windows bundles its timezone data. Manual restore keeps the pre-migration backup in `root.json`'s `sub-store`
 key and preserves unrelated root entries. A private undo record protects the two
 files during restore; startup recovers an interrupted restore before serving.
 Legacy Base64 imports and startup data retain the old decoder's URL-safe symbols,

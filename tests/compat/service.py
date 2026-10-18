@@ -1745,9 +1745,8 @@ def main():
         root = {"opaque": {"text": "根缓存🙂\r\n", "zero": 0, "flag": False, "nil": None}, "sub-store": "previous backup"}
         for key in ("sub-store-cached-resource", "sub-store-cached-headers-resource", "sub-store-cached-script-resource"):
             root[key] = json.dumps({"fixture": {"time": 4102444800000, "data": "cached"}})
-        zones = [("local", {}, None)]
-        if os.name != "nt":
-            zones.append(("tokyo", {"TZ": "Asia/Tokyo"}, 540))
+        zones = [("local", {}, None), ("tokyo", {"TZ": "Asia/Tokyo"}, 540),
+                 ("kathmandu", {"TZ": "Asia/Kathmandu"}, 345)]
         report["backup_fixture_sha256"] = hashlib.sha256((HERE / "fixtures/frontend-backup.json").read_bytes()).hexdigest()
         for zone, overrides, offset in zones:
             restored = {}
