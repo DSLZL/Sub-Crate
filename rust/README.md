@@ -100,6 +100,12 @@ methods and entity metadata. Root non-GET requests retain the backend greeting.
 Unsupported methods return escaped production HTML 404 responses with the original
 pathname, while GET/HEAD wildcard misses and explicit prefix rejections stay empty.
 Structured business errors retain their response bodies and status.
+CRUD query flags preserve repeated and bracketed values. Empty scalar raw flags
+keep wrapped JSON; nonempty strings, arrays and objects select raw export.
+Ambiguous array/object delete modes return INVALID_DELETE_MODE without changing
+state. Query decoding retains plus/percent behavior, its 1,000-parameter cap,
+depth-five remainder and array limit, separately from body form limits.
+Exotic query overflow collisions and own-toString coercion remain M2 gaps.
 Node development stack bodies and broader HTTP/API edge cases remain M2
 acceptance work.
 Stored excluded Node scripts remain intact.

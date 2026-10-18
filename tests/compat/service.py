@@ -741,6 +741,44 @@ def api_entities(url, state, output, name, origin=None):
             send("/", method=method, expected="Hello from sub-store, made with ❤️ by Peng-YM".encode())
         send("/", method="POST", body=b"{", status=400, tagged=False)
     assert all((state / filename).read_bytes() == data for filename, data in before_methods.items()), "HTTP method handling changed durable state"
+    before_queries = {filename: (state / filename).read_bytes() for filename in ("sub-store.json", "root.json")}
+    for singular in ("sub", "collection"):
+        target = f"/api/{singular}/route-created"
+        for query, exported in (("raw", False), ("raw=", False), ("raw=0", True), ("raw=false", True),
+                                ("raw=&raw=", True), ("raw=1&raw=", True), ("raw[]", True),
+                                ("raw[x]=", True), ("r%61w%5B%5D=", True), ("raw%3Dx=1", False),
+                                ("raw[x][y][z][u][v][w]=", True), ("raw[__proto__]=", True)):
+            headers, content = send(target + "?" + query)
+            assert ("content-disposition" in headers) == exported
+            value = json.loads(content)
+            assert (value if exported else value["data"]) == {"name": "route-created", "marker": "created"}
+        for query, mode in (("mode=invalid", "invalid"), ("mode=0", "0"),
+                            ("mode=archive&mode=permanent", "archive,permanent"),
+                            ("mode=permanent&mode=", "permanent,"), ("mode=&mode=", ","),
+                            ("mode[]=permanent", "permanent"), ("m%6Fde%5B%5D=permanent", "permanent"),
+                            ("mode[0]=permanent&mode[2]=", "permanent,"),
+                            ("mode[19]=permanent", "permanent"), ("mode[20]=permanent", "[object Object]"),
+                            ("mode[x]=permanent", "[object Object]"),
+                            ("mode[x]=archive&mode=permanent", "[object Object]"),
+                            ("mode[x][y][z][u][v][w]=permanent", "[object Object]"),
+                            ("mode[__proto__]=permanent", "[object Object]"),
+                            ("mode=+permanent+", " permanent "), ("mode=%2570ermanent", "%70ermanent"),
+                            ("mode=%FF%20permanent", "%FF%20permanent"),
+                            ("&".join(["mode=permanent"] * 20), ",".join(["permanent"] * 20)),
+                            ("&".join(["mode=permanent"] * 21), "[object Object]"),
+                            ("mode=invalid&" + "x=&" * 999 + "mode=permanent", "invalid")):
+            _, content = send(target + "?" + query, method="DELETE", status=500)
+            assert json.loads(content) == {"status": "failed", "error": {"code": "INVALID_DELETE_MODE",
+                "type": "RequestInvalidError", "message": "Unsupported delete mode: " + mode}}
+        for query, exported in (("x=&" * 999 + "raw=1", True), ("x=&" * 1000 + "raw=1", False)):
+            headers, _ = send(target + "?" + query)
+            assert ("content-disposition" in headers) == exported
+    assert all((state / filename).read_bytes() == data for filename, data in before_queries.items()), "CRUD query flags changed durable state"
+    for plural, singular in (("subs", "sub"), ("collections", "collection")):
+        for query in ("", "?mode=", "?mode=%70ermanent"):
+            send(f"/api/{plural}", method="POST", status=201, body=b'{"name":"query-delete"}')
+            send(f"/api/{singular}/query-delete" + query, method="DELETE")
+            assert all(item.get("name") != "query-delete" for item in observations[-1]["state"][plural])
     (output / f"{name}.json").write_text(json.dumps(observations, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return observations
 
@@ -1379,6 +1417,7 @@ def main():
         report["api_entity_error_and_mutation_boundaries_checked"] = True
         report["crud_route_case_suffix_and_parameter_decoding_checked"] = True
         report["m2_http_methods_and_cors_parser_precedence_checked"] = True
+        report["crud_query_flags_and_ambiguous_delete_checked"] = True
         report["export_second_boundary_clock_checked"] = True
         report["api_entity_configurations_checked"] = ["merged-prefix", "merged-root", "standalone-prefixed", "standalone-unprefixed", "standalone-root"]
         report["exit_code"] = 0

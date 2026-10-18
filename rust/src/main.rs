@@ -10,7 +10,6 @@ use hyper_util::rt::TokioIo;
 use percent_encoding::percent_decode_str;
 use serde_json::{Value, json};
 use std::cmp::Reverse;
-use std::collections::HashMap;
 use std::convert::Infallible;
 use std::env;
 use std::io;
@@ -777,11 +776,7 @@ async fn route(
     if method == Method::OPTIONS {
         return api::options(&path);
     }
-    let query = reqwest::Url::parse(&format!("http://localhost/?{raw_query}"))
-        .unwrap()
-        .query_pairs()
-        .into_owned()
-        .collect::<HashMap<_, _>>();
+    let query = body::query(&raw_query);
     if (path == "/" || path == "/api/utils/env") && method == Method::GET {
         return api::send(200, "application/json; charset=utf-8", json!({
             "status":"success", "data":{

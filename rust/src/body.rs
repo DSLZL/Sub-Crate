@@ -136,7 +136,7 @@ pub async fn read(request: Request<Incoming>, json_limit: usize) -> Result<Body,
     if json || form {
         let text = decode(&bytes, &charset);
         let value = if form {
-            parse_form(&text)?
+            parse_fields(&text, false)?
         } else if text.is_empty() {
             json!({})
         } else {
@@ -222,7 +222,7 @@ fn form_decode(value: &str) -> String {
         .unwrap_or(value)
 }
 
-fn merge(target: &mut Value, source: Value) {
+fn merge(target: &mut Value, source: Value, query: bool) {
     if target.is_null() {
         *target = source;
         return;
@@ -241,7 +241,7 @@ fn merge(target: &mut Value, source: Value) {
                 } else if (left[index].is_object() || left[index].is_array())
                     && (value.is_object() || value.is_array())
                 {
-                    merge(&mut left[index], value);
+                    merge(&mut left[index], value, query);
                 } else {
                     left.push(value);
                 }
@@ -257,12 +257,12 @@ fn merge(target: &mut Value, source: Value) {
                     .map(|(i, v)| (i.to_string(), v))
                     .collect(),
             );
-            merge(left, right);
+            merge(left, right, query);
         }
         (Value::Object(left), Value::Object(right)) => {
             for (key, value) in right {
                 if let Some(old) = left.get_mut(&key) {
-                    merge(old, value);
+                    merge(old, value, query);
                 } else {
                     left.insert(key, value);
                 }
@@ -277,7 +277,12 @@ fn merge(target: &mut Value, source: Value) {
                     .map(|(i, v)| (i.to_string(), v))
                     .collect(),
             );
-            merge(left, right);
+            merge(left, right, query);
+        }
+        (Value::Object(left), Value::String(right)) if query => {
+            if !right.is_empty() {
+                left.insert(right, Value::Bool(true));
+            }
         }
         (Value::Array(left), right) => left.push(right),
         (left, Value::Array(mut right)) => {
@@ -299,16 +304,21 @@ fn compact(value: &mut Value) {
     }
 }
 
-fn parse_form(text: &str) -> Result<Value, u16> {
+pub fn query(text: &str) -> Value {
+    // Query limits truncate; only body forms reject excessive parameters/depth.
+    parse_fields(text, true).unwrap()
+}
+
+fn parse_fields(text: &str, query: bool) -> Result<Value, u16> {
     if text.is_empty() {
         return Ok(json!({}));
     }
     let count = text.bytes().filter(|&b| b == b'&').count() + 1;
-    if count > 1000 {
+    if !query && count > 1000 {
         return Err(413);
     }
     let mut fields = Map::new();
-    for pair in text.split('&') {
+    for pair in text.split('&').take(1000) {
         let pair = pair
             .replace("%5B", "[")
             .replace("%5b", "[")
@@ -330,6 +340,21 @@ fn parse_form(text: &str) -> Result<Value, u16> {
             fields.insert(key, value);
         }
     }
+    if query {
+        for value in fields.values_mut() {
+            if let Value::Array(items) = value
+                && items.len() > 20
+            {
+                *value = Value::Object(
+                    std::mem::take(items)
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, value)| (index.to_string(), value))
+                        .collect(),
+                );
+            }
+        }
+    }
     let mut result = json!({});
     for (key, mut value) in fields {
         if key.is_empty() {
@@ -346,8 +371,12 @@ fn parse_form(text: &str) -> Result<Value, u16> {
                 && let Some(start) = opening.take()
             {
                 depth += 1;
-                if depth > 32 {
-                    return Err(400);
+                if depth > if query { 5 } else { 32 } {
+                    if !query {
+                        return Err(400);
+                    }
+                    segments.push((&key[start..], true));
+                    break;
                 }
                 if segments.is_empty() && start > 0 {
                     segments.push((&key[..start], false));
@@ -363,7 +392,7 @@ fn parse_form(text: &str) -> Result<Value, u16> {
             value = if key == "__proto__" {
                 json!({})
             } else if bracket && key.is_empty() {
-                if value.is_array() {
+                if value.is_array() || (query && value.get("20").is_some()) {
                     value
                 } else {
                     json!([value])
@@ -371,7 +400,7 @@ fn parse_form(text: &str) -> Result<Value, u16> {
             } else if bracket
                 && let Ok(index) = key.parse::<usize>()
                 && index.to_string() == key
-                && index < count.max(100)
+                && index < if query { 20 } else { count.max(100) }
             {
                 let mut items = vec![Value::Null; index + 1];
                 items[index] = value;
@@ -380,8 +409,8 @@ fn parse_form(text: &str) -> Result<Value, u16> {
                 Value::Object(Map::from_iter([(key.to_owned(), value)]))
             };
         }
-        // shortcut: qs overflow-array collision metadata is not modeled; extend before accepting that exotic form shape.
-        merge(&mut result, value);
+        // shortcut: qs overflow-array collision metadata is not modeled; extend before accepting that exotic shape.
+        merge(&mut result, value, query);
     }
     compact(&mut result);
     Ok(result)

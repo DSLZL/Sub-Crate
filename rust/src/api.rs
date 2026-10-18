@@ -5,7 +5,6 @@ use http_body_util::Full;
 use hyper::{Method, Response, body::Bytes};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde_json::{Value, json};
-use std::collections::HashMap;
 use std::io;
 use std::mem::MaybeUninit;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -491,7 +490,7 @@ fn reference_name_matches(value: &Value, name: &str, subscription: bool) -> bool
 pub fn dispatch(
     method: &Method,
     path: &str,
-    query: &HashMap<String, String>,
+    query: &Value,
     body: Body,
     store: &mut Store,
 ) -> Reply {
@@ -598,7 +597,7 @@ pub fn dispatch(
                     .remove("subscriptions");
             }
             let item = store.data[key][position].clone();
-            if query.get("raw").is_some_and(|s| !s.is_empty()) {
+            if truthy(&query["raw"]) {
                 download(
                     &item,
                     &format!(
@@ -693,10 +692,10 @@ pub fn dispatch(
             if mode == "archive" {
                 return pending("Archive deletion is pending");
             }
-            if !mode.is_empty() && mode != "permanent" {
+            if mode != "" && mode != "permanent" {
                 return invalid(
                     "INVALID_DELETE_MODE",
-                    &format!("Unsupported delete mode: {mode}"),
+                    &format!("Unsupported delete mode: {}", js_string(mode)),
                 );
             }
         }
