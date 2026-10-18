@@ -13,7 +13,7 @@ import subprocess
 from urllib.parse import parse_qs, quote, urlsplit
 
 from reference import BACKEND, HERE, ROOT, execute, oracle, source_provenance
-from runner import check_json
+from runner import check_json, request
 from upstream import ControlledUpstream
 
 
@@ -302,14 +302,18 @@ def main():
                 command("open", original_origin + "/subs")
                 command("wait", "--load", "networkidle")
                 if phase == "restored":
+                    feature = json.loads(request(url, {"path": "/api/utils/env"})["body"])["data"]["feature"]
+                    # The existing archive capability selects the frontend's two delete-dialog labels.
+                    confirm = "永久删除" if feature.get("archive") else "确认删除"
+                    report["permanent_delete_confirmation"] = confirm
                     for name, plural in (("ui-restored-sub", "subs"), ("ui-restored-col", "collections")):
                         row = '.nut-swipe:has(.sub-item-title[title="' + name + '"])'
                         command("wait", row)
-                        click_in_view(row + " .sub-item-actions button:last-child")
+                        click_in_view(row + ' .sub-item-menu button:has(svg[data-icon="angles-right"])')
                         command("wait", "--fn", "(() => { const el = document.querySelector(" + json.dumps(row) + "); return el && Math.abs(new DOMMatrix(el.style.transform).m41) > 0 && Math.abs(new DOMMatrix(getComputedStyle(el).transform).m41 - new DOMMatrix(el.style.transform).m41) < 0.1 })()")
                         click_in_view(row + " .sub-item-swipe-btn.nut-button--danger")
                         command("wait", ".nut-dialog")
-                        assert command("get", "text", ".nut-dialog__footer-ok")["text"] == "永久删除", "Permanent delete confirmation missing"
+                        assert command("get", "text", ".nut-dialog__footer-ok")["text"] == confirm, "Permanent delete confirmation missing"
                         command("click", ".nut-dialog__footer-ok")
                         command("wait", "--fn", "document.querySelector(" + json.dumps(row) + ") === null")
                         document = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))

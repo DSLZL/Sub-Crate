@@ -133,7 +133,10 @@ fn null_name_error(caught: bool) -> Reply {
     if caught {
         caught_error("Cannot read properties of null (reading 'name')")
     } else {
-        uncaught_error(500, "TypeError: Cannot read properties of null (reading 'name')")
+        uncaught_error(
+            500,
+            "TypeError: Cannot read properties of null (reading 'name')",
+        )
     }
 }
 

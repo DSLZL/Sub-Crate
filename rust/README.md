@@ -29,6 +29,11 @@ Downloaded service binaries use the existing environment variables:
   static assets. Configure CORS to allow the frontend origin when needed.
 - `SUB_STORE_CORS_ALLOWED_ORIGINS`, `SUB_STORE_BACKEND_CUSTOM_NAME`,
   `SUB_STORE_X_POWERED_BY`, `SUB_STORE_BODY_JSON_LIMIT`: existing HTTP policy.
+  JSON limits accept binary units such as `1mb` and `1.5 kb`, or the legacy
+  decimal integer prefix. Limits must be finite and nonnegative.
+- `NODE_ENV`: `production` returns the legacy HTTP reason in uncaught HTML
+  errors; other values include native Rust traces. Trace frames and JSON/zlib
+  parser diagnostic wording differ from Node.
 
 Existing data is snapshotted as `sub-store.pre-rust.json` / `root.pre-rust.json`
 before Rust writes. Corrupt data causes startup to fail without resetting it.
@@ -48,8 +53,8 @@ reference matching is intentionally looser than collection matching. Array bodie
 retain legacy create/PATCH behavior, and versioned subscription/collection lists
 preserve mixed JSON entries across bulk writes, restart and restore. Null-record
 lookup failures retain endpoint-specific errors; scalar JSON bodies are rejected
-before dispatch. Uncaught errors use production HTML responses. Development stack
-bodies and invalid-reference-graph mutations remain unverified.
+before dispatch. Invalid reference graphs return endpoint-specific errors;
+rejected mutations preserve both files and the previously published state.
 Bulk PUT rejects parsed objects, forms and skipped/empty JSON or form bodies with the
 legacy caught-error envelope, before normalizing items or writing either data
 file. Raw-byte bulk PUT retains the legacy Buffer JSON on disk and in exports.
@@ -62,7 +67,7 @@ bytes before routing, including environment requests. Identity-encoded UTF-8
 and UTF-16LE JSON, nested/repeated form fields, settings array/byte spreads and
 raw-buffer CRUD retain legacy behavior. JSON uses SUB_STORE_BODY_JSON_LIMIT;
 form/raw bodies retain their separate 100 KiB limit. Invalid JSON, excessive
-size/depth/parameters and unsupported charset/encoding return production HTML
+size/depth/parameters and unsupported charset/encoding return mode-selected HTML
 errors without publishing state. The legacy verifier rejects nonempty UTF-16BE
 and UTF-7 bodies with 403 while permitting empty bodies in these charsets.
 The locked decoder rejects UTF-32 with 415. Media selection preserves the locked
@@ -107,11 +112,11 @@ lengths. Successful GET/HEAD revalidation returns 304; HEAD preserves entity
 metadata. Mutations and errors keep their original status, and empty end-style
 responses and production HTML errors remain untagged. Both frontend listeners
 reuse this behavior. Range combination and validator matching retain the locked
-Node dependency's behavior. Static 412/416 errors use production HTML messages.
+Node dependency's behavior. Static 412/416 errors use the same error-mode policy.
 CRUD route tokens accept case variants and one trailing slash. Names retain
 their case and decode once after raw segment matching, including encoded slashes
 and percent signs. Extra segments remain unregistered; invalid escapes/UTF-8
-return production HTML 400 without changing durable data. Prefix admission keeps
+return HTML 400 without changing durable data. Prefix admission keeps
 the legacy raw path policy.
 Standalone forwarding collapses repeated path slashes before backend matching,
 matching the old proxy, while preserving the query and encoded name characters.
