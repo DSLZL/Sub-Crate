@@ -212,6 +212,51 @@ pub fn pretty(value: &Value) -> Vec<u8> {
     serialized(&serde_json::to_string_pretty(value).expect("JSON value serialization")).into_bytes()
 }
 
+pub fn to_number(value: &Value) -> f64 {
+    match value {
+        Value::Null => 0.0,
+        Value::Bool(value) => {
+            if *value {
+                1.0
+            } else {
+                0.0
+            }
+        }
+        Value::Number(value) => value.as_f64().unwrap_or(f64::NAN),
+        Value::String(value) => {
+            let value = trim(value);
+            if value.is_empty() {
+                return 0.0;
+            }
+            for (prefix, radix) in [
+                ("0x", 16),
+                ("0X", 16),
+                ("0b", 2),
+                ("0B", 2),
+                ("0o", 8),
+                ("0O", 8),
+            ] {
+                if let Some(digits) = value.strip_prefix(prefix) {
+                    if digits.is_empty() {
+                        return f64::NAN;
+                    }
+                    return digits
+                        .chars()
+                        .try_fold(0.0, |total, digit| {
+                            digit
+                                .to_digit(radix)
+                                .map(|digit| total * f64::from(radix) + f64::from(digit))
+                        })
+                        .unwrap_or(f64::NAN);
+                }
+            }
+            value.parse().unwrap_or(f64::NAN)
+        }
+        Value::Array(_) => to_number(&Value::String(js_string(value))),
+        _ => f64::NAN,
+    }
+}
+
 pub fn number(value: &serde_json::Number) -> String {
     let number = value.as_f64().unwrap();
     if number == 0.0 {

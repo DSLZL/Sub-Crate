@@ -1232,5 +1232,752 @@
       {"method": "POST", "path": "/api/utils/node-info", "body": {}, "expect": {"status": 500, "json": {"status": "failed", "error": {"code": "FAILED_TO_GET_NODE_INFO", "type": "NetworkError", "message": "Failed to get node info", "details": "Reason: Error: fixture address missing"}}}, "upstream": [{"method": "GET", "path": "http://ip-api.com/json/undefined?lang=zh-CN", "headers": {"host": "ip-api.com", "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.4 Safari/605.1.15"}, "body": ""}], "state": {"nodeInfoMarker": false, "settings": {}, "subs": []}},
       {"path": "/api/utils/env", "expect": {"status": 200, "json_contains": {"status": "success", "data": {"backend": "Node", "version": "2.42.4"}}}, "state": {"nodeInfoMarker": false, "settings": {}, "subs": []}}
     ]
+  },
+  {
+    "id": "P02-input-trojan-native",
+    "source": "backend/src/test/proxy-parsers/uri.spec.js:650-826; parsers/peggy/trojan-uri.js:50-298; parsers/index.js::URI_Trojan; producers/uri.js:1153-1280",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "trojan://p%3Aa@trojan.example?udp=0&tfo=1#Basic",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "type": "trojan",
+                  "password": "p:a",
+                  "server": "trojan.example",
+                  "port": 443,
+                  "name": "Basic",
+                  "sni": "trojan.example",
+                  "udp": false,
+                  "tfo": true,
+                  "network": "tcp",
+                  "tls": true
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "trojan://p%3Aa@trojan.example?udp=0&tfo=1#Basic",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "trojan://p:a@trojan.example:443?sni=trojan.example&type=tcp#Basic"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "trojan://trojan-pass@trojan-ws.example.com?type=ws&host=ws.example.com&path=%2Fws%3Fed%3D1024%26a%3D1%26b%3D2&pcs=fingerprint&fp=chrome&alpn=h2,http%2F1.1&vcn=first.example.com%2C%20second.example.com#Trojan%20WS\ntrojan://trojan-pass@trojan-grpc.example.com?type=grpc&serviceName=grpc-service&authority=grpc.example.com&mode=multi&security=reality&pbk=pubkey==&sid=08&spx=%2Fspider&extra=%7B%22x%22%3A1%7D&udp=1&tfo=1#Trojan%20Reality",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "type": "trojan",
+                  "name": "Trojan WS",
+                  "network": "ws",
+                  "ws-opts": {
+                    "path": "/ws?a=1&b=2",
+                    "headers": {
+                      "Host": "ws.example.com"
+                    },
+                    "max-early-data": 1024,
+                    "early-data-header-name": "Sec-WebSocket-Protocol"
+                  },
+                  "tls-fingerprint": "fingerprint",
+                  "client-fingerprint": "chrome",
+                  "alpn": [
+                    "h2",
+                    "http/1.1"
+                  ],
+                  "_vcn": [
+                    "first.example.com",
+                    "second.example.com"
+                  ],
+                  "name-cert-verify": "first.example.com"
+                },
+                {
+                  "name": "Trojan Reality",
+                  "network": "grpc",
+                  "grpc-opts": {
+                    "grpc-service-name": "grpc-service",
+                    "_grpc-type": "multi",
+                    "_grpc-authority": "grpc.example.com"
+                  },
+                  "reality-opts": {
+                    "public-key": "pubkey==",
+                    "short-id": "08",
+                    "_spider-x": "/spider"
+                  },
+                  "_mode": "multi",
+                  "_extra": "{\"x\":1}"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "trojan://trojan-pass@trojan-ws.example.com?type=ws&host=ws.example.com&path=%2Fws%3Fed%3D1024%26a%3D1%26b%3D2&pcs=fingerprint&fp=chrome&alpn=h2,http%2F1.1&vcn=first.example.com%2C%20second.example.com#Trojan%20WS\ntrojan://trojan-pass@trojan-grpc.example.com?type=grpc&serviceName=grpc-service&authority=grpc.example.com&mode=multi&security=reality&pbk=pubkey==&sid=08&spx=%2Fspider&extra=%7B%22x%22%3A1%7D&udp=1&tfo=1#Trojan%20Reality",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "trojan://trojan-pass@trojan-ws.example.com:443?sni=ws.example.com&type=ws&path=%2Fws%3Fa%3D1%26b%3D2%26ed%3D1024&host=ws.example.com&alpn=h2%2Chttp%2F1.1&fp=chrome&pcs=fingerprint&vcn=first.example.com%2Csecond.example.com#Trojan%20WS",
+                "trojan://trojan-pass@trojan-grpc.example.com:443?sni=trojan-grpc.example.com&type=grpc&serviceName=grpc-service&authority=grpc.example.com&mode=multi&security=reality&sid=08&pbk=pubkey%3D%3D&spx=%2Fspider&mode=multi&extra=%7B%22x%22%3A1%7D#Trojan%20Reality"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "trojan://p@[2001:db8::1]:443?udp&tfo&ws&wspath=%2Fws#IPv6\ntrojan://p@2001:db8::1:443#Bare",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "server": "2001:db8::1",
+                  "port": 443,
+                  "name": "IPv6",
+                  "udp": true,
+                  "tfo": true,
+                  "network": "ws",
+                  "ws-opts": {
+                    "path": "/ws"
+                  }
+                },
+                {
+                  "server": "2001:db8::1",
+                  "port": 443,
+                  "name": "Bare:443"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "trojan://p@host:0#invalid\ntrojan://p@host:65536#invalid\ntrojan://p@host:123:443#invalid\ntrojan://p@host:443?type=__proto__.ws&path=%2Fx#bad\ntrojan://p@host:443?type=constructor.prototype.ws&path=%2Fx#bad\ntrojan://p%3Aa@trojan.example?udp=0&tfo=1#Basic",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Basic",
+                  "server": "trojan.example"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "trojan://bad%GG@trojan.example:443?path=%GG&udp=false#bad%GG",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "password": "bad%GG",
+                  "name": "trojan.example:443",
+                  "udp": false
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "trojan://p@host:8443#tag\ntrojan://p@missing#skip\ntrojan://p@host?type=httpupgrade&host=cdn.example&path=%2Fu%3Fed%3D64&ed=128#Upgrade",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "server": "host",
+                  "port": 8443,
+                  "name": "tag:443"
+                },
+                {
+                  "name": "Upgrade",
+                  "network": "ws",
+                  "ws-opts": {
+                    "path": "/u",
+                    "headers": {
+                      "Host": "cdn.example"
+                    },
+                    "v2ray-http-upgrade": true,
+                    "v2ray-http-upgrade-fast-open": true,
+                    "_v2ray-http-upgrade-ed": "64"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-input-hysteria-native",
+    "source": "backend/src/test/proxy-parsers/uri.spec.js:450-570; parsers/index.js::URI_Hysteria/URI_Hysteria2; proxy-utils/index.js::lastParse; producers/uri.js:1281-1444",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "hy://hysteria.example.com:8443?auth=token&peer=sni.example.com&alpn=h3,h2&mport=2000,3000&obfsParam=mask&upmbps=10&downmbps=20&insecure=1#Hysteria",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "type": "hysteria",
+                  "name": "Hysteria",
+                  "server": "hysteria.example.com",
+                  "port": 8443,
+                  "protocol": "udp",
+                  "auth-str": "token",
+                  "sni": "sni.example.com",
+                  "alpn": [
+                    "h3",
+                    "h2"
+                  ],
+                  "ports": "2000,3000",
+                  "obfs": "mask",
+                  "up": "10",
+                  "down": "20",
+                  "skip-cert-verify": true,
+                  "tls": true,
+                  "udp": true
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "hy://hysteria.example.com:8443?auth=token&peer=sni.example.com&alpn=h3,h2&mport=2000,3000&obfsParam=mask&upmbps=10&downmbps=20&insecure=1#Hysteria",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "hysteria://hysteria.example.com:8443?auth=token&alpn=h3&mport=2000,3000&obfsParam=mask&upmbps=10&downmbps=20&insecure=1&peer=sni.example.com&protocol=udp&udp=true#Hysteria"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "hy2://hy2-secret@hy2.example.com:8443-8443?peer=peer.example.com&obfs=salamander&obfs-password=mask&insecure=1&fastopen=1&pinSHA256=fingerprint&hop-interval=15-30&keepalive=15&upmbps=50&downmbps=100#Hy2%20Range",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "type": "hysteria2",
+                  "name": "Hy2 Range",
+                  "server": "hy2.example.com",
+                  "port": 8443,
+                  "ports": "8443-8443",
+                  "password": "hy2-secret",
+                  "sni": "peer.example.com",
+                  "obfs": "salamander",
+                  "obfs-password": "mask",
+                  "skip-cert-verify": true,
+                  "tfo": true,
+                  "tls-fingerprint": "fingerprint",
+                  "hop-interval": 15,
+                  "hop-interval-max": 30,
+                  "keepalive": 15,
+                  "up": "50",
+                  "down": "100",
+                  "tls": true,
+                  "udp": true
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "hy2://hy2-secret@hy2.example.com:8443-8443?peer=peer.example.com&obfs=salamander&obfs-password=mask&insecure=1&fastopen=1&pinSHA256=fingerprint&hop-interval=15-30&keepalive=15&upmbps=50&downmbps=100#Hy2%20Range",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "hysteria2://hy2-secret@hy2.example.com:8443?hop-interval=15&keepalive=15&insecure=1&obfs=salamander&obfs-password=mask&sni=peer.example.com&mport=8443-8443&pinSHA256=fingerprint&fastopen=1#Hy2%20Range"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "hysteria2://p@ech.example?ech=ECHCONFIG&hop-interval=30-15#Config\nhy2://p@dns.example?ech=cover.example%2Bhttps%3A%2F%2Fdns.example%2Fdns-query&obfs=secret#moved\nhy2://p@127.0.0.1?obfs=salamander#skip",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Config",
+                  "ech-opts": {
+                    "enable": true,
+                    "config": "ECHCONFIG"
+                  }
+                },
+                {
+                  "name": "moved",
+                  "ech-opts": {
+                    "enable": true,
+                    "_dns": "https://dns.example/dns-query",
+                    "query-server-name": "cover.example"
+                  },
+                  "obfs": "salamander",
+                  "obfs-password": "secret"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "hy://127.0.0.1?alpn=&fast-open=1&udp=off&custom_key_one=v&protocol=faketcp#HY\nhy2://p@127.0.0.1?insecure=unTRUEish&fastopen=1&hop_interval=7&keepalive=01#HY2",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "HY",
+                  "udp": false,
+                  "protocol": "faketcp",
+                  "custom-key_one": "v"
+                },
+                {
+                  "name": "HY2",
+                  "skip-cert-verify": true,
+                  "tfo": true,
+                  "hop-interval": 7,
+                  "keepalive": 1
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-input-tuic-native",
+    "source": "backend/src/test/proxy-parsers/uri.spec.js:571-591; parsers/index.js::URI_TUIC; proxy-utils/index.js::lastParse/produce; producers/uri.js::tuic",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "tuic://b831381d-6324-4d53-ad4f-8cda48b30811:pass%3Aword@tuic.example.com?alpn=h3,hq-29&allow-insecure=1&fast-open=0&disable-sni=1&reduce-rtt=1&congestion-control=bbr#TUIC",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "type": "tuic",
+                  "name": "TUIC",
+                  "server": "tuic.example.com",
+                  "port": 443,
+                  "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+                  "password": "pass:word",
+                  "alpn": [
+                    "h3",
+                    "hq-29"
+                  ],
+                  "skip-cert-verify": true,
+                  "tfo": true,
+                  "disable-sni": true,
+                  "reduce-rtt": true,
+                  "congestion-controller": "bbr",
+                  "sni": "tuic.example.com",
+                  "udp-relay-mode": "native",
+                  "udp": true,
+                  "tls": true
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "tuic://b831381d-6324-4d53-ad4f-8cda48b30811:pass%3Aword@tuic.example.com?alpn=h3,hq-29&allow-insecure=1&fast-open=0&disable-sni=1&reduce-rtt=1&congestion-control=bbr#TUIC",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "tuic://b831381d-6324-4d53-ad4f-8cda48b30811:pass%3Aword@tuic.example.com:443?alpn=h3&allow_insecure=1&fast_open=1&disable_sni=1&reduce_rtt=1&congestion_control=bbr&udp=true&sni=tuic.example.com&udp_relay_mode=native#TUIC"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "tuic://u:p%253Aq@127.0.0.1#Double\ntuic://only@default.example?alpn=&udp=off&token=old&congestion_control=&udp_relay_mode=quic#Token",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Double",
+                  "uuid": "u",
+                  "password": "p:q",
+                  "alpn": [
+                    "h3"
+                  ],
+                  "congestion-controller": "cubic",
+                  "udp-relay-mode": "native"
+                },
+                {
+                  "name": "Token",
+                  "uuid": "only",
+                  "password": "",
+                  "alpn": [
+                    "h3"
+                  ],
+                  "udp": false,
+                  "token": "old",
+                  "congestion-controller": "cubic",
+                  "udp-relay-mode": "quic"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "tuic://u:p@127.0.0.1#Basic",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "tuic://u:p@127.0.0.1:443?udp=true&alpn=h3&congestion_control=cubic&udp_relay_mode=native#Basic"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "tuic://only@default.example?token=old#Token",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": []
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-input-wireguard-native",
+    "source": "backend/src/test/proxy-parsers/uri.spec.js:592-649; parsers/index.js::URI_WireGuard/parseWireGuardURIAddressValue; producers/utils.js::normalizeWireGuardInterface/getWireGuardAddressWithCIDR; producers/uri.js::wireguard",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "wg://120.233.41.77:19368?publicKey=N+K9fXobvy0vy3VFbn8a7tPRgUNcQbGRwjlyOMx4WHc=&privateKey=QJjrFqqqpbIqfI5qhbYWrPXhaBFmFq71jCj8mMaQE04=&ip=10.0.20.45/16,fd10:10:10:0:10:0:20:45/64&mtu=1420&udp=1#HK-%E5%A4%A7%E5%B8%A6%E5%AE%BD4",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "type": "wireguard",
+                  "name": "HK-大带宽4",
+                  "server": "120.233.41.77",
+                  "port": 19368,
+                  "public-key": "N+K9fXobvy0vy3VFbn8a7tPRgUNcQbGRwjlyOMx4WHc=",
+                  "private-key": "QJjrFqqqpbIqfI5qhbYWrPXhaBFmFq71jCj8mMaQE04=",
+                  "ip": "10.0.20.45",
+                  "ip-cidr": 16,
+                  "ipv6": "fd10:10:10:0:10:0:20:45",
+                  "ipv6-cidr": 64,
+                  "mtu": 1420,
+                  "udp": true
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "wg://private-key@wg.example.com?publickey=public-key&privatekey=override-key&address=10.0.0.2/32,[fd00::2]/128&reserved=1,2,bad,3&mtu=1280tail&udp=0#WG\nwireguard://key@[2001:db8::4]?address=10.0.0.2/99,[fd00::2]/999&flag=no&reserved=1,2#Defaults",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "WG",
+                  "private-key": "override-key",
+                  "public-key": "public-key",
+                  "ip": "10.0.0.2",
+                  "ipv6": "fd00::2",
+                  "ip-cidr": 32,
+                  "ipv6-cidr": 128,
+                  "reserved": [
+                    1,
+                    2,
+                    3
+                  ],
+                  "mtu": 1280,
+                  "udp": false
+                },
+                {
+                  "name": "Defaults",
+                  "port": 51820,
+                  "server": "2001:db8::4",
+                  "ip": "10.0.0.2",
+                  "ip-cidr": 32,
+                  "ipv6": "fd00::2",
+                  "ipv6-cidr": 128
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "wg://key@127.0.0.1?publickey=abc%3D&address=10.1.1.1/24,[fd00::1]/64&reserved=1,2,3&mtu=1420#WG",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "wireguard://key@127.0.0.1:51820/?udp=1&publickey=abc%3D&reserved=1%2C2%2C3&mtu=1420&address=10.1.1.1%2F24%2Cfd00%3A%3A1%2F64#WG"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "wg://127.0.0.1?publicKey=abc+def==&address=bad,10.0.0.1/24,10.0.0.2&reserved=x&mtu=oops#NoKey",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "NoKey",
+                  "private-key": "undefined",
+                  "public-key": "abc+def==",
+                  "ip": "10.0.0.2",
+                  "ip-cidr": 24
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-output-v2ray-native-tls-uris",
+    "source": "backend/src/core/proxy-utils/producers/v2ray.js:10-20; URI_Producer Trojan/Hysteria1/Hysteria2/TUIC/WireGuard",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "trojan://p@127.0.0.1?#Basic\nhy://127.0.0.1#Basic\nhy2://p@127.0.0.1#Basic\ntuic://u:p@127.0.0.1#Basic\nwg://key@127.0.0.1#Basic",
+          "client": "V2Ray",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": "dHJvamFuOi8vcEAxMjcuMC4wLjE6NDQzP3NuaT0xMjcuMC4wLjEmdHlwZT10Y3AjQmFzaWMKaHlzdGVyaWE6Ly8xMjcuMC4wLjE6NDQzP3Byb3RvY29sPXVkcCZ1ZHA9dHJ1ZSNCYXNpYwpoeXN0ZXJpYTI6Ly9wQDEyNy4wLjAuMTo0NDM/I0Jhc2ljCnR1aWM6Ly91OnBAMTI3LjAuMC4xOjQ0Mz91ZHA9dHJ1ZSZhbHBuPWgzJmNvbmdlc3Rpb25fY29udHJvbD1jdWJpYyZ1ZHBfcmVsYXlfbW9kZT1uYXRpdmUjQmFzaWMKd2lyZWd1YXJkOi8va2V5QDEyNy4wLjAuMTo1MTgyMC8/dWRwPTEjQmFzaWM="
+            }
+          }
+        }
+      }
+    ]
   }
 ]

@@ -3,7 +3,7 @@ use crate::state::truthy;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use percent_encoding::percent_decode_str;
 use serde_json::{Map, Value, json};
-use std::net::{IpAddr, Ipv6Addr};
+use std::net::Ipv6Addr;
 
 pub enum Error {
     Pending(&'static str),
@@ -116,14 +116,548 @@ fn normalized_port(raw: &str) -> Value {
     }
 }
 
-fn normalize_endpoint(proxy: &mut Value) {
+fn normalize_endpoint(proxy: &mut Value) -> Result<(), Error> {
     if let Some(server) = proxy["server"].as_str() {
         let server = codec::trim(server);
         let server = server.strip_prefix('[').unwrap_or(server);
         proxy["server"] = json!(server.strip_suffix(']').unwrap_or(server));
     }
-    normalize(proxy);
+    normalize(proxy)
 }
+
+fn ipv6(address: &str) -> bool {
+    if let Some((host, zone)) = address.split_once('%') {
+        let Some(rest) = host.strip_prefix("fe80:") else {
+            return false;
+        };
+        return !zone.is_empty()
+            && zone.bytes().all(|byte| byte.is_ascii_alphanumeric())
+            && (rest.is_empty()
+                || (rest.starts_with(':')
+                    && rest[1..].split(':').count() <= 4
+                    && rest[1..].split(':').all(|part| {
+                        part.len() <= 4 && part.bytes().all(|byte| byte.is_ascii_hexdigit())
+                    })));
+    }
+    if address.contains('.') {
+        let Some((prefix, tail)) = address.rsplit_once(':') else {
+            return false;
+        };
+        let prefix = format!("{prefix}:");
+        let compressed = prefix.strip_suffix("::").is_some_and(|parts| {
+            let parts: Vec<_> = parts.split(':').collect();
+            (1..=4).contains(&parts.len())
+                && parts.iter().all(|part| {
+                    !part.is_empty()
+                        && part.len() <= 4
+                        && part.bytes().all(|byte| byte.is_ascii_hexdigit())
+                })
+        });
+        let mapped = prefix == "::"
+            || prefix == "::ffff:"
+            || prefix.strip_prefix("::ffff:").is_some_and(|rest| {
+                rest.strip_suffix(':').is_some_and(|zeros| {
+                    !zeros.is_empty() && zeros.len() <= 4 && zeros.bytes().all(|byte| byte == b'0')
+                })
+            });
+        let parts: Vec<_> = tail.split('.').collect();
+        return (compressed || mapped)
+            && parts.len() == 4
+            && parts.iter().all(|part| {
+                !part.is_empty()
+                    && part.len() <= 3
+                    && part.bytes().all(|byte| byte.is_ascii_digit())
+                    && (part.len() < 3 || !part.starts_with('0'))
+                    && part.parse::<u8>().is_ok()
+            });
+    }
+    address.parse::<Ipv6Addr>().is_ok()
+}
+
+fn is_ip(address: &str) -> bool {
+    address.parse::<std::net::Ipv4Addr>().is_ok() || ipv6(address)
+}
+
+fn url_parts(raw: &str) -> (&str, &str, Option<&str>) {
+    let (raw, name) = raw
+        .split_once('#')
+        .map_or((raw, None), |(raw, name)| (raw, Some(name)));
+    let (address, query) = raw.split_once('?').unwrap_or((raw, ""));
+    (address.strip_suffix('/').unwrap_or(address), query, name)
+}
+
+fn endpoint(address: &str, default_port: u16) -> Result<(&str, Value), Error> {
+    match address.rsplit_once(':') {
+        Some((server, port))
+            if !port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit()) =>
+        {
+            Ok((server, finite_int(port)?))
+        }
+        _ => Ok((address, json!(default_port))),
+    }
+}
+
+fn flag(value: &Value) -> bool {
+    let value = codec::js_string(value).to_lowercase();
+    value.contains("true") || value.contains('1')
+}
+
+fn random_port(raw: &str) -> Result<Value, Error> {
+    let random = || {
+        let mut bytes = [0; 8];
+        getrandom::fill(&mut bytes).map_err(|error| Error::Legacy(error.to_string()))?;
+        Ok::<f64, Error>((u64::from_le_bytes(bytes) >> 11) as f64 / 9_007_199_254_740_992.0)
+    };
+    let parts: Vec<_> = raw.split([',', '/']).collect();
+    let part = parts[(random()? * parts.len() as f64).floor() as usize];
+    let number = |raw: &str| codec::to_number(&json!(raw));
+    let port = if let Some((min, remaining)) = part.split_once('-') {
+        let min = number(min).ceil();
+        let max = number(remaining.split('-').next().unwrap()).floor();
+        (random()? * (max - min + 1.0)).floor() + min
+    } else {
+        number(part)
+    };
+    if !port.is_finite() {
+        return Err(Error::Pending("Non-finite proxy numeric fields are not implemented yet"));
+    }
+    Ok(json!(port))
+}
+
+fn interface_address(raw: &str) -> Option<(&str, Option<u32>, bool)> {
+    let raw = codec::trim(raw);
+    let (host, cidr) = raw.rsplit_once('/').filter(|(_, cidr)| {
+        !cidr.is_empty() && cidr.bytes().all(|byte| byte.is_ascii_digit())
+    }).map_or((raw, None), |(host, cidr)| (host, Some(cidr)));
+    let host = codec::trim(host);
+    let host = host.strip_prefix('[').unwrap_or(host);
+    let host = host.strip_suffix(']').unwrap_or(host);
+    let v6 = ipv6(host);
+    if !v6 && host.parse::<std::net::Ipv4Addr>().is_err() {
+        return None;
+    }
+    let cidr = cidr.and_then(|cidr| cidr.parse::<u32>().ok())
+        .filter(|cidr| *cidr <= if v6 { 128 } else { 32 });
+    Some((host, cidr, v6))
+}
+
+fn normalize_wireguard(proxy: &mut Value) {
+    for (address, cidr_key, max) in [("ip", "ip-cidr", 32), ("ipv6", "ipv6-cidr", 128)] {
+        let raw = field_text(proxy, address);
+        let Some((host, parsed_cidr, v6)) = interface_address(&raw) else {
+            if proxy[address].is_null() || codec::trim(&raw).is_empty() {
+                proxy.as_object_mut().unwrap().shift_remove(cidr_key);
+            }
+            continue;
+        };
+        if v6 != (max == 128) {
+            continue;
+        }
+        let cidr = safe_integer(codec::trim(&field_text(proxy, cidr_key)))
+            .filter(|cidr| *cidr <= max)
+            .map(|cidr| cidr as u32)
+            .or(parsed_cidr)
+            .unwrap_or(max as u32);
+        proxy[address] = json!(host);
+        proxy[cidr_key] = json!(cidr);
+    }
+}
+
+fn ech_options(raw: &str) -> Option<Value> {
+    if codec::trim(raw).is_empty() {
+        return None;
+    }
+    if !raw.contains("://") {
+        return Some(json!({"enable":true, "config":raw}));
+    }
+    let parts: Vec<_> = raw.split('+').collect();
+    match parts.as_slice() {
+        [dns] if !codec::trim(dns).is_empty() => Some(json!({"enable":true, "_dns":dns})),
+        [name, dns] if !codec::trim(name).is_empty() && !codec::trim(dns).is_empty() => {
+            Some(json!({"enable":true, "_dns":dns, "query-server-name":name}))
+        }
+        _ => None,
+    }
+}
+
+fn modern_uri(line: &str) -> Result<Option<Value>, Error> {
+    let (scheme, raw) = line.split_once("://").unwrap();
+    let (kind, label, default_port) = match scheme {
+        "hy" | "hysteria" => ("hysteria", "Hysteria", 443),
+        "hy2" | "hysteria2" => ("hysteria2", "Hysteria2", 443),
+        "tuic" => ("tuic", "TUIC", 443),
+        _ => ("wireguard", "WireGuard", 51820),
+    };
+    let (address, query, name) = url_parts(raw);
+    let (auth, address) = if kind == "hysteria" {
+        (None, address)
+    } else if let Some((auth, address)) = address.split_once('@') {
+        (Some(auth), address)
+    } else if kind == "wireguard" {
+        (None, address)
+    } else {
+        return Ok(None);
+    };
+    let mut ports = Value::Null;
+    let (server, port) = if kind == "hysteria2"
+        && let Some((server, range)) = address.rsplit_once(':')
+        && range.split([',', ';']).all(|part| {
+            let parts: Vec<_> = part.split('-').collect();
+            (1..=2).contains(&parts.len()) && parts.iter().all(|part| {
+                !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit())
+            })
+        })
+        && !range.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        ports = json!(range);
+        (server, random_port(range)?)
+    } else {
+        endpoint(address, default_port)?
+    };
+    let name = match name {
+        Some(raw) => match component(raw) {
+            Some(name) => name,
+            None => return Ok(None),
+        },
+        None => codec::encode(&format!("{label} {server}:{}", codec::js_string(&port))),
+    };
+    let mut proxy = json!({"type":kind, "name":name, "server":codec::encode(server), "port":port});
+    match kind {
+        "hysteria2" => {
+            let Some(password) = component(auth.unwrap()) else {
+                return Ok(None);
+            };
+            proxy["ports"] = ports;
+            proxy["password"] = json!(password);
+        }
+        "tuic" => {
+            let Some(auth) = component(auth.unwrap()) else {
+                return Ok(None);
+            };
+            let (uuid, password) = auth.split_once(':').unwrap_or((&auth, ""));
+            let Some(password) = component(&codec::text(password)) else {
+                return Ok(None);
+            };
+            proxy["password"] = json!(password);
+            proxy["uuid"] = json!(uuid);
+        }
+        "wireguard" => {
+            let Some(key) = component(auth.unwrap_or("undefined")) else {
+                return Ok(None);
+            };
+            proxy["private-key"] = json!(key);
+            proxy["udp"] = json!(true);
+        }
+        _ => {}
+    }
+    let mut params = json!({});
+    for part in query.split('&').filter(|part| !part.is_empty()) {
+        let (key, raw) = if kind == "wireguard" {
+            part.split_once('=').unwrap_or((part, ""))
+        } else {
+            let mut parts = part.split('=');
+            (parts.next().unwrap(), parts.next().unwrap_or("undefined"))
+        };
+        let key = if kind == "tuic" {
+            key.replace('_', "-")
+        } else if kind == "hysteria" || kind == "wireguard" {
+            key.replacen('_', "-", 1)
+        } else {
+            key.to_owned()
+        };
+        let key = codec::encode(&key);
+        let Some(value) = component(raw) else {
+            return Ok(None);
+        };
+        let value = json!(value);
+        if key == "__proto__" {
+            continue;
+        }
+        match kind {
+            "hysteria2" => params[&key] = value,
+            "hysteria" => match key.as_str() {
+                "alpn" => proxy["alpn"] = if truthy(&value) {
+                    json!(value.as_str().unwrap().split(',').collect::<Vec<_>>())
+                } else { Value::Null },
+                "insecure" => proxy["skip-cert-verify"] = json!(flag(&value)),
+                "auth" => proxy["auth-str"] = value,
+                "mport" => proxy["ports"] = value,
+                "obfsParam" => proxy["obfs"] = value,
+                "upmbps" => proxy["up"] = value,
+                "downmbps" => proxy["down"] = value,
+                "obfs" => proxy["_obfs"] = value,
+                "fast-open" | "peer" => params[&key] = value,
+                _ => {
+                    if proxy.get(&key).is_none() {
+                        proxy[&key] = value;
+                    }
+                }
+            },
+            "tuic" => match key.as_str() {
+                "alpn" => proxy["alpn"] = if truthy(&value) {
+                    json!(value.as_str().unwrap().split(',').collect::<Vec<_>>())
+                } else { Value::Null },
+                "allow-insecure" | "insecure" => proxy["skip-cert-verify"] = json!(flag(&value)),
+                "fast-open" => proxy["tfo"] = json!(true),
+                "disable-sni" | "reduce-rtt" => proxy[&key] = json!(flag(&value)),
+                "congestion-control" => proxy["congestion-controller"] = value,
+                _ => {
+                    if proxy.get(&key).is_none() {
+                        proxy[&key] = value;
+                    }
+                }
+            },
+            _ => match key.as_str() {
+                "reserved" => {
+                    let items: Vec<_> = value.as_str().unwrap().split(',')
+                        .filter_map(|raw| finite_int(raw).ok()).collect();
+                    if items.len() == 3 {
+                        proxy["reserved"] = json!(items);
+                    }
+                }
+                "address" | "ip" => {
+                    for raw in value.as_str().unwrap().split(',') {
+                        if let Some((host, cidr, v6)) = interface_address(raw) {
+                            proxy[if v6 { "ipv6" } else { "ip" }] = json!(host);
+                            if let Some(cidr) = cidr {
+                                proxy[if v6 { "ipv6-cidr" } else { "ip-cidr" }] = json!(cidr);
+                            }
+                        }
+                    }
+                }
+                "mtu" => {
+                    if let Ok(mtu) = finite_int(value.as_str().unwrap()) {
+                        proxy["mtu"] = mtu;
+                    }
+                }
+                "udp" => proxy["udp"] = json!(flag(&value)),
+                _ if key.to_lowercase().contains("publickey") => proxy["public-key"] = value,
+                _ if key.to_lowercase().contains("privatekey") => proxy["private-key"] = value,
+                _ => {
+                    if key != "flag" && proxy.get(&key).is_none() {
+                        proxy[&key] = value;
+                    }
+                }
+            },
+        }
+    }
+    if kind == "hysteria2" {
+        proxy["sni"] = params["sni"].clone();
+        if !truthy(&proxy["sni"]) && truthy(&params["peer"]) {
+            proxy["sni"] = params["peer"].clone();
+        }
+        if truthy(&params["obfs"]) && params["obfs"] != "none" {
+            proxy["obfs"] = params["obfs"].clone();
+        }
+        if truthy(&params["mport"]) {
+            proxy["ports"] = params["mport"].clone();
+        }
+        proxy["obfs-password"] = params["obfs-password"].clone();
+        proxy["skip-cert-verify"] = json!(flag(&params["insecure"]));
+        proxy["tfo"] = json!(flag(&params["fastopen"]));
+        proxy["tls-fingerprint"] = params["pinSHA256"].clone();
+        let hop = if truthy(&params["hop-interval"]) {
+            &params["hop-interval"]
+        } else {
+            &params["hop_interval"]
+        };
+        if !hop.is_null() {
+            proxy["hop-interval"] = hop.clone();
+        }
+        if let Some(raw) = params["keepalive"].as_str()
+            && !raw.is_empty() && raw.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            proxy["keepalive"] = finite_int(raw)?;
+        }
+        for (source, key) in [("upmbps", "up"), ("downmbps", "down")] {
+            if truthy(&params[source]) {
+                proxy[key] = params[source].clone();
+            }
+        }
+        if let Some(ech) = params["ech"].as_str().and_then(ech_options) {
+            proxy["ech-opts"] = ech;
+        }
+    } else if kind == "hysteria" {
+        if !truthy(&proxy["sni"]) && truthy(&params["peer"]) {
+            proxy["sni"] = params["peer"].clone();
+        }
+        if !truthy(&proxy["protocol"]) {
+            proxy["protocol"] = json!("udp");
+        }
+    }
+    normalize_endpoint(&mut proxy)?;
+    proxy.as_object_mut().unwrap().retain(|_, value| !value.is_null());
+    if kind == "hysteria2" && truthy(&proxy["obfs"]) && !truthy(&proxy["obfs-password"]) {
+        return Ok(None);
+    }
+    Ok(Some(proxy))
+}
+
+fn trojan(line: &str) -> Result<Option<Value>, Error> {
+    let (before_query, query) = line.split_once('?').map_or((line, None), |(raw, query)| (raw, Some(query)));
+    if !before_query.contains('@') {
+        return Ok(None);
+    }
+    let trailing_slash = before_query.ends_with('/');
+    let base = before_query.strip_suffix('/').unwrap_or(before_query);
+    let has_port = base.rsplit_once(':').is_some_and(|(_, port)| {
+        !port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit())
+    });
+    let rewritten;
+    let line = if has_port {
+        line
+    } else {
+        rewritten = format!("{base}:443{}{}", if trailing_slash { "/" } else { "" },
+            query.map_or_else(String::new, |query| format!("?{query}")));
+        &rewritten
+    };
+    let (raw, name) = line.split_once('#').map_or((line, None), |(raw, name)| (raw, Some(name)));
+    let (address, query, _) = url_parts(raw.strip_prefix("trojan://").unwrap());
+    let Some((password, address)) = address.split_once('@') else {
+        return Ok(None);
+    };
+    if password.is_empty() || address.contains(['/', '#']) {
+        return Ok(None);
+    }
+    let Some((server, port_raw)) = address.rsplit_once(':') else {
+        return Ok(None);
+    };
+    let Ok(port) = port_raw.parse::<u16>() else {
+        return Ok(None);
+    };
+    if server.is_empty() || port == 0 || port_raw.is_empty() || !port_raw.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Ok(None);
+    }
+    let host = server.strip_prefix('[').unwrap_or(server);
+    let host = host.strip_suffix(']').unwrap_or(host);
+    if (server.starts_with('[') || server.contains(':')) && !ipv6(host) {
+        return Ok(None);
+    }
+    let decode = |raw: &str| component(raw).unwrap_or_else(|| codec::encode(raw));
+    let mut proxy = json!({"type":"trojan", "password":decode(password), "server":codec::encode(server),
+        "port":port, "name":codec::encode(&format!("{server}:{port_raw}"))});
+    if let Some(name) = name.filter(|name| !codec::trim(name).is_empty())
+        && let Some(name) = component(name)
+    {
+        proxy["name"] = json!(name);
+    }
+    let mut params = json!({});
+    if !query.is_empty() {
+        for part in query.split('&') {
+            let (key, value) = part.split_once('=')
+                .map_or((part, json!(true)), |(key, raw)| (key, json!(decode(raw))));
+            if key != "__proto__" {
+                let key = codec::encode(key);
+                params[&key] = value;
+            }
+        }
+    }
+    let boolean = |key: &str| {
+        if params[key].is_null() { Value::Null } else { json!(flag(&params[key])) }
+    };
+    proxy["skip-cert-verify"] = boolean("allowInsecure");
+    proxy["sni"] = if truthy(&params["sni"]) { params["sni"].clone() } else { params["peer"].clone() };
+    proxy["client-fingerprint"] = params["fp"].clone();
+    proxy["tls-fingerprint"] = params["pcs"].clone();
+    proxy["_vcn"] = match &params["vcn"] {
+        Value::Null => Value::Null,
+        Value::String(names) => json!(names.split(',').map(codec::trim)
+            .filter(|name| !name.is_empty()).collect::<Vec<_>>()),
+        _ => return Ok(None),
+    };
+    proxy["name-cert-verify"] = proxy["_vcn"].as_array()
+        .and_then(|names| names.first()).cloned().unwrap_or(Value::Null);
+    if truthy(&params["alpn"]) {
+        let Some(alpn) = params["alpn"].as_str() else { return Ok(None) };
+        proxy["alpn"] = json!(alpn.split(',').collect::<Vec<_>>());
+    }
+    if truthy(&boolean("ws")) {
+        proxy["network"] = json!("ws");
+        proxy["ws-opts"]["path"] = params["wspath"].clone();
+    }
+    if truthy(&params["type"]) {
+        proxy["network"] = params["type"].clone();
+        let upgrade = proxy["network"] == "httpupgrade";
+        if upgrade {
+            proxy["network"] = json!("ws");
+        }
+        let network = field_text(&proxy, "network");
+        let key = format!("{network}-opts");
+        if network == "grpc" {
+            proxy[&key] = json!({"grpc-service-name":params["serviceName"], "_grpc-type":params["mode"],
+                "_grpc-authority":params["authority"]});
+        } else {
+            if truthy(&params["path"]) || truthy(&params["host"]) {
+                if format!("{network}-opts").split(['.', '[', ']'])
+                    .any(|part| ["__proto__", "constructor", "prototype"].contains(&part))
+                {
+                    return Ok(None);
+                }
+                // shortcut: exotic nested transport property paths need the M3 value bridge.
+                if network.contains(['.', '[', ']']) {
+                    return Err(Error::Pending("Nested Trojan transport property paths are not implemented yet"));
+                }
+            }
+            let mut early = None;
+            if truthy(&params["path"]) {
+                let path = if network == "ws" {
+                    if let Some(path) = params["path"].as_str() {
+                        let (path, ed) = path_ed(path);
+                        early = ed;
+                        json!(path)
+                    } else { params["path"].clone() }
+                } else { params["path"].clone() };
+                proxy[&key]["path"] = path;
+            }
+            if truthy(&params["host"]) {
+                proxy[&key]["headers"]["Host"] = params["host"].clone();
+            }
+            if upgrade {
+                let ed = early.or_else(|| {
+                    let ed = field_text(&params, "ed");
+                    safe_integer(&ed).map(|_| ed)
+                });
+                proxy["ws-opts"]["v2ray-http-upgrade"] = json!(true);
+                if let Some(ed) = ed {
+                    proxy["ws-opts"]["v2ray-http-upgrade-fast-open"] = json!(true);
+                    proxy["ws-opts"]["_v2ray-http-upgrade-ed"] = json!(ed);
+                }
+            } else if network == "ws"
+                && let Some(ed) = early
+            {
+                proxy["ws-opts"]["max-early-data"] = json!(safe_integer(&ed).unwrap());
+                proxy["ws-opts"]["early-data-header-name"] = json!("Sec-WebSocket-Protocol");
+            }
+        }
+        if params["security"] == "reality" {
+            let mut options = json!({});
+            for (source, field) in [("pbk", "public-key"), ("sid", "short-id"), ("spx", "_spider-x")] {
+                if truthy(&params[source]) {
+                    options[field] = params[source].clone();
+                }
+            }
+            for (source, field) in [("mode", "_mode"), ("extra", "_extra")] {
+                if truthy(&params[source]) {
+                    proxy[field] = params[source].clone();
+                }
+            }
+            if !options.as_object().unwrap().is_empty() {
+                proxy["reality-opts"] = options;
+            }
+        }
+    }
+    proxy["udp"] = boolean("udp");
+    proxy["tfo"] = boolean("tfo");
+    normalize_endpoint(&mut proxy)?;
+    for value in proxy.as_object_mut().unwrap().values_mut() {
+        if let Some(options) = value.as_object_mut() {
+            options.retain(|_, value| !value.is_null());
+        }
+    }
+    proxy.as_object_mut().unwrap().retain(|_, value| !value.is_null());
+    Ok(Some(proxy))
+}
+
 
 fn proxy_uri(line: &str) -> Result<Option<Value>, Error> {
     let (scheme, raw) = line.split_once("://").unwrap();
@@ -200,7 +734,7 @@ fn proxy_uri(line: &str) -> Result<Option<Value>, Error> {
         }
     }
     proxy["udp"] = json!(true);
-    normalize_endpoint(&mut proxy);
+    normalize_endpoint(&mut proxy)?;
     Ok(Some(proxy))
 }
 
@@ -271,7 +805,7 @@ fn ssr(line: &str) -> Result<Option<Value>, Error> {
         ));
     }
     proxy["port"] = normalized_port(port);
-    normalize_endpoint(&mut proxy);
+    normalize_endpoint(&mut proxy)?;
     Ok(Some(proxy))
 }
 
@@ -722,7 +1256,7 @@ fn ss(line: &str) -> Result<Option<Value>, Error> {
         }
     }
     proxy["name"] = json!(name.unwrap_or_else(|| format!("SS {name_server}:{name_port}")));
-    normalize_endpoint(&mut proxy);
+    normalize_endpoint(&mut proxy)?;
     for field in ["tls", "sni", "client-fingerprint", "alpn"] {
         if proxy[field].is_null() {
             proxy.as_object_mut().unwrap().shift_remove(field);
@@ -731,7 +1265,7 @@ fn ss(line: &str) -> Result<Option<Value>, Error> {
     Ok(Some(proxy))
 }
 
-fn normalize(proxy: &mut Value) {
+fn normalize(proxy: &mut Value) -> Result<(), Error> {
     let keys: Vec<_> = proxy.as_object().unwrap().keys().cloned().collect();
     for key in keys {
         let lower = key.to_lowercase();
@@ -756,13 +1290,57 @@ fn normalize(proxy: &mut Value) {
             }
         }
     }
+    proxy["udp"] = json!(match &proxy["udp"] {
+        Value::Bool(false) => false,
+        Value::Number(number) if number.as_f64() == Some(0.0) => false,
+        Value::String(value) if ["0", "false", "off"].contains(&value.to_lowercase().as_str()) => false,
+        _ => true,
+    });
+    if !proxy["hop-interval"].is_null() {
+        let raw = field_text(proxy, "hop-interval");
+        let raw = codec::trim(&raw);
+        let digits = |raw: &str| !raw.is_empty() && raw.bytes().all(|byte| byte.is_ascii_digit());
+        let range = raw.split_once('-').map(|(min, max)| (codec::trim(min), codec::trim(max)));
+        let interval = if let Some((min, max)) = range.filter(|(min, max)| digits(min) && digits(max)) {
+            let min = finite_int(min)?;
+            let max = finite_int(max)?;
+            if min.as_f64().unwrap() > 0.0 && min.as_f64().unwrap() <= max.as_f64().unwrap() {
+                Some((min, Some(max)))
+            } else { None }
+        } else if digits(raw) {
+            let value = finite_int(raw)?;
+            if value.as_f64().unwrap() > 0.0 { Some((value, None)) } else { None }
+        } else { None };
+        if let Some((min, max)) = interval {
+            proxy["hop-interval"] = min;
+            if let Some(max) = max {
+                proxy["hop-interval-max"] = max;
+            } else {
+                proxy.as_object_mut().unwrap().shift_remove("hop-interval-max");
+            }
+        } else {
+            proxy.as_object_mut().unwrap().shift_remove("hop-interval");
+            proxy.as_object_mut().unwrap().shift_remove("hop-interval-max");
+        }
+    }
+    if truthy(&proxy["interface"]) {
+        proxy["interface-name"] = proxy["interface"].clone();
+        proxy.as_object_mut().unwrap().shift_remove("interface");
+    }
+    if proxy["type"] == "trojan" && !truthy(&proxy["network"]) {
+        proxy["network"] = json!("tcp");
+    }
+    if matches!(proxy["type"].as_str(), Some("trojan" | "tuic" | "hysteria" | "hysteria2")) {
+        proxy["tls"] = json!(true);
+    }
     if proxy["plugin"] == "shadow-tls" && !proxy["alpn"].is_null() {
         if proxy["plugin-opts"]["alpn"].is_null() {
             proxy["plugin-opts"]["alpn"] = proxy["alpn"].clone();
         }
         proxy.as_object_mut().unwrap().shift_remove("alpn");
     }
-    if let Some(network) = proxy["network"].as_str().map(str::to_owned) {
+    if truthy(&proxy["network"]) {
+        let network = field_text(proxy, "network");
         let key = format!("{network}-opts");
         let path = proxy[&key]["path"].as_str().map(|path| {
             let path = codec::trim(path);
@@ -780,7 +1358,7 @@ fn normalize(proxy: &mut Value) {
             && !truthy(&proxy[&key]["headers"]["Host"])
             && proxy["server"]
                 .as_str()
-                .is_some_and(|server| server.parse::<IpAddr>().is_err())
+                .is_some_and(|server| !is_ip(server))
         {
             proxy[&key]["headers"]["Host"] = proxy["server"].clone();
         }
@@ -824,13 +1402,41 @@ fn normalize(proxy: &mut Value) {
         && proxy["sni"] != ""
         && proxy["server"]
             .as_str()
-            .is_some_and(|server| server.parse::<IpAddr>().is_err())
+            .is_some_and(|server| !is_ip(server))
     {
         proxy["sni"] = proxy["server"].clone();
     }
     if matches!(proxy["sni"].as_str(), Some("" | "off")) {
         proxy["disable-sni"] = json!(true);
     }
+    if truthy(&proxy["ports"]) {
+        proxy["ports"] = json!(field_text(proxy, "ports").replace('/', ","));
+    } else {
+        proxy.as_object_mut().unwrap().shift_remove("ports");
+    }
+    if proxy["type"] == "hysteria2" && truthy(&proxy["obfs"]) {
+        if proxy["obfs"] != "salamander" && !truthy(&proxy["obfs-password"]) {
+            proxy["obfs-password"] = proxy["obfs"].clone();
+            proxy["obfs"] = json!("salamander");
+        }
+        if !truthy(&proxy["obfs-password"]) && truthy(&proxy["obfs_password"]) {
+            proxy["obfs-password"] = proxy["obfs_password"].clone();
+        }
+    }
+    if proxy["type"] == "tuic" {
+        if !proxy["alpn"].is_array() {
+            proxy["alpn"] = json!([if truthy(&proxy["alpn"]) { proxy["alpn"].clone() } else { json!("h3") }]);
+        }
+        for (key, value) in [("congestion-controller", "cubic"), ("udp-relay-mode", "native")] {
+            if !truthy(&proxy[key]) {
+                proxy[key] = json!(value);
+            }
+        }
+    }
+    if proxy["type"] == "wireguard" {
+        normalize_wireguard(proxy);
+    }
+    Ok(())
 }
 
 pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
@@ -860,6 +1466,16 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
             if let Some(proxy) = ssr(line)? {
                 proxies.push(proxy);
             }
+        } else if line.starts_with("trojan://") {
+            if let Some(proxy) = trojan(line)? {
+                proxies.push(proxy);
+            }
+        } else if line.split_once("://").is_some_and(|(scheme, _)| {
+            ["hy", "hysteria", "hy2", "hysteria2", "tuic", "wireguard", "wg"].contains(&scheme)
+        }) {
+            if let Some(proxy) = modern_uri(line)? {
+                proxies.push(proxy);
+            }
         } else if line.split_once("://").is_some_and(|(scheme, _)| {
             ["http", "https", "socks5", "socks5+tls", "socks"].contains(&scheme)
         }) {
@@ -870,15 +1486,7 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
             [
                 "vmess",
                 "vless",
-                "trojan",
                 "anytls",
-                "hy",
-                "hysteria",
-                "hy2",
-                "hysteria2",
-                "tuic",
-                "wireguard",
-                "wg",
                 "juicity",
                 "trusttunnel",
                 "h2-connect",
@@ -944,9 +1552,144 @@ pub fn tag(proxies: &mut [Value], sub: &Value, preview: bool) {
     }
 }
 
+fn modern_output(proxy: &Value, server: &str, port: &str) -> Option<String> {
+    let kind = proxy["type"].as_str()?;
+    let encode = |value: &Value| codec::uri_component(&codec::js_string(value)).ok();
+    let mut query = Vec::new();
+    if kind == "hysteria2" {
+        for (key, parameter) in [("hop-interval", "hop-interval"), ("keepalive", "keepalive")] {
+            if truthy(&proxy[key]) {
+                query.push(format!("{parameter}={}", field_text(proxy, key)));
+            }
+        }
+        if truthy(&proxy["skip-cert-verify"]) {
+            query.push("insecure=1".to_owned());
+        }
+        if truthy(&proxy["obfs"]) {
+            query.push(format!("obfs={}", encode(&proxy["obfs"])?));
+            if truthy(&proxy["obfs-password"]) {
+                query.push(format!("obfs-password={}", encode(&proxy["obfs-password"])?));
+            }
+        }
+        if truthy(&proxy["sni"]) {
+            query.push(format!("sni={}", encode(&proxy["sni"])?));
+        }
+        if truthy(&proxy["ports"]) {
+            query.push(format!("mport={}", field_text(proxy, "ports")));
+        }
+        if truthy(&proxy["tls-fingerprint"]) {
+            query.push(format!("pinSHA256={}", encode(&proxy["tls-fingerprint"])?));
+        }
+        if truthy(&proxy["tfo"]) {
+            query.push("fastopen=1".to_owned());
+        }
+        let ech = &proxy["ech-opts"];
+        let enabled = ech["enable"] == true || ech["enable"].as_f64()
+            .is_some_and(|value| value != 0.0 && value.fract() == 0.0);
+        if enabled {
+            let name = nonblank(&ech["query-server-name"]).map(|value| codec::js_string(&value));
+            let config = if let Some(config) = nonblank(&ech["config"]) {
+                Some(codec::js_string(&config))
+            } else if let Some(dns) = nonblank(&ech["_dns"]) {
+                Some(name.map_or_else(|| codec::js_string(&dns), |name| format!("{name}+{}", codec::js_string(&dns))))
+            } else {
+                name.map(|name| format!("{name}+https://dns.alidns.com/dns-query"))
+            };
+            if let Some(config) = config {
+                query.push(format!("ech={}", codec::uri_component(&config).ok()?));
+            }
+        }
+        return Some(format!("hysteria2://{}@{server}:{port}?{}#{}",
+            encode(&proxy["password"])?, query.join("&"), encode(&proxy["name"])?));
+    }
+    if kind == "tuic" && truthy(&proxy["token"])
+        && !proxy["token"].as_array().is_some_and(Vec::is_empty)
+    {
+        return Some(String::new());
+    }
+    for (key, value) in proxy.as_object()? {
+        if ["name", "type", "server", "port", "id", "resolved", "no-resolve", "subName", "collectionName"].contains(&key.as_str())
+            || value.is_null()
+            || (kind != "wireguard" && key == "tls")
+            || (kind == "tuic" && ["uuid", "password"].contains(&key.as_str()))
+            || (kind == "wireguard" && ["ip", "ipv6", "ip-cidr", "ipv6-cidr", "private-key"].contains(&key.as_str()))
+        {
+            continue;
+        }
+        let parameter = if kind == "tuic" {
+            key.replace('-', "_")
+        } else if kind == "hysteria" {
+            key.replacen('-', "_", 1)
+        } else { key.clone() };
+        match (kind, key.as_str()) {
+            ("wireguard", "public-key") => query.push(format!("publickey={}", encode(value)?)),
+            ("wireguard", "udp") => {
+                if truthy(value) { query.push("udp=1".to_owned()); }
+            }
+            ("hysteria" | "tuic", "alpn") => {
+                if truthy(value) {
+                    let value = value.as_array().map_or(Some(value), |items| items.first());
+                    let encoded = value.map_or_else(|| Some("undefined".to_owned()), encode)?;
+                    query.push(format!("{parameter}={encoded}"));
+                }
+            }
+            ("hysteria" | "tuic", "skip-cert-verify") => {
+                if truthy(value) {
+                    query.push(if kind == "tuic" { "allow_insecure=1" } else { "insecure=1" }.to_owned());
+                }
+            }
+            ("hysteria" | "tuic", "tfo" | "fast-open") => {
+                let fast = if kind == "tuic" { "fast_open=1" } else { "fastopen=1" }.to_owned();
+                if truthy(value) && !query.contains(&fast) { query.push(fast); }
+            }
+            ("tuic", "disable-sni" | "reduce-rtt") => {
+                if truthy(value) { query.push(format!("{parameter}=1")); }
+            }
+            ("tuic", "congestion-controller") => {
+                query.push(format!("congestion_control={}", codec::text(&codec::js_string(value))));
+            }
+            ("hysteria", "ports" | "auth-str" | "up" | "down" | "_obfs" | "obfs" | "sni") => {
+                let parameter = match key.as_str() {
+                    "ports" => "mport", "auth-str" => "auth", "up" => "upmbps",
+                    "down" => "downmbps", "_obfs" => "obfs", "obfs" => "obfsParam",
+                    _ => "peer",
+                };
+                query.push(format!("{parameter}={}", codec::text(&codec::js_string(value))));
+            }
+            _ if truthy(value) && !key.starts_with('_') => {
+                query.push(format!("{parameter}={}", encode(value)?));
+            }
+            _ => {}
+        }
+    }
+    let auth = if kind == "tuic" {
+        format!("{}:{}@", encode(&proxy["uuid"])?, encode(&proxy["password"])?)
+    } else if kind == "wireguard" {
+        let mut addresses = Vec::new();
+        for (key, cidr_key, v6) in [("ip", "ip-cidr", false), ("ipv6", "ipv6-cidr", true)] {
+            if let Some((host, parsed_cidr, family)) = proxy[key].as_str().and_then(interface_address)
+                && family == v6
+            {
+                let max = if v6 { 128 } else { 32 };
+                let cidr = safe_integer(codec::trim(&field_text(proxy, cidr_key)))
+                    .filter(|cidr| *cidr <= max).map(|cidr| cidr as u32)
+                    .or(parsed_cidr).unwrap_or(max as u32);
+                addresses.push(format!("{host}/{cidr}"));
+            }
+        }
+        if !addresses.is_empty() {
+            query.push(format!("address={}", codec::uri_component(&addresses.join(",")).ok()?));
+        }
+        format!("{}@", encode(&proxy["private-key"])?)
+    } else { String::new() };
+    Some(format!("{kind}://{auth}{server}:{port}{}?{}#{}",
+        if kind == "wireguard" { "/" } else { "" }, query.join("&"), encode(&proxy["name"])?))
+}
+
+
 fn uri(proxy: &Value) -> Option<String> {
     let server = codec::text(&field_text(proxy, "server"));
-    let server = if server.parse::<Ipv6Addr>().is_ok() {
+    let server = if ipv6(&server) {
         format!("[{server}]")
     } else {
         server
@@ -992,9 +1735,13 @@ fn uri(proxy: &Value) -> Option<String> {
             }
             return Some(format!("ssr://{}", STANDARD.encode(output)));
         }
-        "ss" => {}
+        "hysteria" | "hysteria2" | "tuic" | "wireguard" => {
+            return modern_output(proxy, &server, &port);
+        }
+        "ss" | "trojan" => {}
         _ => return Some(String::new()),
     }
+    let trojan = proxy["type"] == "trojan";
     let cipher = proxy["cipher"].as_str().unwrap_or("undefined");
     let password = proxy["password"].as_str().unwrap_or("undefined");
     let auth = if cipher.starts_with("2022-blake3-") {
@@ -1006,9 +1753,13 @@ fn uri(proxy: &Value) -> Option<String> {
     } else {
         STANDARD.encode(codec::text(&format!("{cipher}:{password}")))
     };
-    let mut output = format!("ss://{auth}@{server}:{port}");
+    let mut output = if trojan {
+        format!("trojan://{}@{server}:{port}", codec::text(&field_text(proxy, "password")))
+    } else {
+        format!("ss://{auth}@{server}:{port}")
+    };
     let mut query = Vec::new();
-    if truthy(&proxy["plugin"]) {
+    if !trojan && truthy(&proxy["plugin"]) {
         let options = &proxy["plugin-opts"];
         let plugin = match proxy["plugin"].as_str()? {
             "obfs" => format!(
@@ -1082,12 +1833,14 @@ fn uri(proxy: &Value) -> Option<String> {
         output.push('/');
         query.push(format!("plugin={}", codec::uri_component(&plugin).ok()?));
     }
-    for (field, parameter) in [("udp-over-tcp", "uot"), ("tfo", "tfo")] {
-        if truthy(&proxy[field]) {
-            query.push(format!("{parameter}=1"));
+    if !trojan {
+        for (field, parameter) in [("udp-over-tcp", "uot"), ("tfo", "tfo")] {
+            if truthy(&proxy[field]) {
+                query.push(format!("{parameter}=1"));
+            }
         }
+        query.push(format!("udp={}", u8::from(truthy(&proxy["udp"]))));
     }
-    query.push(format!("udp={}", u8::from(truthy(&proxy["udp"]))));
     if truthy(&proxy["tls"]) {
         let sni = if truthy(&proxy["sni"]) {
             field_text(proxy, "sni")
@@ -1099,12 +1852,13 @@ fn uri(proxy: &Value) -> Option<String> {
             query.push("allowInsecure=1".to_owned());
         }
     }
-    if let Some(network) = proxy["network"].as_str().filter(|text| !text.is_empty()) {
+    if truthy(&proxy["network"]) {
+        let network = field_text(proxy, "network");
         let options = &proxy[format!("{network}-opts")];
         let upgrade = network == "ws" && truthy(&options["v2ray-http-upgrade"]);
         query.push(format!(
             "type={}",
-            codec::uri_component(if upgrade { "httpupgrade" } else { network }).ok()?
+            codec::uri_component(if upgrade { "httpupgrade" } else { &network }).ok()?
         ));
         if network == "grpc" {
             for (field, param) in [
@@ -1196,6 +1950,15 @@ fn uri(proxy: &Value) -> Option<String> {
             codec::uri_component(&field_text(proxy, "client-fingerprint")).ok()?
         ));
     }
+    if trojan {
+        if truthy(&proxy["tls-fingerprint"]) {
+            query.push(format!("pcs={}", codec::uri_component(&field_text(proxy, "tls-fingerprint")).ok()?));
+        }
+        let names = if proxy["_vcn"].is_array() { &proxy["_vcn"] } else { &proxy["name-cert-verify"] };
+        if proxy["_vcn"].is_array() || truthy(names) {
+            query.push(format!("vcn={}", codec::uri_component(&codec::js_string(names)).ok()?));
+        }
+    }
     if truthy(&proxy["reality-opts"]) {
         query.push("security=reality".to_owned());
         for (field, param) in [
@@ -1219,7 +1982,7 @@ fn uri(proxy: &Value) -> Option<String> {
                 ));
             }
         }
-    } else if truthy(&proxy["tls"]) {
+    } else if !trojan && truthy(&proxy["tls"]) {
         query.push("security=tls".to_owned());
     }
     output.push('?');
@@ -1264,15 +2027,21 @@ pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str) -> Result<Valu
                 field_text(proxy, "port")
             ));
         }
-        if truthy(&proxy["disable-sni"]) {
+        if truthy(&proxy["disable-sni"]) && proxy["type"] != "tuic" {
             proxy["sni"] = json!(if proxy["server"]
                 .as_str()
-                .is_some_and(|server| server.parse::<IpAddr>().is_ok())
+                .is_some_and(is_ip)
             {
                 field_text(proxy, "server")
             } else {
                 "127.0.0.1".to_owned()
             });
+        }
+        if truthy(&proxy["ports"]) && !truthy(&proxy["port"]) {
+            proxy["port"] = random_port(&field_text(proxy, "ports"))?;
+        }
+        if proxy["type"] == "wireguard" {
+            normalize_wireguard(proxy);
         }
     }
     if matches!(target, "json" | "JSON") {
@@ -1293,4 +2062,30 @@ pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str) -> Result<Valu
     } else {
         json!(lines.join("\n"))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn port_hopping_selects_only_members_of_the_source_ranges() {
+        for _ in 0..128 {
+            let port = random_port("443/8000-8002").ok().and_then(|value| value.as_f64())
+                .expect("native entropy and finite port");
+            assert!(port == 443.0 || ((8000.0..=8002.0).contains(&port) && port.fract() == 0.0));
+        }
+        assert_eq!(random_port("0x1bb").ok().and_then(|value| value.as_f64()), Some(443.0));
+        assert!(matches!(random_port("443;443"), Err(Error::Pending(_))));
+    }
+
+    #[test]
+    fn ipv6_validation_preserves_source_specific_address_forms() {
+        for address in ["2001:db8::1", "fe80::1%eth0", "::ffff:192.168.00.1"] {
+            assert!(ipv6(address), "{address}");
+        }
+        for address in ["host:123", "fe80::1%eth_0", "1:2:3:4:5:6:1.2.3.4"] {
+            assert!(!ipv6(address), "{address}");
+        }
+    }
 }
