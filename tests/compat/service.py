@@ -672,8 +672,11 @@ def api_entities(url, state, output, name, origin=None):
     for plural, singular in (("subs", "sub"), ("collections", "collection")):
         names = ["RouteCase🙂", "routecase🙂", "route/part", "route%2Fpart", ""]
         items = [{"name": value, "marker": index} for index, value in enumerate(names)]
-        send(f"/api/{plural.upper()}/", method="PUT", body=json.dumps(items, ensure_ascii=False).encode("utf-8"))
         created = {"name": "route-created", "marker": "created"}
+        if plural == "collections":
+            for value in items + [created]:
+                value["subscriptions"] = []
+        send(f"/api/{plural.upper()}/", method="PUT", body=json.dumps(items, ensure_ascii=False).encode("utf-8"))
         send(f"/api/{plural.upper()}/", method="POST", status=201, body=json.dumps(created).encode("utf-8"))
         before_routes = {filename: (state / filename).read_bytes() for filename in ("sub-store.json", "root.json")}
         for item in items[:-1] + [created]:
@@ -744,6 +747,9 @@ def api_entities(url, state, output, name, origin=None):
     before_queries = {filename: (state / filename).read_bytes() for filename in ("sub-store.json", "root.json")}
     for singular in ("sub", "collection"):
         target = f"/api/{singular}/route-created"
+        expected = {"name": "route-created", "marker": "created"}
+        if singular == "collection":
+            expected["subscriptions"] = []
         for query, exported in (("raw", False), ("raw=", False), ("raw=0", True), ("raw=false", True),
                                 ("raw=&raw=", True), ("raw=1&raw=", True), ("raw[]", True),
                                 ("raw[x]=", True), ("r%61w%5B%5D=", True), ("raw%3Dx=1", False),
@@ -751,7 +757,7 @@ def api_entities(url, state, output, name, origin=None):
             headers, content = send(target + "?" + query)
             assert ("content-disposition" in headers) == exported
             value = json.loads(content)
-            assert (value if exported else value["data"]) == {"name": "route-created", "marker": "created"}
+            assert (value if exported else value["data"]) == expected
         for query, mode in (("mode=invalid", "invalid"), ("mode=0", "0"),
                             ("mode=archive&mode=permanent", "archive,permanent"),
                             ("mode=permanent&mode=", "permanent,"), ("mode=&mode=", ","),
