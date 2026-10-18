@@ -86,7 +86,12 @@ lengths. Successful GET/HEAD revalidation returns 304; HEAD preserves entity
 metadata. Mutations and errors keep their original status, and empty end-style
 responses and production HTML errors remain untagged. Both frontend listeners
 reuse this behavior. Range combination and validator matching retain the locked
-Node dependency's behavior. Static 412/416 errors use production HTML messages;
+Node dependency's behavior. Static 412/416 errors use production HTML messages.
+CRUD route tokens accept case variants and one trailing slash. Names retain
+their case and decode once after raw segment matching, including encoded slashes
+and percent signs. Extra segments remain unregistered; invalid escapes/UTF-8
+return production HTML 400 without changing durable data. Prefix admission keeps
+the legacy raw path policy.
 Node development stack bodies and broader HTTP/API edge cases remain M2
 acceptance work.
 Stored excluded Node scripts remain intact.

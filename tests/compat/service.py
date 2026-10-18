@@ -662,6 +662,43 @@ def api_entities(url, state, output, name, origin=None):
          tagged=False, expected=b"CORS origin not allowed")
     allowed = origin or f"{parsed.scheme}://{parsed.netloc}"
     send("/api/settings", {"Origin": allowed, "If-None-Match": "*"}, method="OPTIONS", tagged=False, expected=b"")
+    for resource in ("SETTINGS", "SuBs", "COLLECTIONS", "wholeFiles", "FILES", "MODULES", "TOKENS", "ARCHIVES"):
+        send(f"/api/{resource}/")
+    normal, content = send("/api/SeTTings/")
+    head, _ = send("/api/SETTINGS/", method="HEAD", expected=b"")
+    assert all(head.get(key) == normal.get(key) for key in compared_headers)
+    send("/api/SeTTings/", {"If-None-Match": normal["etag"]}, status=304, expected=b"")
+    for plural, singular in (("subs", "sub"), ("collections", "collection")):
+        names = ["RouteCase🙂", "routecase🙂", "route/part", "route%2Fpart", ""]
+        items = [{"name": value, "marker": index} for index, value in enumerate(names)]
+        send(f"/api/{plural.upper()}/", method="PUT", body=json.dumps(items, ensure_ascii=False).encode("utf-8"))
+        created = {"name": "route-created", "marker": "created"}
+        send(f"/api/{plural.upper()}/", method="POST", status=201, body=json.dumps(created).encode("utf-8"))
+        before_routes = {filename: (state / filename).read_bytes() for filename in ("sub-store.json", "root.json")}
+        for item in items[:-1] + [created]:
+            _, content = send(f"/api/{singular.upper()}/{quote(item['name'], safe='')}/")
+            assert json.loads(content)["data"] == item
+        _, content = send(f"/api/{singular}/route%2fpart")
+        assert json.loads(content)["data"]["name"] == "route/part"
+        for path in (f"/api/{singular}/", f"/api/{singular}/route/part", f"/api/{singular}/route-created//"):
+            send(path, status=404, tagged=False, expected=b"")
+        assert all((state / filename).read_bytes() == data for filename, data in before_routes.items())
+        target = f"/api/{singular.upper()}/{quote(names[0], safe='')}/"
+        send(target, method="PATCH", body=b'{"marker":"patched"}')
+        _, content = send(f"/api/{singular}/{quote(names[1], safe='')}")
+        assert json.loads(content)["data"]["marker"] == 1, "Case folding changed another record"
+        send(target + "?mode=permanent", method="DELETE")
+        _, content = send(f"/api/{plural.upper()}/")
+        assert [item["name"] for item in json.loads(content)["data"]] == names[1:] + [created["name"]]
+    before_routes = {filename: (state / filename).read_bytes() for filename in ("sub-store.json", "root.json")}
+    for path in ("/api/%73ettings", "/api/utils/%65nv", "/api/settings//"):
+        send(path, status=404, tagged=False, expected=b"")
+    for escape in ("%", "%0", "%GG", "%FF", "%E0%A4"):
+        for method in ("GET", "PATCH"):
+            headers, content = send(f"/api/sub/{escape}", method=method, status=400, tagged=False)
+            assert headers["content-type"] == "text/html; charset=utf-8" and b"Bad Request" in content
+            assert headers["content-security-policy"] == "default-src 'none'" and headers["x-content-type-options"] == "nosniff"
+    assert all((state / filename).read_bytes() == data for filename, data in before_routes.items()), "Rejected route changed durable state"
     (output / f"{name}.json").write_text(json.dumps(observations, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return observations
 
@@ -1298,6 +1335,7 @@ def main():
         report["standalone_configurations_checked"] = ["prefixed", "unprefixed", "root", "static-only"]
         report["api_entity_validators_and_head_checked"] = True
         report["api_entity_error_and_mutation_boundaries_checked"] = True
+        report["crud_route_case_suffix_and_parameter_decoding_checked"] = True
         report["export_second_boundary_clock_checked"] = True
         report["api_entity_configurations_checked"] = ["merged-prefix", "merged-root", "standalone-prefixed", "standalone-unprefixed", "standalone-root"]
         report["exit_code"] = 0

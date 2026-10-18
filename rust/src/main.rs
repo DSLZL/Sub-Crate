@@ -666,6 +666,45 @@ async fn frontend_handle(
     Ok(response)
 }
 
+fn api_path(raw: &str) -> Result<Option<String>, ()> {
+    if raw.as_bytes().iter().enumerate().any(|(index, byte)| {
+        *byte == b'%'
+            && !raw
+                .as_bytes()
+                .get(index + 1..index + 3)
+                .is_some_and(|pair| pair.iter().all(u8::is_ascii_hexdigit))
+    }) {
+        return Err(());
+    }
+    percent_decode_str(raw).decode_utf8().map_err(|_| ())?;
+    if raw == "/" {
+        return Ok(Some(raw.to_owned()));
+    }
+    let parts = raw
+        .strip_suffix('/')
+        .unwrap_or(raw)
+        .split('/')
+        .collect::<Vec<_>>();
+    let path = match parts.as_slice() {
+        ["", api, resource] if api.eq_ignore_ascii_case("api") => {
+            Some(format!("/api/{}", resource.to_ascii_lowercase()))
+        }
+        ["", api, resource, name] if api.eq_ignore_ascii_case("api") && !name.is_empty() => {
+            let resource = resource.to_ascii_lowercase();
+            match resource.as_str() {
+                "sub" | "collection" => Some(format!(
+                    "/api/{resource}/{}",
+                    percent_decode_str(name).decode_utf8().map_err(|_| ())?
+                )),
+                "utils" => Some(format!("/api/utils/{}", name.to_ascii_lowercase())),
+                _ => None,
+            }
+        }
+        _ => None,
+    };
+    Ok(path)
+}
+
 async fn route(
     request: Request<Incoming>,
     config: &Config,
@@ -693,10 +732,6 @@ async fn route(
             );
         }
     };
-    let decoded = match percent_decode_str(&raw_path).decode_utf8() {
-        Ok(path) => path,
-        Err(_) => return api::text(400, "text/plain; charset=utf-8", "Invalid URL encoding"),
-    };
     let path = if let Some(prefix) = &config.prefix {
         let matches = if prefix == "/" {
             backend_route(&raw_path)
@@ -706,9 +741,9 @@ async fn route(
         };
         if matches {
             let stripped = if prefix == "/" {
-                decoded.as_ref()
+                raw_path.as_str()
             } else {
-                decoded.strip_prefix(prefix).unwrap_or("")
+                raw_path.strip_prefix(prefix).unwrap_or("")
             };
             if stripped.is_empty() { "/" } else { stripped }
         } else {
@@ -717,12 +752,20 @@ async fn route(
                 && !backend_route(&raw_path)
                 && method == Method::GET
             {
-                return static_file(root, &decoded, &headers, true);
+                return match percent_decode_str(&raw_path).decode_utf8() {
+                    Ok(path) => static_file(root, &path, &headers, true),
+                    Err(_) => api::text(400, "text/plain; charset=utf-8", "Invalid URL encoding"),
+                };
             }
             return api::not_found();
         }
     } else {
-        decoded.as_ref()
+        raw_path.as_str()
+    };
+    let path = match api_path(path) {
+        Ok(Some(path)) => path,
+        Ok(None) => return api::not_found(),
+        Err(()) => return api::html_error(400, "Bad Request"),
     };
     let query = reqwest::Url::parse(&format!("http://localhost/?{raw_query}"))
         .unwrap()
@@ -739,7 +782,7 @@ async fn route(
         }).to_string());
     }
     let mut store = store.lock().unwrap();
-    api::dispatch(&method, path, &query, body, &mut store)
+    api::dispatch(&method, &path, &query, body, &mut store)
 }
 
 #[tokio::main(flavor = "current_thread")]

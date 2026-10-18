@@ -498,7 +498,7 @@ pub fn dispatch(
     if method == Method::GET {
         let key = match path {
             "/api/artifacts" => Some("artifacts"),
-            "/api/wholeFiles" | "/api/files" => Some("files"),
+            "/api/wholefiles" | "/api/files" => Some("files"),
             "/api/modules" => Some("modules"),
             "/api/tokens" => Some("tokens"),
             "/api/archives" => Some("archives"),
