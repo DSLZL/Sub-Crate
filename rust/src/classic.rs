@@ -1192,13 +1192,17 @@ fn try_loon(line: &str) -> Result<Option<(Value, Parser)>, Error> {
     Ok(proxy.map(|proxy| (proxy, Parser::Loon(kind))))
 }
 
-pub fn parse(line: &str, last: Option<Parser>) -> Result<Option<(Value, Parser)>, Error> {
+pub fn cached(line: &str, last: Option<Parser>) -> Result<Option<(Value, Parser)>, Error> {
     if let Some(Parser::Loon(kind)) = last
         && loon_kind(line) == Some(kind)
         && let Some(parsed) = try_loon(line)?
     {
         return Ok(Some(parsed));
     }
+    Ok(None)
+}
+
+pub fn parse(line: &str) -> Result<Option<(Value, Parser)>, Error> {
     if crate::surge::matches(line)
         && let Some(proxy) = crate::surge::parse(line)?
     {

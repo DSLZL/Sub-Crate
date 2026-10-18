@@ -2,6 +2,7 @@ FROM rust:1.98.0-bookworm@sha256:82150a52ec202c1b14d7817e14516c392bb7f5cfebd88f1
 WORKDIR /work
 COPY rust/Cargo.toml rust/Cargo.lock rust/
 COPY rust/src rust/src
+COPY rust/vendor rust/vendor
 RUN cargo build --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust
 
 FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587

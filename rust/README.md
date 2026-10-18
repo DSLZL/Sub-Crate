@@ -5,7 +5,8 @@ subscription/collection/settings CRUD and legacy JSON storage without Node.
 Local subscriptions share native Rust parsing and JSON/URI/V2Ray output through
 `/api/proxy/parse`, subscription preview and subscription download. Native input
 includes SS/SSR, HTTP/SOCKS, Trojan, Hysteria1/2, TUIC, WireGuard, VMess, VLESS and
-AnyTLS, plus the registered Surge/Loon/QX formats and Base64/SSD/FullConfig preprocessing
+AnyTLS, plus the registered Surge/Loon/QX and Clash JSON5/YAML formats and
+Base64/SSD/FullConfig/Clash preprocessing
 with transport/TLS normalization. Surge External fields are parsed as data.
 V2Ray also serves the default download target and its three legacy aliases.
 These protocol slices remain partial while the complete source-branch inventory is verified.
@@ -14,6 +15,11 @@ processors, remote sources and unported value branches return a pending error.
 The JavaScript feasibility example remains separate. Remaining conversion,
 script execution inside the application, archive actions, Gist/age and integrations are
 still under development; this is not a complete replacement release.
+
+Clash language parsing embeds only the existing locked JSON5/yaml utility
+packages through rquickjs. Application conversion policies remain native Rust.
+The utility-only build in Actions records package input hashes and license
+notices in `vendor/`; the development application-helper bundle is separate.
 
 All builds and tests run in the **Rust service and compatibility** GitHub Actions
 workflow. Native Linux x64/arm64 and Windows x64 jobs produce release binaries;

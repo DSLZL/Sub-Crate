@@ -3,6 +3,7 @@
   "frontend_commit": "4bd7b0acbe65466b933ccea14fc61dbebe036ead",
   "suites": {
     "conversion-local": [
+      "P02-input-clash-all-types", "P02-input-clash-json5-options", "P02-input-clash-yaml-config", "P02-input-clash-flow-recovery", "P02-input-clash-preprocess-precedence", "P02-input-clash-cache-reset", "P05-local-clash-paths",
       "P01-output-uri", "P01-output-URI", "P01-output-json", "P01-output-JSON",
       "P01-output-v2", "P01-output-v2ray", "P01-output-V2Ray", "P02-output-v2ray-shapes",
       "P02-input-ss-obfs", "P02-input-invalid", "P02-input-ss-unicode-ipv6",
@@ -40,6 +41,7 @@
       "T03-share-datetime-archive"
     ],
     "full": [
+      "P02-input-clash-all-types", "P02-input-clash-json5-options", "P02-input-clash-yaml-config", "P02-input-clash-flow-recovery", "P02-input-clash-preprocess-precedence", "P02-input-clash-cache-reset", "P05-local-clash-paths",
       "E01-env-basic-share-sequence",
       "D01-backup-seed",
       "C01-subscription-crud",
@@ -163,6 +165,7 @@
       "M1-complete-inventory-and-fixtures"
     ],
     "conversion": [
+      "P02-input-clash-all-types", "P02-input-clash-json5-options", "P02-input-clash-yaml-config", "P02-input-clash-flow-recovery", "P02-input-clash-preprocess-precedence", "P02-input-clash-cache-reset", "P05-local-clash-paths",
       "P01-output-qx",
       "P01-output-QX",
       "P01-output-QuantumultX",

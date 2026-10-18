@@ -1,5 +1,558 @@
 [
   {
+    "id": "P02-input-clash-all-types",
+    "source": "backend/src/core/proxy-utils/parsers/index.js:2543-2626; backend/src/core/proxy-utils/preprocessors/index.js:5-37,109-137; backend/src/utils/yaml.js; backend/src/core/proxy-utils/index.js:51-123,756-1205",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"zerotier\",\"name\":\"Clash-zerotier\",\"server\":\"127.0.0.1\",\"port\":10000}\n{\"type\":\"shadowquic\",\"name\":\"Clash-shadowquic\",\"server\":\"127.0.0.1\",\"port\":10001}\n{\"type\":\"gost-relay\",\"name\":\"Clash-gost-relay\",\"server\":\"127.0.0.1\",\"port\":10002}\n{\"type\":\"openvpn\",\"name\":\"Clash-openvpn\",\"server\":\"127.0.0.1\",\"port\":10003}\n{\"type\":\"tailscale\",\"name\":\"Clash-tailscale\",\"server\":\"127.0.0.1\",\"port\":10004}\n{\"type\":\"easytier\",\"name\":\"Clash-easytier\",\"server\":\"127.0.0.1\",\"port\":10005}\n{\"type\":\"trusttunnel\",\"name\":\"Clash-trusttunnel\",\"server\":\"127.0.0.1\",\"port\":10006}\n{\"type\":\"h2-connect\",\"name\":\"Clash-h2-connect\",\"server\":\"127.0.0.1\",\"port\":10007}\n{\"type\":\"naive\",\"name\":\"Clash-naive\",\"server\":\"127.0.0.1\",\"port\":10008}\n{\"type\":\"anytls\",\"name\":\"Clash-anytls\",\"server\":\"127.0.0.1\",\"port\":10009}\n{\"type\":\"mieru\",\"name\":\"Clash-mieru\",\"server\":\"127.0.0.1\",\"port\":10010}\n{\"type\":\"masque\",\"name\":\"Clash-masque\",\"server\":\"127.0.0.1\",\"port\":10011}\n{\"type\":\"masque-surge\",\"name\":\"Clash-masque-surge\",\"server\":\"127.0.0.1\",\"port\":10012}\n{\"type\":\"sudoku\",\"name\":\"Clash-sudoku\",\"server\":\"127.0.0.1\",\"port\":10013}\n{\"type\":\"juicity\",\"name\":\"Clash-juicity\",\"server\":\"127.0.0.1\",\"port\":10014}\n{\"type\":\"ss\",\"name\":\"Clash-ss\",\"server\":\"127.0.0.1\",\"port\":10015}\n{\"type\":\"ssr\",\"name\":\"Clash-ssr\",\"server\":\"127.0.0.1\",\"port\":10016}\n{\"type\":\"vmess\",\"name\":\"Clash-vmess\",\"server\":\"127.0.0.1\",\"port\":10017}\n{\"type\":\"socks5\",\"name\":\"Clash-socks5\",\"server\":\"127.0.0.1\",\"port\":10018}\n{\"type\":\"http\",\"name\":\"Clash-http\",\"server\":\"127.0.0.1\",\"port\":10019}\n{\"type\":\"snell\",\"name\":\"Clash-snell\",\"server\":\"127.0.0.1\",\"port\":10020}\n{\"type\":\"trojan\",\"name\":\"Clash-trojan\",\"server\":\"127.0.0.1\",\"port\":10021}\n{\"type\":\"tuic\",\"name\":\"Clash-tuic\",\"server\":\"127.0.0.1\",\"port\":10022}\n{\"type\":\"vless\",\"name\":\"Clash-vless\",\"server\":\"127.0.0.1\",\"port\":10023}\n{\"type\":\"hysteria\",\"name\":\"Clash-hysteria\",\"server\":\"127.0.0.1\",\"port\":10024}\n{\"type\":\"hysteria2\",\"name\":\"Clash-hysteria2\",\"server\":\"127.0.0.1\",\"port\":10025}\n{\"type\":\"wireguard\",\"name\":\"Clash-wireguard\",\"server\":\"127.0.0.1\",\"port\":10026}\n{\"type\":\"ssh\",\"name\":\"Clash-ssh\",\"server\":\"127.0.0.1\",\"port\":10027}\n{\"type\":\"direct\",\"name\":\"Clash-direct\",\"server\":\"127.0.0.1\",\"port\":10028}",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "type": "zerotier",
+                  "name": "Clash-zerotier"
+                },
+                {
+                  "type": "shadowquic",
+                  "name": "Clash-shadowquic"
+                },
+                {
+                  "type": "gost-relay",
+                  "name": "Clash-gost-relay"
+                },
+                {
+                  "type": "openvpn",
+                  "name": "Clash-openvpn"
+                },
+                {
+                  "type": "tailscale",
+                  "name": "Clash-tailscale"
+                },
+                {
+                  "type": "easytier",
+                  "name": "Clash-easytier"
+                },
+                {
+                  "type": "trusttunnel",
+                  "name": "Clash-trusttunnel"
+                },
+                {
+                  "type": "h2-connect",
+                  "name": "Clash-h2-connect"
+                },
+                {
+                  "type": "naive",
+                  "name": "Clash-naive"
+                },
+                {
+                  "type": "anytls",
+                  "name": "Clash-anytls"
+                },
+                {
+                  "type": "mieru",
+                  "name": "Clash-mieru"
+                },
+                {
+                  "type": "masque",
+                  "name": "Clash-masque"
+                },
+                {
+                  "type": "masque-surge",
+                  "name": "Clash-masque-surge"
+                },
+                {
+                  "type": "sudoku",
+                  "name": "Clash-sudoku"
+                },
+                {
+                  "type": "juicity",
+                  "name": "Clash-juicity"
+                },
+                {
+                  "type": "ss",
+                  "name": "Clash-ss"
+                },
+                {
+                  "type": "ssr",
+                  "name": "Clash-ssr"
+                },
+                {
+                  "type": "vmess",
+                  "name": "Clash-vmess"
+                },
+                {
+                  "type": "socks5",
+                  "name": "Clash-socks5"
+                },
+                {
+                  "type": "http",
+                  "name": "Clash-http"
+                },
+                {
+                  "type": "snell",
+                  "name": "Clash-snell"
+                },
+                {
+                  "type": "trojan",
+                  "name": "Clash-trojan"
+                },
+                {
+                  "type": "tuic",
+                  "name": "Clash-tuic"
+                },
+                {
+                  "type": "vless",
+                  "name": "Clash-vless"
+                },
+                {
+                  "type": "hysteria",
+                  "name": "Clash-hysteria"
+                },
+                {
+                  "type": "hysteria2",
+                  "name": "Clash-hysteria2"
+                },
+                {
+                  "type": "wireguard",
+                  "name": "Clash-wireguard"
+                },
+                {
+                  "type": "ssh",
+                  "name": "Clash-ssh"
+                },
+                {
+                  "type": "direct",
+                  "name": "Clash-direct"
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-input-clash-json5-options",
+    "source": "backend/src/core/proxy-utils/parsers/index.js:2543-2626; backend/src/core/proxy-utils/preprocessors/index.js:5-37,109-137; backend/src/utils/yaml.js; backend/src/core/proxy-utils/index.js:51-123,756-1205",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{type:'vmess',name:'JSON5 VM',server:' [2001:db8::1] ',port:'00443',uuid:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',cipher:'CHACHA20-IETF-POLY1305',servername:'sni.example',fingerprint:'final-cert','server-cert-fingerprint':'old-cert','dialer-proxy':'base','benchmark-url':'https://test.example','benchmark-timeout':1500,network:'ws','WS-OPTS':{Path:'socket',Headers:{host:'cdn.example'}},'unknown-field':null,numbers:[0x10,.5,1e2,-0],}\n{type:'vless',name:'JSON5 VL',server:'v.example',port:443,uuid:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',network:'http','http-opts':{path:'request',headers:{host:'cdn.example'}},flow:'null',udp:'off'}\n{type:'ss',name:42,server:123,port:8388,cipher:'AES-128-GCM',password:12.5,udp:false,unknown:{nested:[null,true,'\\ud800']}}",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "type": "vmess",
+                  "name": "JSON5 VM",
+                  "server": "2001:db8::1",
+                  "port": 443,
+                  "cipher": "chacha20-poly1305",
+                  "sni": "sni.example",
+                  "tls-fingerprint": "final-cert",
+                  "underlying-proxy": "base",
+                  "test-timeout": 1500,
+                  "numbers": [
+                    16,
+                    0.5,
+                    100,
+                    0
+                  ]
+                },
+                {
+                  "type": "vless",
+                  "name": "JSON5 VL",
+                  "udp": false,
+                  "network": "http",
+                  "http-opts": {
+                    "path": [
+                      "/request"
+                    ],
+                    "headers": {
+                      "Host": [
+                        "cdn.example"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "type": "ss",
+                  "name": "42",
+                  "server": "123",
+                  "password": "12.5",
+                  "unknown": {
+                    "nested": [
+                      null,
+                      true,
+                      "\ud800"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-input-clash-yaml-config",
+    "source": "backend/src/core/proxy-utils/parsers/index.js:2543-2626; backend/src/core/proxy-utils/preprocessors/index.js:5-37,109-137; backend/src/utils/yaml.js; backend/src/core/proxy-utils/index.js:51-123,756-1205",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "defaults: &base\n  type: ss\n  server: \" [2001:db8::1] \"\n  port: \"0443\"\n  cipher: AES-128-GCM\n  password: 12345\nloop: &loop {self: *loop}\nproxies:\n  - <<: *base\n    name: Merge\n    extension: {nan: .nan, infinity: .inf}\n  - {type: vless, name: Short08, server: v.example, port: 443, uuid: u, tls: true, reality-opts: {public-key: key, short-id: 08}}\n  - {type: vless, name: Short0088, server: v.example, port: 443, uuid: u, tls: true, reality-opts: {public-key: key, short-id: 0088}}\n  - {type: vless, name: ShortEmpty, server: v.example, port: 443, uuid: u, tls: true, reality-opts: {public-key: key, short-id: }}\n  - {type: vless, name: ShortNull, server: v.example, port: 443, uuid: u, tls: true, reality-opts: {public-key: key, short-id: null}}\n  - {type: vless, name: ShortQuoted, server: v.example, port: 443, uuid: u, tls: true, reality-opts: {public-key: key, short-id: '08'}}\nproxy-groups: []\n",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "Merge",
+                  "type": "ss",
+                  "port": 443,
+                  "password": "12345",
+                  "extension": {
+                    "nan": null,
+                    "infinity": null
+                  }
+                },
+                {
+                  "name": "Short08",
+                  "reality-opts": {
+                    "short-id": "08"
+                  }
+                },
+                {
+                  "name": "Short0088",
+                  "reality-opts": {
+                    "short-id": "0088"
+                  }
+                },
+                {
+                  "name": "ShortEmpty",
+                  "reality-opts": {
+                    "short-id": ""
+                  }
+                },
+                {
+                  "name": "ShortNull",
+                  "reality-opts": {
+                    "short-id": null
+                  }
+                },
+                {
+                  "name": "ShortQuoted",
+                  "reality-opts": {
+                    "short-id": "08"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-input-clash-flow-recovery",
+    "source": "backend/src/core/proxy-utils/parsers/index.js:2543-2626; backend/src/core/proxy-utils/preprocessors/index.js:5-37,109-137; backend/src/utils/yaml.js; backend/src/core/proxy-utils/index.js:51-123,756-1205",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{type: http, name: Flow, server: h.example, port: 8080, headers: {X-Test: literal}}\n{type:'not-real',name:'unsupported'}\n{type:3}\nnull\n{type:false}\n{type:'ss',broken\nss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture\n{type:'hysteria2',name:'Dropped',server:'h.example',port:443,password:'p',obfs:'salamander'}\n{type:'hysteria2',name:'Compat',server:'h.example',port:443,password:'p',obfs:'raw'}",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "type": "http",
+                  "name": "Flow"
+                },
+                {
+                  "type": "ss",
+                  "name": "fixture"
+                },
+                {
+                  "type": "hysteria2",
+                  "name": "Compat",
+                  "obfs": "salamander",
+                  "obfs-password": "raw"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "proxies: []\nproxies: invalid\nss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "type": "ss",
+                  "name": "fixture"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "proxies:\n  - {type: ss, name: Tagged, server: 127.0.0.1, port: 8388, cipher: aes-128-gcm, password: !<str> 0008}\n",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "type": "ss",
+                  "name": "Tagged"
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-input-clash-preprocess-precedence",
+    "source": "backend/src/core/proxy-utils/parsers/index.js:2543-2626; backend/src/core/proxy-utils/preprocessors/index.js:5-37,109-137; backend/src/utils/yaml.js; backend/src/core/proxy-utils/index.js:51-123,756-1205",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"ss\",\"name\":\"discarded\",\"server\":\"127.0.0.1\",\"port\":8388,\"proxies\":[]}",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": []
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "proxy-groups: []\ncomment: proxies\n",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": []
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "proxies: invalid\nproxy-groups: []\n",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": []
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-input-clash-cache-reset",
+    "source": "backend/src/core/proxy-utils/parsers/index.js:2543-2626; backend/src/core/proxy-utils/preprocessors/index.js:5-37,109-137; backend/src/utils/yaml.js; backend/src/core/proxy-utils/index.js:51-123,756-1205",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "First = HTTPS, first.example, 443, u, \"p\", fast-open=true\nBefore = http, before.example, 80, username=user, password=password\n{type:\"direct\",name:\"ResetClash\"}\nAfter = http, after.example, 80, username=user, password=password",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                {
+                  "name": "First",
+                  "type": "http",
+                  "tls": true
+                },
+                {
+                  "name": "Before",
+                  "type": "http"
+                },
+                {
+                  "name": "ResetClash",
+                  "type": "direct"
+                },
+                {
+                  "name": "After",
+                  "type": "http",
+                  "username": "user",
+                  "password": "password"
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P05-local-clash-paths",
+    "source": "backend/src/core/proxy-utils/parsers/index.js:2543-2626; backend/src/core/proxy-utils/preprocessors/index.js:5-37,109-137; backend/src/utils/yaml.js; backend/src/core/proxy-utils/index.js:51-123,756-1205",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/preview/sub",
+        "body": {
+          "name": "clash-preview",
+          "source": "local",
+          "content": "proxies:\n  - {type: ss, name: fixture, server: 127.0.0.1, port: 8388, cipher: aes-128-gcm, password: pass}\n",
+          "process": []
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "status": "success",
+            "data": {
+              "original": [
+                {
+                  "name": "fixture",
+                  "type": "ss",
+                  "id": 0,
+                  "_subName": "clash-preview"
+                }
+              ],
+              "processed": [
+                {
+                  "name": "fixture",
+                  "type": "ss"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/subs",
+        "body": {
+          "name": "native-clash",
+          "source": "local",
+          "content": "proxies:\n  - {type: ss, name: fixture, server: 127.0.0.1, port: 8388, cipher: aes-128-gcm, password: pass}\n",
+          "process": [],
+          "unknown": {
+            "keep": true
+          }
+        },
+        "expect": {
+          "status": 201
+        }
+      },
+      {
+        "path": "/download/native-clash/URI",
+        "expect": {
+          "status": 200,
+          "body": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388?udp=1#fixture"
+        }
+      },
+      {
+        "path": "/download/native-clash/JSON",
+        "expect": {
+          "status": 200,
+          "json_contains": [
+            {
+              "name": "fixture",
+              "type": "ss",
+              "_subName": "native-clash"
+            }
+          ]
+        }
+      },
+      {
+        "path": "/download/native-clash/V2Ray",
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/sub/native-clash?mode=permanent",
+        "expect": {
+          "status": 200
+        }
+      }
+    ]
+  },
+  {
     "id": "P02-input-loon-native",
     "source": "backend/src/core/proxy-utils/parsers/index.js:2629-2915; backend/src/core/proxy-utils/parsers/peggy/loon.js; backend/src/core/proxy-utils/parsers/peggy/qx.js; backend/src/core/proxy-utils/index.js:65,756",
     "steps": [

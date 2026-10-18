@@ -117,8 +117,9 @@ fn normalized_port(raw: &str) -> Value {
 }
 
 fn normalize_endpoint(proxy: &mut Value) -> Result<(), Error> {
-    if let Some(server) = proxy["server"].as_str() {
-        let server = codec::trim(server);
+    if truthy(&proxy["server"]) {
+        let server = field_text(proxy, "server");
+        let server = codec::trim(&server);
         let server = server.strip_prefix('[').unwrap_or(server);
         proxy["server"] = json!(server.strip_suffix(']').unwrap_or(server));
     }
@@ -284,7 +285,7 @@ fn ech_options(raw: &str) -> Option<Value> {
     }
 }
 
-fn vmess_security(value: &Value) -> Value {
+pub(crate) fn vmess_security(value: &Value) -> Value {
     let cipher = value.as_str().map(codec::trim).unwrap_or("").to_lowercase();
     json!(match cipher.as_str() {
         "auto" | "none" | "zero" | "aes-128-gcm" | "chacha20-poly1305" => cipher,
@@ -2445,8 +2446,8 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
     let raw = String::from_utf16(&codec::units(raw)).map_err(|_| {
         Error::Pending("URI parsing of isolated UTF-16 surrogates is not implemented yet")
     })?;
-    let raw = preprocess(&raw);
-    let full_config = crate::surge::is_full_config(&raw);
+    let clash = crate::clash::Parser::new()?;
+    let raw = clash.preprocess(&raw).unwrap_or_else(|| preprocess(&raw));
     let mut proxies = Vec::new();
     let mut last_parser = None;
     for line in raw
@@ -2456,7 +2457,11 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
     {
         let before = proxies.len();
         let mut parsed_classic = None;
-        if line.starts_with("ss://") {
+        if let Some((mut proxy, parser)) = crate::classic::cached(line, last_parser)? {
+            normalize_endpoint(&mut proxy)?;
+            proxies.push(proxy);
+            parsed_classic = Some(parser);
+        } else if line.starts_with("ss://") {
             if let Some(proxy) = ss(line)? {
                 proxies.push(proxy);
             }
@@ -2507,21 +2512,21 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
             if let Some(proxy) = proxy_uri(line)? {
                 proxies.push(proxy);
             }
-        } else if let Some((mut proxy, parser)) = crate::classic::parse(line, last_parser)? {
+        } else if let Some(mut proxy) = clash.line(line)? {
+            normalize_endpoint(&mut proxy)?;
+            proxies.push(proxy);
+        } else if let Some((mut proxy, parser)) = crate::classic::parse(line)? {
             normalize_endpoint(&mut proxy)?;
             proxies.push(proxy);
             parsed_classic = Some(parser);
-        } else if full_config && line.starts_with('[') && line.ends_with(']') {
-            continue;
-        } else if line.contains("proxies:") || line.starts_with('[') || line.starts_with('{') {
-            return Err(Error::Pending(
-                "This subscription format is not implemented yet",
-            ));
         }
         if proxies.len() > before {
             last_parser = parsed_classic;
         }
     }
+    proxies.retain(|proxy| {
+        proxy["type"] != "hysteria2" || !truthy(&proxy["obfs"]) || truthy(&proxy["obfs-password"])
+    });
     Ok(proxies)
 }
 

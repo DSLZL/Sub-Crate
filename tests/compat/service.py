@@ -1666,7 +1666,7 @@ def main():
     try:
         report.update(source_provenance(environment, output))
         report["sources"] = {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
-                             for path in [ROOT / "rust/Cargo.toml", ROOT / "rust/Cargo.lock", *sorted((ROOT / "rust/src").glob("*.rs"))]}
+                             for path in [ROOT / "rust/Cargo.toml", ROOT / "rust/Cargo.lock", *sorted((ROOT / "rust/src").glob("*.rs")), *sorted((ROOT / "rust/vendor").iterdir())]}
         report["harness_sha256"] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
         version = execute([args.node, "--version"], ROOT, environment, output, "node-version")
         assert version.returncode == 0 and version.stdout.strip() == "v24.16.0", "Pinned Node required"
@@ -1742,7 +1742,8 @@ def main():
                 if kind == "rust":
                     before_pending = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")}
                     pending_steps = [
-                        {"method": "POST", "path": "/api/proxy/parse", "body": {"data": '{"type":"ss","name":"later","server":"127.0.0.1","port":443,"cipher":"none","password":"password"}', "client": "JSON"}},
+                        {"method": "POST", "path": "/api/proxy/parse", "body": {"data": '{type:"ss",name:"nonfinite",server:"127.0.0.1",port:443,extra:NaN}', "client": "JSON"}},
+                        {"method": "POST", "path": "/api/proxy/parse", "body": {"data": '{type: ss, name: cyclic, server: 127.0.0.1, port: 443, extra: &loop {self: *loop}}', "client": "JSON"}},
                         {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://none:p@127.0.0.1:443?plugin=shadow-tls%3Bversion%3Dbad", "client": "URI"}},
                         {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ssr://aG9zdDo6b3JpZ2luOmFlcy0xMjgtY2ZiOnBsYWluOmNBLz8=", "client": "URI"}},
                         {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "Huge = snell, 127.0.0.1, 443, psk=p, version=" + "9" * 400, "client": "JSON"}},
