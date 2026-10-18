@@ -1,6 +1,6 @@
-use serde_json::Value;
 use base64::{Engine, engine::general_purpose};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
+use serde_json::Value;
 
 pub const COMPONENT: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'-')

@@ -1,4 +1,5 @@
 use crate::json as codec;
+use base64::{Engine, engine::general_purpose};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
@@ -14,8 +15,8 @@ pub struct Store {
 
 pub fn decode(text: &str) -> Result<Value, String> {
     let value: Value = codec::parse(text).or_else(|_| {
-        let bytes = codec::decode_base64(text)
-            .map_err(|_| "Invalid JSON or Base64 backup".to_owned())?;
+        let bytes =
+            codec::decode_base64(text).map_err(|_| "Invalid JSON or Base64 backup".to_owned())?;
         codec::parse(&String::from_utf8_lossy(&bytes)).map_err(|_| "Invalid backup JSON".to_owned())
     })?;
     if !value.is_object() {
