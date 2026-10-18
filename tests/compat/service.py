@@ -1724,8 +1724,6 @@ def main():
         baseline_root = json.loads((output / "node-state/root.json").read_text(encoding="utf-8"))
         _, conversion_cases = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "conversion-local")
         _, conversion_restart = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "conversion-local-restart")
-        _, conversion_contracts = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "conversion")
-        ssd_input = next(case for case in conversion_contracts if case["id"] == "P02-input-ssd")["steps"][0]["body"]
         conversion_state = {}
         conversion_responses = {}
         for kind in ("node", "rust"):
@@ -1745,8 +1743,8 @@ def main():
                     before_pending = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")}
                     pending_steps = [
                         {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "trojan://secret@127.0.0.1:443#later", "client": "JSON"}},
-                        {"method": "POST", "path": "/api/proxy/parse", "body": ssd_input},
                         {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://none:p@127.0.0.1:443?plugin=shadow-tls%3Bversion%3Dbad", "client": "URI"}},
+                        {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ssr://aG9zdDo6b3JpZ2luOmFlcy0xMjgtY2ZiOnBsYWluOmNBLz8=", "client": "URI"}},
                         {"method": "POST", "path": "/api/preview/sub", "body": {"name": "later", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#later", "process": [{"type": "Script Operator", "args": {"mode": "script", "content": "$substore.write('must-not-write', true);"}}]}},
                         {"path": "/download/native-local/URI?$options=response-hook"},
                     ]

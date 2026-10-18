@@ -58,7 +58,7 @@ fn finite_int(raw: &str) -> Result<Value, Error> {
         .ok()
         .filter(|number| number.is_finite())
         .ok_or(Error::Pending(
-            "Non-finite SS numeric fields are not implemented yet",
+            "Non-finite proxy numeric fields are not implemented yet",
         ))?;
     Ok(json!(number))
 }
@@ -100,6 +100,263 @@ fn path_ed(path: &str) -> (String, Option<String>) {
         format!("{base}?{}", kept.join("&"))
     };
     (path, value)
+}
+
+fn normalized_port(raw: &str) -> Value {
+    match raw.parse::<u16>() {
+        Ok(number)
+            if raw.bytes().all(|byte| byte.is_ascii_digit())
+                && (raw.len() <= 4
+                    || (raw.len() == 5
+                        && (!raw.starts_with('0')
+                            || raw.bytes().all(|byte| byte <= b'5')))) =>
+        {
+            json!(number)
+        }
+        _ => json!(raw),
+    }
+}
+
+fn normalize_endpoint(proxy: &mut Value) {
+    if let Some(server) = proxy["server"].as_str() {
+        let server = codec::trim(server);
+        let server = server.strip_prefix('[').unwrap_or(server);
+        proxy["server"] = json!(server.strip_suffix(']').unwrap_or(server));
+    }
+    normalize(proxy);
+}
+
+fn proxy_uri(line: &str) -> Result<Option<Value>, Error> {
+    let (scheme, raw) = line.split_once("://").unwrap();
+    let (raw, fragment) = raw
+        .split_once('#')
+        .map_or((raw, None), |(raw, name)| (raw, Some(name)));
+    let name = match fragment {
+        Some(fragment) => match component(fragment) {
+            Some(name) => Some(name),
+            None => return Ok(None),
+        },
+        None => None,
+    };
+    let raw = raw.split('?').next().unwrap();
+    let legacy = scheme == "socks";
+    let raw = if legacy {
+        raw
+    } else {
+        raw.strip_suffix('/').unwrap_or(raw)
+    };
+    let (auth, address) = if legacy {
+        raw.rsplit_once('@')
+            .map_or((None, raw), |(auth, address)| (Some(auth), address))
+    } else {
+        raw.split_once('@')
+            .filter(|(auth, _)| auth.contains(':'))
+            .map_or((None, raw), |(auth, address)| (Some(auth), address))
+    };
+    let (server, port) = address
+        .rsplit_once(':')
+        .filter(|(_, port)| {
+            !port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit())
+        })
+        .map_or((address, None), |(server, port)| (server, Some(port)));
+    let tls = matches!(scheme, "https" | "socks5+tls");
+    let port = if let Some(port) = port {
+        finite_int(port)?
+    } else if tls {
+        json!(443)
+    } else if scheme == "http" {
+        json!(80)
+    } else {
+        return Ok(None);
+    };
+    let proxy_type = if matches!(scheme, "http" | "https") {
+        "http"
+    } else {
+        "socks5"
+    };
+    let mut proxy = json!({"name":name.unwrap_or_else(|| codec::encode(&format!("{} {server}:{}", if legacy { "socks" } else { proxy_type }, codec::js_string(&port)))), "type":proxy_type});
+    if !legacy {
+        proxy["tls"] = json!(tls);
+    }
+    proxy["server"] = json!(codec::encode(server));
+    proxy["port"] = port;
+    if let Some(auth) = auth {
+        if legacy {
+            if !auth.is_empty() {
+                let Some(auth) = component(auth).and_then(|auth| decoded(&auth)) else {
+                    return Ok(None);
+                };
+                let mut credentials = auth.split(':');
+                proxy["username"] = json!(codec::encode(credentials.next().unwrap()));
+                if let Some(password) = credentials.next() {
+                    proxy["password"] = json!(codec::encode(password));
+                }
+            }
+        } else {
+            let (username, password) = auth.split_once(':').unwrap();
+            let (Some(username), Some(password)) = (component(username), component(password)) else {
+                return Ok(None);
+            };
+            proxy["username"] = json!(username);
+            proxy["password"] = json!(password);
+        }
+    }
+    proxy["udp"] = json!(true);
+    normalize_endpoint(&mut proxy);
+    Ok(Some(proxy))
+}
+
+fn ssr(line: &str) -> Result<Option<Value>, Error> {
+    let Some(raw) = decoded(&line[6..]) else {
+        return Ok(None);
+    };
+    let Some(index) = raw.find(":origin").or_else(|| raw.find(":auth_")) else {
+        return Ok(None);
+    };
+    let Some((server, port)) = raw[..index].rsplit_once(':') else {
+        return Ok(None);
+    };
+    let Some((protocol, parameters)) = raw[index + 1..].split_once("/?") else {
+        return Ok(None);
+    };
+    let fields: Vec<_> = protocol.split(':').collect();
+    if fields.len() < 4 {
+        return Ok(None);
+    }
+    let Some(password) = decoded(fields[3]) else {
+        return Ok(None);
+    };
+    let mut proxy = json!({"type":"ssr", "server":codec::encode(server), "port":port, "protocol":codec::encode(fields[0]), "cipher":codec::encode(&fields[1].to_lowercase()), "obfs":codec::encode(fields[2]), "password":codec::encode(&password)});
+    let mut options = Map::new();
+    let parameters: Vec<_> = parameters.split('&').collect();
+    if parameters.len() > 1 {
+        for parameter in parameters {
+            let mut pair = parameter.split('=');
+            let key = pair.next().unwrap();
+            let Some(value) = pair.next() else {
+                return Ok(None);
+            };
+            let value = codec::trim(value);
+            if !value.is_empty() && value != "(null)" {
+                options.insert(key.to_owned(), json!(value));
+            }
+        }
+    }
+    let options = Value::Object(options);
+    proxy["name"] = if truthy(&options["remarks"]) {
+        json!(codec::encode(
+            &decoded(options["remarks"].as_str().unwrap()).unwrap_or_default()
+        ))
+    } else {
+        proxy["server"].clone()
+    };
+    for (field, raw) in [
+        (
+            "protocol-param",
+            options
+                .get("protoparam")
+                .filter(|value| truthy(value))
+                .or_else(|| options.get("protocolparam")),
+        ),
+        ("obfs-param", options.get("obfsparam")),
+    ] {
+        let text = decoded(raw.and_then(Value::as_str).unwrap_or("")).unwrap_or_default();
+        let text: String = text.chars().filter(|c| !codec::is_space(*c)).collect();
+        if !text.is_empty() {
+            proxy[field] = json!(codec::encode(&text));
+        }
+    }
+    proxy["udp"] = json!(true);
+    if port.is_empty() {
+        return Err(Error::Pending(
+            "Non-finite proxy numeric fields are not implemented yet",
+        ));
+    }
+    proxy["port"] = normalized_port(port);
+    normalize_endpoint(&mut proxy);
+    Ok(Some(proxy))
+}
+
+fn ssd(raw: &str) -> Option<String> {
+    let document = codec::parse(&decoded(raw.split("ssd://").nth(1)?)?).ok()?;
+    let mut method = document.get("encryption");
+    let mut password = document.get("password");
+    let mut port = document.get("port");
+    let mut lines = Vec::new();
+    for (index, server) in document["servers"].as_array()?.iter().enumerate() {
+        for (field, value) in [
+            ("encryption", &mut method),
+            ("password", &mut password),
+            ("port", &mut port),
+        ] {
+            if let Some(next) = server.get(field).filter(|value| truthy(value)) {
+                *value = Some(next);
+            }
+        }
+        let text = |value: Option<&Value>| {
+            codec::text(&value.map_or_else(|| "undefined".to_owned(), codec::js_string))
+        };
+        let auth = STANDARD.encode(format!("{}:{}", text(method), text(password)));
+        let plugin = if truthy(&server["plugin_options"]) {
+            format!(
+                "/?plugin={}",
+                codec::uri_component(&format!(
+                    "{};{}",
+                    field_text(server, "plugin"),
+                    field_text(server, "plugin_options")
+                ))
+                .ok()?
+            )
+        } else {
+            String::new()
+        };
+        let name = if truthy(&server["remarks"]) {
+            text(server.get("remarks"))
+        } else {
+            index.to_string()
+        };
+        lines.push(format!(
+            "ss://{auth}@{}:{}{plugin}#{name}",
+            text(server.get("server")),
+            text(port)
+        ));
+    }
+    Some(lines.join("\n"))
+}
+
+fn preprocess(raw: &str) -> String {
+    if raw.starts_with("ssd://") {
+        return ssd(raw).unwrap_or_else(|| raw.to_owned());
+    }
+    let compact: String = raw.chars().filter(|c| !codec::is_space(*c)).collect();
+    let unpadded = compact
+        .strip_suffix("==")
+        .or_else(|| compact.strip_suffix('='))
+        .unwrap_or(&compact);
+    let alphabet = |extra: &[u8]| {
+        unpadded
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || extra.contains(&byte))
+    };
+    if (alphabet(b"+/") || alphabet(b"-_"))
+        && let Some(text) = decoded(raw)
+        && text.split(['\r', '\n', '\u{2028}', '\u{2029}']).any(|line| {
+            let word = |c: u8| c.is_ascii_alphanumeric() || c == b'_';
+            let prefix = line.bytes().take_while(|byte| word(*byte)).count();
+            if prefix == 0 {
+                return false;
+            }
+            let tail = &line[prefix..];
+            tail.strip_prefix("://")
+                .is_some_and(|tail| tail.bytes().next().is_some_and(word))
+                || codec::trim(tail).strip_prefix('=').is_some_and(|tail| {
+                    codec::trim(tail).bytes().next().is_some_and(word)
+                })
+        })
+    {
+        return text;
+    }
+    raw.to_owned()
 }
 
 fn ss(line: &str) -> Result<Option<Value>, Error> {
@@ -309,17 +566,7 @@ fn ss(line: &str) -> Result<Option<Value>, Error> {
         digits.clone()
     };
     if !digits.is_empty() {
-        proxy["port"] = match digits.parse::<u16>() {
-            Ok(number)
-                if digits.len() <= 4
-                    || (digits.len() == 5
-                        && (!digits.starts_with('0')
-                            || digits.bytes().all(|byte| byte <= b'5'))) =>
-            {
-                json!(number)
-            }
-            _ => json!(digits),
-        };
+        proxy["port"] = normalized_port(&digits);
     }
     if let Some((cipher, password)) = user.split_once(':') {
         proxy["cipher"] = json!(cipher.to_lowercase());
@@ -475,12 +722,7 @@ fn ss(line: &str) -> Result<Option<Value>, Error> {
         }
     }
     proxy["name"] = json!(name.unwrap_or_else(|| format!("SS {name_server}:{name_port}")));
-    if let Some(server) = proxy["server"].as_str() {
-        let server = codec::trim(server);
-        let server = server.strip_prefix('[').unwrap_or(server);
-        proxy["server"] = json!(server.strip_suffix(']').unwrap_or(server));
-    }
-    normalize_ss(&mut proxy);
+    normalize_endpoint(&mut proxy);
     for field in ["tls", "sni", "client-fingerprint", "alpn"] {
         if proxy[field].is_null() {
             proxy.as_object_mut().unwrap().shift_remove(field);
@@ -489,7 +731,7 @@ fn ss(line: &str) -> Result<Option<Value>, Error> {
     Ok(Some(proxy))
 }
 
-fn normalize_ss(proxy: &mut Value) {
+fn normalize(proxy: &mut Value) {
     let keys: Vec<_> = proxy.as_object().unwrap().keys().cloned().collect();
     for key in keys {
         let lower = key.to_lowercase();
@@ -600,13 +842,10 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
     if raw.starts_with("<!DOCTYPE html>") {
         return Ok(Vec::new());
     }
-    // shortcut: SSD imports must fail explicitly until their native M3 preprocessor is ported.
-    if raw.starts_with("ssd://") {
-        return Err(Error::Pending("SSD preprocessing is not implemented yet"));
-    }
     let raw = String::from_utf16(&codec::units(raw)).map_err(|_| {
         Error::Pending("URI parsing of isolated UTF-16 surrogates is not implemented yet")
     })?;
+    let raw = preprocess(&raw);
     let mut proxies = Vec::new();
     for line in raw
         .split('\n')
@@ -617,14 +856,18 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
             if let Some(proxy) = ss(line)? {
                 proxies.push(proxy);
             }
+        } else if line.starts_with("ssr://") {
+            if let Some(proxy) = ssr(line)? {
+                proxies.push(proxy);
+            }
+        } else if line.split_once("://").is_some_and(|(scheme, _)| {
+            ["http", "https", "socks5", "socks5+tls", "socks"].contains(&scheme)
+        }) {
+            if let Some(proxy) = proxy_uri(line)? {
+                proxies.push(proxy);
+            }
         } else if line.split_once("://").is_some_and(|(scheme, _)| {
             [
-                "socks5+tls",
-                "socks5",
-                "socks",
-                "http",
-                "https",
-                "ssr",
                 "vmess",
                 "vless",
                 "trojan",
@@ -649,7 +892,6 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
             || line.starts_with('[')
             || line.starts_with('{')
             || line.contains(" = ")
-            || decoded(line).is_some_and(|text| text.contains("://"))
         {
             return Err(Error::Pending(
                 "This subscription format is not implemented yet",
@@ -714,6 +956,56 @@ fn port_text(proxy: &Value) -> String {
 }
 
 fn uri(proxy: &Value) -> Option<String> {
+    let server = codec::text(&field_text(proxy, "server"));
+    let server = if server.parse::<Ipv6Addr>().is_ok() {
+        format!("[{server}]")
+    } else {
+        server
+    };
+    let port = port_text(proxy);
+    match proxy["type"].as_str()? {
+        "socks5" => {
+            let credentials = |field: &str| {
+                proxy
+                    .get(field)
+                    .filter(|value| !value.is_null())
+                    .map(codec::js_string)
+                    .unwrap_or_default()
+            };
+            let auth = STANDARD.encode(codec::text(&format!(
+                "{}:{}",
+                credentials("username"),
+                credentials("password")
+            )));
+            return Some(format!(
+                "socks://{}@{server}:{port}#{}",
+                codec::uri_component(&auth).ok()?,
+                codec::text(&field_text(proxy, "name"))
+            ));
+        }
+        "ssr" => {
+            let text = |field| codec::text(&field_text(proxy, field));
+            let mut output = format!(
+                "{server}:{port}:{}:{}:{}:{}/?remarks={}",
+                text("protocol"),
+                text("cipher"),
+                text("obfs"),
+                STANDARD.encode(text("password")),
+                STANDARD.encode(text("name"))
+            );
+            for (field, param) in [
+                ("obfs-param", "obfsparam"),
+                ("protocol-param", "protoparam"),
+            ] {
+                if truthy(&proxy[field]) {
+                    output.push_str(&format!("&{param}={}", STANDARD.encode(text(field))));
+                }
+            }
+            return Some(format!("ssr://{}", STANDARD.encode(output)));
+        }
+        "ss" => {}
+        _ => return None,
+    }
     let cipher = proxy["cipher"].as_str().unwrap_or("undefined");
     let password = proxy["password"].as_str().unwrap_or("undefined");
     let auth = if cipher.starts_with("2022-blake3-") {
@@ -725,13 +1017,6 @@ fn uri(proxy: &Value) -> Option<String> {
     } else {
         STANDARD.encode(codec::text(&format!("{cipher}:{password}")))
     };
-    let server = codec::text(proxy["server"].as_str().unwrap_or("undefined"));
-    let server = if server.parse::<Ipv6Addr>().is_ok() {
-        format!("[{server}]")
-    } else {
-        server
-    };
-    let port = port_text(proxy);
     let mut output = format!("ss://{auth}@{server}:{port}");
     let mut query = Vec::new();
     if truthy(&proxy["plugin"]) {
@@ -971,7 +1256,8 @@ pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str) -> Result<Valu
         }
     }
     proxies.retain(|proxy| {
-        !(proxy["tls"] == true
+        !(proxy["type"] == "ss"
+            && proxy["tls"] == true
             && proxy.get("plugin").is_none_or(Value::is_null)
             && proxy["network"]
                 .as_str()
@@ -983,7 +1269,8 @@ pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str) -> Result<Valu
             .is_none_or(|name| codec::trim(name).is_empty())
         {
             proxy["name"] = json!(format!(
-                "ss {}:{}",
+                "{} {}:{}",
+                field_text(proxy, "type"),
                 proxy["server"].as_str().unwrap_or("undefined"),
                 port_text(proxy)
             ));
