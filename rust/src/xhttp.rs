@@ -420,6 +420,9 @@ fn parse_download(raw: &Value) -> Option<Value> {
             result["reality-opts"] = options;
         }
     }
+    if security == "reality" && !reality.is_object() {
+        result["reality-opts"] = json!({});
+    }
     let settings = &raw["xhttpSettings"];
     if settings.is_object() {
         for key in ["path", "host", "mode"] {

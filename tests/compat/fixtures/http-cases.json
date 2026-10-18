@@ -2770,22 +2770,45 @@
         },
         "expect": {
           "status": 200,
-          "json_contains": {
+          "json": {
             "status": "success",
             "data": {
-              "par_res": [
-                {
-                  "name": "RealityMarker",
-                  "xhttp-opts": {
-                    "download-settings": {
-                      "tls": true,
-                      "reality-opts": {},
-                      "path": "/"
-                    }
-                  }
-                }
-              ]
+              "par_res": []
             }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=reality&sid=08#MissingKey\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?type=xhttp&extra=%7B%22downloadSettings%22%3A%7B%22security%22%3A%22reality%22%7D%7D#MissingDownloadKey\nvless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443#Recovered",
+          "client": "URI",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": ["vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?security=none&type=tcp&packetEncoding=xudp#Recovered"]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "vless://b831381d-6324-4d53-ad4f-8cda48b30811@127.0.0.1:443?type=xhttp&mode=stream-one&extra=%7B%22downloadSettings%22%3A%7B%22address%22%3A%22down.example%22%7D%7D#InvalidSplit",
+          "client": "V2Ray",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {"par_res": ""}
           }
         }
       }

@@ -3481,12 +3481,38 @@ pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str) -> Result<Valu
         }
     }
     proxies.retain(|proxy| {
-        !(proxy["type"] == "ss"
+        if proxy["type"] == "ss"
             && proxy["tls"] == true
             && proxy.get("plugin").is_none_or(Value::is_null)
             && proxy["network"]
                 .as_str()
-                .is_none_or(|network| codec::trim(network).eq_ignore_ascii_case("tcp")))
+                .is_none_or(|network| codec::trim(network).eq_ignore_ascii_case("tcp"))
+        {
+            return false;
+        }
+        if proxy["type"] == "vless" {
+            let options = &proxy["xhttp-opts"];
+            for (download, reality) in [
+                (false, &proxy["reality-opts"]),
+                (true, &options["download-settings"]["reality-opts"]),
+            ] {
+                if truthy(reality)
+                    && nonblank(&reality["public-key"]).is_none()
+                    && !(download
+                        && nonblank(&proxy["reality-opts"]["public-key"]).is_some()
+                        && reality["public-key"] == "")
+                {
+                    return false;
+                }
+            }
+            if proxy["network"] == "xhttp"
+                && options["mode"] == "stream-one"
+                && truthy(&options["download-settings"])
+            {
+                return false;
+            }
+        }
+        true
     });
     for proxy in &mut proxies {
         if proxy["name"]
