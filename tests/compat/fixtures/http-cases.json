@@ -1,5 +1,39 @@
 [
   {
+    "id": "P02-input-ss-unicode-ipv6",
+    "source": "backend/src/core/proxy-utils/parsers/index.js:49,57,241; backend/src/core/proxy-utils/index.js:65,756; backend/src/core/proxy-utils/producers/uri.js:800",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"content": "ss://%%%\ninvalid://missing\nss://AES-128-GCM:p%3Aa%40ss@[2001:db8::1]:0443?udp=OFF&uot=1&tfo=true#%E4%B8%AD%E6%96%87%F0%9F%99%82\nss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#%GG", "platform": "JSON", "type": "internal"}, "expect": {"status": 200, "json": {"status": "success", "data": {"par_res": [{"type":"ss", "skip-cert-verify":false, "udp":false, "server":"2001:db8::1", "port":443, "cipher":"aes-128-gcm", "password":"p:a@ss", "udp-over-tcp":true, "tfo":true, "name":"中文🙂"}]}}}},
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://AES-128-GCM:p%3Aa%40ss@[2001:db8::1]:0443?udp=OFF&uot=1&tfo=true#%E4%B8%AD%E6%96%87%F0%9F%99%82", "client": "URI"}, "expect": {"status": 200, "json": {"status": "success", "data": {"par_res": "ss://YWVzLTEyOC1nY206cDphQHNz@[2001:db8::1]:443?uot=1&tfo=1&udp=0#%E4%B8%AD%E6%96%87%F0%9F%99%82"}}}}
+    ]
+  },
+  {
+    "id": "P05-local-subscription-paths",
+    "source": "backend/src/restful/preview.js:79; backend/src/restful/download.js:45,85; backend/src/restful/sync.js:271; backend/src/restful/response.js:8",
+    "steps": [
+      {"method": "POST", "path": "/api/subs", "body": {"name":"native-local", "displayName":"本地🙂", "source":"local", "content":"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#export-fixture", "process":[], "kept":{"zero":0,"flag":false,"excludedScript":"require('node:fs')\r\n"}}, "expect": {"status":201, "json_contains":{"status":"success", "data":{"name":"native-local", "kept":{"zero":0,"flag":false,"excludedScript":"require('node:fs')\r\n"}}}}},
+      {"path":"/download/native-local/URI?target=Clash", "expect":{"status":200, "headers":{"content-type":"text/plain; charset=utf-8"}, "body":"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388?udp=1#export-fixture"}},
+      {"path":"/download/native-local/URI?platform=JSON", "expect":{"status":200, "headers":{"content-type":"application/json; charset=utf-8"}, "body":"[\n  {\n    \"type\": \"ss\",\n    \"skip-cert-verify\": false,\n    \"udp\": true,\n    \"server\": \"127.0.0.1\",\n    \"port\": 8388,\n    \"cipher\": \"aes-128-gcm\",\n    \"password\": \"pass\",\n    \"name\": \"export-fixture\",\n    \"_subName\": \"native-local\",\n    \"_subDisplayName\": \"本地🙂\"\n  }\n]"}},
+      {"method":"POST", "path":"/API/PrEvIeW/SuB/?target=URI", "body":{"name":"native-local", "displayName":"本地🙂", "source":"local", "content":"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#export-fixture", "process":[]}, "expect":{"status":200, "json":{"status":"success", "data":{"original":[{"type":"ss","skip-cert-verify":false,"udp":true,"server":"127.0.0.1","port":8388,"cipher":"aes-128-gcm","password":"pass","name":"export-fixture","id":0,"_subName":"native-local","_subDisplayName":"本地🙂"}], "processed":[{"type":"ss","skip-cert-verify":false,"udp":true,"server":"127.0.0.1","port":8388,"cipher":"aes-128-gcm","password":"pass","name":"export-fixture","id":0,"_subName":"native-local","_subDisplayName":"本地🙂"}]}}}},
+      {"method":"OPTIONS", "path":"/API/PROXY/PARSE", "expect":{"status":200,"headers":{"allow":"POST"},"body":"POST"}},
+      {"method":"OPTIONS", "path":"/api/preview/sub", "expect":{"status":200,"headers":{"allow":"POST"},"body":"POST"}},
+      {"method":"HEAD", "path":"/DOWNLOAD/native-local/URI/", "expect":{"status":200,"body":""}},
+      {"path":"/download/native-local?target=unsupported", "expect":{"status":500,"json":{"status":"failed","error":{"code":"INTERNAL_SERVER_ERROR","type":"InternalServerError","message":"Failed to download subscription: native-local","details":"Reason: Target platform: unsupported is not supported!"}}}},
+      {"path":"/download/missing/URI", "expect":{"status":404,"json":{"status":"failed","error":{"code":"RESOURCE_NOT_FOUND","type":"ResourceNotFoundError","message":"Subscription missing does not exist!"}}}},
+      {"method":"POST", "path":"/api/subs", "body":{"name":"native-empty","source":"local","content":""}, "expect":{"status":201}},
+      {"path":"/download/native-empty/JSON", "expect":{"status":500,"json":{"status":"failed","error":{"code":"INTERNAL_SERVER_ERROR","type":"InternalServerError","message":"Failed to download subscription: native-empty","details":"Reason: 订阅 native-empty 中不含有效节点"}}}},
+      {"method":"DELETE", "path":"/api/sub/native-empty?mode=permanent", "expect":{"status":200}}
+    ]
+  },
+  {
+    "id": "P05-local-subscription-restart",
+    "source": "backend/src/restful/download.js:85; backend/src/restful/subscriptions.js:180; backend/src/restful/sync.js:271",
+    "steps": [
+      {"path":"/download/native-local/URI", "expect":{"status":200,"body":"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388?udp=1#export-fixture"}},
+      {"path":"/api/sub/native-local", "expect":{"status":200,"json_contains":{"status":"success","data":{"name":"native-local","displayName":"本地🙂","kept":{"zero":0,"flag":false,"excludedScript":"require('node:fs')\r\n"}}}}}
+    ]
+  },
+  {
     "id": "E01-env-basic-share-sequence",
     "source": "backend/src/restful/miscs.js:125; backend/src/utils/env.js; frontend/src/api/env/index.ts",
     "steps": [

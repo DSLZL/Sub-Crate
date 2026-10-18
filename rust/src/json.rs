@@ -1,4 +1,43 @@
 use serde_json::Value;
+use base64::{Engine, engine::general_purpose};
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
+
+pub const COMPONENT: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'_')
+    .remove(b'.')
+    .remove(b'!')
+    .remove(b'~')
+    .remove(b'*')
+    .remove(b'\'')
+    .remove(b'(')
+    .remove(b')');
+
+pub fn uri_component(value: &str) -> Result<String, std::string::FromUtf16Error> {
+    let value = String::from_utf16(&units(value))?;
+    Ok(utf8_percent_encode(&value, COMPONENT).to_string())
+}
+
+pub fn decode_base64(text: &str) -> Result<Vec<u8>, base64::DecodeError> {
+    // js-base64 removes padding/noise before Buffer decodes the remaining sextets.
+    let mut encoded: String = text
+        .chars()
+        .filter_map(|c| match c {
+            '-' => Some('+'),
+            '_' => Some('/'),
+            c if c.is_ascii_alphanumeric() || matches!(c, '+' | '/') => Some(c),
+            _ => None,
+        })
+        .collect();
+    if encoded.len() % 4 == 1 {
+        encoded.pop();
+    }
+    general_purpose::GeneralPurpose::new(
+        &base64::alphabet::STANDARD,
+        general_purpose::NO_PAD.with_decode_allow_trailing_bits(true),
+    )
+    .decode(encoded)
+}
 
 // Escape this private marker too; the internal representation never reaches JSON.
 const MARKER: char = '\u{e000}';

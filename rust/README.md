@@ -2,8 +2,12 @@
 
 This branch now includes an independent Rust HTTP server in `src/`. It serves
 subscription/collection/settings CRUD and legacy JSON storage without Node.
-The JavaScript feasibility example remains separate. Conversion, script execution
-inside the application, archive actions, Gist/age and remaining integrations are
+Local SIP002 SS subscriptions now share native Rust parsing and JSON/URI output
+through `/api/proxy/parse`, subscription preview and subscription download.
+The first conversion slice includes UDP/TFO/UOT, simple obfs, Unicode and IPv6;
+other formats, processors and remote sources return an explicit pending error.
+The JavaScript feasibility example remains separate. Remaining conversion,
+script execution inside the application, archive actions, Gist/age and integrations are
 still under development; this is not a complete replacement release.
 
 All builds and tests run in the **Rust service and compatibility** GitHub Actions

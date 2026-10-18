@@ -2,6 +2,13 @@
   "backend_commit": "9cc6b5fac966993364ae33da8797f446bbf7f571",
   "frontend_commit": "4bd7b0acbe65466b933ccea14fc61dbebe036ead",
   "suites": {
+    "conversion-local": [
+      "P01-output-uri", "P01-output-URI", "P01-output-json", "P01-output-JSON",
+      "P02-input-ss-obfs", "P02-input-invalid", "P02-input-ss-unicode-ipv6",
+      "P04-invalid-proxy-target", "P04-invalid-proxy-missing-target",
+      "P05-local-subscription-paths"
+    ],
+    "conversion-local-restart": ["P05-local-subscription-restart"],
     "service-state": [
       "D01-backup-seed", "C01-subscription-crud", "C02-rename-references",
       "D02-export-preserves-unknown", "C01-invalid-input",
@@ -112,6 +119,7 @@
       "P04-invalid-proxy-missing-target",
       "P04-invalid-rule-missing-target",
       "P05-download-collection-and-query-precedence",
+      "P02-input-ss-unicode-ipv6", "P05-local-subscription-paths", "P05-local-subscription-restart",
       "K01-key-default",
       "K01-key-hybrid",
       "K03-fixed-key-derivation",
@@ -216,7 +224,8 @@
       "P04-invalid-rule-target",
       "P04-invalid-proxy-missing-target",
       "P04-invalid-rule-missing-target",
-      "P05-download-collection-and-query-precedence"
+      "P05-download-collection-and-query-precedence",
+      "P02-input-ss-unicode-ipv6", "P05-local-subscription-paths", "P05-local-subscription-restart"
     ],
     "resources": [
       "K01-key-default",

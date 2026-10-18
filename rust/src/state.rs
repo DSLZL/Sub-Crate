@@ -1,5 +1,4 @@
 use crate::json as codec;
-use base64::{Engine, engine::general_purpose};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
@@ -15,25 +14,7 @@ pub struct Store {
 
 pub fn decode(text: &str) -> Result<Value, String> {
     let value: Value = codec::parse(text).or_else(|_| {
-        // js-base64 removes padding/noise before Buffer decodes the remaining sextets.
-        let mut encoded: String = text
-            .chars()
-            .filter_map(|c| match c {
-                '-' => Some('+'),
-                '_' => Some('/'),
-                c if c.is_ascii_alphanumeric() || matches!(c, '+' | '/') => Some(c),
-                _ => None,
-            })
-            .collect();
-        if encoded.len() % 4 == 1 {
-            encoded.pop();
-        }
-        let decoder = general_purpose::GeneralPurpose::new(
-            &base64::alphabet::STANDARD,
-            general_purpose::NO_PAD.with_decode_allow_trailing_bits(true),
-        );
-        let bytes = decoder
-            .decode(encoded)
+        let bytes = codec::decode_base64(text)
             .map_err(|_| "Invalid JSON or Base64 backup".to_owned())?;
         codec::parse(&String::from_utf8_lossy(&bytes)).map_err(|_| "Invalid backup JSON".to_owned())
     })?;

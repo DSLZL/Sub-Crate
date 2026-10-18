@@ -1,5 +1,6 @@
 mod api;
 mod body;
+mod conversion;
 mod json;
 mod state;
 
@@ -718,8 +719,15 @@ fn api_path(raw: &str) -> Result<Option<String>, ()> {
                     json::encode(&percent_decode_str(name).decode_utf8().map_err(|_| ())?)
                 )),
                 "utils" => Some(format!("/api/utils/{}", name.to_ascii_lowercase())),
+                "proxy" | "preview" => Some(format!("/api/{resource}/{}", name.to_ascii_lowercase())),
                 _ => None,
             }
+        }
+        ["", download, name] if download.eq_ignore_ascii_case("download") && !name.is_empty() => {
+            Some(format!("/download/{}", json::encode(&percent_decode_str(name).decode_utf8().map_err(|_| ())?)))
+        }
+        ["", download, name, target] if download.eq_ignore_ascii_case("download") && !name.is_empty() && !target.is_empty() && !name.eq_ignore_ascii_case("collection") => {
+            Some(format!("/download/{}/{}", json::encode(&percent_decode_str(name).decode_utf8().map_err(|_| ())?), json::encode(&percent_decode_str(target).decode_utf8().map_err(|_| ())?)))
         }
         _ => None,
     };
@@ -820,6 +828,9 @@ async fn route(
                 }
             })),
         );
+    }
+    if let Some(response) = api::conversion_dispatch(&method, &path, &query, &body, &headers, store) {
+        return response;
     }
     let mut store = store.lock().unwrap();
     let response = api::dispatch(&method, &path, &query, body, &mut store);
