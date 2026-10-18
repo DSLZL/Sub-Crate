@@ -2,7 +2,7 @@ use crate::json as codec;
 use crate::state::truthy;
 use flate2::{Decompress, FlushDecompress, Status};
 use http_body_util::{BodyExt, Limited};
-use hyper::{Request, body::Bytes, body::Incoming};
+use hyper::{HeaderMap, Request, body::Bytes, body::Incoming};
 use percent_encoding::percent_decode_str;
 use serde_json::{Map, Value, json};
 
@@ -151,7 +151,22 @@ fn decode(bytes: &[u8], charset: &str) -> String {
 }
 
 pub async fn read(request: Request<Incoming>, json_limit: usize) -> Result<Body, Error> {
-    let headers = request.headers();
+    let (parts, mut incoming) = request.into_parts();
+    let result = read_body(&parts.headers, &mut incoming, json_limit).await;
+    // Finish the request before replying: unread bytes can reset Windows TCP and hide the error.
+    while let Some(frame) = incoming.frame().await {
+        if frame.is_err() {
+            break;
+        }
+    }
+    result
+}
+
+async fn read_body(
+    headers: &HeaderMap,
+    incoming: &mut Incoming,
+    json_limit: usize,
+) -> Result<Body, Error> {
     let media = headers
         .get("content-type")
         .map(|v| {
@@ -205,13 +220,13 @@ pub async fn read(request: Request<Incoming>, json_limit: usize) -> Result<Body,
     }
     let limit = if json { json_limit } else { 100 * 1024 };
     let bytes = if encoding == "identity" {
-        Limited::new(request.into_body(), limit)
+        Limited::new(incoming, limit)
             .collect()
             .await
             .map_err(|_| Error::new(413, "PayloadTooLargeError: request entity too large"))?
             .to_bytes()
     } else {
-        inflate(request.into_body(), encoding == "gzip", limit).await?
+        inflate(incoming, encoding == "gzip", limit).await?
     };
     // The legacy rawBodySaver uses Buffer.toString, which rejects these iconv-supported charsets.
     if json && !bytes.is_empty() && !["utf-8", "utf-16le"].contains(&charset.as_str()) {
@@ -253,7 +268,7 @@ pub async fn read(request: Request<Incoming>, json_limit: usize) -> Result<Body,
     }
 }
 
-async fn inflate(mut body: Incoming, gzip: bool, limit: usize) -> Result<Bytes, Error> {
+async fn inflate(body: &mut Incoming, gzip: bool, limit: usize) -> Result<Bytes, Error> {
     let mut decoder = if gzip {
         Decompress::new_gzip(15)
     } else {
