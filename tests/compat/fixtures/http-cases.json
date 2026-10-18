@@ -1,5 +1,13 @@
 [
   {
+    "id": "P02-output-v2ray-shapes",
+    "source": "backend/src/core/proxy-utils/producers/v2ray.js:8-23; backend/src/core/proxy-utils/producers/index.js:40-42",
+    "steps": [
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client":"V2Ray", "type":"internal"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":"c3M6Ly9ZV1Z6TFRFeU9DMW5ZMjA2Y0dGemN3PT1AMTI3LjAuMC4xOjgzODg/dWRwPTEjZml4dHVyZQ=="}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"invalid://missing", "client":"v2ray", "type":"internal"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":""}}}}
+    ]
+  },
+  {
     "id": "P02-input-ss-unicode-ipv6",
     "source": "backend/src/core/proxy-utils/parsers/index.js:49,57,241; backend/src/core/proxy-utils/index.js:65,756; backend/src/core/proxy-utils/producers/uri.js:800",
     "steps": [
@@ -16,6 +24,9 @@
     "steps": [
       {"method": "POST", "path": "/api/subs", "body": {"name":"native-local", "displayName":"本地🙂", "source":"local", "content":"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#export-fixture", "process":[], "kept":{"zero":0,"flag":false,"excludedScript":"require('node:fs')\r\n"}}, "expect": {"status":201, "json_contains":{"status":"success", "data":{"name":"native-local", "kept":{"zero":0,"flag":false,"excludedScript":"require('node:fs')\r\n"}}}}},
       {"path":"/download/native-local/URI?target=Clash", "expect":{"status":200, "headers":{"content-type":"text/plain; charset=utf-8"}, "body":"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388?udp=1#export-fixture"}},
+      {"path":"/download/native-local", "expect":{"status":200,"headers":{"content-type":"text/plain; charset=utf-8"},"body":"c3M6Ly9ZV1Z6TFRFeU9DMW5ZMjA2Y0dGemN3PT1AMTI3LjAuMC4xOjgzODg/dWRwPTEjZXhwb3J0LWZpeHR1cmU="}},
+      {"path":"/download/native-local", "headers":{"User-Agent":"v2ray", "Accept":"application/json"}, "expect":{"status":200,"headers":{"content-type":"text/plain; charset=utf-8"},"body":"c3M6Ly9ZV1Z6TFRFeU9DMW5ZMjA2Y0dGemN3PT1AMTI3LjAuMC4xOjgzODg/dWRwPTEjZXhwb3J0LWZpeHR1cmU="}},
+      {"method":"HEAD", "path":"/download/native-local", "expect":{"status":200,"headers":{"content-type":"text/plain; charset=utf-8"},"body":""}},
       {"path":"/download/native-local/URI?platform=JSON", "expect":{"status":200, "headers":{"content-type":"application/json; charset=utf-8"}, "body":"[\n  {\n    \"type\": \"ss\",\n    \"skip-cert-verify\": false,\n    \"udp\": true,\n    \"server\": \"127.0.0.1\",\n    \"port\": 8388,\n    \"cipher\": \"aes-128-gcm\",\n    \"password\": \"pass\",\n    \"name\": \"export-fixture\",\n    \"_subName\": \"native-local\",\n    \"_subDisplayName\": \"本地🙂\"\n  }\n]"}},
       {"method":"POST", "path":"/API/PrEvIeW/SuB/?target=URI", "body":{"name":"native-local", "displayName":"本地🙂", "source":"local", "content":"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#export-fixture", "process":[]}, "expect":{"status":200, "json":{"status":"success", "data":{"original":[{"type":"ss","skip-cert-verify":false,"udp":true,"server":"127.0.0.1","port":8388,"cipher":"aes-128-gcm","password":"pass","name":"export-fixture","id":0,"_subName":"native-local","_subDisplayName":"本地🙂"}], "processed":[{"type":"ss","skip-cert-verify":false,"udp":true,"server":"127.0.0.1","port":8388,"cipher":"aes-128-gcm","password":"pass","name":"export-fixture","id":0,"_subName":"native-local","_subDisplayName":"本地🙂"}]}}}},
       {"method":"OPTIONS", "path":"/API/PROXY/PARSE", "expect":{"status":200,"headers":{"allow":"POST,GET,HEAD"},"body":"POST,GET,HEAD"}},
@@ -34,6 +45,7 @@
     "source": "backend/src/restful/download.js:85; backend/src/restful/subscriptions.js:180; backend/src/restful/sync.js:271",
     "steps": [
       {"path":"/download/native-local/URI", "expect":{"status":200,"body":"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388?udp=1#export-fixture"}},
+      {"path":"/download/native-local", "expect":{"status":200,"body":"c3M6Ly9ZV1Z6TFRFeU9DMW5ZMjA2Y0dGemN3PT1AMTI3LjAuMC4xOjgzODg/dWRwPTEjZXhwb3J0LWZpeHR1cmU="}},
       {"path":"/api/sub/native-local", "expect":{"status":200,"json_contains":{"status":"success","data":{"name":"native-local","displayName":"本地🙂","kept":{"zero":0,"flag":false,"excludedScript":"require('node:fs')\r\n"}}}}}
     ]
   },

@@ -353,12 +353,11 @@ fn uri(proxy: &Value) -> Option<String> {
 
 pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str) -> Result<Value, Error> {
     match target {
-        "json" | "JSON" | "uri" | "URI" => {}
+        "json" | "JSON" | "uri" | "URI" | "v2" | "v2ray" | "V2Ray" => {}
         "qx" | "QX" | "QuantumultX" | "surge" | "Surge" | "SurgeMac" | "Loon" | "Clash"
         | "meta" | "clashmeta" | "clash.meta" | "Clash.Meta" | "ClashMeta" | "mihomo"
-        | "Mihomo" | "v2" | "v2ray" | "V2Ray" | "stash" | "Stash" | "shadowrocket"
-        | "Shadowrocket" | "ShadowRocket" | "surfboard" | "Surfboard" | "singbox" | "sing-box"
-        | "egern" | "Egern" => {
+        | "Mihomo" | "stash" | "Stash" | "shadowrocket" | "Shadowrocket" | "ShadowRocket"
+        | "surfboard" | "Surfboard" | "singbox" | "sing-box" | "egern" | "Egern" => {
             return Err(Error::Pending("This output format is not implemented yet"));
         }
         _ => {
@@ -388,6 +387,9 @@ pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str) -> Result<Valu
         });
     }
     let lines: Vec<_> = proxies.iter().filter_map(uri).collect();
+    if matches!(target, "v2" | "v2ray" | "V2Ray") {
+        return Ok(json!(STANDARD.encode(lines.join("\n"))));
+    }
     Ok(if kind == "internal" {
         json!(lines)
     } else {

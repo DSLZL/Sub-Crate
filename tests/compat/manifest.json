@@ -4,6 +4,7 @@
   "suites": {
     "conversion-local": [
       "P01-output-uri", "P01-output-URI", "P01-output-json", "P01-output-JSON",
+      "P01-output-v2", "P01-output-v2ray", "P01-output-V2Ray", "P02-output-v2ray-shapes",
       "P02-input-ss-obfs", "P02-input-invalid", "P02-input-ss-unicode-ipv6",
       "P04-invalid-proxy-target", "P04-invalid-proxy-missing-target",
       "P05-local-subscription-paths"
@@ -119,7 +120,7 @@
       "P04-invalid-proxy-missing-target",
       "P04-invalid-rule-missing-target",
       "P05-download-collection-and-query-precedence",
-      "P02-input-ss-unicode-ipv6", "P05-local-subscription-paths", "P05-local-subscription-restart",
+      "P02-input-ss-unicode-ipv6", "P02-output-v2ray-shapes", "P05-local-subscription-paths", "P05-local-subscription-restart",
       "K01-key-default",
       "K01-key-hybrid",
       "K03-fixed-key-derivation",
@@ -225,7 +226,7 @@
       "P04-invalid-proxy-missing-target",
       "P04-invalid-rule-missing-target",
       "P05-download-collection-and-query-precedence",
-      "P02-input-ss-unicode-ipv6", "P05-local-subscription-paths", "P05-local-subscription-restart"
+      "P02-input-ss-unicode-ipv6", "P02-output-v2ray-shapes", "P05-local-subscription-paths", "P05-local-subscription-restart"
     ],
     "resources": [
       "K01-key-default",

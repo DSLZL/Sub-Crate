@@ -2,8 +2,9 @@
 
 This branch now includes an independent Rust HTTP server in `src/`. It serves
 subscription/collection/settings CRUD and legacy JSON storage without Node.
-Local SIP002 SS subscriptions now share native Rust parsing and JSON/URI output
+Local SIP002 SS subscriptions now share native Rust parsing and JSON/URI/V2Ray output
 through `/api/proxy/parse`, subscription preview and subscription download.
+V2Ray output also serves the default download target and its three legacy aliases.
 The first conversion slice includes UDP/TFO/UOT, simple obfs, Unicode and IPv6;
 other formats, processors and remote sources return an explicit pending error.
 The JavaScript feasibility example remains separate. Remaining conversion,
