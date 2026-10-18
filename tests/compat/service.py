@@ -21,6 +21,21 @@ from reference import BACKEND, HERE, ROOT, execute, oracle, source_provenance
 from runner import BufferedHTTPConnection, check_json, load_cases, request, run_cases
 
 
+def wall_time():
+    if os.name != "nt":
+        return datetime.now(timezone.utc)
+    # Some Windows Python builds sample a coarse clock; export bounds need the precise OS clock.
+    import ctypes
+    from ctypes.wintypes import FILETIME
+    stamp = FILETIME()
+    precise = ctypes.windll.kernel32.GetSystemTimePreciseAsFileTime
+    precise.argtypes = (ctypes.POINTER(FILETIME),)
+    precise.restype = None
+    precise(ctypes.byref(stamp))
+    ticks = (stamp.dwHighDateTime << 32) | stamp.dwLowDateTime
+    return datetime(1601, 1, 1, tzinfo=timezone.utc) + timedelta(microseconds=ticks // 10)
+
+
 @contextmanager
 def listener(binary, environment, output, report, log_prefix="rust", image=None):
     with socket.socket() as reserved:
@@ -340,9 +355,9 @@ def backup_edges(url, state, output, name, offset=None):
 
     def send(method, path, body=None, status=200, filename=None):
         previous = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")} if status >= 400 else None
-        before = datetime.now(timezone.utc)
+        before = wall_time()
         response = request(url, {"method": method, "path": path, **({"body": body} if body is not None else {})})
-        after = datetime.now(timezone.utc)
+        after = wall_time()
         stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
         root = json.loads((state / "root.json").read_text(encoding="utf-8"))
         record = {"method": method, "path": path, "body": body, "response": response,
@@ -830,7 +845,7 @@ def api_entities(url, state, output, name, origin=None):
         if body is not None:
             headers.setdefault("Content-Type", "application/json")
         connection = BufferedHTTPConnection(parsed.hostname, parsed.port, timeout=5)
-        before = datetime.now().astimezone()
+        before = wall_time().astimezone()
         try:
             connection.request(method, parsed.path.rstrip("/") + path, body=body, headers=headers)
             response = connection.getresponse()
@@ -839,7 +854,7 @@ def api_entities(url, state, output, name, origin=None):
                    "request_body_base64": base64.b64encode(body or b"").decode("ascii"),
                    "status": response.status, "headers": {key.lower(): value for key, value in response.getheaders()},
                    "body_base64": base64.b64encode(content).decode("ascii"), "before": before.isoformat(),
-                   "after": datetime.now().astimezone().isoformat(),
+                   "after": wall_time().astimezone().isoformat(),
                    "state": json.loads((state / "sub-store.json").read_text(encoding="utf-8"))}
         finally:
             connection.close()
@@ -1243,7 +1258,7 @@ def standalone_resources(frontend_url, backend_url, mount, state, output, name):
         data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
         headers = {"Origin": "https://allowed.invalid", **({"Content-Type": "application/json"} if data else {}), **(headers or {})}
         connection = BufferedHTTPConnection(parsed.hostname, parsed.port, timeout=5)
-        before_request = datetime.now().astimezone()
+        before_request = wall_time().astimezone()
         try:
             connection.request(method, path, body=data, headers=headers)
             response = connection.getresponse()
@@ -1253,7 +1268,7 @@ def standalone_resources(frontend_url, backend_url, mount, state, output, name):
                    "body_base64": base64.b64encode(content).decode("ascii")}
         finally:
             connection.close()
-        after_request = datetime.now().astimezone()
+        after_request = wall_time().astimezone()
         raw.update(before=before_request.isoformat(), after=after_request.isoformat())
         with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
             evidence.write(json.dumps(raw, ensure_ascii=False) + "\n")
@@ -1339,7 +1354,9 @@ def main():
     environment = {key: value for key, value in os.environ.items() if not key.startswith("SUB_STORE_")}
     environment.update(SUB_STORE_BACKEND_API_HOST="127.0.0.1", SUB_STORE_BACKEND_PREFIX="true", SUB_STORE_FRONTEND_BACKEND_PATH="/backend")
     report = {"kind": "rust-service-docker" if args.docker else "rust-service-native", "exit_code": 1,
-              "full_coverage": False, "production_ready": False, "os": platform.system(), "machine": platform.machine(), "phases": []}
+              "full_coverage": False, "production_ready": False, "os": platform.system(), "machine": platform.machine(), "phases": [],
+              "request_clock": "GetSystemTimePreciseAsFileTime" if os.name == "nt" else "datetime.now",
+              "python_version": platform.python_version()}
     image = None
     try:
         report.update(source_provenance(environment, output))
