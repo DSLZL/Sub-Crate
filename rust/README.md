@@ -5,7 +5,7 @@ subscription/collection/settings CRUD and legacy JSON storage without Node.
 Local subscriptions share native Rust parsing and JSON/URI/V2Ray output through
 `/api/proxy/parse`, subscription preview and subscription download. Native input
 includes SS/SSR, HTTP/SOCKS, Trojan, Hysteria1/2, TUIC, WireGuard, VMess, VLESS and
-AnyTLS, plus the registered Surge formats and Base64/SSD/FullConfig preprocessing
+AnyTLS, plus the registered Surge/Loon/QX formats and Base64/SSD/FullConfig preprocessing
 with transport/TLS normalization. Surge External fields are parsed as data.
 V2Ray also serves the default download target and its three legacy aliases.
 These protocol slices remain partial while the complete source-branch inventory is verified.

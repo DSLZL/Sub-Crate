@@ -2117,6 +2117,12 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
             }
         }
     }
+    if truthy(&proxy["reality-opts"]["public-key"])
+        && proxy["reality-opts"].get("support-x25519mlkem768").is_none()
+        && matches!(proxy["_loon_tls_profile"].as_str(), Some("chrome147" | "safari-ios-26"))
+    {
+        proxy["reality-opts"]["support-x25519mlkem768"] = json!(true);
+    }
     proxy["udp"] = json!(match &proxy["udp"] {
         Value::Bool(false) => false,
         Value::Number(number) if number.as_f64() == Some(0.0) => false,
@@ -2437,11 +2443,14 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
     let raw = preprocess(&raw);
     let full_config = crate::surge::is_full_config(&raw);
     let mut proxies = Vec::new();
+    let mut last_parser = None;
     for line in raw
         .split('\n')
         .map(codec::trim)
         .filter(|line| !line.is_empty())
     {
+        let before = proxies.len();
+        let mut parsed_classic = None;
         if line.starts_with("ss://") {
             if let Some(proxy) = ss(line)? {
                 proxies.push(proxy);
@@ -2493,23 +2502,22 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
             if let Some(proxy) = proxy_uri(line)? {
                 proxies.push(proxy);
             }
-        } else if crate::surge::matches(line) {
-            if let Some(mut proxy) = crate::surge::parse(line)? {
-                normalize_endpoint(&mut proxy)?;
-                proxies.push(proxy);
-            } else if crate::surge::loon_fallback(line) {
-                return Err(Error::Pending("Loon parsing is not implemented yet"));
-            }
+        } else if let Some((mut proxy, parser)) = crate::classic::parse(line, last_parser)? {
+            normalize_endpoint(&mut proxy)?;
+            proxies.push(proxy);
+            parsed_classic = Some(parser);
         } else if full_config && line.starts_with('[') && line.ends_with(']') {
             continue;
         } else if line.contains("proxies:")
             || line.starts_with('[')
             || line.starts_with('{')
-            || crate::surge::unported_classic(line)
         {
             return Err(Error::Pending(
                 "This subscription format is not implemented yet",
             ));
+        }
+        if proxies.len() > before {
+            last_parser = parsed_classic;
         }
     }
     Ok(proxies)

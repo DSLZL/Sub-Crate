@@ -1,22 +1,7 @@
+use crate::classic::{boolean, digits, space, strip_quotes};
 use crate::json as codec;
 use crate::state::truthy;
 use serde_json::{Value, json};
-
-fn strip_quotes(raw: &str, single: bool, trim: bool) -> &str {
-    let raw = if trim { codec::trim(raw) } else { raw };
-    let quoted = raw.as_bytes().first().is_some_and(|byte| {
-        (*byte == b'"' || (single && *byte == b'\'')) && raw.as_bytes().last() == Some(byte)
-    });
-    if quoted && raw.len() >= 2 {
-        &raw[1..raw.len() - 1]
-    } else {
-        raw
-    }
-}
-
-fn space(raw: &str) -> &str {
-    raw.trim_start_matches([' ', '\r', '\t'])
-}
 
 fn quoted_key(raw: &str) -> Option<usize> {
     let quote = *raw.as_bytes().first()?;
@@ -183,31 +168,6 @@ fn parse_headers(raw: &str, separator: u8) -> Value {
         }
     }
     headers
-}
-
-fn digits(raw: &str, non_finite: &mut bool) -> Option<Option<Value>> {
-    let end = raw.bytes().take_while(u8::is_ascii_digit).count();
-    if end == 0 {
-        return Some(None);
-    }
-    if !space(&raw[end..]).is_empty() {
-        return None;
-    }
-    let number = raw[..end].parse::<f64>().ok()?;
-    if !number.is_finite() {
-        *non_finite = true;
-        return None;
-    }
-    Some(Some(json!(number)))
-}
-
-fn boolean(raw: &str) -> Option<Option<Value>> {
-    for (text, value) in [("true", true), ("false", false)] {
-        if let Some(rest) = raw.strip_prefix(text) {
-            return space(rest).is_empty().then_some(Some(json!(value)));
-        }
-    }
-    Some(None)
 }
 
 fn allowed(kind: &str, key: &str) -> bool {
@@ -966,54 +926,6 @@ fn external(name: &str, raw: &str) -> Option<Value> {
             .collect::<Vec<_>>()
     );
     Some(proxy)
-}
-
-pub fn unported_classic(line: &str) -> bool {
-    let first = line.split(',').next().unwrap_or("");
-    let Some((name, kind)) = first.split_once('=') else {
-        return false;
-    };
-    let kind = codec::trim(kind).to_ascii_lowercase();
-    [
-        "shadowsocks",
-        "shadowsocksr",
-        "vmess",
-        "vless",
-        "trojan",
-        "hysteria2",
-        "anytls",
-        "http",
-        "https",
-        "socks5",
-        "wireguard",
-    ]
-    .contains(&kind.as_str())
-        || [
-            "shadowsocks",
-            "vmess",
-            "vless",
-            "trojan",
-            "anytls",
-            "http",
-            "socks5",
-        ]
-        .contains(&codec::trim(name))
-}
-
-pub fn loon_fallback(line: &str) -> bool {
-    let Some((_, raw)) = line.split_once('=') else {
-        return false;
-    };
-    let kind = codec::trim(raw.split(',').next().unwrap_or(""));
-    let tail = line.splitn(4, ',').nth(3).map(codec::trim).unwrap_or("");
-    match kind {
-        "trojan" | "anytls" | "hysteria2" => tail.starts_with('"'),
-        "vmess" => tail.split_once(',').is_some_and(|(cipher, uuid)| {
-            !cipher.contains('=') && codec::trim(uuid).starts_with('"')
-        }),
-        "wireguard" => raw.to_ascii_lowercase().contains("peers"),
-        _ => false,
-    }
 }
 
 pub fn is_full_config(raw: &str) -> bool {

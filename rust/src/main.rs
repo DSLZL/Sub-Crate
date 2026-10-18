@@ -1,5 +1,6 @@
 mod api;
 mod body;
+mod classic;
 mod conversion;
 mod json;
 mod state;
