@@ -142,6 +142,13 @@ def state_edges(url, state, keys, output, name):
     for value in values:
         send("PATCH", "/api/settings", dict.fromkeys(numeric_fields, value), 200)
     send("PATCH", "/api/settings", dict.fromkeys(numeric_fields), 200)
+    for field in numeric_fields:
+        for value in ({"toString": None}, [{"toString": "not callable"}], [[{"toString": False}]]):
+            before = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")}
+            error = send("PATCH", "/api/settings", {field: value}, 500)["error"]
+            check_json(error, {"code": "FAILED_TO_UPDATE_SETTINGS", "type": "InternalServerError",
+                               "message": "Failed to update settings", "details": "Reason: Cannot convert object to primitive value"})
+            assert all((state / key).read_bytes() == content for key, content in before.items())
     for plural, singular in (("subs", "sub"), ("collections", "collection")):
         for index, key in enumerate(keys["valid"]):
             item = {"name": f"key-{index}", "age-public-key": f"\ufeff \n{key}\r ",
@@ -255,6 +262,14 @@ def crud_edges(url, state, output, name):
         for item in ({"name": ["alias"]}, {"name": {"alias": True}}):
             send("POST", f"/api/{plural}", item, 201)
             send("POST", f"/api/{plural}", item, 201)
+        for value in (1.0, 1e-6, 1e-7, 1e20, 1e21):
+            send("POST", f"/api/{plural}", {"name": value}, 201)
+            assert send("POST", f"/api/{plural}", {"name": value}, 500)["error"]["code"] == "DUPLICATE_KEY"
+        for field in ("name", "age-public-key"):
+            before = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")}
+            error = send("POST", f"/api/{plural}", {field: {"toString": "not callable"}}, 500)["error"]
+            check_json(error, {"message": "Cannot convert object to primitive value"})
+            assert all((state / key).read_bytes() == content for key, content in before.items())
         before = (state / "sub-store.json").read_bytes()
         for value in ("bad/name", ["bad/name"]):
             assert send("POST", f"/api/{plural}", {"name": value}, 500)["error"]["code"] == "INVALID_NAME"
@@ -300,6 +315,11 @@ def crud_edges(url, state, output, name):
             assert (state / "sub-store.json").read_bytes() == before, "Duplicate unnamed record changed state"
         target = {"name": "typed", "opaque": {"zero": 0, "flag": False}}
         send("PUT", path, [target])
+        before = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")}
+        error = send("PUT", path, [target, {"age-public-key": {"toString": None}}], 500)["error"]
+        check_json(error, {"message": "Cannot convert object to primitive value"})
+        send("PATCH", item_path, {"age-public-key": {"toString": None}}, 500, html="Internal Server Error")
+        assert all((state / key).read_bytes() == content for key, content in before.items())
         for value in ([], [None, False, {"opaque": "PATCH🙂\r\n"}]):
             changed = send("PATCH", item_path, value)["data"]
             target.update((str(index), item) for index, item in enumerate(value))
@@ -332,6 +352,8 @@ def crud_edges(url, state, output, name):
         ("stored-buffer", {"type": "Buffer", "data": [0, 65]}),
         ("stored-empty-buffer", {"type": "Buffer", "data": []}),
         ("live-buffer", b"\x00A"), ("live-empty-buffer", b""),
+        ("artifact-coercion", {"subscriptions": ["1"]}),
+        ("file-coercion", {"subscriptions": ["1"]}),
     ]
     for case_id, collection in reference_cases:
         for method in ("PATCH", "DELETE"):
@@ -342,6 +364,10 @@ def crud_edges(url, state, output, name):
                 document["collections"] = collection
             elif isinstance(collection, bytes):
                 document["collections"] = []
+            if case_id == "artifact-coercion":
+                document["artifacts"] = [{"type": "subscription", "source": {"toString": None}}]
+            elif case_id == "file-coercion":
+                document["files"] = [{"sourceType": "subscription", "sourceName": {"toString": None}}]
             send("POST", "/api/storage", {"content": json.dumps(document, ensure_ascii=False)})
             if isinstance(collection, bytes):
                 endpoint = urlsplit(url)
@@ -370,7 +396,7 @@ def crud_edges(url, state, output, name):
                       "files_after_base64": {key: base64.b64encode(value).decode() for key, value in after.items()}}
             with (output / f"{name}-reference-graphs.jsonl").open("a", encoding="utf-8") as evidence:
                 evidence.write(json.dumps(record, ensure_ascii=False) + "\n")
-            expected_status = 200 if case_id in ("valid", "live-empty-buffer") or (method == "PATCH" and case_id in ("empty-string", "matching-string", "other-string")) else 500
+            expected_status = 200 if case_id in ("valid", "live-empty-buffer") or (method == "PATCH" and case_id in ("empty-string", "matching-string", "other-string")) or (method == "DELETE" and case_id.endswith("-coercion")) else 500
             assert response["status"] == expected_status, f"{name} {case_id} {method}: {response}"
             assert after["root.json"] == before["root.json"], "Reference mutation changed root backup"
             if expected_status == 500:
@@ -764,12 +790,28 @@ def request_bodies(url, state, output, name, origin=None):
              b"parserSparse[2]=c&parserSparse[0]=a&parserObjects[0][a]=1&parserObjects[0][b]=2",
              b"parserConflict[x]=nested&parserConflict=scalar&parserNumeric[100]=object",
              b"parserMalformed=%E0%A4%A&parserPlus=a+b&parserComma=a,b&parserEquals[x=y]=z",
-             b"__proto__[polluted]=yes&parserSafe[__proto__][polluted]=yes&constructor[prototype][opaque]=keep")
+             b"__proto__[polluted]=yes&parserSafe[__proto__][polluted]=yes&constructor[prototype][opaque]=keep",
+             b"parserOverflow[100]=one&parserOverflow=tail",
+             b"parserOverflow=lead&parserOverflow[100]=one",
+             b"parserOverflow[100]=one&parserOverflow[2]=two&parserOverflow=tail",
+             b"parserOverflow[]=lead&parserOverflow[100]=one&parserOverflow[]=tail",
+             b"parserOverflow[100][x]=one&parserOverflow=tail",
+             b"parserOverflow[100]=one&parserOverflow[word]=value&parserOverflow=tail",
+             b"parserOverflow[word]=one&parserOverflow[100]=two&parserOverflow=tail",
+             b"parserOverflow=lead&parserOverflow[100][x]=one&parserOverflow[01]=two",
+             b"parserOverflow%5B100%5D=one&parserOverflow%5B%5D=two",
+             b"parserOverflow[18446744073709551615]=one&parserOverflow=tail",
+             b"parserOverflow[100000000000000000000]=one&parserOverflow=tail",
+             b"parserOverflow[1000000000000000000000]=one&parserOverflow=tail",
+             b"parserConflict[x]=nested&parserConflict=&parserConflict[y]=last",
+             b"parserConflict=first&parserConflict[x]=last&parserConflict=",
+             b"%EE%80%80overflow=literal&parserMarker[%EE%80%80overflow]=keep")
     results = [send(body=body, media="application/x-www-form-urlencoded")["data"] for body in forms]
     assert results[0]["parserForm"] == {"a": {"b": "nested"}} and results[0]["parserRepeat"] == ["one", "two"]
     assert results[1]["parserSparse"] == ["a", "c"] and results[1]["parserObjects"] == [{"a": "1", "b": "2"}]
     assert results[3]["parserMalformed"] == "%E0%A4%A" and results[3]["parserPlus"] == "a b"
-    assert "polluted" not in results[-1] and "__proto__" not in results[-1]
+    assert "polluted" not in results[4] and "__proto__" not in results[4]
+    assert results[-1]["\ue000overflow"] == "literal" and results[-1]["parserMarker"]["\ue000overflow"] == "keep"
     for coding in ("gzip", "deflate"):
         compress = (lambda data: gzip.compress(data, mtime=0)) if coding == "gzip" else zlib.compress
         headers = {"Content-Encoding": coding}
@@ -1182,6 +1224,10 @@ def api_entities(url, state, output, name, origin=None):
                             ("mode[19]=permanent", "permanent"), ("mode[20]=permanent", "[object Object]"),
                             ("mode[x]=permanent", "[object Object]"),
                             ("mode[x]=archive&mode=permanent", "[object Object]"),
+                            ("mode=lead&mode[20]=tail", "[object Object]"),
+                            ("mode[20]=tail&mode=toString", "[object Object]"),
+                            ("mode[x]=one&mode[20]=last&mode=toString", "[object Object]"),
+                            ("mode[20]=tail&mode[x]=one&mode=more", "[object Object]"),
                             ("mode[x][y][z][u][v][w]=permanent", "[object Object]"),
                             ("mode[__proto__]=permanent", "[object Object]"),
                             ("mode=+permanent+", " permanent "), ("mode=%2570ermanent", "%70ermanent"),
@@ -1192,6 +1238,9 @@ def api_entities(url, state, output, name, origin=None):
             _, content = send(target + "?" + query, method="DELETE", status=500)
             assert json.loads(content) == {"status": "failed", "error": {"code": "INVALID_DELETE_MODE",
                 "type": "RequestInvalidError", "message": "Unsupported delete mode: " + mode}}
+        for query in ("mode[toString]=not-callable", "mode[x]=one&mode=toString", "mode[][toString]=not-callable"):
+            _, content = send(target + "?" + query, method="DELETE", status=500)
+            assert json.loads(content) == {"status": "failed", "error": {"message": "Cannot convert object to primitive value"}}
         for query, exported in (("x=&" * 999 + "raw=1", True), ("x=&" * 1000 + "raw=1", False)):
             headers, _ = send(target + "?" + query)
             assert ("content-disposition" in headers) == exported
@@ -1563,6 +1612,19 @@ def main():
         check_json(final["rust"], final["node"])
         report["full_document_equal_after_shared_suite"] = True
         legacy = {"settings": {}, "subs": {"z-last": {"name": "z-last", "display-name": "旧数据🙂", "process": [{"type": "Useless Filter"}, {"type": "Set Property Operator", "args": {"key": "udp", "value": False}}, {"type": "Flag Operator", "args": False}, {"type": "Script Operator", "args": {"content": "require('node:fs')\r\n"}}]}, "a-first": {"name": "a-first"}}, "collections": {"c": {"name": "c", "ua": "old", "subscriptions": ["z-last"], "extra": False}}, "unknown": {"nil": None, "zero": 0, "flag": False}}
+        legacy["builtin"] = {"must": "be removed"}
+        legacy["subs"].update({"empty-process": {"name": "empty-process", "source": "local", "display-name": False, "process": []},
+                               "string-process": {"name": "string-process", "process": "legacy-string"},
+                               "zero-length": {"name": "zero-length", "process": {"length": 0, "opaque": False}}})
+        legacy["subs"]["z-last"]["process"].extend(
+            [{"type": "Set Property Operator", "args": {"key": key, "value": value}}
+             for key, value in (("tfo", []), ("skip-cert-verify", None), ("aead", True), ("unknown", False))]
+            + [{"type": "Keyword Filter"}, {"type": "Custom Keyword Operator"},
+               {"type": "Flag Operator"}, {"type": "Flag Operator", "args": None},
+               {"type": ["opaque"], "args": {"content": "keep\r\n"}}, {"type": ["Keyword"]},
+               {}, False, 0, "ignored", []])
+        legacy["collections"]["c"]["process"] = [{"type": "Flag Operator", "args": "truthy"},
+                                                 {"type": "Script Operator", "args": {"content": "// JS 保留\r\n🙂"}}]
         for key in ("10", "2", "01", "0", "4294967295", "4294967294"):
             legacy["subs"][key] = {"name": "index-" + key}
         original = backup_encodings(legacy)["separated-urlsafe"].encode("utf-8")
@@ -1580,6 +1642,7 @@ def main():
                 response = request(url, {"path": "/api/storage"})
                 assert response["status"] == 200
                 migrated[kind] = json.loads(response["body"])
+                assert "builtin" not in migrated[kind]
                 (output / f"{kind}-migration.json").write_text(json.dumps(migrated[kind], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
                 if kind == "rust":
                     assert (state / "sub-store.pre-rust.json").read_bytes() == original
@@ -1911,6 +1974,10 @@ def main():
             assert result.returncode != 0 and (corrupt / "sub-store.json").read_bytes() == b"invalid backup \xff"
             report["corrupt_state_not_reset"] = True
             for label, document in (("invalid-legacy-record", {"settings": {}, "subs": [None]}),
+                                    ("invalid-legacy-processes", {"settings": {}, "subs": [{"process": {}}]}),
+                                    ("invalid-legacy-process", {"settings": {}, "subs": [{"process": [None]}]}),
+                                    ("invalid-legacy-process-type", {"settings": {}, "subs": [{"process": [{"type": True}]}]}),
+                                    ("missing-legacy-operator-args", {"settings": {}, "subs": [{"process": [{"type": "Set Property Operator"}]}]}),
                                     ("invalid-other-family", {"schemaVersion": "2.0", "settings": {}, "artifacts": [None]}),
                                     ("invalid-buffer-byte", {"schemaVersion": "2.0", "settings": {}, "subs": {"type": "Buffer", "data": [256]}}),
                                     ("invalid-buffer-shape", {"schemaVersion": "2.0", "settings": {}, "collections": {"type": "Buffer", "data": [0], "extra": True}})):

@@ -370,21 +370,43 @@ pub fn migrate(data: &mut Value) -> io::Result<()> {
                         let name = object.remove("display-name").unwrap();
                         object.insert("displayName".to_owned(), name);
                     }
-                    if let Some(processes) = object.get_mut("process").and_then(Value::as_array_mut)
-                        && !processes.is_empty()
+                    if let Some(processes) = object.get_mut("process")
+                        && truthy(processes)
+                        && !processes.as_array().is_some_and(Vec::is_empty)
+                        && processes["length"].as_f64() != Some(0.0)
                     {
+                        let items = match std::mem::take(processes) {
+                            Value::Array(items) => items,
+                            Value::String(_) => Vec::new(),
+                            _ => return Err(io::Error::other("Invalid legacy processes")),
+                        };
                         let mut quick = json!({"type":"Quick Setting Operator", "args":{
                             "udp":"DEFAULT", "tfo":"DEFAULT", "scert":"DEFAULT",
                             "vmess aead":"DEFAULT", "useless":"DEFAULT"
                         }});
                         let mut next = Vec::new();
-                        for mut process in std::mem::take(processes) {
-                            let Some(kind) = process["type"].as_str() else {
+                        for mut process in items {
+                            if process.is_null() {
+                                return Err(io::Error::other("Invalid legacy process"));
+                            }
+                            if !truthy(&process["type"]) {
                                 continue;
+                            }
+                            if let Some(kinds) = process["type"].as_array() {
+                                if !kinds.iter().any(|kind| kind == "Keyword") {
+                                    next.push(process);
+                                }
+                                continue;
+                            }
+                            let Some(kind) = process["type"].as_str() else {
+                                return Err(io::Error::other("Invalid legacy process type"));
                             };
                             if kind == "Useless Filter" {
                                 quick["args"]["useless"] = json!("ENABLED");
                             } else if kind == "Set Property Operator" {
+                                if process["args"].is_null() {
+                                    return Err(io::Error::other("Missing legacy operator args"));
+                                }
                                 let field = match process["args"]["key"].as_str() {
                                     Some("udp") => "udp",
                                     Some("tfo") => "tfo",
@@ -410,7 +432,7 @@ pub fn migrate(data: &mut Value) -> io::Result<()> {
                             }
                         }
                         next.insert(0, quick);
-                        *processes = next;
+                        *processes = Value::Array(next);
                     }
                 }
             }

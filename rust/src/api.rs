@@ -268,7 +268,7 @@ fn normalize_item(item: &mut Value, subscription: bool) -> Result<(), &'static s
         .filter(|key| !key.is_null())
         .map(js_string)
         .unwrap_or_default();
-    let key = js_trim(&key);
+    let key = codec::trim(&key);
     if key.is_empty() {
         object.remove("age-public-key");
     } else if valid_recipient(key) {
@@ -339,23 +339,14 @@ fn valid_recipient(key: &str) -> bool {
     checksum == 1
 }
 
-fn js_trim(value: &str) -> &str {
-    value.trim_matches(|c| {
-        matches!(
-            c,
-            '\u{0009}'..='\u{000d}'
-                | ' '
-                | '\u{00a0}'
-                | '\u{1680}'
-                | '\u{2000}'..='\u{200a}'
-                | '\u{2028}'
-                | '\u{2029}'
-                | '\u{202f}'
-                | '\u{205f}'
-                | '\u{3000}'
-                | '\u{feff}'
-        )
-    })
+const PRIMITIVE_ERROR: &str = "Cannot convert object to primitive value";
+
+fn cannot_coerce(value: &Value) -> bool {
+    match value {
+        Value::Object(fields) => fields.contains_key("toString"),
+        Value::Array(items) => items.iter().any(cannot_coerce),
+        _ => false,
+    }
 }
 
 fn js_string(value: &Value) -> String {
@@ -373,6 +364,7 @@ fn js_string(value: &Value) -> String {
             .collect::<Vec<_>>()
             .join(","),
         Value::Object(_) => "[object Object]".to_owned(),
+        Value::Number(value) => codec::number(value),
         _ => value.to_string(),
     }
 }
@@ -389,7 +381,7 @@ fn number(value: &Value) -> f64 {
         }
         Value::Number(value) => value.as_f64().unwrap_or(f64::NAN),
         Value::String(value) => {
-            let value = js_trim(value);
+            let value = codec::trim(value);
             if value.is_empty() {
                 return 0.0;
             }
@@ -465,6 +457,17 @@ fn settings(store: &mut Store, body: Body) -> Reply {
         "backendRequestConcurrencyWaitTime",
     ] {
         if let Some(raw) = settings.get(key) {
+            if cannot_coerce(raw) {
+                return send(
+                    500,
+                    "text/plain; charset=utf-8",
+                    codec::stringify(&json!({"status":"failed", "error":{
+                        "code":"FAILED_TO_UPDATE_SETTINGS", "type":"InternalServerError",
+                        "message":"Failed to update settings",
+                        "details":format!("Reason: {PRIMITIVE_ERROR}")
+                    }})),
+                );
+            }
             let value = number(raw);
             let valid = match key {
                 "logsMaxCount" => !raw.is_null() && raw != "" && value >= 0.0,
@@ -699,6 +702,9 @@ pub fn dispatch(
         let mut items = body.into_json();
         if let Some(items) = items.as_array_mut() {
             for item in items {
+                if cannot_coerce(&item["age-public-key"]) {
+                    return caught_error(PRIMITIVE_ERROR);
+                }
                 if let Err(message) = normalize_item(item, false) {
                     return invalid("INVALID_AGE_PUBLIC_KEY", message);
                 }
@@ -716,8 +722,14 @@ pub fn dispatch(
         } else {
             body.into_json()
         };
+        if cannot_coerce(&item["age-public-key"]) {
+            return caught_error(PRIMITIVE_ERROR);
+        }
         if let Err(message) = normalize_item(&mut item, subscription) {
             return invalid("INVALID_AGE_PUBLIC_KEY", message);
+        }
+        if cannot_coerce(&item["name"]) {
+            return caught_error(PRIMITIVE_ERROR);
         }
         let item_name = item
             .get("name")
@@ -773,6 +785,9 @@ pub fn dispatch(
                 return pending("Archive deletion is pending");
             }
             if mode != "" && mode != "permanent" {
+                if cannot_coerce(mode) {
+                    return caught_error(PRIMITIVE_ERROR);
+                }
                 return invalid(
                     "INVALID_DELETE_MODE",
                     &format!("Unsupported delete mode: {}", js_string(mode)),
@@ -815,6 +830,9 @@ pub fn dispatch(
         }
         let mut item = next[key][position].clone();
         item.as_object_mut().unwrap().extend(patch);
+        if cannot_coerce(&item["age-public-key"]) {
+            return html_error(500, "Internal Server Error");
+        }
         if normalize_item(&mut item, false).is_err() {
             // The legacy PATCH handler lets this error reach Express's HTML handler.
             return html_error(500, "[object Object]");
@@ -832,6 +850,12 @@ pub fn dispatch(
                 return html_error(500, "Internal Server Error");
             }
             for artifact in next["artifacts"].as_array_mut().into_iter().flatten() {
+                if subscription
+                    && artifact["type"] == source_type
+                    && cannot_coerce(&artifact["source"])
+                {
+                    return html_error(500, "Internal Server Error");
+                }
                 if artifact["type"] == source_type
                     && reference_name_matches(&artifact["source"], name, subscription)
                 {
@@ -839,6 +863,12 @@ pub fn dispatch(
                 }
             }
             for file in next["files"].as_array_mut().into_iter().flatten() {
+                if subscription
+                    && file["sourceType"] == source_type
+                    && cannot_coerce(&file["sourceName"])
+                {
+                    return html_error(500, "Internal Server Error");
+                }
                 if file["sourceType"] == source_type
                     && reference_name_matches(&file["sourceName"], name, subscription)
                 {

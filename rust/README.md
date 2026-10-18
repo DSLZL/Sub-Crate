@@ -72,7 +72,8 @@ retain their 403 verifier / empty-body behavior, including after decompression.
 Gzip and zlib-wrapped deflate requests stream through the same parsers, applying
 limits to expanded bytes. Concatenated gzip members are decoded before parsing;
 corrupt/truncated streams return 400 and expanded overflow returns 413 without
-publishing data. Exotic form overflow collisions remain an M2 gap.
+publishing data. Form/query array overflow retains the locked decoders' separate
+limits and merge rules; its private bookkeeping never enters user JSON.
 Raw JSON exports retain the legacy local-calendar filenames and escaped resource
 names. Manual restore keeps the pre-migration backup in `root.json`'s `sub-store`
 key and preserves unrelated root entries. A private undo record protects the two
@@ -124,7 +125,9 @@ keep wrapped JSON; nonempty strings, arrays and objects select raw export.
 Ambiguous array/object delete modes return INVALID_DELETE_MODE without changing
 state. Query decoding retains plus/percent behavior, its 1,000-parameter cap,
 depth-five remainder and array limit, separately from body form limits.
-Exotic query overflow collisions and own-toString coercion remain M2 gaps.
+Object-to-primitive failures retain their endpoint-specific errors and preserve
+state. JSON numbers and name coercion use the legacy double-precision values and
+decimal/exponent boundaries, including negative zero.
 Node development stack bodies and broader HTTP/API edge cases remain M2
 acceptance work.
 Stored excluded Node scripts remain intact.

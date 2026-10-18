@@ -3,6 +3,25 @@ use serde_json::Value;
 // Escape this private marker too; the internal representation never reaches JSON.
 const MARKER: char = '\u{e000}';
 
+pub fn trim(value: &str) -> &str {
+    value.trim_matches(|c| {
+        matches!(
+            c,
+            '\u{0009}'..='\u{000d}'
+                | ' '
+                | '\u{00a0}'
+                | '\u{1680}'
+                | '\u{2000}'..='\u{200a}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202f}'
+                | '\u{205f}'
+                | '\u{3000}'
+                | '\u{feff}'
+        )
+    })
+}
+
 pub fn encode(text: &str) -> String {
     text.replace(MARKER, "\u{e000}\u{e000}")
 }
@@ -125,11 +144,54 @@ pub fn parse(mut input: &str) -> serde_json::Result<Value> {
 }
 
 pub fn stringify(value: &Value) -> String {
-    text(&value.to_string())
+    serialized(&value.to_string())
 }
 
 pub fn pretty(value: &Value) -> Vec<u8> {
-    text(&serde_json::to_string_pretty(value).expect("JSON value serialization")).into_bytes()
+    serialized(&serde_json::to_string_pretty(value).expect("JSON value serialization")).into_bytes()
+}
+
+pub fn number(value: &serde_json::Number) -> String {
+    let number = value.as_f64().unwrap();
+    if number == 0.0 {
+        "0".to_owned()
+    } else if (1e-6..1e21).contains(&number.abs()) {
+        number.to_string()
+    } else {
+        let text = serde_json::json!(number).to_string();
+        if let Some((mantissa, exponent)) = text.split_once('e') {
+            let exponent = exponent.parse::<i32>().unwrap();
+            format!("{mantissa}e{exponent:+}")
+        } else {
+            text
+        }
+    }
+}
+
+fn serialized(mut input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut quoted = false;
+    while let Some(character) = input.chars().next() {
+        let length = if quoted && character == '\\' {
+            1 + input[1..].chars().next().unwrap().len_utf8()
+        } else if !quoted && (character == '-' || character.is_ascii_digit()) {
+            let length = input
+                .find(|c: char| !matches!(c, '0'..='9' | '-' | '+' | '.' | 'e' | 'E'))
+                .unwrap_or(input.len());
+            let value = serde_json::from_str(&input[..length]).expect("serialized JSON number");
+            output.push_str(&number(&value));
+            input = &input[length..];
+            continue;
+        } else {
+            if character == '"' {
+                quoted = !quoted;
+            }
+            character.len_utf8()
+        };
+        output.push_str(&input[..length]);
+        input = &input[length..];
+    }
+    text(&output)
 }
 
 #[cfg(test)]
@@ -190,6 +252,15 @@ mod tests {
         assert_eq!(
             parse(&utf16_json(&[0x22, 0x5c, 0x5c, 0xd800, 0x22])).unwrap(),
             json!(format!("\\{}", from_units(&[0xd800])))
+        );
+    }
+
+    #[test]
+    fn numbers_use_the_source_backend_value_and_wire_format() {
+        let value = parse(r#"{"values":[1.0,-0.0,1e-6,1e-7,1e20,1e21,9007199254740993],"literal":"1e+21","key123":2}"#).unwrap();
+        assert_eq!(
+            stringify(&value),
+            r#"{"values":[1,0,0.000001,1e-7,100000000000000000000,1e+21,9007199254740992],"literal":"1e+21","key123":2}"#
         );
     }
 }

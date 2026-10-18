@@ -1,4 +1,5 @@
 use crate::json as codec;
+use crate::state::truthy;
 use flate2::{Decompress, FlushDecompress, Status};
 use http_body_util::{BodyExt, Limited};
 use hyper::{Request, body::Bytes, body::Incoming};
@@ -283,7 +284,63 @@ fn form_decode(value: &str) -> String {
     codec::encode(&decoded)
 }
 
-fn merge(target: &mut Value, source: Value, query: bool) {
+// Input keys escape this marker; remove the unreachable bookkeeping key in compact.
+const OVERFLOW: &str = "\u{e000}overflow";
+
+fn overflow_index(value: &Value) -> Option<f64> {
+    value.get(OVERFLOW).and_then(Value::as_f64)
+}
+
+fn numeric_index(key: &str) -> Option<f64> {
+    key.parse::<f64>().ok().filter(|index| {
+        index.is_finite()
+            && !index.is_sign_negative()
+            && *index < 1e21
+            && index.fract() == 0.0
+            && index.to_string() == key
+    })
+}
+
+fn array_object(items: Vec<Value>, overflow: Option<f64>) -> Value {
+    let mut fields: Map<_, _> = items
+        .into_iter()
+        .enumerate()
+        .filter(|(_, value)| !value.is_null())
+        .map(|(index, value)| (index.to_string(), value))
+        .collect();
+    if let Some(index) = overflow {
+        fields.insert(OVERFLOW.to_owned(), json!(index));
+    }
+    Value::Object(fields)
+}
+
+fn combine(left: Value, right: Value, limit: usize) -> Value {
+    if let Some(index) = overflow_index(&left) {
+        let mut result = left;
+        result[(index + 1.0).to_string()] = right;
+        result[OVERFLOW] = json!(index + 1.0);
+        return result;
+    }
+    let mut items = match left {
+        Value::Array(items) => items,
+        value => vec![value],
+    };
+    match right {
+        Value::Array(right) => items.extend(right),
+        value => items.push(value),
+    }
+    if items.len() > limit {
+        let last = items.len() - 1;
+        array_object(items, Some(last as f64))
+    } else {
+        Value::Array(items)
+    }
+}
+
+fn merge(target: &mut Value, source: Value, query: bool, limit: usize) {
+    if !truthy(&source) {
+        return;
+    }
     if target.is_null() {
         *target = source;
         return;
@@ -302,7 +359,7 @@ fn merge(target: &mut Value, source: Value, query: bool) {
                 } else if (left[index].is_object() || left[index].is_array())
                     && (value.is_object() || value.is_array())
                 {
-                    merge(&mut left[index], value, query);
+                    merge(&mut left[index], value, query, limit);
                 } else {
                     left.push(value);
                 }
@@ -310,45 +367,74 @@ fn merge(target: &mut Value, source: Value, query: bool) {
         }
         (left @ Value::Array(_), right @ Value::Object(_)) => {
             let items = std::mem::take(left).as_array().unwrap().clone();
-            *left = Value::Object(
-                items
-                    .into_iter()
-                    .enumerate()
-                    .filter(|(_, v)| !v.is_null())
-                    .map(|(i, v)| (i.to_string(), v))
-                    .collect(),
-            );
-            merge(left, right, query);
+            *left = array_object(items, None);
+            merge(left, right, query, limit);
         }
-        (Value::Object(left), Value::Object(right)) => {
+        (Value::Object(left), Value::Object(mut right)) => {
+            let overflow = right.remove(OVERFLOW).and_then(|value| value.as_f64());
             for (key, value) in right {
                 if let Some(old) = left.get_mut(&key) {
-                    merge(old, value, query);
+                    merge(old, value, query, limit);
                 } else {
-                    left.insert(key, value);
+                    left.insert(key.clone(), value);
+                }
+                let maximum = left.get(OVERFLOW).and_then(Value::as_f64).or(overflow);
+                if let Some(maximum) = maximum {
+                    let index = numeric_index(&key).unwrap_or(maximum).max(maximum);
+                    left.insert(OVERFLOW.to_owned(), json!(index));
                 }
             }
         }
         (left @ Value::Object(_), Value::Array(right)) => {
-            let right = Value::Object(
-                right
-                    .into_iter()
-                    .enumerate()
-                    .filter(|(_, v)| !v.is_null())
-                    .map(|(i, v)| (i.to_string(), v))
-                    .collect(),
-            );
-            merge(left, right, query);
+            merge(left, array_object(right, None), query, limit);
         }
-        (Value::Object(left), Value::String(right)) if query => {
-            if !right.is_empty() {
-                left.insert(right, Value::Bool(true));
+        (left @ Value::Object(_), right) if !right.is_array() && !right.is_object() => {
+            if let Some(index) = overflow_index(left) {
+                left[(index + 1.0).to_string()] = right;
+                left[OVERFLOW] = json!(index + 1.0);
+            } else if query {
+                let key = right
+                    .as_str()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| right.to_string());
+                if key != "__proto__" {
+                    left[key] = Value::Bool(true);
+                }
+            } else {
+                *left = json!([std::mem::take(left), right]);
             }
         }
-        (Value::Array(left), right) => left.push(right),
-        (left, Value::Array(mut right)) => {
-            right.insert(0, std::mem::take(left));
-            *left = Value::Array(right);
+        (left @ Value::Array(_), right) => {
+            let items = left.as_array_mut().unwrap();
+            items.push(right);
+            let last = items.len() - 1;
+            if last > limit {
+                *left = array_object(std::mem::take(items), Some(last as f64));
+            }
+        }
+        (left, right @ Value::Array(_)) => {
+            *left = combine(std::mem::take(left), right, limit);
+        }
+        (left, right) if overflow_index(&right).is_some() => {
+            let maximum = overflow_index(&right).unwrap() + 1.0;
+            let mut fields = Map::from_iter([("0".to_owned(), std::mem::take(left))]);
+            for (key, value) in right.as_object().unwrap() {
+                if key != OVERFLOW {
+                    let text = codec::trim(key);
+                    let digits = text
+                        .strip_prefix('+')
+                        .or_else(|| text.strip_prefix('-'))
+                        .unwrap_or(text);
+                    let end = digits
+                        .find(|c: char| !c.is_ascii_digit())
+                        .unwrap_or(digits.len());
+                    let index = digits[..end].parse::<f64>().unwrap_or(f64::NAN);
+                    let index = if text.starts_with('-') { -index } else { index };
+                    fields.insert((index + 1.0).to_string(), value.clone());
+                }
+            }
+            fields.insert(OVERFLOW.to_owned(), json!(maximum));
+            *left = Value::Object(fields);
         }
         (left, right) => *left = json!([std::mem::take(left), right]),
     }
@@ -360,7 +446,10 @@ fn compact(value: &mut Value) {
             items.retain(|v| !v.is_null());
             items.iter_mut().for_each(compact);
         }
-        Value::Object(fields) => fields.values_mut().for_each(compact),
+        Value::Object(fields) => {
+            fields.remove(OVERFLOW);
+            fields.values_mut().for_each(compact);
+        }
         _ => {}
     }
 }
@@ -379,6 +468,7 @@ fn parse_fields(text: &str, query: bool) -> Result<Value, u16> {
         return Err(413);
     }
     let mut fields = Map::new();
+    let limit = if query { 20 } else { count.max(100) };
     for pair in text.split('&').take(1000) {
         let pair = pair
             .replace("%5B", "[")
@@ -392,28 +482,9 @@ fn parse_fields(text: &str, query: bool) -> Result<Value, u16> {
         let key = form_decode(key);
         let value = Value::String(form_decode(value));
         if let Some(old) = fields.get_mut(&key) {
-            if let Value::Array(items) = old {
-                items.push(value);
-            } else {
-                *old = json!([std::mem::take(old), value]);
-            }
+            *old = combine(std::mem::take(old), value, limit);
         } else {
             fields.insert(key, value);
-        }
-    }
-    if query {
-        for value in fields.values_mut() {
-            if let Value::Array(items) = value
-                && items.len() > 20
-            {
-                *value = Value::Object(
-                    std::mem::take(items)
-                        .into_iter()
-                        .enumerate()
-                        .map(|(index, value)| (index.to_string(), value))
-                        .collect(),
-                );
-            }
         }
     }
     let mut result = json!({});
@@ -453,25 +524,29 @@ fn parse_fields(text: &str, query: bool) -> Result<Value, u16> {
             value = if key == "__proto__" {
                 json!({})
             } else if bracket && key.is_empty() {
-                if value.is_array() || (query && value.get("20").is_some()) {
+                if overflow_index(&value).is_some() {
                     value
                 } else {
-                    json!([value])
+                    combine(json!([]), value, limit)
                 }
             } else if bracket
-                && let Ok(index) = key.parse::<usize>()
-                && index.to_string() == key
-                && index < if query { 20 } else { count.max(100) }
+                && let Some(index) = numeric_index(key)
             {
-                let mut items = vec![Value::Null; index + 1];
-                items[index] = value;
-                Value::Array(items)
+                if index < limit as f64 {
+                    let mut items = vec![Value::Null; index as usize + 1];
+                    items[index as usize] = value;
+                    Value::Array(items)
+                } else {
+                    Value::Object(Map::from_iter([
+                        (key.to_owned(), value),
+                        (OVERFLOW.to_owned(), json!(index)),
+                    ]))
+                }
             } else {
                 Value::Object(Map::from_iter([(key.to_owned(), value)]))
             };
         }
-        // shortcut: qs overflow-array collision metadata is not modeled; extend before accepting that exotic shape.
-        merge(&mut result, value, query);
+        merge(&mut result, value, query, limit);
     }
     compact(&mut result);
     Ok(result)
