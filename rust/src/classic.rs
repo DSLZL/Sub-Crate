@@ -888,7 +888,8 @@ fn qx_line(line: &str) -> Option<Value> {
                 if mode == Some("wss") {
                     proxy["tls"] = json!(true);
                 }
-                let mut options = json!({});
+                // The grammar creates path before headers even when path is absent.
+                let mut options = json!({"path":null});
                 if let Some(value) = obfs.get("path") {
                     options["path"] = value.clone();
                 }
