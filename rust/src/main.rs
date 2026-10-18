@@ -3,6 +3,7 @@ mod body;
 mod conversion;
 mod json;
 mod state;
+mod surge;
 mod xhttp;
 
 use hyper::body::{Body, Incoming};

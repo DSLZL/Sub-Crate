@@ -174,7 +174,7 @@ fn ipv6(address: &str) -> bool {
     address.parse::<Ipv6Addr>().is_ok()
 }
 
-fn is_ip(address: &str) -> bool {
+pub(crate) fn is_ip(address: &str) -> bool {
     address.parse::<std::net::Ipv4Addr>().is_ok() || ipv6(address)
 }
 
@@ -1717,7 +1717,7 @@ fn preprocess(raw: &str) -> String {
     {
         return text;
     }
-    raw.to_owned()
+    crate::surge::full_config(raw).unwrap_or(raw).to_owned()
 }
 
 fn ss(line: &str) -> Result<Option<Value>, Error> {
@@ -2435,6 +2435,7 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
         Error::Pending("URI parsing of isolated UTF-16 surrogates is not implemented yet")
     })?;
     let raw = preprocess(&raw);
+    let full_config = crate::surge::is_full_config(&raw);
     let mut proxies = Vec::new();
     for line in raw
         .split('\n')
@@ -2492,10 +2493,19 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
             if let Some(proxy) = proxy_uri(line)? {
                 proxies.push(proxy);
             }
+        } else if crate::surge::matches(line) {
+            if let Some(mut proxy) = crate::surge::parse(line)? {
+                normalize_endpoint(&mut proxy)?;
+                proxies.push(proxy);
+            } else if crate::surge::loon_fallback(line) {
+                return Err(Error::Pending("Loon parsing is not implemented yet"));
+            }
+        } else if full_config && line.starts_with('[') && line.ends_with(']') {
+            continue;
         } else if line.contains("proxies:")
             || line.starts_with('[')
             || line.starts_with('{')
-            || line.contains(" = ")
+            || crate::surge::unported_classic(line)
         {
             return Err(Error::Pending(
                 "This subscription format is not implemented yet",

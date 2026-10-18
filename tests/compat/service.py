@@ -1745,6 +1745,8 @@ def main():
                         {"method": "POST", "path": "/api/proxy/parse", "body": {"data": '{"type":"ss","name":"later","server":"127.0.0.1","port":443,"cipher":"none","password":"password"}', "client": "JSON"}},
                         {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://none:p@127.0.0.1:443?plugin=shadow-tls%3Bversion%3Dbad", "client": "URI"}},
                         {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ssr://aG9zdDo6b3JpZ2luOmFlcy0xMjgtY2ZiOnBsYWluOmNBLz8=", "client": "URI"}},
+                        {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "Huge = snell, 127.0.0.1, 443, psk=p, version=" + "9" * 400, "client": "JSON"}},
+                        {"method": "POST", "path": "/api/proxy/parse", "body": {"data": 'Loon = trojan, 127.0.0.1, 443, "password"', "client": "JSON"}},
                         {"method": "POST", "path": "/api/preview/sub", "body": {"name": "later", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#later", "process": [{"type": "Script Operator", "args": {"mode": "script", "content": "$substore.write('must-not-write', true);"}}]}},
                         {"path": "/download/native-local/URI?$options=response-hook"},
                     ]
