@@ -39,10 +39,47 @@ fn configured(name: &str, default: &str) -> String {
 }
 
 fn origin(value: &str) -> String {
-    let value = value.trim().trim_matches(['\'', '"']);
+    let value = json::trim(value).trim_matches(['\'', '"']);
     reqwest::Url::parse(value)
         .map(|url| url.origin().ascii_serialization())
         .unwrap_or_else(|_| value.to_owned())
+}
+
+fn json_limit(raw: &str) -> io::Result<usize> {
+    let raw = raw.to_ascii_lowercase();
+    let scaled = ["kb", "mb", "gb", "tb", "pb"]
+        .iter()
+        .enumerate()
+        .find_map(|(index, unit)| {
+            let number = raw.strip_suffix(*unit)?.trim_end_matches(' ');
+            let unsigned = number.trim_start_matches(['+', '-']);
+            let mut parts = unsigned.split('.');
+            let whole = parts.next().unwrap();
+            let fraction = parts.next();
+            let digits = |s: &str| !s.is_empty() && s.bytes().all(|c| c.is_ascii_digit());
+            if !digits(whole) || !fraction.is_none_or(digits) || parts.next().is_some() {
+                return None;
+            }
+            number
+                .parse::<f64>()
+                .ok()
+                .map(|n| n * 1024f64.powi(index as i32 + 1))
+        });
+    let bytes = scaled.or_else(|| {
+        let text = json::trim(&raw);
+        let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
+        let end = unsigned
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(unsigned.len());
+        let number = unsigned[..end].parse::<f64>().ok()?;
+        Some(if text.starts_with('-') { -number } else { number })
+    });
+    match bytes {
+        Some(bytes) if bytes.is_finite() && bytes >= 0.0 && bytes <= usize::MAX as f64 => {
+            Ok(bytes.floor() as usize)
+        }
+        _ => Err(io::Error::other("Invalid SUB_STORE_BODY_JSON_LIMIT")),
+    }
 }
 
 impl Config {
@@ -64,7 +101,7 @@ impl Config {
         }
         let allowed = configured("SUB_STORE_CORS_ALLOWED_ORIGINS", "");
         let mut cors: Vec<_> = allowed
-            .split(|c: char| c == ',' || c == '，' || c.is_whitespace())
+            .split(|c: char| c == ',' || c == '，' || json::trim(&c.to_string()).is_empty())
             .filter(|s| !s.is_empty())
             .map(origin)
             .collect();
@@ -78,20 +115,7 @@ impl Config {
             .map(str::to_owned)
             .to_vec();
         }
-        let raw_limit = configured("SUB_STORE_BODY_JSON_LIMIT", "1mb").to_lowercase();
-        let (number, multiplier) = if let Some(number) = raw_limit.strip_suffix("mb") {
-            (number, 1024.0 * 1024.0)
-        } else if let Some(number) = raw_limit.strip_suffix("kb") {
-            (number, 1024.0)
-        } else if let Some(number) = raw_limit.strip_suffix('b') {
-            (number, 1.0)
-        } else {
-            (raw_limit.as_str(), 1.0)
-        };
-        let bytes = number.trim().parse::<f64>().unwrap_or(f64::NAN) * multiplier;
-        if !bytes.is_finite() || bytes < 1.0 || bytes > usize::MAX as f64 {
-            return Err(io::Error::other("Invalid SUB_STORE_BODY_JSON_LIMIT"));
-        }
+        let body_limit = json_limit(&configured("SUB_STORE_BODY_JSON_LIMIT", "1mb"))?;
         let environment = Value::Object(
             env::vars()
                 .filter(|(key, _)| key.starts_with("SUB_STORE_"))
@@ -106,7 +130,7 @@ impl Config {
             cors,
             local_origins: default_cors
                 && !configured("SUB_STORE_BACKEND_CUSTOM_NAME", "").is_empty(),
-            body_limit: bytes as usize,
+            body_limit,
             environment,
             powered_by: configured("SUB_STORE_X_POWERED_BY", "Sub-Store"),
         })
@@ -866,5 +890,32 @@ async fn serve(
                 eprintln!("HTTP connection error: {error}");
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::json_limit;
+
+    #[test]
+    fn json_limits_use_legacy_binary_units_and_integer_prefixes() {
+        for (text, expected) in [
+            ("0", 0),
+            ("+1KB", 1024),
+            ("1.5 kb", 1536),
+            ("1mb", 1048576),
+            ("1GB", 1073741824),
+            ("1tb", 1099511627776),
+            ("1pb", 1125899906842624),
+            ("64junk", 64),
+            ("1e3", 1),
+            ("1kb ", 1),
+            ("\u{feff}32b", 32),
+        ] {
+            assert_eq!(json_limit(text).unwrap(), expected, "{text}");
+        }
+        for text in ["-1kb", "unbounded", "NaN", "Infinity"] {
+            assert!(json_limit(text).is_err(), "{text}");
+        }
     }
 }

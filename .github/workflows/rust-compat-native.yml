@@ -57,9 +57,6 @@ jobs:
       - name: Rust service formatting (preserve CI formatting output)
         run: |
           mkdir -p tests/compat/evidence/service-format
-          # One-time CI lock generation; restore the normal locked gate after applying this artifact.
-          cargo check --manifest-path rust/Cargo.toml --all-targets
-          cp rust/Cargo.lock tests/compat/evidence/service-format/Cargo.lock
           cargo fmt --manifest-path rust/Cargo.toml --all
           cp -R rust/src tests/compat/evidence/service-format/src
           git diff --exit-code -- rust

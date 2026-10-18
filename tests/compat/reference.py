@@ -62,7 +62,7 @@ def source_provenance(environment, output_dir):
 @contextmanager
 def oracle(node, environment, output_dir, summary, log_prefix="server"):
     with socket.socket() as reserved:
-        reserved.bind(("127.0.0.1", 0))
+        reserved.bind(("127.0.0.1", int(environment.get("SUB_STORE_BACKEND_API_PORT", "0"))))
         port = reserved.getsockname()[1]
     environment = {**environment, "SUB_STORE_BACKEND_API_PORT": str(port)}
     origin = f"http://127.0.0.1:{port}"

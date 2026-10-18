@@ -39,7 +39,7 @@ def wall_time():
 @contextmanager
 def listener(binary, environment, output, report, log_prefix="rust", image=None):
     with socket.socket() as reserved:
-        reserved.bind(("127.0.0.1", 0))
+        reserved.bind(("127.0.0.1", int(environment.get("SUB_STORE_BACKEND_API_PORT", "0"))))
         port = reserved.getsockname()[1]
     environment = {**environment, "SUB_STORE_BACKEND_API_PORT": str(port)}
     origin = f"http://127.0.0.1:{port}"
@@ -1536,6 +1536,40 @@ def standalone_resources(frontend_url, backend_url, mount, state, output, name):
     return observations
 
 
+def configuration_probes(url, state, output, name, limit, allowed, denied, wildcard):
+    observations = []
+    def send(step, status):
+        before = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")}
+        response = request(url, step)
+        after = {key: (state / key).read_bytes() for key in before}
+        observations.append({"request": step, "response": {key: response[key] for key in ("status", "body")},
+                             "headers": {key: response["headers"].get(key) for key in ("content-type", "access-control-allow-origin", "vary", "x-powered-by")},
+                             "state": json.loads(after["sub-store.json"]), "root": json.loads(after["root.json"]),
+                             "files_before_base64": {key: base64.b64encode(value).decode() for key, value in before.items()},
+                             "files_after_base64": {key: base64.b64encode(value).decode() for key, value in after.items()}})
+        assert response["status"] == status, f"{name}: {step}: {response}"
+        if status >= 400 or step.get("method", "GET") in ("GET", "OPTIONS"):
+            assert before == after, "Rejected/read-only configuration probe changed files"
+        return response
+    response = send({"path": "/api/settings"}, 200)
+    assert response["headers"].get("access-control-allow-origin") == ("*" if wildcard else None)
+    for raw, normalized in allowed:
+        response = send({"path": "/api/settings", "headers": {"Origin": raw}}, 200)
+        assert response["headers"]["access-control-allow-origin"] == ("*" if wildcard else normalized)
+        send({"path": "/not-a-route", "method": "OPTIONS", "headers": {"Origin": raw}, "body": {"configProbe": "x" * 2000}}, 200)
+    if denied:
+        response = send({"path": "/api/settings", "method": "PATCH", "headers": {"Origin": denied}, "body": {"configProbe": "x" * 2000}}, 403)
+        assert response["body"] == "CORS origin not allowed" and "access-control-allow-origin" not in response["headers"]
+    for value in (1, "x" * 2000):
+        body = {"configProbe": value}
+        length = len(json.dumps(body, ensure_ascii=False).encode("utf-8"))
+        send({"path": "/api/settings", "method": "PATCH", "body": body}, 200 if length <= limit else 413)
+    # A nondefault prefix must still exclude the unprefixed management route.
+    send({"path": "/api/settings", "origin": True}, 404)
+    (output / (name + ".json")).write_text(json.dumps(observations, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return [{key: value for key, value in row.items() if not key.startswith("files_")} for row in observations]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--node", required=True, type=Path)
@@ -1611,6 +1645,34 @@ def main():
                     report["cors_and_prefix_checked"] = True
         check_json(final["rust"], final["node"])
         report["full_document_equal_after_shared_suite"] = True
+        configurations = [
+            ("default", {}, 1048576, [("https://sub-store.vercel.app", "https://sub-store.vercel.app")], "https://denied.invalid", False),
+            ("custom-name", {"SUB_STORE_BACKEND_CUSTOM_NAME": "configuration-fixture", "SUB_STORE_BODY_JSON_LIMIT": "+1GB"}, 1073741824,
+             [("http://127.0.0.1:9911", "http://127.0.0.1:9911")], "https://127.0.0.1:9911", False),
+            ("wildcard", {"SUB_STORE_CORS_ALLOWED_ORIGINS": "https://unused.invalid,*", "SUB_STORE_BODY_JSON_LIMIT": "1.5 kb"}, 1536,
+             [("https://arbitrary.invalid", "https://arbitrary.invalid")], None, True),
+            ("zero", {"SUB_STORE_BODY_JSON_LIMIT": "0", "SUB_STORE_CORS_ALLOWED_ORIGINS": "'https://ALLOWED.invalid/a'，https://second.invalid"}, 0,
+             [("https://allowed.invalid", "https://allowed.invalid"), ("https://second.invalid", "https://second.invalid")], "https://denied.invalid", False),
+            ("integer-prefix", {"SUB_STORE_BODY_JSON_LIMIT": "64junk", "SUB_STORE_BACKEND_PREFIX": "false", "SUB_STORE_FRONTEND_BACKEND_PATH": "/custom",
+                                "SUB_STORE_CORS_ALLOWED_ORIGINS": "\ufeffhttps://allowed.invalid\ufeff"}, 64,
+             [("https://allowed.invalid", "https://allowed.invalid")], "https://denied.invalid", False),
+            ("integer-exponent", {"SUB_STORE_BODY_JSON_LIMIT": "1e3"}, 1,
+             [("https://sub-store.vercel.app", "https://sub-store.vercel.app")], "https://denied.invalid", False),
+        ]
+        for config_name, overrides, limit, allowed, denied, wildcard in configurations:
+            observed = {}
+            for kind in ("node", "rust"):
+                label = kind + "-config-" + config_name
+                state = output / label
+                state.mkdir()
+                (state / "sub-store.json").write_text(json.dumps(final["node"], ensure_ascii=False), encoding="utf-8")
+                (state / "root.json").write_text('{"configurationRoot":[null,false,0]}', encoding="utf-8")
+                env = {**environment, **overrides, "NODE_ENV": "production", "SUB_STORE_DATA_BASE_PATH": str(state)}
+                manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
+                with manager as url:
+                    observed[kind] = configuration_probes(url, state, output, label, limit, allowed, denied, wildcard)
+            check_json(observed["rust"], observed["node"])
+        report["listener_prefix_cors_and_json_limit_configurations_checked"] = [row[0] for row in configurations]
         legacy = {"settings": {}, "subs": {"z-last": {"name": "z-last", "display-name": "旧数据🙂", "process": [{"type": "Useless Filter"}, {"type": "Set Property Operator", "args": {"key": "udp", "value": False}}, {"type": "Flag Operator", "args": False}, {"type": "Script Operator", "args": {"content": "require('node:fs')\r\n"}}]}, "a-first": {"name": "a-first"}}, "collections": {"c": {"name": "c", "ua": "old", "subscriptions": ["z-last"], "extra": False}}, "unknown": {"nil": None, "zero": 0, "flag": False}}
         legacy["builtin"] = {"must": "be removed"}
         legacy["subs"].update({"empty-process": {"name": "empty-process", "source": "local", "display-name": False, "process": []},

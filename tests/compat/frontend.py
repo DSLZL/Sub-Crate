@@ -38,7 +38,9 @@ def check_network(entries, cases, backend_url):
         "FE17-read-filter-logs": [("PATCH", "/api/file/browser-file-renamed", 200), ("GET", "/api/logs", 200)],
         "FE18-clear-logs": [("DELETE", "/api/logs", 200)],
         "FE19-download-manual-backup": [("GET", "/api/storage", 200)],
-        "FE20-restore-manual-backup": [("POST", "/api/storage", 200), ("GET", "/api/utils/refresh", 200)],
+        "FE20-restore-manual-backup": [("POST", "/api/storage", 200), ("GET", "/api/utils/refresh", 200),
+                                        ("DELETE", "/api/sub/ui-restored-sub", 200),
+                                        ("DELETE", "/api/collection/ui-restored-col", 200)],
     }
     observed = [(entry["request"]["method"], urlsplit(entry["request"]["url"])._replace(query="", fragment="").geturl(), entry["response"]["status"])
                 for entry in entries]
@@ -56,6 +58,11 @@ def check_network(entries, cases, backend_url):
                        and parse_qs(urlsplit(entry["request"]["url"]).query).get("keyword") == [case["keyword"]]
                        for entry in entries), "Missing successful log search with the selected keyword in HAR"
         case.update(status="passed", network_verified=True)
+    for path in ("/api/sub/ui-restored-sub", "/api/collection/ui-restored-col"):
+        assert any(entry["request"]["method"] == "DELETE" and entry["response"]["status"] == 200
+                   and urlsplit(entry["request"]["url"])._replace(query="", fragment="").geturl() == backend_url + path
+                   and parse_qs(urlsplit(entry["request"]["url"]).query).get("mode") == ["permanent"]
+                   for entry in entries), "Permanent UI deletion missing from HAR"
     origin = urlsplit(backend_url)._replace(path="", query="", fragment="").geturl()
     return [{"method": method, "url": url, "status": status} for method, url, status in observed if url.startswith((backend_url.rstrip("/") + "/", origin + "/share/"))]
 
@@ -275,6 +282,52 @@ def main():
         command("wait", "--text", "ui-restored-sub")
         command("wait", "--text", "ui-restored-col")
         report["cases"].append({"id": "FE20-restore-manual-backup", "source": "src/views/My.vue:1253,1262; src/utils/initApp.ts:36,76", "status": "browser_passed"})
+
+    def restart_and_delete():
+        original_url, original_origin = report["server_url"], report["server_origin"]
+        direct_url = report.get("direct_backend_url", original_url)
+        environment["SUB_STORE_BACKEND_API_PORT"] = str(urlsplit(direct_url).port)
+        expected = {filename: json.loads((state / filename).read_text(encoding="utf-8"))
+                    for filename in ("sub-store.json", "root.json")}
+        previous_pid = report["server_pid"]
+        for phase in ("restored", "deleted"):
+            manager = listener(args.rust_binary.resolve(strict=True), environment, output, report, "rust-" + phase) if args.rust_binary else oracle(node, environment, output, report, "node-" + phase)
+            with manager as url:
+                assert url == direct_url and report["server_pid"] != previous_pid, "Backend was not restarted on its original identity"
+                previous_pid = report["server_pid"]
+                report.update(server_url=original_url, server_origin=original_origin)
+                for filename, content in expected.items():
+                    check_json(json.loads((state / filename).read_text(encoding="utf-8")), content)
+                command("open", original_origin + "/subs")
+                command("wait", "--load", "networkidle")
+                if phase == "restored":
+                    for name, plural in (("ui-restored-sub", "subs"), ("ui-restored-col", "collections")):
+                        row = '.nut-swipe:has(.sub-item-title[title="' + name + '"])'
+                        command("wait", row)
+                        click_in_view(row + " .sub-item-actions button:last-child")
+                        command("wait", "--fn", "(() => { const el = document.querySelector(" + json.dumps(row) + "); return el && Math.abs(new DOMMatrix(el.style.transform).m41) > 0 && Math.abs(new DOMMatrix(getComputedStyle(el).transform).m41 - new DOMMatrix(el.style.transform).m41) < 0.1 })()")
+                        click_in_view(row + " .sub-item-swipe-btn.nut-button--danger")
+                        command("wait", ".nut-dialog")
+                        assert command("get", "text", ".nut-dialog__footer-ok")["text"] == "永久删除", "Permanent delete confirmation missing"
+                        command("click", ".nut-dialog__footer-ok")
+                        command("wait", "--fn", "document.querySelector(" + json.dumps(row) + ") === null")
+                        document = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+                        assert document[plural] == [], "UI deletion did not persist"
+                        if plural == "subs":
+                            assert document["collections"][0]["subscriptions"] == [], "Subscription deletion retained collection references"
+                    deleted = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+                    check_json(deleted, {**expected["sub-store.json"], "subs": [], "collections": []})
+                    expected["sub-store.json"] = deleted
+                else:
+                    command("wait", "--text", "立即添加")
+                    assert evaluate("document.querySelectorAll('.sub-item-wrapper').length") == 0, "Deleted resources returned after restart"
+                    command("open", original_origin + "/files")
+                    command("wait", "--text", "ui-restored-file")
+                    for filename, content in expected.items():
+                        check_json(json.loads((state / filename).read_text(encoding="utf-8")), content)
+                (output / ("frontend-" + phase + "-state.json")).write_text(json.dumps(expected, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                report.setdefault("state_restarts", []).append({"phase": phase, "pid": previous_pid, "url": url})
+        report["ui_permanent_deletion_and_restart_checked"] = True
 
     try:
         report.update(source_provenance(environment, output))
@@ -547,6 +600,19 @@ def main():
                 except Exception as diagnostic_error:
                     report.setdefault("diagnostic_errors", []).append(str(diagnostic_error))
     finally:
+        if report["exit_code"] == 0:
+            try:
+                restart_and_delete()
+                report["restart_page_errors"] = command("errors")
+                assert not report["restart_page_errors"]["errors"], "Frontend errors after restart"
+            except Exception as error:
+                report["exit_code"] = 1
+                report["error"] = f"{type(error).__name__}: {error}"
+                for arguments in (("snapshot", "-i"), ("errors",), ("screenshot", output / "restart-failure.png")):
+                    try:
+                        command(*arguments)
+                    except Exception as diagnostic_error:
+                        report.setdefault("diagnostic_errors", []).append(str(diagnostic_error))
         if command_index:
             for arguments in (("network", "har", "stop", output / "frontend.har"), ("close",)):
                 try:
