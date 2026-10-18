@@ -771,8 +771,10 @@ def api_entities(url, state, output, name, origin=None):
     item = "/api/collection/" + quote("entity-保留🙂", safe="")
     send("/api/settings", method="PATCH", body=b'{"entityValidator":"before"}')
     before_reads = {filename: (state / filename).read_bytes() for filename in ("sub-store.json", "root.json")}
+    # Windows V8 interpolates a coarse wall-clock sample; keep Node off that tick.
+    boundary_offset = 0.05 if os.name == "nt" and name.startswith("node-") else 0
     for _ in range(3):
-        time.sleep(1 - time.time() % 1)
+        time.sleep(1 - time.time() % 1 + boundary_offset)
         send("/api/storage")
     for path in ("/api/settings", "/api/subs", "/api/collections", item, item + "?raw=1", "/api/storage"):
         normal, content = send(path)
