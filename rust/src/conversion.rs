@@ -293,6 +293,17 @@ pub fn tag(proxies: &mut [Value], sub: &Value, preview: bool) {
     }
 }
 
+fn port_text(proxy: &Value) -> String {
+    proxy.get("port").map_or_else(
+        || "undefined".to_owned(),
+        |value| {
+            value
+                .as_str()
+                .map_or_else(|| value.to_string(), str::to_owned)
+        },
+    )
+}
+
 fn uri(proxy: &Value) -> Option<String> {
     let cipher = proxy["cipher"].as_str().unwrap_or("undefined");
     let password = proxy["password"].as_str().unwrap_or("undefined");
@@ -311,14 +322,7 @@ fn uri(proxy: &Value) -> Option<String> {
     } else {
         server
     };
-    let port = proxy.get("port").map_or_else(
-        || "undefined".to_owned(),
-        |value| {
-            value
-                .as_str()
-                .map_or_else(|| value.to_string(), str::to_owned)
-        },
-    );
+    let port = port_text(proxy);
     let mut output = format!("ss://{auth}@{server}:{port}");
     let mut query = Vec::new();
     if proxy["plugin"] == "obfs" {
@@ -371,7 +375,7 @@ pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str) -> Result<Valu
             proxy["name"] = json!(format!(
                 "ss {}:{}",
                 proxy["server"].as_str().unwrap_or("undefined"),
-                proxy["port"]
+                port_text(proxy)
             ));
         }
     }
