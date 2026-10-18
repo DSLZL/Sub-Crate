@@ -65,12 +65,15 @@ form/raw bodies retain their separate 100 KiB limit. Invalid JSON, excessive
 size/depth/parameters and unsupported charset/encoding return production HTML
 errors without publishing state. The legacy verifier rejects nonempty UTF-16BE
 and UTF-7 bodies with 403 while permitting empty bodies in these charsets.
-The locked decoder rejects UTF-32 with 415.
+The locked decoder rejects UTF-32 with 415. Media selection preserves the locked
+name/suffix rules, quoted parameters, escaped pairs and Latin-1 header bytes.
+The last charset wins; an empty charset defaults to UTF-8. Recognized UTF aliases
+retain their 403 verifier / empty-body behavior, including after decompression.
 Gzip and zlib-wrapped deflate requests stream through the same parsers, applying
 limits to expanded bytes. Concatenated gzip members are decoded before parsing;
 corrupt/truncated streams return 400 and expanded overflow returns 413 without
-publishing data. Other UTF aliases and exotic form overflow collisions remain
-M2 gaps.
+publishing data. Lone UTF-16 surrogate values and exotic form overflow collisions
+remain M2 gaps.
 Raw JSON exports retain the legacy local-calendar filenames and escaped resource
 names. Manual restore keeps the pre-migration backup in `root.json`'s `sub-store`
 key and preserves unrelated root entries. A private undo record protects the two

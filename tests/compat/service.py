@@ -490,7 +490,7 @@ def request_bodies(url, state, output, name, origin=None):
     original = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
     compared_headers = ("content-type", "content-length", "etag", "content-security-policy", "x-content-type-options")
 
-    def send(path="/api/settings", body=b"{}", media="application/json", status=200, method="PATCH", headers=None, parser_error=False, chunk_size=None):
+    def send(path="/api/settings", body=b"{}", media="application/json", status=200, method="PATCH", headers=None, parser_error=False, chunk_size=None, case_id=None):
         headers = {**({"Origin": origin} if origin else {}), **(headers or {})}
         if media is not None:
             headers["Content-Type"] = media
@@ -512,7 +512,9 @@ def request_bodies(url, state, output, name, origin=None):
                    "state": json.loads((state / "sub-store.json").read_text(encoding="utf-8"))}
         finally:
             connection.close()
-        if method == "PUT" and status == 500:
+        if case_id is not None:
+            raw["case_id"] = case_id
+        if (method == "PUT" and status == 500) or case_id is not None:
             raw["files_before_base64"] = {filename: base64.b64encode(data).decode("ascii") for filename, data in before.items()}
             raw["files_after_base64"] = {filename: base64.b64encode((state / filename).read_bytes()).decode("ascii") for filename in before}
         with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
@@ -654,6 +656,67 @@ def request_bodies(url, state, output, name, origin=None):
     for coding in ("br", "x-gzip", "gzip, deflate"):
         send(headers={"Content-Encoding": coding}, status=415)
     send(headers={"Content-Encoding": ""})
+    json_media = ('Application/JSON ; charset = "UTF-8"',
+                  'application/json; note="a;b\\"c\\\\d"; charset="utf\\-8"',
+                  'application/json; note="café;ok"; charset="utf-8"',
+                  'application/json; charset=latin1; CHARSET=utf-8',
+                  'application/json; charset=latin1; charset=""',
+                  'application/json; note=""; charset=utf-8',
+                  'application/json+',
+                  'application/json; extension*="a=b;c"; charset=utf-8')
+    for index, media in enumerate(json_media):
+        value = {"label": f"json-{index}", "text": "参数🙂\r\n", "nil": None, "flag": False}
+        data = send(body=json.dumps({"parserMedia": value}, ensure_ascii=False).encode(), media=media,
+                    case_id=f"media-json-{index}")["data"]
+        check_json(data["parserMedia"], value)
+    form_media = ('application/x-www-form-urlencoded; charset = "UTF-8"; note="a;b"',
+                  'application/x-www-form-urlencoded; charset=""',
+                  'application/x-www-form-urlencoded; charset=latin1; charset="utf\\-8"')
+    for index, media in enumerate(form_media):
+        value = f"form-{index}中🙂\r\n"
+        data = send(body=("parserMediaForm=" + quote(value, safe="")).encode(), media=media,
+                    case_id=f"media-form-{index}")["data"]
+        assert data["parserMediaForm"] == value
+    raw_media = ('application/problem+json; note="a;b"',
+                 'text/plain; note="café"; charset=unrecognized',
+                 "a" * 127 + "/" + "b" * 127,
+                 'application/json!; note="a;b"',
+                 'application/json+other')
+    for index, media in enumerate(raw_media):
+        body = bytes([index, 0, 255])
+        data = send(body=body, media=media, case_id=f"media-raw-{index}")["data"]
+        assert [data[str(i)] for i in range(3)] == list(body)
+    invalid_media = ('application/json;', 'application/json; charset=',
+                     'application/json; note="unterminated',
+                     'application/json; \tcharset=utf-8', 'application/json; charset\t=utf-8',
+                     'application/json; note="tab\tvalue"',
+                     'application/json; charset="utf-8" garbage',
+                     'application/json; note="escape\\é"', 'application/json; =missing',
+                     'application/json; note=(x)', 'application/jso%n', 'app.lication/json',
+                     'application/json+bad.suffix', 'application/json++',
+                     "application/" + "a" * 128, "a" * 128 + "/json",
+                     'application/json\t; charset=utf-8', 'application/json; charset=UTF8;')
+    for index, media in enumerate(invalid_media):
+        send(body=b"{", media=media, method="GET", headers={"Content-Encoding": "br"},
+             case_id=f"media-invalid-{index}")
+    aliases = ("utf--8", "utf-8_", "utf-8:1987", "utf-16-le", "utf-16-be", "utf-7-imap", "utf-7:1987")
+    for index, charset in enumerate(aliases):
+        media = f'application/json; charset="{charset}"'
+        send(media=media, status=403, parser_error=True, case_id=f"charset-alias-{index}-nonempty")
+        send(body=b"", media=media, case_id=f"charset-alias-{index}-empty")
+    unsupported = ("utf8", "ucs-2", "unicode-1-1-utf-8", "utf-32le", "utf-99", "utf-8:198", "utf-8:19870")
+    for index, charset in enumerate(unsupported):
+        for label, body in (("nonempty", b"{}"), ("empty", b"")):
+            send(body=body, media=f'application/json; charset="{charset}"', status=415,
+                 case_id=f"charset-unsupported-{index}-{label}")
+    for index, charset in enumerate(("utf8", "utf--8", "utf-8:1987")):
+        send(media=f'application/x-www-form-urlencoded; charset="{charset}"', status=415,
+             case_id=f"charset-form-{index}")
+    media = 'application/json; charset="utf--8"'
+    for label, body, status in (("nonempty", member(b"{}"), 403), ("empty", member(b""), 200),
+                                ("invalid", b"bad-header", 400), ("limit", member(b"x" * 32769), 413)):
+        send(body=body, media=media, headers={"Content-Encoding": "gzip"}, status=status,
+             parser_error=status == 403, case_id=f"charset-gzip-{label}")
     for plural in ("subs", "collections"):
         current = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))[plural]
         send("/api/" + plural, json.dumps(original[plural] + current, ensure_ascii=False).encode(), method="PUT")
@@ -1449,6 +1512,8 @@ def main():
         report["compressed_request_body_parity"] = "gzip_and_deflate_checked"
         report["compressed_body_expanded_limits_and_errors_checked"] = True
         report["compressed_body_chunking_and_members_checked"] = True
+        report["request_media_parameters_and_selection_checked"] = True
+        report["request_charset_aliases_and_verifier_order_checked"] = True
         report["crud_development_stack_parity"] = "NOT_VERIFIED"
         backup = json.loads((HERE / "fixtures/frontend-backup.json").read_text(encoding="utf-8"))
         root = {"opaque": {"text": "根缓存🙂\r\n", "zero": 0, "flag": False, "nil": None}, "sub-store": "previous backup"}

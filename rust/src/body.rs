@@ -36,34 +36,81 @@ impl Body {
 }
 
 fn content_type(value: &str) -> Option<(String, String)> {
-    let mut parts = value.split(';');
-    let media = parts.next()?.trim().to_ascii_lowercase();
-    let token = |s: &str| {
-        !s.is_empty()
+    let delimiter = value.find(';').unwrap_or(value.len());
+    let media = value[..delimiter].trim_matches(' ').to_ascii_lowercase();
+    let restricted = |s: &str, punctuation: &[u8]| {
+        s.len() <= 127
+            && s.as_bytes().first().is_some_and(u8::is_ascii_alphanumeric)
             && s.bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b))
+                .all(|b| b.is_ascii_alphanumeric() || punctuation.contains(&b))
     };
     let (kind, subtype) = media.split_once('/')?;
-    if !token(kind) || !token(subtype) {
+    if !restricted(kind, b"!#$&^_-") || !restricted(subtype, b"!#$&^_.+-") {
         return None;
     }
+    let (subtype, suffix) = subtype.rsplit_once('+').unwrap_or((subtype, ""));
+    if !restricted(subtype, b"!#$&^_.-")
+        || (!suffix.is_empty() && !restricted(suffix, b"!#$&^_-"))
+    {
+        return None;
+    }
+    let media = if suffix.is_empty() {
+        format!("{kind}/{subtype}")
+    } else {
+        format!("{kind}/{subtype}+{suffix}")
+    };
+    let token = |c: char| {
+        c.is_ascii() && (c.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&(c as u8)))
+    };
     let mut charset = "utf-8".to_owned();
-    for parameter in parts {
-        let (key, value) = parameter.trim().split_once('=')?;
-        let value = value.trim();
-        let value = if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
-            &value[1..value.len() - 1]
-        } else if token(value) {
-            value
-        } else {
-            return None;
-        };
-        if !token(key) {
+    let mut rest = &value[delimiter..];
+    while !rest.is_empty() {
+        rest = rest.strip_prefix(';')?.trim_start_matches(' ');
+        let end = rest.find(|c| !token(c)).unwrap_or(rest.len());
+        if end == 0 {
             return None;
         }
+        let key = &rest[..end];
+        rest = rest[end..].trim_start_matches(' ');
+        rest = rest.strip_prefix('=')?.trim_start_matches(' ');
+        let value = if let Some(quoted) = rest.strip_prefix('"') {
+            let mut chars = quoted.char_indices();
+            let mut value = String::new();
+            loop {
+                let (index, c) = chars.next()?;
+                match c {
+                    '"' => {
+                        rest = &quoted[index + 1..];
+                        break;
+                    }
+                    '\\' => {
+                        let (_, escaped) = chars.next()?;
+                        if !(' '..='~').contains(&escaped) {
+                            return None;
+                        }
+                        value.push(escaped);
+                    }
+                    ' ' | '!' | '#'..='[' | ']'..='~' | '\u{80}'..='\u{ff}' => value.push(c),
+                    _ => return None,
+                }
+            }
+            value
+        } else {
+            let end = rest.find(|c| !token(c)).unwrap_or(rest.len());
+            if end == 0 {
+                return None;
+            }
+            let value = rest[..end].to_owned();
+            rest = &rest[end..];
+            value
+        };
+        rest = rest.trim_start_matches(' ');
         if key.eq_ignore_ascii_case("charset") {
             charset = value.to_ascii_lowercase();
         }
+    }
+    if charset.is_empty() {
+        charset = "utf-8".to_owned();
     }
     Some((media, charset))
 }
@@ -87,8 +134,8 @@ pub async fn read(request: Request<Incoming>, json_limit: usize) -> Result<Body,
     let headers = request.headers();
     let media = headers
         .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .and_then(content_type);
+        .map(|v| v.as_bytes().iter().map(|&b| char::from(b)).collect::<String>())
+        .and_then(|v| content_type(&v));
     let Some((media, charset)) = media.filter(|_| {
         headers.contains_key("content-length") || headers.contains_key("transfer-encoding")
     }) else {
@@ -96,16 +143,19 @@ pub async fn read(request: Request<Incoming>, json_limit: usize) -> Result<Body,
     };
     let json = media == "application/json";
     let form = media == "application/x-www-form-urlencoded";
+    let canonical = match charset.rsplit_once(':') {
+        Some((name, year)) if year.len() == 4 && year.bytes().all(|b| b.is_ascii_digit()) => name,
+        _ => charset.as_str(),
+    };
+    let canonical: String = canonical
+        .bytes()
+        .filter(u8::is_ascii_alphanumeric)
+        .map(char::from)
+        .collect();
     if (json
-        && ![
-            "utf-8",
-            "utf-16le",
-            "utf-16",
-            "utf-16be",
-            "utf-7",
-            "utf-7imap",
-        ]
-        .contains(&charset.as_str()))
+        && (!charset.starts_with("utf-")
+            || !["utf8", "utf16le", "utf16", "utf16be", "utf7", "utf7imap"]
+                .contains(&canonical.as_str())))
         || (form && charset != "utf-8")
     {
         return Err(415);
