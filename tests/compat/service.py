@@ -427,7 +427,7 @@ def backup_edges(url, state, output, name, offset=None):
     for encoding, content in encodings.items():
         expected = lossy_backup if encoding == "lossy-utf8" else codec_backup
         send("POST", "/api/storage", {"content": content})
-        check_json(json.loads((state / "root.json").read_text(encoding="utf-8"))["sub-store"], expected)
+        check_json(json.loads(json.loads((state / "root.json").read_text(encoding="utf-8"))["sub-store"]), expected)
         check_json(send("GET", "/api/storage", filename="sub-store_data"), expected)
         check_json(send("GET", "/api/settings")["data"], expected["settings"])
     send("POST", "/api/storage", {"content": json.dumps(array_backup, ensure_ascii=False)})
