@@ -1746,6 +1746,7 @@ def main():
                     pending_steps = [
                         {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "trojan://secret@127.0.0.1:443#later", "client": "JSON"}},
                         {"method": "POST", "path": "/api/proxy/parse", "body": ssd_input},
+                        {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://none:p@127.0.0.1:443?plugin=shadow-tls%3Bversion%3Dbad", "client": "URI"}},
                         {"method": "POST", "path": "/api/preview/sub", "body": {"name": "later", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#later", "process": [{"type": "Script Operator", "args": {"mode": "script", "content": "$substore.write('must-not-write', true);"}}]}},
                         {"path": "/download/native-local/URI?$options=response-hook"},
                     ]
