@@ -1496,7 +1496,7 @@ def main():
             state = output / (kind + "-buffers")
             state.mkdir()
             (state / "sub-store.json").write_text(json.dumps({**seed, "subs": [], "collections": []}), encoding="utf-8")
-            (state / "root.json").write_text(json.dumps({"opaque": unknown}), encoding="utf-8")
+            (state / "root.json").write_text(json.dumps({**root, "opaque": unknown}), encoding="utf-8")
             env = {**environment, "NODE_ENV": "production", "SUB_STORE_DATA_BASE_PATH": str(state)}
             label = kind + "-buffers"
             manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
