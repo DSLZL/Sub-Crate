@@ -35,8 +35,7 @@ pub fn decode(text: &str) -> Result<Value, String> {
         let bytes = decoder
             .decode(encoded)
             .map_err(|_| "Invalid JSON or Base64 backup".to_owned())?;
-        codec::parse(&String::from_utf8_lossy(&bytes))
-            .map_err(|_| "Invalid backup JSON".to_owned())
+        codec::parse(&String::from_utf8_lossy(&bytes)).map_err(|_| "Invalid backup JSON".to_owned())
     })?;
     if !value.is_object() {
         return Err("State must be a JSON object".to_owned());
@@ -60,8 +59,9 @@ impl Store {
         let mut data = decode(text).map_err(io::Error::other)?;
         let root_path = directory.join("root.json");
         if root_path.exists() {
-            let root =
-                codec::parse(std::str::from_utf8(&fs::read(&root_path)?).map_err(io::Error::other)?)?;
+            let root = codec::parse(
+                std::str::from_utf8(&fs::read(&root_path)?).map_err(io::Error::other)?,
+            )?;
             if !root.is_object() {
                 return Err(io::Error::other("root.json must be a JSON object"));
             }
@@ -137,16 +137,14 @@ impl Store {
         let root_path = self.path.with_file_name("root.json");
         let previous_data = fs::read(&self.path)?;
         let previous_root = fs::read(&root_path)?;
-        let mut root = codec::parse(std::str::from_utf8(&previous_root).map_err(io::Error::other)?)?;
+        let mut root =
+            codec::parse(std::str::from_utf8(&previous_root).map_err(io::Error::other)?)?;
         let original = String::from_utf8(codec::pretty(&legacy_object_order(original)))
             .expect("serialized JSON is UTF-8");
         let root_fields = root
             .as_object_mut()
             .ok_or_else(|| io::Error::other("root.json must be an object"))?;
-        root_fields.insert(
-            "sub-store".to_owned(),
-            json!(codec::encode(&original)),
-        );
+        root_fields.insert("sub-store".to_owned(), json!(codec::encode(&original)));
         let pending = self.path.with_file_name(".sub-store-restore.pending.json");
         let previous = json!({
             "data": general_purpose::STANDARD.encode(previous_data),

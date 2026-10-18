@@ -128,3 +128,9 @@ Exotic query overflow collisions and own-toString coercion remain M2 gaps.
 Node development stack bodies and broader HTTP/API edge cases remain M2
 acceptance work.
 Stored excluded Node scripts remain intact.
+
+Subscription rename and permanent deletion retain the legacy errors for invalid
+collection references, including live versus stored raw buffers. Rejected Rust
+mutations retain both durable files and the published graph. The old backend can
+partly mutate references in memory or persist a deletion before raising the same
+error; its original behavior remains captured separately in CI evidence.

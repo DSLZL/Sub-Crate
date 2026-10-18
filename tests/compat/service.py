@@ -320,7 +320,81 @@ def crud_edges(url, state, output, name):
         assert send("DELETE", item_path + "?mode=invalid", status=500)["error"]["code"] == "INVALID_DELETE_MODE"
         check_json(send("GET", path)["data"], mixed)
         assert (state / "sub-store.json").read_bytes() == before, "Null-record lookup failure changed state"
-    restored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+    original = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+    reference_cases = [
+        ("null-record", None), ("false-record", False), ("number-record", 3),
+        ("string-record", "record"), ("array-record", []), ("missing", {}),
+        ("null-names", {"subscriptions": None}), ("false-names", {"subscriptions": False}),
+        ("number-names", {"subscriptions": 3}), ("object-names", {"subscriptions": {}}),
+        ("empty-string", {"subscriptions": ""}), ("matching-string", {"subscriptions": "1"}),
+        ("other-string", {"subscriptions": "other"}),
+        ("valid", {"subscriptions": ["1", 1, "1", False, None]}),
+        ("stored-buffer", {"type": "Buffer", "data": [0, 65]}),
+        ("stored-empty-buffer", {"type": "Buffer", "data": []}),
+        ("live-buffer", b"\x00A"), ("live-empty-buffer", b""),
+    ]
+    for case_id, collection in reference_cases:
+        for method in ("PATCH", "DELETE"):
+            document = {**original, "subs": [{"name": "1", "opaque": {"keep": True}}],
+                        "collections": [{"name": "first", "subscriptions": ["1", "1", 1]}, collection,
+                                        {"name": "last", "subscriptions": ["1"]}]}
+            if case_id.startswith("stored-"):
+                document["collections"] = collection
+            elif isinstance(collection, bytes):
+                document["collections"] = []
+            send("POST", "/api/storage", {"content": json.dumps(document, ensure_ascii=False)})
+            if isinstance(collection, bytes):
+                endpoint = urlsplit(url)
+                connection = BufferedHTTPConnection(endpoint.hostname, endpoint.port, timeout=5)
+                try:
+                    connection.request("PUT", endpoint.path.rstrip("/") + "/api/collections",
+                                       body=collection, headers={"Content-Type": "application/octet-stream"})
+                    response = connection.getresponse()
+                    content = response.read()
+                    assert response.status == 200, f"Reference Buffer setup failed: {content!r}"
+                finally:
+                    connection.close()
+            before = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")}
+            published_before = request(url, {"path": "/api/storage"})
+            step = {"method": method, "path": "/api/sub/1?mode=permanent"}
+            if method == "PATCH":
+                step["body"] = {"name": "renamed"}
+            response = request(url, step)
+            after = {key: (state / key).read_bytes() for key in before}
+            published_after = request(url, {"path": "/api/storage"})
+            record = {"id": case_id, "request": step, "response": response,
+                      "raw_setup_base64": base64.b64encode(collection).decode() if isinstance(collection, bytes) else None,
+                      "published_before": published_before, "published_after": published_after,
+                      "state": json.loads(after["sub-store.json"]), "root": json.loads(after["root.json"]),
+                      "files_before_base64": {key: base64.b64encode(value).decode() for key, value in before.items()},
+                      "files_after_base64": {key: base64.b64encode(value).decode() for key, value in after.items()}}
+            with (output / f"{name}-reference-graphs.jsonl").open("a", encoding="utf-8") as evidence:
+                evidence.write(json.dumps(record, ensure_ascii=False) + "\n")
+            expected_status = 200 if case_id in ("valid", "live-empty-buffer") or (method == "PATCH" and case_id in ("empty-string", "matching-string", "other-string")) else 500
+            assert response["status"] == expected_status, f"{name} {case_id} {method}: {response}"
+            assert after["root.json"] == before["root.json"], "Reference mutation changed root backup"
+            if expected_status == 500:
+                if name.startswith("rust"):
+                    assert before == after, "Rejected reference mutation changed durable files"
+                    check_json(json.loads(published_after["body"]), json.loads(published_before["body"]))
+                elif method == "PATCH":
+                    assert before == after, "Node rename unexpectedly persisted before its reference error"
+                    if not case_id.startswith(("stored-", "live-")):
+                        check_json(json.loads(published_after["body"])["collections"][0]["subscriptions"], ["renamed", "1", 1])
+                else:
+                    check_json(json.loads(after["sub-store.json"])["subs"], [])
+            else:
+                stored = json.loads(after["sub-store.json"])
+                if case_id == "live-empty-buffer":
+                    check_json(stored["collections"], {"type": "Buffer", "data": []})
+                else:
+                    check_json(stored["collections"][0]["subscriptions"], ["renamed", "1", 1] if method == "PATCH" else [1])
+                check_json(stored["subs"], [{"name": "renamed", "opaque": {"keep": True}}] if method == "PATCH" else [])
+            observations.append({"id": f"reference-{case_id}-{method}",
+                                 "response": {key: response[key] for key in ("status", "body")},
+                                 "headers": {key: response["headers"].get(key) for key in
+                                             ("content-type", "content-length", "etag", "content-security-policy", "x-content-type-options")}})
+    restored = original
     for key in ("subs", "collections"):
         restored[key] = [None, False, 0, "恢复🙂\r\n", [], [None, {"name": "nested"}],
                          {"0": False, "1": None, "name": "restored", "opaque": {"zero": 0}}]

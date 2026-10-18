@@ -124,7 +124,11 @@ fn success(data: Option<Value>, status: u16) -> Reply {
         value["data"] = legacy_object_order(data);
     }
     // The legacy middleware sets text/plain before Express serializes JSON.
-    send(status, "text/plain; charset=utf-8", codec::stringify(&value))
+    send(
+        status,
+        "text/plain; charset=utf-8",
+        codec::stringify(&value),
+    )
 }
 
 pub fn failure(status: u16, code: &str, kind: &str, message: &str) -> Reply {
@@ -494,6 +498,57 @@ fn reference_name_matches(value: &Value, name: &str, subscription: bool) -> bool
         }
 }
 
+fn collection_references(
+    store: &Store,
+    next: &mut Value,
+    name: &str,
+    renamed: Option<&Value>,
+) -> Result<(), &'static str> {
+    if !truthy(&next["collections"]) {
+        return Ok(());
+    }
+    let collections = if next["collections"].is_array() {
+        &mut next["collections"]
+    } else if store.list("collections").is_some() {
+        &mut next["collections"]["data"]
+    } else {
+        return Err(if renamed.is_some() {
+            "a is not iterable"
+        } else {
+            "n is not iterable"
+        });
+    };
+    for collection in collections.as_array_mut().unwrap() {
+        if renamed.is_some() && collection["subscriptions"].is_string() {
+            // The frozen CJS bundle silently ignores assignment to a string index.
+            continue;
+        }
+        let error = if collection.is_null() {
+            "Cannot read properties of null (reading 'subscriptions')"
+        } else {
+            match collection.get("subscriptions") {
+                None => "Cannot read properties of undefined (reading 'filter')",
+                Some(Value::Null) => "Cannot read properties of null (reading 'filter')",
+                _ => "i.subscriptions.filter is not a function",
+            }
+        };
+        let Some(names) = collection
+            .get_mut("subscriptions")
+            .and_then(Value::as_array_mut)
+        else {
+            return Err(error);
+        };
+        if let Some(renamed) = renamed {
+            if let Some(index) = names.iter().position(|value| value == name) {
+                names[index] = renamed.clone();
+            }
+        } else {
+            names.retain(|value| value != name);
+        }
+    }
+    Ok(())
+}
+
 pub fn dispatch(
     method: &Method,
     path: &str,
@@ -744,15 +799,10 @@ pub fn dispatch(
         };
         if method == Method::DELETE {
             next[key].as_array_mut().unwrap().remove(position);
-            if subscription {
-                for collection in next["collections"].as_array_mut().into_iter().flatten() {
-                    if let Some(names) = collection
-                        .get_mut("subscriptions")
-                        .and_then(Value::as_array_mut)
-                    {
-                        names.retain(|value| value != name);
-                    }
-                }
+            if subscription
+                && let Err(message) = collection_references(store, &mut next, name, None)
+            {
+                return caught_error(message);
             }
             return publish(store, next, success(None, 200));
         }
@@ -776,16 +826,10 @@ pub fn dispatch(
             "collection"
         };
         if new_name != name {
-            if subscription {
-                for collection in next["collections"].as_array_mut().into_iter().flatten() {
-                    if let Some(names) = collection
-                        .get_mut("subscriptions")
-                        .and_then(Value::as_array_mut)
-                        && let Some(index) = names.iter().position(|value| value == name)
-                    {
-                        names[index] = new_name.clone();
-                    }
-                }
+            if subscription
+                && collection_references(store, &mut next, name, Some(&new_name)).is_err()
+            {
+                return html_error(500, "Internal Server Error");
             }
             for artifact in next["artifacts"].as_array_mut().into_iter().flatten() {
                 if artifact["type"] == source_type
