@@ -75,8 +75,8 @@ impl Store {
         if !truthy(&data["settings"]) {
             data["settings"] = json!({});
         }
-        if !data["settings"].is_object() {
-            return Err(io::Error::other("settings must be an object"));
+        if !data["settings"].is_object() && !data["settings"].is_array() {
+            return Err(io::Error::other("settings must be an object or array"));
         }
         if !valid_records(&data) {
             return Err(io::Error::other("Invalid state records"));
@@ -294,6 +294,7 @@ pub fn migrate(data: &mut Value) -> io::Result<()> {
                 .remove(key)
                 .unwrap_or(Value::Null);
             let mut items: Vec<Value> = match previous {
+                value if !truthy(&value) => Vec::new(),
                 Value::Object(items) => {
                     let mut entries: Vec<_> = items.into_iter().collect();
                     // Object.values visits canonical array indices before other keys.
@@ -301,7 +302,6 @@ pub fn migrate(data: &mut Value) -> io::Result<()> {
                     entries.into_iter().map(|(_, value)| value).collect()
                 }
                 Value::Array(items) => items,
-                Value::Null => Vec::new(),
                 _ => return Err(io::Error::other(format!("Invalid legacy {key}"))),
             };
             if key == "subs" || key == "collections" {

@@ -358,7 +358,7 @@ def backup_edges(url, state, output, name, offset=None):
     before = {name: (state / name).read_bytes() for name in ("sub-store.json", "root.json")}
     check_json(send("GET", "/api/storage", filename="sub-store_data"), json.loads(before["sub-store.json"]))
     assert all((state / name).read_bytes() == content for name, content in before.items()), "Export changed persisted files"
-    for content in ("invalid backup", json.dumps({"unknown": "missing settings"})):
+    for content in ("invalid backup", json.dumps({"unknown": "missing settings"}), json.dumps({"settings": None})):
         result = send("POST", "/api/storage", {"content": content}, 500)
         assert result["error"]["code"] == "INVALID_BACKUP_DATA"
         assert all((state / name).read_bytes() == value for name, value in before.items()), "Invalid import changed persisted files"
@@ -367,7 +367,13 @@ def backup_edges(url, state, output, name, offset=None):
               "collections": {"c": {"name": "legacy-col", "subscriptions": ["two"], "ua": "old"}},
               "files": {}, "artifacts": {}, "tokens": {}}
     del legacy["schemaVersion"]
-    for original in (backup, legacy):
+    array_settings = [None, False, 0, "设置🙂\r\n", [None, {"nested": True}],
+                      {"script": "require('node:fs')\r\n", "opaque": {"zero": 0, "nil": None}}]
+    array_backup = {**backup, "settings": array_settings}
+    empty_legacy = {**backup, "settings": [], "subs": False, "collections": 0,
+                    "artifacts": "", "rules": False, "files": None, "tokens": 0}
+    del empty_legacy["schemaVersion"]
+    for original in (backup, legacy, {**backup, "settings": []}, array_backup, empty_legacy):
         for encoded in (False, True):
             content = json.dumps(original, ensure_ascii=False)
             if encoded:
@@ -378,6 +384,18 @@ def backup_edges(url, state, output, name, offset=None):
             exported = send("GET", "/api/storage", filename="sub-store_data")
             check_json(exported, json.loads((state / "sub-store.json").read_text(encoding="utf-8")))
             assert "opaque" not in exported and "sub-store" not in exported, "Export included root cache"
+            if isinstance(original["settings"], list):
+                check_json(send("GET", "/api/settings")["data"], original["settings"])
+                expected = {str(index): value for index, value in enumerate(original["settings"])}
+                expected.update({"defaultTimeout": "1500", "appearanceSetting": {"createItemPosition": "top"}})
+                check_json(send("PATCH", "/api/settings", {"defaultTimeout": "1500", "appearanceSetting": {"createItemPosition": "top"}})["data"], expected)
+                expected.update({"0": "覆盖🙂\r\n", "1": False})
+                check_json(send("PATCH", "/api/settings", ["覆盖🙂\r\n", False])["data"], expected)
+                check_json(json.loads((state / "sub-store.json").read_text(encoding="utf-8"))["settings"], expected)
+            if original is empty_legacy:
+                assert all(exported[key] == [] for key in ("subs", "collections", "artifacts", "rules", "files", "tokens"))
+    send("POST", "/api/storage", {"content": json.dumps(array_backup, ensure_ascii=False)})
+    check_json(send("GET", "/api/settings")["data"], array_settings)
     prior_data = (state / "sub-store.json").read_bytes()
     send("GET", "/api/utils/refresh")
     root = json.loads((state / "root.json").read_text(encoding="utf-8"))
@@ -1156,8 +1174,11 @@ def main():
                 with manager as url:
                     check_json(json.loads(request(url, {"path": "/api/storage"})["body"]), restored[kind][-1]["state"])
                     check_json(json.loads((state / "root.json").read_text(encoding="utf-8"))["sub-store"], restored[kind][-1]["root"]["sub-store"])
+                    check_json(json.loads(request(url, {"path": "/api/settings"})["body"])["data"], restored[kind][-1]["state"]["settings"])
             check_json(restored["rust"], restored["node"])
         report["backup_http_and_root_state_equal"] = True
+        report["array_settings_restore_patch_and_restart_checked"] = True
+        report["legacy_falsy_lists_migration_checked"] = True
         report["calendar_filename_timezones_checked"] = [zone for zone, _, _ in zones]
         old_data = (output / "rust-backup-local/sub-store.json").read_bytes()
         old_root = (output / "rust-backup-local/root.json").read_bytes()
@@ -1184,6 +1205,7 @@ def main():
         with oracle(args.node, {**environment, "SUB_STORE_DATA_BASE_PATH": str(restored_rollback)}, output, report, "restored-node-rollback") as url:
             check_json(json.loads(request(url, {"path": "/api/storage"})["body"]), json.loads(old_data))
             check_json(json.loads((restored_rollback / "root.json").read_text(encoding="utf-8"))["sub-store"], json.loads(old_root)["sub-store"])
+            check_json(json.loads(request(url, {"path": "/api/settings"})["body"])["data"], json.loads(old_data)["settings"])
         report["node_reads_restored_rust_data_and_root"] = True
         rollback = output / "node-rollback"
         rollback.mkdir()

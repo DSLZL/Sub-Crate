@@ -394,7 +394,7 @@ fn settings(store: &mut Store, body: Body) -> Reply {
         return pending("Gist and age settings integration is pending");
     }
     let mut next = store.data.clone();
-    let mut settings = next["settings"].as_object().cloned().unwrap_or_default();
+    let mut settings = Body::Json(next["settings"].clone()).fields();
     let previous_appearance = settings
         .get("appearanceSetting")
         .and_then(Value::as_object)
@@ -478,7 +478,9 @@ pub fn dispatch(
                 return invalid_backup();
             };
             let original = next.clone();
-            if !next["settings"].is_object() || migrate(&mut next).is_err() || !valid_records(&next)
+            if (!next["settings"].is_object() && !next["settings"].is_array())
+                || migrate(&mut next).is_err()
+                || !valid_records(&next)
             {
                 return invalid_backup();
             }
