@@ -57,12 +57,13 @@ def check_network(entries, cases, backend_url):
                        and urlsplit(entry["request"]["url"])._replace(query="", fragment="").geturl() == backend_url.rstrip("/") + "/api/logs"
                        and parse_qs(urlsplit(entry["request"]["url"]).query).get("keyword") == [case["keyword"]]
                        for entry in entries), "Missing successful log search with the selected keyword in HAR"
+        if case["id"] == "FE20-restore-manual-backup":
+            for path in ("/api/sub/ui-restored-sub", "/api/collection/ui-restored-col"):
+                assert any(entry["request"]["method"] == "DELETE" and entry["response"]["status"] == 200
+                           and urlsplit(entry["request"]["url"])._replace(query="", fragment="").geturl() == backend_url.rstrip("/") + path
+                           and parse_qs(urlsplit(entry["request"]["url"]).query).get("mode") == ["permanent"]
+                           for entry in entries), "Permanent UI deletion missing from HAR"
         case.update(status="passed", network_verified=True)
-    for path in ("/api/sub/ui-restored-sub", "/api/collection/ui-restored-col"):
-        assert any(entry["request"]["method"] == "DELETE" and entry["response"]["status"] == 200
-                   and urlsplit(entry["request"]["url"])._replace(query="", fragment="").geturl() == backend_url + path
-                   and parse_qs(urlsplit(entry["request"]["url"]).query).get("mode") == ["permanent"]
-                   for entry in entries), "Permanent UI deletion missing from HAR"
     origin = urlsplit(backend_url)._replace(path="", query="", fragment="").geturl()
     return [{"method": method, "url": url, "status": status} for method, url, status in observed if url.startswith((backend_url.rstrip("/") + "/", origin + "/share/"))]
 

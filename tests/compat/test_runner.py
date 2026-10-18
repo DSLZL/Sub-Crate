@@ -519,6 +519,16 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(len(check_network(log_requests, [{"id": "FE17-read-filter-logs", "keyword": "selected"}], "http://127.0.0.1:1/backend")), 2)
         with self.assertRaises(AssertionError):
             check_network(log_requests, [{"id": "FE17-read-filter-logs", "keyword": "wrong"}], "http://127.0.0.1:1/backend")
+        restore_requests = [
+            {"request": {"method": method, "url": "http://127.0.0.1:1/backend" + path}, "response": {"status": 200}}
+            for method, path in (("POST", "/api/storage"), ("GET", "/api/utils/refresh"),
+                                 ("DELETE", "/api/sub/ui-restored-sub?mode=permanent"),
+                                 ("DELETE", "/api/collection/ui-restored-col?mode=permanent"))
+        ]
+        self.assertEqual(len(check_network(restore_requests, [{"id": "FE20-restore-manual-backup"}], "http://127.0.0.1:1/backend")), 4)
+        restore_requests[-1]["request"]["url"] = restore_requests[-1]["request"]["url"].replace("permanent", "archive")
+        with self.assertRaises(AssertionError):
+            check_network(restore_requests, [{"id": "FE20-restore-manual-backup"}], "http://127.0.0.1:1/backend")
         for mutation in ("missing", "error", "wrong-origin", "wrong-method"):
             entries = [copy.deepcopy(entry)]
             if mutation == "missing":

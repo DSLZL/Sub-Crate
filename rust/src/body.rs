@@ -11,6 +11,20 @@ pub enum Body {
     Raw(Bytes),
 }
 
+pub struct Error {
+    pub status: u16,
+    pub detail: String,
+}
+
+impl Error {
+    fn new(status: u16, detail: impl Into<String>) -> Self {
+        Self {
+            status,
+            detail: detail.into(),
+        }
+    }
+}
+
 impl Body {
     pub fn fields(&self) -> Map<String, Value> {
         match self {
@@ -136,7 +150,7 @@ fn decode(bytes: &[u8], charset: &str) -> String {
     text.strip_prefix('\u{feff}').unwrap_or(&text).to_owned()
 }
 
-pub async fn read(request: Request<Incoming>, json_limit: usize) -> Result<Body, u16> {
+pub async fn read(request: Request<Incoming>, json_limit: usize) -> Result<Body, Error> {
     let headers = request.headers();
     let media = headers
         .get("content-type")
@@ -169,7 +183,13 @@ pub async fn read(request: Request<Incoming>, json_limit: usize) -> Result<Body,
                 .contains(&canonical.as_str())))
         || (form && charset != "utf-8")
     {
-        return Err(415);
+        return Err(Error::new(
+            415,
+            format!(
+                "UnsupportedMediaTypeError: unsupported charset \"{}\"",
+                charset.to_uppercase()
+            ),
+        ));
     }
     let encoding = headers
         .get("content-encoding")
@@ -178,32 +198,53 @@ pub async fn read(request: Request<Incoming>, json_limit: usize) -> Result<Body,
         .unwrap_or("identity")
         .to_ascii_lowercase();
     if !["identity", "gzip", "deflate"].contains(&encoding.as_str()) {
-        return Err(415);
+        return Err(Error::new(
+            415,
+            format!("UnsupportedMediaTypeError: unsupported content encoding \"{encoding}\""),
+        ));
     }
     let limit = if json { json_limit } else { 100 * 1024 };
     let bytes = if encoding == "identity" {
         Limited::new(request.into_body(), limit)
             .collect()
             .await
-            .map_err(|_| 413u16)?
+            .map_err(|_| Error::new(413, "PayloadTooLargeError: request entity too large"))?
             .to_bytes()
     } else {
         inflate(request.into_body(), encoding == "gzip", limit).await?
     };
     // The legacy rawBodySaver uses Buffer.toString, which rejects these iconv-supported charsets.
     if json && !bytes.is_empty() && !["utf-8", "utf-16le"].contains(&charset.as_str()) {
-        return Err(403);
+        return Err(Error::new(
+            403,
+            format!("TypeError [ERR_UNKNOWN_ENCODING]: Unknown encoding: {charset}"),
+        ));
     }
     if json || form {
         let text = decode(&bytes, &charset);
         let value = if form {
-            parse_fields(&text, false)?
+            parse_fields(&text, false).map_err(|status| {
+                Error::new(
+                    status,
+                    if status == 413 {
+                        "PayloadTooLargeError: too many parameters"
+                    } else {
+                        "BadRequestError: The input exceeded the depth"
+                    },
+                )
+            })?
         } else if text.is_empty() {
             json!({})
         } else {
             match codec::parse(&text) {
                 Ok(value @ (Value::Object(_) | Value::Array(_))) => value,
-                _ => return Err(400),
+                Ok(_) => {
+                    return Err(Error::new(
+                        400,
+                        "SyntaxError: JSON body must be an object or array",
+                    ));
+                }
+                Err(error) => return Err(Error::new(400, format!("SyntaxError: {error}"))),
             }
         };
         Ok(Body::Json(value))
@@ -212,7 +253,7 @@ pub async fn read(request: Request<Incoming>, json_limit: usize) -> Result<Body,
     }
 }
 
-async fn inflate(mut body: Incoming, gzip: bool, limit: usize) -> Result<Bytes, u16> {
+async fn inflate(mut body: Incoming, gzip: bool, limit: usize) -> Result<Bytes, Error> {
     let mut decoder = if gzip {
         Decompress::new_gzip(15)
     } else {
@@ -222,7 +263,7 @@ async fn inflate(mut body: Incoming, gzip: bool, limit: usize) -> Result<Bytes, 
     let mut finished = false;
     let mut padding = false;
     while let Some(frame) = body.frame().await {
-        let frame = frame.map_err(|_| 400u16)?;
+        let frame = frame.map_err(|error| Error::new(400, format!("Error: {error}")))?;
         let Ok(data) = frame.into_data() else {
             continue;
         };
@@ -246,22 +287,25 @@ async fn inflate(mut body: Incoming, gzip: bool, limit: usize) -> Result<Bytes, 
             let consumed = (decoder.total_in() - before_in) as usize;
             let produced = (decoder.total_out() - before_out) as usize;
             if produced > limit.saturating_sub(output.len()) {
-                return Err(413);
+                return Err(Error::new(
+                    413,
+                    "PayloadTooLargeError: request entity too large",
+                ));
             }
-            let status = status.map_err(|_| 400u16)?;
+            let status = status.map_err(|error| Error::new(400, format!("Error: {error}")))?;
             output.extend_from_slice(&decoded[..produced]);
             input = &input[consumed..];
             finished = status == Status::StreamEnd;
             if consumed == 0 && produced == 0 && !finished {
                 if !input.is_empty() {
-                    return Err(400);
+                    return Err(Error::new(400, "Error: Invalid compressed request body"));
                 }
                 break;
             }
         }
     }
     if !finished {
-        return Err(400);
+        return Err(Error::new(400, "Error: Incomplete compressed request body"));
     }
     Ok(Bytes::from(output))
 }

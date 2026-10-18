@@ -3,6 +3,7 @@ import argparse
 import base64
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from html import unescape as unescape_html
 import gzip
 import hashlib
 import json
@@ -38,9 +39,11 @@ def wall_time():
 
 @contextmanager
 def listener(binary, environment, output, report, log_prefix="rust", image=None):
-    with socket.socket() as reserved:
-        reserved.bind(("127.0.0.1", int(environment.get("SUB_STORE_BACKEND_API_PORT", "0"))))
-        port = reserved.getsockname()[1]
+    port = int(environment.get("SUB_STORE_BACKEND_API_PORT", "0"))
+    if not port:
+        with socket.socket() as reserved:
+            reserved.bind(("127.0.0.1", 0))
+            port = reserved.getsockname()[1]
     environment = {**environment, "SUB_STORE_BACKEND_API_PORT": str(port)}
     origin = f"http://127.0.0.1:{port}"
     if environment.get("SUB_STORE_FRONTEND_PATH"):
@@ -1570,6 +1573,79 @@ def configuration_probes(url, state, output, name, limit, allowed, denied, wildc
     return [{key: value for key, value in row.items() if not key.startswith("files_")} for row in observations]
 
 
+def error_diagnostics(url, state, output, name, mode, kind):
+    parsed = urlsplit(url)
+    observations = []
+    cases = [
+        ("missing-subscription", "GET", "/api/sub/missing", b"", {}, 500,
+         "TypeError: Cannot convert undefined or null to object", True),
+        ("recipient-coercion", "PATCH", "/api/sub/diagnostic", b'{"age-public-key":{"toString":null}}', {}, 500,
+         "TypeError: Cannot convert object to primitive value", True),
+        ("parameter-decoding", "GET", "/api/sub/%FF", b"", {}, 400,
+         "URIError: Failed to decode param '%FF'", True),
+        ("static-precondition", "GET", "/chunks/main-84da2e86.js", b"", {"If-Match": '"wrong"'}, 412,
+         "PreconditionFailedError: Precondition Failed", True),
+        ("static-range", "GET", "/chunks/main-84da2e86.js", b"", {"Range": "bytes=99999-"}, 416,
+         "RangeNotSatisfiableError: Range Not Satisfiable", True),
+        ("invalid-json", "PATCH", "/api/settings", b"{", {}, 400, "SyntaxError:", False),
+        ("scalar-json", "PATCH", "/api/settings", b"false", {}, 400, "SyntaxError:", False),
+        ("unsupported-charset", "PATCH", "/api/settings", b"{}", {"Content-Type": "application/json; charset=latin1"}, 415,
+         'UnsupportedMediaTypeError: unsupported charset "LATIN1"', True),
+        ("unsupported-encoding", "PATCH", "/api/settings", b"{}", {"Content-Encoding": "br"}, 415,
+         'UnsupportedMediaTypeError: unsupported content encoding "br"', True),
+        ("json-limit", "PATCH", "/api/settings", b'{"x":"' + b"x" * 80 + b'"}', {}, 413,
+         "PayloadTooLargeError: request entity too large", True),
+        ("raw-verifier", "PATCH", "/api/settings", b"{}", {"Content-Type": "application/json; charset=utf-16be"}, 403,
+         "TypeError [ERR_UNKNOWN_ENCODING]: Unknown encoding: utf-16be", True),
+        ("invalid-gzip", "PATCH", "/api/settings", b"not-gzip", {"Content-Encoding": "gzip"}, 400, "Error:", False),
+    ]
+    prefix = '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>Error</title>\n</head>\n<body>\n<pre>'
+    suffix = '</pre>\n</body>\n</html>\n'
+    reasons = {400: "Bad Request", 403: "Forbidden", 412: "Precondition Failed", 413: "Payload Too Large",
+               415: "Unsupported Media Type", 416: "Range Not Satisfiable", 500: "Internal Server Error"}
+    for case_id, method, path, body, headers, status, detail, exact in cases:
+        before = {filename: (state / filename).read_bytes() for filename in ("sub-store.json", "root.json")}
+        connection = BufferedHTTPConnection(parsed.hostname, parsed.port, timeout=5)
+        sent_path = path if path.startswith("/chunks/") else parsed.path.rstrip("/") + path
+        headers = {"Content-Type": "application/json", **headers}
+        try:
+            connection.request(method, sent_path, body=body, headers=headers)
+            response = connection.getresponse()
+            content = response.read()
+            actual_headers = {key.lower(): value for key, value in response.getheaders()}
+            actual_status = response.status
+        finally:
+            connection.close()
+        after = {filename: (state / filename).read_bytes() for filename in before}
+        raw = {"case_id": case_id, "mode": mode, "method": method, "path": sent_path, "request_headers": headers,
+               "request_body_base64": base64.b64encode(body).decode(), "status": actual_status, "headers": actual_headers,
+               "body_base64": base64.b64encode(content).decode(),
+               "files_before_base64": {key: base64.b64encode(value).decode() for key, value in before.items()},
+               "files_after_base64": {key: base64.b64encode(value).decode() for key, value in after.items()}}
+        with (output / (name + ".jsonl")).open("a", encoding="utf-8") as evidence:
+            evidence.write(json.dumps(raw, ensure_ascii=False) + "\n")
+        assert actual_status == status, f"{name}/{case_id}: {actual_status}: {content!r}"
+        assert before == after, f"{name}/{case_id}: rejected request changed durable state"
+        assert actual_headers["content-type"] == "text/html; charset=utf-8"
+        assert actual_headers["content-security-policy"] == "default-src 'none'"
+        assert actual_headers["x-content-type-options"] == "nosniff"
+        assert int(actual_headers["content-length"]) == len(content)
+        text = content.decode("utf-8")
+        assert text.startswith(prefix) and text.endswith(suffix), f"{name}/{case_id}: HTML envelope changed"
+        diagnostic = unescape_html(text[len(prefix):-len(suffix)].replace("<br>", "\n"))
+        if mode == "production":
+            assert diagnostic == reasons[status]
+            comparison = diagnostic
+        else:
+            first, separator, frames = diagnostic.partition("\n")
+            assert first == detail if exact else first.startswith(detail), f"{name}/{case_id}: {first!r}"
+            assert separator and re.search(r"(?m)^\s+at " if kind == "node" else r"(?m)^\s*\d+: ", frames), f"{name}/{case_id}: native trace missing"
+            comparison = first if exact else detail + " [parser-specific wording]"
+        observations.append({"case_id": case_id, "status": status, "diagnostic": comparison,
+                             "state": json.loads(after["sub-store.json"]), "root": json.loads(after["root.json"])})
+    return observations
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--node", required=True, type=Path)
@@ -1645,6 +1721,7 @@ def main():
                     report["cors_and_prefix_checked"] = True
         check_json(final["rust"], final["node"])
         report["full_document_equal_after_shared_suite"] = True
+        baseline_root = json.loads((output / "node-state/root.json").read_text(encoding="utf-8"))
         configurations = [
             ("default", {}, 1048576, [("https://sub-store.vercel.app", "https://sub-store.vercel.app")], "https://denied.invalid", False),
             ("custom-name", {"SUB_STORE_BACKEND_CUSTOM_NAME": "configuration-fixture", "SUB_STORE_BODY_JSON_LIMIT": "+1GB"}, 1073741824,
@@ -1666,13 +1743,34 @@ def main():
                 state = output / label
                 state.mkdir()
                 (state / "sub-store.json").write_text(json.dumps(final["node"], ensure_ascii=False), encoding="utf-8")
-                (state / "root.json").write_text('{"configurationRoot":[null,false,0]}', encoding="utf-8")
+                (state / "root.json").write_text(json.dumps({**baseline_root, "configurationRoot": [None, False, 0]}), encoding="utf-8")
                 env = {**environment, **overrides, "NODE_ENV": "production", "SUB_STORE_DATA_BASE_PATH": str(state)}
                 manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
                 with manager as url:
                     observed[kind] = configuration_probes(url, state, output, label, limit, allowed, denied, wildcard)
             check_json(observed["rust"], observed["node"])
         report["listener_prefix_cors_and_json_limit_configurations_checked"] = [row[0] for row in configurations]
+        for mode in ("default", "development", "production"):
+            observed = {}
+            for kind in ("node", "rust"):
+                label = kind + "-diagnostics-" + mode
+                state = output / label
+                state.mkdir()
+                document = {**final["node"], "subs": [{"name": "diagnostic", "source": "local", "content": ""}], "collections": []}
+                (state / "sub-store.json").write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+                (state / "root.json").write_text(json.dumps(baseline_root, ensure_ascii=False), encoding="utf-8")
+                static_fixture(state / "frontend")
+                env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state), "SUB_STORE_BACKEND_MERGE": "true",
+                       "SUB_STORE_FRONTEND_PATH": str(state / "frontend"), "SUB_STORE_BODY_JSON_LIMIT": "64b"}
+                env.pop("NODE_ENV", None)
+                if mode != "default":
+                    env["NODE_ENV"] = mode
+                manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
+                with manager as url:
+                    observed[kind] = error_diagnostics(url, state, output, label, mode, kind)
+            check_json(observed["rust"], observed["node"])
+        report["error_environment_modes_checked"] = ["default", "development", "production"]
+        report["development_error_stack_parity"] = "Native frames and parser-specific wording differ; raw responses retained; fixed reasons, classes, envelopes and rejected-state boundaries match"
         legacy = {"settings": {}, "subs": {"z-last": {"name": "z-last", "display-name": "旧数据🙂", "process": [{"type": "Useless Filter"}, {"type": "Set Property Operator", "args": {"key": "udp", "value": False}}, {"type": "Flag Operator", "args": False}, {"type": "Script Operator", "args": {"content": "require('node:fs')\r\n"}}]}, "a-first": {"name": "a-first"}}, "collections": {"c": {"name": "c", "ua": "old", "subscriptions": ["z-last"], "extra": False}}, "unknown": {"nil": None, "zero": 0, "flag": False}}
         legacy["builtin"] = {"must": "be removed"}
         legacy["subs"].update({"empty-process": {"name": "empty-process", "source": "local", "display-name": False, "process": []},
@@ -2083,7 +2181,6 @@ def main():
         report["static_prefix_configurations_checked"] = ["/backend", "/"]
         report["static_ranges_preconditions_checked"] = True
         report["static_conditional_error_mode"] = "production"
-        report["development_error_stack_parity"] = "NOT_VERIFIED"
         for mode, mount, prefix in (("prefixed", "/backend", "true"), ("unprefixed", "/gateway", ""),
                                     ("root", "/", "true"), ("static-only", "", "")):
             standalone = {}

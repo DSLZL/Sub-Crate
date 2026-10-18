@@ -72,7 +72,11 @@ fn json_limit(raw: &str) -> io::Result<usize> {
             .find(|c: char| !c.is_ascii_digit())
             .unwrap_or(unsigned.len());
         let number = unsigned[..end].parse::<f64>().ok()?;
-        Some(if text.starts_with('-') { -number } else { number })
+        Some(if text.starts_with('-') {
+            -number
+        } else {
+            number
+        })
     });
     match bytes {
         Some(bytes) if bytes.is_finite() && bytes >= 0.0 && bytes <= usize::MAX as f64 => {
@@ -433,6 +437,12 @@ fn static_file(root: &Path, path: &str, headers: &HeaderMap, fallback: bool) -> 
         } else {
             "Range Not Satisfiable"
         };
+        let kind = if status == 412 {
+            "PreconditionFailedError"
+        } else {
+            "RangeNotSatisfiableError"
+        };
+        let message = api::diagnostic(status, &format!("{kind}: {message}"));
         format!("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>{message}</pre>\n</body>\n</html>\n").into_bytes()
     } else if fresh {
         Vec::new()
@@ -731,17 +741,7 @@ async fn route(
     let raw_query = request.uri().query().unwrap_or("").to_owned();
     let body = match body::read(request, config.body_limit).await {
         Ok(body) => body,
-        Err(status) => {
-            return api::html_error(
-                status,
-                match status {
-                    403 => "Forbidden",
-                    413 => "Payload Too Large",
-                    415 => "Unsupported Media Type",
-                    _ => "Bad Request",
-                },
-            );
-        }
+        Err(error) => return api::uncaught_error(error.status, &error.detail),
     };
     let not_found = || {
         if method == Method::GET {
@@ -793,7 +793,13 @@ async fn route(
     let path = match api_path(path) {
         Ok(Some(path)) => path,
         Ok(None) => return not_found(),
-        Err(()) => return api::html_error(400, "Bad Request"),
+        Err(()) => {
+            let parameter = path.rsplit('/').next().unwrap_or("");
+            return api::uncaught_error(
+                400,
+                &format!("URIError: Failed to decode param '{parameter}'"),
+            );
+        }
     };
     if path == "/" && method != Method::GET {
         return api::greeting();

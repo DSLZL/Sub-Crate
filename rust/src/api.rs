@@ -47,13 +47,16 @@ pub fn not_found() -> Reply {
 }
 
 pub fn route_not_found(method: &Method, path: &str) -> Reply {
-    let message = format!("Cannot {method} {path}")
+    html_error(404, &escape_html(&format!("Cannot {method} {path}")))
+}
+
+fn escape_html(value: &str) -> String {
+    value
         .replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
-        .replace('\'', "&#39;");
-    html_error(404, &message)
+        .replace('\'', "&#39;")
 }
 
 pub fn greeting() -> Reply {
@@ -100,6 +103,24 @@ pub fn html_error(status: u16, message: &str) -> Reply {
     response
 }
 
+pub fn diagnostic(status: u16, detail: &str) -> String {
+    if std::env::var("NODE_ENV").as_deref() == Ok("production") {
+        return hyper::StatusCode::from_u16(status)
+            .unwrap()
+            .canonical_reason()
+            .unwrap()
+            .to_owned();
+    }
+    let trace = std::backtrace::Backtrace::force_capture();
+    escape_html(&format!("{detail}\n{trace}"))
+        .replace('\n', "<br>")
+        .replace("  ", " &nbsp;")
+}
+
+pub fn uncaught_error(status: u16, detail: &str) -> Reply {
+    html_error(status, &diagnostic(status, detail))
+}
+
 fn caught_error(message: &str) -> Reply {
     send(
         500,
@@ -112,7 +133,7 @@ fn null_name_error(caught: bool) -> Reply {
     if caught {
         caught_error("Cannot read properties of null (reading 'name')")
     } else {
-        html_error(500, "Internal Server Error")
+        uncaught_error(500, "TypeError: Cannot read properties of null (reading 'name')")
     }
 }
 
@@ -166,7 +187,7 @@ fn invalid_backup() -> Reply {
 
 fn download(value: &Value, name: &str) -> Reply {
     let Ok(name) = String::from_utf16(&codec::units(name)) else {
-        return html_error(500, "Internal Server Error");
+        return uncaught_error(500, "URIError: URI malformed");
     };
     let stamp = jiff::Zoned::now().strftime("%Y-%m-%d_%H-%M-%S");
     let filename = format!("{name}_{stamp}.json");
@@ -496,6 +517,12 @@ fn collection_references(
         }
         let error = if collection.is_null() {
             "Cannot read properties of null (reading 'subscriptions')"
+        } else if renamed.is_some() {
+            match collection.get("subscriptions") {
+                None => "Cannot read properties of undefined (reading 'indexOf')",
+                Some(Value::Null) => "Cannot read properties of null (reading 'indexOf')",
+                _ => "i.subscriptions.indexOf is not a function",
+            }
         } else {
             match collection.get("subscriptions") {
                 None => "Cannot read properties of undefined (reading 'filter')",
@@ -621,7 +648,10 @@ pub fn dispatch(
         }
     }
     if path != plural && method == Method::GET {
-        if lookup_failed || null_record {
+        if lookup_failed {
+            return uncaught_error(500, "TypeError: e.find is not a function");
+        }
+        if null_record {
             return null_name_error(false);
         }
         return if let Some(position) = position {
@@ -658,7 +688,7 @@ pub fn dispatch(
                 }})),
             )
         } else {
-            html_error(500, "Internal Server Error")
+            uncaught_error(500, "TypeError: Cannot convert undefined or null to object")
         };
     }
     let mut next = store.data.clone();
@@ -766,7 +796,7 @@ pub fn dispatch(
             return if method == Method::DELETE {
                 caught_error("e.find is not a function")
             } else {
-                html_error(500, "Internal Server Error")
+                uncaught_error(500, "TypeError: e.find is not a function")
             };
         }
         if null_record {
@@ -799,7 +829,7 @@ pub fn dispatch(
         let mut item = next[key][position].clone();
         item.as_object_mut().unwrap().extend(patch);
         if cannot_coerce(&item["age-public-key"]) {
-            return html_error(500, "Internal Server Error");
+            return uncaught_error(500, &format!("TypeError: {PRIMITIVE_ERROR}"));
         }
         if normalize_item(&mut item, false).is_err() {
             // The legacy PATCH handler lets this error reach Express's HTML handler.
@@ -813,16 +843,16 @@ pub fn dispatch(
         };
         if new_name != name {
             if subscription
-                && collection_references(store, &mut next, name, Some(&new_name)).is_err()
+                && let Err(message) = collection_references(store, &mut next, name, Some(&new_name))
             {
-                return html_error(500, "Internal Server Error");
+                return uncaught_error(500, &format!("TypeError: {message}"));
             }
             for artifact in next["artifacts"].as_array_mut().into_iter().flatten() {
                 if subscription
                     && artifact["type"] == source_type
                     && cannot_coerce(&artifact["source"])
                 {
-                    return html_error(500, "Internal Server Error");
+                    return uncaught_error(500, &format!("TypeError: {PRIMITIVE_ERROR}"));
                 }
                 if artifact["type"] == source_type
                     && reference_name_matches(&artifact["source"], name, subscription)
@@ -835,7 +865,7 @@ pub fn dispatch(
                     && file["sourceType"] == source_type
                     && cannot_coerce(&file["sourceName"])
                 {
-                    return html_error(500, "Internal Server Error");
+                    return uncaught_error(500, &format!("TypeError: {PRIMITIVE_ERROR}"));
                 }
                 if file["sourceType"] == source_type
                     && reference_name_matches(&file["sourceName"], name, subscription)
