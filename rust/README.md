@@ -72,8 +72,7 @@ retain their 403 verifier / empty-body behavior, including after decompression.
 Gzip and zlib-wrapped deflate requests stream through the same parsers, applying
 limits to expanded bytes. Concatenated gzip members are decoded before parsing;
 corrupt/truncated streams return 400 and expanded overflow returns 413 without
-publishing data. Lone UTF-16 surrogate values and exotic form overflow collisions
-remain M2 gaps.
+publishing data. Exotic form overflow collisions remain an M2 gap.
 Raw JSON exports retain the legacy local-calendar filenames and escaped resource
 names. Manual restore keeps the pre-migration backup in `root.json`'s `sub-store`
 key and preserves unrelated root entries. A private undo record protects the two
@@ -86,7 +85,10 @@ Non-null JSON settings survive import; truthy booleans, numbers, strings,
 objects and arrays retain their type on reads and startup. Reading imported
 false/zero/empty-string settings durably initializes an empty object. Object
 and array settings retain their existing PATCH behavior; boolean/number PATCH
-spreads no old fields. String property spreading remains an M2 coercion gap.
+spreads no old fields. String property spreading uses the original UTF-16 code
+units. JSON strings and keys retain isolated surrogates through parsing, export,
+import and restart; valid pairs and literal private-use/backslash sequences keep
+their original values.
 Legacy migration treats falsy lists as empty maps, matching the old backend.
 Malformed recovery records stop startup without resetting either file. Let Rust
 recover a pending restore before rolling back to Node. The no-Gist refresh path

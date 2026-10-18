@@ -1,3 +1,4 @@
+use crate::json as codec;
 use flate2::{Decompress, FlushDecompress, Status};
 use http_body_util::{BodyExt, Limited};
 use hyper::{Request, body::Bytes, body::Incoming};
@@ -17,6 +18,11 @@ impl Body {
                 .iter()
                 .enumerate()
                 .map(|(index, item)| (index.to_string(), item.clone()))
+                .collect(),
+            Self::Json(Value::String(text)) => codec::units(text)
+                .into_iter()
+                .enumerate()
+                .map(|(index, unit)| (index.to_string(), json!(codec::from_units(&[unit]))))
                 .collect(),
             Self::Raw(bytes) => bytes
                 .iter()
@@ -124,7 +130,7 @@ fn decode(bytes: &[u8], charset: &str) -> String {
             .iter()
             .map(|pair| u16::from_le_bytes(*pair))
             .collect();
-        String::from_utf16_lossy(&words)
+        codec::utf16_json(&words)
     };
     text.strip_prefix('\u{feff}').unwrap_or(&text).to_owned()
 }
@@ -194,7 +200,7 @@ pub async fn read(request: Request<Incoming>, json_limit: usize) -> Result<Body,
         } else if text.is_empty() {
             json!({})
         } else {
-            match serde_json::from_str(&text) {
+            match codec::parse(&text) {
                 Ok(value @ (Value::Object(_) | Value::Array(_))) => value,
                 _ => return Err(400),
             }
@@ -268,12 +274,13 @@ fn form_decode(value: &str) -> String {
                 .get(index + 1..index + 3)
                 .is_some_and(|digits| digits.iter().all(u8::is_ascii_hexdigit))
     }) {
-        return value;
+        return codec::encode(&value);
     }
-    percent_decode_str(&value)
+    let decoded = percent_decode_str(&value)
         .decode_utf8()
         .map(|decoded| decoded.into_owned())
-        .unwrap_or(value)
+        .unwrap_or(value);
+    codec::encode(&decoded)
 }
 
 fn merge(target: &mut Value, source: Value, query: bool) {

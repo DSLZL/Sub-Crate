@@ -1,4 +1,5 @@
 use crate::body::Body;
+use crate::json as codec;
 use crate::state::{Store, decode, legacy_object_order, migrate, truthy, valid_records};
 use base64::Engine;
 use http_body_util::Full;
@@ -105,7 +106,7 @@ fn caught_error(message: &str) -> Reply {
     send(
         500,
         "text/plain; charset=utf-8",
-        json!({"status":"failed", "error":{"message":message}}).to_string(),
+        codec::stringify(&json!({"status":"failed", "error":{"message":message}})),
     )
 }
 
@@ -123,17 +124,16 @@ fn success(data: Option<Value>, status: u16) -> Reply {
         value["data"] = legacy_object_order(data);
     }
     // The legacy middleware sets text/plain before Express serializes JSON.
-    send(status, "text/plain; charset=utf-8", value.to_string())
+    send(status, "text/plain; charset=utf-8", codec::stringify(&value))
 }
 
 pub fn failure(status: u16, code: &str, kind: &str, message: &str) -> Reply {
     send(
         status,
         "text/plain; charset=utf-8",
-        json!({
+        codec::stringify(&json!({
             "status":"failed", "error":{"code":code, "type":kind, "message":message}
-        })
-        .to_string(),
+        })),
     )
 }
 
@@ -154,16 +154,18 @@ fn invalid_backup() -> Reply {
     send(
         500,
         "text/plain; charset=utf-8",
-        json!({"status":"failed", "error":{
+        codec::stringify(&json!({"status":"failed", "error":{
             "code":"INVALID_BACKUP_DATA", "type":"RequestInvalidError",
             "message":"Invalid backup data, failed to restore!",
             "details":"Reason: 备份文件校验失败, 无法还原"
-        }})
-        .to_string(),
+        }})),
     )
 }
 
 fn download(value: &Value, name: &str) -> Reply {
+    let Ok(name) = String::from_utf16(&codec::units(name)) else {
+        return html_error(500, "Internal Server Error");
+    };
     let mut local = MaybeUninit::<libc::tm>::uninit();
     // Linux time() can lag behind the precise wall clock at a second boundary.
     let now = SystemTime::now()
@@ -203,7 +205,7 @@ fn download(value: &Value, name: &str) -> Reply {
     let mut response = send(
         200,
         "application/json; charset=utf-8",
-        legacy_object_order(value.clone()).to_string(),
+        codec::stringify(&legacy_object_order(value.clone())),
     );
     response.headers_mut().insert(
         "access-control-expose-headers",
@@ -513,7 +515,7 @@ pub fn dispatch(
             let restored = body.into_json()["content"]
                 .as_str()
                 .ok_or_else(|| "Missing content".to_owned())
-                .and_then(decode);
+                .and_then(|text| decode(&codec::text(text)));
             let Ok(mut next) = restored else {
                 return invalid_backup();
             };
@@ -624,11 +626,10 @@ pub fn dispatch(
             send(
                 500,
                 "text/plain; charset=utf-8",
-                json!({"status":"failed", "error":{
+                codec::stringify(&json!({"status":"failed", "error":{
                     "code":"SUBSCRIPTION_NOT_FOUND", "type":"ResourceNotFoundError",
                     "message":format!("{label} {name} does not exist"), "details":404
-                }})
-                .to_string(),
+                }})),
             )
         } else {
             html_error(500, "Internal Server Error")

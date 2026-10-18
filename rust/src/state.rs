@@ -1,3 +1,4 @@
+use crate::json as codec;
 use base64::{Engine, engine::general_purpose};
 use serde_json::{Value, json};
 use std::collections::HashSet;
@@ -13,7 +14,7 @@ pub struct Store {
 }
 
 pub fn decode(text: &str) -> Result<Value, String> {
-    let value: Value = serde_json::from_str(text).or_else(|_| {
+    let value: Value = codec::parse(text).or_else(|_| {
         // js-base64 removes padding/noise before Buffer decodes the remaining sextets.
         let mut encoded: String = text
             .chars()
@@ -34,7 +35,7 @@ pub fn decode(text: &str) -> Result<Value, String> {
         let bytes = decoder
             .decode(encoded)
             .map_err(|_| "Invalid JSON or Base64 backup".to_owned())?;
-        serde_json::from_str(&String::from_utf8_lossy(&bytes))
+        codec::parse(&String::from_utf8_lossy(&bytes))
             .map_err(|_| "Invalid backup JSON".to_owned())
     })?;
     if !value.is_object() {
@@ -59,7 +60,8 @@ impl Store {
         let mut data = decode(text).map_err(io::Error::other)?;
         let root_path = directory.join("root.json");
         if root_path.exists() {
-            let root: Value = serde_json::from_slice(&fs::read(&root_path)?)?;
+            let root =
+                codec::parse(std::str::from_utf8(&fs::read(&root_path)?).map_err(io::Error::other)?)?;
             if !root.is_object() {
                 return Err(io::Error::other("root.json must be a JSON object"));
             }
@@ -100,13 +102,13 @@ impl Store {
             data,
             live_buffers: HashSet::new(),
         };
-        atomic_write(&store.path, &serde_json::to_vec_pretty(&store.data)?)?;
+        atomic_write(&store.path, &codec::pretty(&store.data))?;
         Ok(store)
     }
 
     pub fn commit(&mut self, next: Value) -> io::Result<()> {
         recover_restore(&self.path)?;
-        atomic_write(&self.path, &serde_json::to_vec_pretty(&next)?)?;
+        atomic_write(&self.path, &codec::pretty(&next))?;
         self.data = next;
         Ok(())
     }
@@ -135,15 +137,15 @@ impl Store {
         let root_path = self.path.with_file_name("root.json");
         let previous_data = fs::read(&self.path)?;
         let previous_root = fs::read(&root_path)?;
-        let mut root: Value = serde_json::from_slice(&previous_root)?;
-        let root = root
+        let mut root = codec::parse(std::str::from_utf8(&previous_root).map_err(io::Error::other)?)?;
+        let original = String::from_utf8(codec::pretty(&legacy_object_order(original)))
+            .expect("serialized JSON is UTF-8");
+        let root_fields = root
             .as_object_mut()
             .ok_or_else(|| io::Error::other("root.json must be an object"))?;
-        root.insert(
+        root_fields.insert(
             "sub-store".to_owned(),
-            json!(serde_json::to_string_pretty(&legacy_object_order(
-                original
-            ))?),
+            json!(codec::encode(&original)),
         );
         let pending = self.path.with_file_name(".sub-store-restore.pending.json");
         let previous = json!({
@@ -152,8 +154,8 @@ impl Store {
         });
         atomic_write(&pending, &serde_json::to_vec(&previous)?)?;
         let result = (|| {
-            atomic_write(&root_path, &serde_json::to_vec_pretty(root)?)?;
-            atomic_write(&self.path, &serde_json::to_vec_pretty(&next)?)?;
+            atomic_write(&root_path, &codec::pretty(&root))?;
+            atomic_write(&self.path, &codec::pretty(&next))?;
             fs::remove_file(&pending)
         })();
         if let Err(error) = result {
@@ -170,8 +172,9 @@ impl Store {
     pub fn clear_resource_cache(&mut self) -> io::Result<()> {
         recover_restore(&self.path)?;
         let path = self.path.with_file_name("root.json");
-        let mut root: Value = serde_json::from_slice(&fs::read(&path)?)?;
-        let root = root
+        let mut root =
+            codec::parse(std::str::from_utf8(&fs::read(&path)?).map_err(io::Error::other)?)?;
+        let root_fields = root
             .as_object_mut()
             .ok_or_else(|| io::Error::other("root.json must be an object"))?;
         for key in [
@@ -179,9 +182,9 @@ impl Store {
             "sub-store-cached-headers-resource",
             "sub-store-cached-script-resource",
         ] {
-            root.insert(key.to_owned(), json!("{}"));
+            root_fields.insert(key.to_owned(), json!("{}"));
         }
-        atomic_write(&path, &serde_json::to_vec_pretty(root)?)
+        atomic_write(&path, &codec::pretty(&root))
     }
 }
 
@@ -204,7 +207,7 @@ fn recover_restore(path: &Path) -> io::Result<()> {
     let data = saved("data")?;
     let root = saved("root")?;
     decode(std::str::from_utf8(&data).map_err(io::Error::other)?).map_err(io::Error::other)?;
-    if !serde_json::from_slice::<Value>(&root)?.is_object() {
+    if !codec::parse(std::str::from_utf8(&root).map_err(io::Error::other)?)?.is_object() {
         return Err(io::Error::other("Invalid root restore recovery record"));
     }
     atomic_write(&path.with_file_name("root.json"), &root)?;

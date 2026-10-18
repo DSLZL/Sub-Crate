@@ -1,5 +1,6 @@
 mod api;
 mod body;
+mod json;
 mod state;
 
 use hyper::body::{Body, Incoming};
@@ -94,7 +95,7 @@ impl Config {
         let environment = Value::Object(
             env::vars()
                 .filter(|(key, _)| key.starts_with("SUB_STORE_"))
-                .map(|(key, value)| (key, json!(value)))
+                .map(|(key, value)| (json::encode(&key), json!(json::encode(&value))))
                 .collect(),
         );
         Ok(Self {
@@ -680,7 +681,7 @@ fn api_path(raw: &str) -> Result<Option<String>, ()> {
             match resource.as_str() {
                 "sub" | "collection" => Some(format!(
                     "/api/{resource}/{}",
-                    percent_decode_str(name).decode_utf8().map_err(|_| ())?
+                    json::encode(&percent_decode_str(name).decode_utf8().map_err(|_| ())?)
                 )),
                 "utils" => Some(format!("/api/utils/{}", name.to_ascii_lowercase())),
                 _ => None,
@@ -778,13 +779,17 @@ async fn route(
     }
     let query = body::query(&raw_query);
     if (path == "/" || path == "/api/utils/env") && method == Method::GET {
-        return api::send(200, "application/json; charset=utf-8", json!({
-            "status":"success", "data":{
-                "backend":"Node", "version":env!("CARGO_PKG_VERSION"),
-                "feature":{"archive":false},
-                "meta":{"node":{"env":config.environment},"rust":{"version":env!("CARGO_PKG_VERSION"),"milestone":"M2","complete":false}}
-            }
-        }).to_string());
+        return api::send(
+            200,
+            "application/json; charset=utf-8",
+            json::stringify(&json!({
+                "status":"success", "data":{
+                    "backend":"Node", "version":env!("CARGO_PKG_VERSION"),
+                    "feature":{"archive":false},
+                    "meta":{"node":{"env":config.environment},"rust":{"version":env!("CARGO_PKG_VERSION"),"milestone":"M2","complete":false}}
+                }
+            })),
+        );
     }
     let mut store = store.lock().unwrap();
     let response = api::dispatch(&method, &path, &query, body, &mut store);

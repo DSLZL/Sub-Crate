@@ -498,6 +498,78 @@ def settings_reads(url, state, output, name, expected):
     return observations
 
 
+def unicode_state(url, state, output, name, mutate=False):
+    """Keep user code units intact across HTTP, both files and Node rollback."""
+    parsed = urlsplit(url)
+    observations = []
+
+    def send(method, path, body=None, status=200, utf16=False):
+        payload = json.dumps(body, ensure_ascii=not utf16) if body is not None else None
+        encoded = payload.encode("utf-16le", errors="surrogatepass") if utf16 else payload.encode() if payload is not None else None
+        before = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")}
+        connection = BufferedHTTPConnection(parsed.hostname, parsed.port, timeout=30)
+        headers = {"Content-Type": "application/json; charset=" + ("utf-16le" if utf16 else "utf-8")} if encoded is not None else {}
+        try:
+            connection.request(method, parsed.path.rstrip("/") + path, body=encoded, headers=headers)
+            response = connection.getresponse()
+            content = response.read()
+            fields = dict(response.getheaders())
+            actual_status = response.status
+        finally:
+            connection.close()
+        after = {key: (state / key).read_bytes() for key in before}
+        record = {"method": method, "path": path, "status": actual_status, "headers": fields,
+                  "request_base64": base64.b64encode(encoded).decode() if encoded is not None else None,
+                  "body_base64": base64.b64encode(content).decode(), "state": json.loads(after["sub-store.json"]),
+                  "root": json.loads(after["root.json"]),
+                  "files_before_base64": {key: base64.b64encode(value).decode() for key, value in before.items()},
+                  "files_after_base64": {key: base64.b64encode(value).decode() for key, value in after.items()}}
+        with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
+            evidence.write(json.dumps(record, ensure_ascii=True) + "\n")
+        assert actual_status == status, f"{name} {method} {path}: {actual_status} {content!r}"
+        if method == "GET" or status >= 400:
+            assert before == after, "Read/rejected Unicode request changed durable files"
+        fields = {key.lower(): value for key, value in fields.items()}
+        assert int(fields["content-length"]) == len(content)
+        if "etag" in fields:
+            digest = base64.b64encode(hashlib.sha1(content).digest()).decode().rstrip("=")
+            assert fields["etag"] == f'W/"{len(content):x}-{digest}"'
+        observations.append({key: record[key] for key in ("method", "path", "status", "body_base64", "state", "root")})
+        return json.loads(content)
+
+    original = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+    check_json(send("GET", "/api/storage"), original)
+    check_json(send("GET", "/api/settings")["data"], original["settings"])
+    if mutate:
+        words = original["settings"].encode("utf-16le", errors="surrogatepass")
+        expected = {str(index // 2): chr(int.from_bytes(words[index:index + 2], "little")) for index in range(0, len(words), 2)}
+        check_json(send("PATCH", "/api/settings", {})["data"], expected)
+        values = {"high": "\ud800", "low": "\udfff", "pair": "🙂", "literal": "\\ud800",
+                  "marker": "\ue000d800", "markers": "\ue000\ue000", "\ud800": "\udc00", "nil": None}
+        expected["unicode"] = values
+        for utf16 in (False, True):
+            check_json(send("PATCH", "/api/settings", {"unicode": values}, utf16=utf16)["data"], expected)
+        item = {"name": "unicode-\ue000d800-🙂", "unicode": values}
+        check_json(send("POST", "/api/subs", item, status=201)["data"], item)
+        path = "/api/sub/" + quote(item["name"], safe="")
+        check_json(send("GET", path)["data"], item)
+        check_json(send("GET", path + "?raw=1"), item)
+        send("POST", "/api/collections", {**item, "subscriptions": [item["name"]]}, status=201)
+        restored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+        restored["unknown"] = values
+        for content in (json.dumps(restored, ensure_ascii=True),
+                        base64.b64encode(json.dumps(restored, ensure_ascii=True).encode()).decode()):
+            send("POST", "/api/storage", {"content": content})
+            check_json(send("GET", "/api/storage"), restored)
+            check_json(json.loads(json.loads((state / "root.json").read_text(encoding="utf-8"))["sub-store"]), restored)
+        send("POST", "/api/storage", {"content": json.dumps({**restored, "settings": None}, ensure_ascii=True)}, status=500)
+    for plural in ("subs", "collections"):
+        check_json(send("GET", "/api/" + plural)["data"], json.loads((state / "sub-store.json").read_text(encoding="utf-8"))[plural])
+    check_json(send("GET", "/api/settings")["data"], json.loads((state / "sub-store.json").read_text(encoding="utf-8"))["settings"])
+    (output / f"{name}.json").write_text(json.dumps(observations, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+    return observations
+
+
 def request_bodies(url, state, output, name, origin=None):
     """Exercise the production parser, durable CRUD, and the standalone forwarding path."""
     parsed = urlsplit(url)
@@ -1678,7 +1750,32 @@ def main():
                     check_json(settings_reads(url, state, output, f"settings-rollback-{label}", value), startup["rust"])
         report["scalar_settings_import_and_startup_checked"] = True
         report["scalar_settings_node_rollback_checked"] = True
-        report["string_settings_patch_parity"] = "NOT_VERIFIED"
+        unicode_results = {}
+        for kind in ("node", "rust"):
+            state = output / (kind + "-unicode")
+            state.mkdir()
+            document = {**seed, "subs": [], "collections": [], "settings": "A中🙂\ue000d800\ud800",
+                        "unknown": {"\udfff": "\ud800", "literal": "\ue000d800"}}
+            (state / "sub-store.json").write_text(json.dumps(document, ensure_ascii=True), encoding="utf-8")
+            (state / "root.json").write_text(json.dumps({**root, "unicodeRoot": document["unknown"]}, ensure_ascii=True), encoding="utf-8")
+            env = {**environment, "NODE_ENV": "production", "SUB_STORE_DATA_BASE_PATH": str(state)}
+            label = kind + "-unicode"
+            manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
+            with manager as url:
+                unicode_results[kind] = unicode_state(url, state, output, label + "-live", mutate=True)
+            manager = oracle(args.node, env, output, report, label + "-restart") if kind == "node" else listener(args.binary, env, output, report, label + "-restart", image)
+            with manager as url:
+                unicode_results[kind].extend(unicode_state(url, state, output, label + "-restart"))
+        check_json(unicode_results["rust"], unicode_results["node"])
+        state = output / "unicode-node-rollback"
+        state.mkdir()
+        for filename in ("sub-store.json", "root.json"):
+            shutil.copyfile(output / "rust-unicode" / filename, state / filename)
+        with oracle(args.node, {**environment, "NODE_ENV": "production", "SUB_STORE_DATA_BASE_PATH": str(state)}, output, report, "unicode-node-rollback") as url:
+            rollback_results = unicode_state(url, state, output, "unicode-node-rollback")
+        check_json(rollback_results, unicode_results["node"][-len(rollback_results):])
+        report["unicode_json_restart_and_node_rollback_checked"] = True
+        report["string_settings_patch_parity"] = True
         buffer_results = {}
         for kind in ("node", "rust"):
             state = output / (kind + "-buffers")
