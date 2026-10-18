@@ -465,10 +465,9 @@ def request_bodies(url, state, output, name, origin=None):
         for body, media in rejected:
             send("/api/" + plural, body, media, status=500, method="PUT")
             actual = observations[-1]
-            variable = "allSubs" if plural == "subs" else "allCols"
             content = base64.b64decode(actual["body_base64"])
             check_json(json.loads(content),
-                       {"status": "failed", "error": {"message": f"{variable}.forEach is not a function"}})
+                       {"status": "failed", "error": {"message": "r.forEach is not a function"}})
             assert actual["headers"]["content-type"] == "text/plain; charset=utf-8"
             assert actual["headers"]["content-length"] == str(len(content))
             tag = base64.b64encode(hashlib.sha1(content).digest()).decode("ascii").rstrip("=")

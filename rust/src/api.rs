@@ -638,13 +638,8 @@ pub fn dispatch(
     if path == plural && method == Method::PUT {
         let mut items = match body {
             Body::Json(Value::Array(items)) => items,
-            Body::Json(_) => {
-                return caught_error(if subscription {
-                    "allSubs.forEach is not a function"
-                } else {
-                    "allCols.forEach is not a function"
-                });
-            }
+            // The frozen minified Node bundle names this local variable r on both routes.
+            Body::Json(_) => return caught_error("r.forEach is not a function"),
             // shortcut: live Buffer bulk state needs separate handling before accepting raw bytes.
             Body::Raw(_) => return invalid("INVALID_DATA", "Expected an array"),
         };
