@@ -536,7 +536,7 @@ async fn handle(
     let headers = request.headers().clone();
     let response = if !config.allowed(&raw_origin) {
         api::text(403, "text/plain;charset=UTF-8", "CORS origin not allowed")
-    } else if request.method() == Method::OPTIONS {
+    } else if request.method() == Method::OPTIONS && !raw_origin.is_empty() {
         api::text(200, "text/plain;charset=UTF-8", "")
     } else {
         route(request, &config, &store).await
@@ -642,27 +642,7 @@ async fn frontend_handle(
         }
     }
     if response.status().as_u16() == 404 {
-        let escaped = path
-            .replace('&', "&amp;")
-            .replace('<', "&lt;")
-            .replace('>', "&gt;")
-            .replace('"', "&quot;")
-            .replace('\'', "&#39;");
-        response = api::text(
-            404,
-            "text/html; charset=utf-8",
-            format!(
-                "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Cannot {} {escaped}</pre>\n</body>\n</html>\n",
-                request.method()
-            ),
-        );
-        response.headers_mut().insert(
-            "content-security-policy",
-            "default-src 'none'".parse().unwrap(),
-        );
-        response
-            .headers_mut()
-            .insert("x-content-type-options", "nosniff".parse().unwrap());
+        response = api::route_not_found(request.method(), &path);
     }
     response
         .headers_mut()
@@ -739,6 +719,15 @@ async fn route(
             );
         }
     };
+    let not_found = || {
+        if method == Method::GET {
+            api::not_found()
+        } else if method == Method::OPTIONS {
+            api::options("")
+        } else {
+            api::route_not_found(&method, &raw_path)
+        }
+    };
     let path = if let Some(prefix) = &config.prefix {
         let matches = if prefix == "/" {
             backend_route(&raw_path)
@@ -757,11 +746,17 @@ async fn route(
             if let Some(root) = &config.frontend
                 && config.merge
                 && !backend_route(&raw_path)
-                && method == Method::GET
             {
-                return match percent_decode_str(&raw_path).decode_utf8() {
-                    Ok(path) => static_file(root, &path, &headers, true),
-                    Err(_) => api::text(400, "text/plain; charset=utf-8", "Invalid URL encoding"),
+                if method == Method::GET {
+                    return match percent_decode_str(&raw_path).decode_utf8() {
+                        Ok(path) => static_file(root, &path, &headers, true),
+                        Err(_) => api::text(400, "text/plain; charset=utf-8", "Invalid URL encoding"),
+                    };
+                }
+                return if raw_path == "/" {
+                    api::greeting()
+                } else {
+                    not_found()
                 };
             }
             return api::not_found();
@@ -771,9 +766,15 @@ async fn route(
     };
     let path = match api_path(path) {
         Ok(Some(path)) => path,
-        Ok(None) => return api::not_found(),
+        Ok(None) => return not_found(),
         Err(()) => return api::html_error(400, "Bad Request"),
     };
+    if path == "/" && method != Method::GET {
+        return api::greeting();
+    }
+    if method == Method::OPTIONS {
+        return api::options(&path);
+    }
     let query = reqwest::Url::parse(&format!("http://localhost/?{raw_query}"))
         .unwrap()
         .query_pairs()
@@ -789,7 +790,12 @@ async fn route(
         }).to_string());
     }
     let mut store = store.lock().unwrap();
-    api::dispatch(&method, &path, &query, body, &mut store)
+    let response = api::dispatch(&method, &path, &query, body, &mut store);
+    if response.status().as_u16() == 404 && response.body().size_hint().exact() == Some(0) {
+        not_found()
+    } else {
+        response
+    }
 }
 
 #[tokio::main(flavor = "current_thread")]

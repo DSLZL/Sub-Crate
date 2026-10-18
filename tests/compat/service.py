@@ -569,10 +569,11 @@ def api_entities(url, state, output, name, origin=None):
     parsed = urlsplit(url)
     observations = []
     compared_headers = ("content-type", "content-length", "etag", "last-modified", "content-encoding",
-                        "cache-control", "vary", "content-security-policy", "x-content-type-options")
+                        "cache-control", "vary", "content-security-policy", "x-content-type-options", "allow")
 
     def send(path, headers=None, method="GET", status=200, body=None, tagged=True, expected=None):
         headers = {**({"Origin": origin} if origin else {}), **(headers or {})}
+        headers = {key: value for key, value in headers.items() if value is not None}
         if body is not None:
             headers.setdefault("Content-Type", "application/json")
         connection = BufferedHTTPConnection(parsed.hostname, parsed.port, timeout=5)
@@ -702,6 +703,44 @@ def api_entities(url, state, output, name, origin=None):
             assert headers["content-type"] == "text/html; charset=utf-8" and b"Bad Request" in content
             assert headers["content-security-policy"] == "default-src 'none'" and headers["x-content-type-options"] == "nosniff"
     assert all((state / filename).read_bytes() == data for filename, data in before_routes.items()), "Rejected route changed durable state"
+    before_methods = {filename: (state / filename).read_bytes() for filename in ("sub-store.json", "root.json")}
+    for method in ("POST", "PUT", "PATCH", "DELETE"):
+        headers, content = send("/api/method-&'quote?ignored=method-query", method=method, status=404,
+                                body=b'{"mustNotWrite":true}', tagged=False)
+        assert headers["content-type"] == "text/html; charset=utf-8"
+        assert f"Cannot {method} ".encode() in content and b"/api/method-&amp;&#39;quote</pre>" in content
+        assert b"method-query" not in content
+    for path, method in (("/api/settings", "POST"), ("/api/settings", "PUT"), ("/api/settings", "DELETE"),
+                         ("/api/subs", "PATCH"), ("/api/collections", "PATCH"),
+                         ("/api/storage", "PATCH"), ("/api/storage", "DELETE"), ("/api/not-a-route/extra", "POST")):
+        headers, content = send(path, method=method, status=404, body=b'{"mustNotWrite":true}', tagged=False)
+        assert headers["content-type"] == "text/html; charset=utf-8" and f"Cannot {method} ".encode() in content
+    for path, methods in (("/api/SeTTings/", "GET,PATCH,HEAD"), ("/api/storage", "GET,POST,HEAD"),
+                          ("/api/subs", "GET,POST,PUT,HEAD"), ("/api/collections", "GET,POST,PUT,HEAD"),
+                          ("/api/sub/route-created", "GET,PATCH,DELETE,HEAD"),
+                          ("/api/collection/route-created", "GET,PATCH,DELETE,HEAD"),
+                          ("/api/utils/env", "GET,HEAD"), ("/api/utils/refresh", "GET,HEAD"),
+                          ("/api/not-a-resource", "GET,HEAD"), ("/api/sub/route/part", "GET,HEAD")):
+        headers, _ = send(path, {"Origin": None}, method="OPTIONS", expected=methods.encode())
+        assert headers["allow"] == methods and headers["content-type"] == "text/plain; charset=utf-8"
+    headers, _ = send("/api/settings", {"Origin": ""}, method="OPTIONS", expected=b"GET,PATCH,HEAD")
+    assert headers["allow"] == "GET,PATCH,HEAD"
+    for value, status, expected in ((None, 400, None), ("", 400, None), (allowed, 200, b""),
+                                    ("https://denied.invalid", 403, b"CORS origin not allowed")):
+        headers, content = send("/api/settings", {"Origin": value}, method="OPTIONS", body=b"{",
+                                status=status, tagged=False, expected=expected)
+        assert "allow" not in headers
+        if status == 400:
+            assert headers["content-type"] == "text/html; charset=utf-8" and b"Bad Request" in content
+    send("/api/sub/%FF", {"Origin": None}, method="OPTIONS", status=400, tagged=False)
+    for singular in ("sub", "collection"):
+        _, content = send(f"/api/{singular}/missing-method-record", method="PATCH", body=b"{}", status=404)
+        assert json.loads(content)["error"]["type"] == "ResourceNotFoundError"
+    if origin is None:
+        for method in ("POST", "PUT", "PATCH", "DELETE", "OPTIONS"):
+            send("/", method=method, expected="Hello from sub-store, made with ❤️ by Peng-YM".encode())
+        send("/", method="POST", body=b"{", status=400, tagged=False)
+    assert all((state / filename).read_bytes() == data for filename, data in before_methods.items()), "HTTP method handling changed durable state"
     (output / f"{name}.json").write_text(json.dumps(observations, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return observations
 
@@ -1339,6 +1378,7 @@ def main():
         report["api_entity_validators_and_head_checked"] = True
         report["api_entity_error_and_mutation_boundaries_checked"] = True
         report["crud_route_case_suffix_and_parameter_decoding_checked"] = True
+        report["m2_http_methods_and_cors_parser_precedence_checked"] = True
         report["export_second_boundary_clock_checked"] = True
         report["api_entity_configurations_checked"] = ["merged-prefix", "merged-root", "standalone-prefixed", "standalone-unprefixed", "standalone-root"]
         report["exit_code"] = 0

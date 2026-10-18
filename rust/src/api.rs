@@ -48,6 +48,40 @@ pub fn not_found() -> Reply {
     text(404, "text/plain;charset=UTF-8", "")
 }
 
+pub fn route_not_found(method: &Method, path: &str) -> Reply {
+    let message = format!("Cannot {method} {path}")
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;");
+    html_error(404, &message)
+}
+
+pub fn greeting() -> Reply {
+    send(
+        200,
+        "text/plain; charset=utf-8",
+        "Hello from sub-store, made with ❤️ by Peng-YM",
+    )
+}
+
+pub fn options(path: &str) -> Reply {
+    let methods = match path {
+        "/api/settings" => "GET,PATCH,HEAD",
+        "/api/storage" => "GET,POST,HEAD",
+        "/api/subs" | "/api/collections" => "GET,POST,PUT,HEAD",
+        _ if path.starts_with("/api/sub/") || path.starts_with("/api/collection/") => {
+            "GET,PATCH,DELETE,HEAD"
+        }
+        // shortcut: remaining route families gain their method inventories with M4.
+        _ => "GET,HEAD",
+    };
+    let mut response = send(200, "text/plain; charset=utf-8", methods);
+    response.headers_mut().insert("allow", methods.parse().unwrap());
+    response
+}
+
 pub fn html_error(status: u16, message: &str) -> Reply {
     let mut response = text(
         status,

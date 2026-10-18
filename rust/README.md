@@ -94,6 +94,12 @@ return production HTML 400 without changing durable data. Prefix admission keeps
 the legacy raw path policy.
 Standalone forwarding collapses repeated path slashes before backend matching,
 matching the old proxy, while preserving the query and encoded name characters.
+On M2 routes, OPTIONS with a nonempty allowed Origin is a CORS preflight;
+originless OPTIONS goes through parsing and returns the legacy ordered Allow
+methods and entity metadata. Root non-GET requests retain the backend greeting.
+Unsupported methods return escaped production HTML 404 responses with the original
+pathname, while GET/HEAD wildcard misses and explicit prefix rejections stay empty.
+Structured business errors retain their response bodies and status.
 Node development stack bodies and broader HTTP/API edge cases remain M2
 acceptance work.
 Stored excluded Node scripts remain intact.
