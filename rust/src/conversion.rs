@@ -2252,7 +2252,11 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
             if truthy(&host) {
                 proxy[&key]["host"] = if host.is_array() { host } else { json!([host]) };
             }
-            if let Some(headers) = proxy[&key]["headers"].as_object_mut() {
+            if let Some(headers) = proxy
+                .get_mut(&key)
+                .and_then(|options| options.get_mut("headers"))
+                .and_then(Value::as_object_mut)
+            {
                 headers.shift_remove("host");
                 headers.shift_remove("Host");
                 if headers.is_empty() {
