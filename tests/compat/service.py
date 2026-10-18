@@ -434,6 +434,9 @@ def request_bodies(url, state, output, name, origin=None):
                    "state": json.loads((state / "sub-store.json").read_text(encoding="utf-8"))}
         finally:
             connection.close()
+        if method == "PUT" and status == 500:
+            raw["files_before_base64"] = {filename: base64.b64encode(data).decode("ascii") for filename, data in before.items()}
+            raw["files_after_base64"] = {filename: base64.b64encode((state / filename).read_bytes()).decode("ascii") for filename in before}
         with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
             evidence.write(json.dumps(raw, ensure_ascii=False) + "\n")
         assert raw["status"] == status, f"{name} {method} {path}: expected {status}, got {raw['status']} {content!r}"
@@ -453,6 +456,23 @@ def request_bodies(url, state, output, name, origin=None):
     for plural in ("subs", "collections"):
         send("/api/" + plural, b"[]", method="PUT")
         send("/api/" + plural, json.dumps({"name": "parser-" + plural}).encode(), status=201, method="POST")
+        rejected = ((b"{}", "application/json"),
+                    (b'{"forEach":0,"age-public-key":"invalid","0":{"name":"must-not-replace"}}', "application/json"),
+                    (b'{"type":"Buffer","data":[65,0,255]}', "application/json"),
+                    (b"name=must-not-replace&forEach[]=one&forEach[]=two", "application/x-www-form-urlencoded"),
+                    (b"not-json", None), (b"not-json", "invalid"),
+                    (b"", "application/json"), (b"", "application/x-www-form-urlencoded"))
+        for body, media in rejected:
+            send("/api/" + plural, body, media, status=500, method="PUT")
+            actual = observations[-1]
+            variable = "allSubs" if plural == "subs" else "allCols"
+            content = base64.b64decode(actual["body_base64"])
+            check_json(json.loads(content),
+                       {"status": "failed", "error": {"message": f"{variable}.forEach is not a function"}})
+            assert actual["headers"]["content-type"] == "text/plain; charset=utf-8"
+            assert actual["headers"]["content-length"] == str(len(content))
+            tag = base64.b64encode(hashlib.sha1(content).digest()).decode("ascii").rstrip("=")
+            assert actual["headers"]["etag"] == f'W/"{len(content):x}-{tag}"'
     for body, media in ((b"", "application/json"), (b"", "text/plain"),
                         (b"not-json", None), (b"not-json", "invalid"),
                         (b"not-json", "application/json; broken")):
@@ -1248,6 +1268,7 @@ def main():
         report["crud_mixed_entries_restore_checked"] = True
         report["request_body_identity_json_form_raw_checked"] = True
         report["request_body_limits_errors_and_cors_checked"] = True
+        report["bulk_object_rejection_and_unchanged_state_checked"] = True
         report["request_body_restart_and_node_rollback_checked"] = True
         report["compressed_request_body_parity"] = "gzip_and_deflate_checked"
         report["compressed_body_expanded_limits_and_errors_checked"] = True

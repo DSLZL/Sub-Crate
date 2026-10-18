@@ -101,15 +101,20 @@ pub fn html_error(status: u16, message: &str) -> Reply {
     response
 }
 
-fn null_name_error(caught: bool) -> Reply {
-    if !caught {
-        return html_error(500, "Internal Server Error");
-    }
+fn caught_error(message: &str) -> Reply {
     send(
         500,
         "text/plain; charset=utf-8",
-        json!({"status":"failed", "error":{"message":"Cannot read properties of null (reading 'name')"}}).to_string(),
+        json!({"status":"failed", "error":{"message":message}}).to_string(),
     )
+}
+
+fn null_name_error(caught: bool) -> Reply {
+    if caught {
+        caught_error("Cannot read properties of null (reading 'name')")
+    } else {
+        html_error(500, "Internal Server Error")
+    }
 }
 
 fn success(data: Option<Value>, status: u16) -> Reply {
@@ -631,8 +636,17 @@ pub fn dispatch(
         next[key] = json!([]);
     }
     if path == plural && method == Method::PUT {
-        let Some(mut items) = body.into_json().as_array().cloned() else {
-            return invalid("INVALID_DATA", "Expected an array");
+        let mut items = match body {
+            Body::Json(Value::Array(items)) => items,
+            Body::Json(_) => {
+                return caught_error(if subscription {
+                    "allSubs.forEach is not a function"
+                } else {
+                    "allCols.forEach is not a function"
+                });
+            }
+            // shortcut: live Buffer bulk state needs separate handling before accepting raw bytes.
+            Body::Raw(_) => return invalid("INVALID_DATA", "Expected an array"),
         };
         for item in &mut items {
             if let Err(message) = normalize_item(item, false) {

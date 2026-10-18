@@ -50,6 +50,10 @@ preserve mixed JSON entries across bulk writes, restart and restore. Null-record
 lookup failures retain endpoint-specific errors; scalar JSON bodies are rejected
 before dispatch. Uncaught errors use production HTML responses. Development stack
 bodies and invalid-reference-graph mutations remain unverified.
+Bulk PUT rejects parsed objects, forms and skipped/empty JSON or form bodies with the
+legacy caught-error envelope, before normalizing items or writing either data
+file. JSON Buffer lookalikes remain ordinary objects; live raw-buffer bulk
+replacement is still pending.
 The HTTP entry point selects strict JSON, extended URL-encoded forms or raw
 bytes before routing, including environment requests. Identity-encoded UTF-8
 and UTF-16LE JSON, nested/repeated form fields, settings array/byte spreads and
