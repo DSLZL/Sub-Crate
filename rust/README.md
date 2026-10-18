@@ -1,4 +1,4 @@
-# Sub-Store Rust service (M2, in progress)
+# Sub-Store Rust service
 
 This branch now includes an independent Rust HTTP server in `src/`. It serves
 subscription/collection/settings CRUD and legacy JSON storage without Node.
@@ -9,9 +9,10 @@ still under development; this is not a complete replacement release.
 All builds and tests run in the **Rust service and compatibility** GitHub Actions
 workflow. Native Linux x64/arm64 and Windows x64 jobs produce release binaries;
 Linux x64/arm64 Docker jobs build and run `rust/Dockerfile`. The browser job uses
-the pinned unchanged frontend and runs a separate initial CRUD slice against the
-Rust listener, including subscription/collection edits, settings and manual
-export/restore. No local build, test or Docker setup is required.
+the pinned unchanged frontend and runs the M2 CRUD/settings/backup slice against
+both Rust hosting modes, including permanent deletion and restored/deleted-state
+restarts. Complete frontend acceptance still depends on the remaining backend
+features. No local build, test or Docker setup is required.
 
 Downloaded service binaries use the existing environment variables:
 
@@ -134,8 +135,6 @@ depth-five remainder and array limit, separately from body form limits.
 Object-to-primitive failures retain their endpoint-specific errors and preserve
 state. JSON numbers and name coercion use the legacy double-precision values and
 decimal/exponent boundaries, including negative zero.
-Node development stack bodies and broader HTTP/API edge cases remain M2
-acceptance work.
 Stored excluded Node scripts remain intact.
 
 Subscription rename and permanent deletion retain the legacy errors for invalid
