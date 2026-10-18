@@ -3145,7 +3145,7 @@
       },
       {
         "method": "POST",
-        "path": "/api/sub",
+        "path": "/api/subs",
         "body": {
           "name": "native-modern",
           "source": "local",
