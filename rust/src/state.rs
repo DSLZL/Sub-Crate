@@ -1,5 +1,6 @@
 use base64::{Engine, engine::general_purpose};
 use serde_json::{Value, json};
+use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -8,6 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub struct Store {
     path: PathBuf,
     pub data: Value,
+    live_buffers: HashSet<&'static str>,
 }
 
 pub fn decode(text: &str) -> Result<Value, String> {
@@ -81,7 +83,7 @@ impl Store {
             if !truthy(&data[key]) {
                 data[key] = json!([]);
             }
-            if !data[key].is_array() {
+            if !data[key].is_array() && !stored_buffer(key, &data[key]) {
                 return Err(io::Error::other(format!(
                     "{key} must be an array after migration"
                 )));
@@ -96,7 +98,11 @@ impl Store {
         if !valid_records(&data) {
             return Err(io::Error::other("Invalid state records"));
         }
-        let store = Self { path, data };
+        let store = Self {
+            path,
+            data,
+            live_buffers: HashSet::new(),
+        };
         atomic_write(&store.path, &serde_json::to_vec_pretty(&store.data)?)?;
         Ok(store)
     }
@@ -105,6 +111,25 @@ impl Store {
         recover_restore(&self.path)?;
         atomic_write(&self.path, &serde_json::to_vec_pretty(&next)?)?;
         self.data = next;
+        Ok(())
+    }
+
+    pub fn list(&self, key: &str) -> Option<&[Value]> {
+        let value = if self.live_buffers.contains(key) {
+            &self.data[key]["data"]
+        } else {
+            &self.data[key]
+        };
+        value.as_array().map(Vec::as_slice)
+    }
+
+    pub fn commit_list(&mut self, next: Value, key: &'static str, raw: bool) -> io::Result<()> {
+        self.commit(next)?;
+        if raw {
+            self.live_buffers.insert(key);
+        } else {
+            self.live_buffers.remove(key);
+        }
         Ok(())
     }
 
@@ -141,6 +166,7 @@ impl Store {
             return Err(error);
         }
         self.data = next;
+        self.live_buffers.clear();
         Ok(())
     }
 
@@ -213,6 +239,17 @@ pub fn legacy_object_order(value: Value) -> Value {
     }
 }
 
+fn stored_buffer(key: &str, value: &Value) -> bool {
+    matches!(key, "subs" | "collections")
+        && value.as_object().is_some_and(|object| object.len() == 2)
+        && value["type"] == "Buffer"
+        && value["data"].as_array().is_some_and(|bytes| {
+            bytes
+                .iter()
+                .all(|byte| byte.as_u64().is_some_and(|byte| byte <= 255))
+        })
+}
+
 pub fn valid_records(data: &Value) -> bool {
     [
         "subs",
@@ -226,10 +263,11 @@ pub fn valid_records(data: &Value) -> bool {
     .iter()
     .all(|key| {
         data.get(key).is_none_or(|items| {
-            items.as_array().is_some_and(|items| {
-                // Versioned CRUD accepts mixed entries in these two lists.
-                matches!(*key, "subs" | "collections") || items.iter().all(Value::is_object)
-            })
+            stored_buffer(key, items)
+                || items.as_array().is_some_and(|items| {
+                    // Versioned CRUD accepts mixed entries in these two lists.
+                    matches!(*key, "subs" | "collections") || items.iter().all(Value::is_object)
+                })
         })
     })
 }

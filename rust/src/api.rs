@@ -577,8 +577,9 @@ pub fn dispatch(
     let name = path.strip_prefix(singular).unwrap_or("");
     let mut position = None;
     let mut null_record = false;
+    let lookup_failed = path != plural && store.list(key).is_none();
     if path != plural {
-        for (index, item) in store.data[key].as_array().into_iter().flatten().enumerate() {
+        for (index, item) in store.list(key).into_iter().flatten().enumerate() {
             if item.is_null() {
                 null_record = true;
                 break;
@@ -590,7 +591,7 @@ pub fn dispatch(
         }
     }
     if path != plural && method == Method::GET {
-        if null_record {
+        if lookup_failed || null_record {
             return null_name_error(false);
         }
         return if let Some(position) = position {
@@ -636,20 +637,20 @@ pub fn dispatch(
         next[key] = json!([]);
     }
     if path == plural && method == Method::PUT {
-        let mut items = match body {
-            Body::Json(Value::Array(items)) => items,
-            // The frozen minified Node bundle names this local variable r on both routes.
-            Body::Json(_) => return caught_error("r.forEach is not a function"),
-            // shortcut: live Buffer bulk state needs separate handling before accepting raw bytes.
-            Body::Raw(_) => return invalid("INVALID_DATA", "Expected an array"),
-        };
-        for item in &mut items {
-            if let Err(message) = normalize_item(item, false) {
-                return invalid("INVALID_AGE_PUBLIC_KEY", message);
+        let raw = matches!(body, Body::Raw(_));
+        let mut items = body.into_json();
+        if let Some(items) = items.as_array_mut() {
+            for item in items {
+                if let Err(message) = normalize_item(item, false) {
+                    return invalid("INVALID_AGE_PUBLIC_KEY", message);
+                }
             }
+        } else if !raw {
+            // The frozen minified Node bundle names this local variable r on both routes.
+            return caught_error("r.forEach is not a function");
         }
-        next[key] = Value::Array(items);
-        return publish(store, next, success(None, 200));
+        next[key] = items;
+        return persisted(store.commit_list(next, key, raw), success(None, 200));
     }
     if path == plural && method == Method::POST {
         let mut item = if subscription {
@@ -667,7 +668,10 @@ pub fn dispatch(
         if item_name.contains('/') {
             return invalid("INVALID_NAME", &format!("{label} {item_name} is invalid"));
         }
-        for old in next[key].as_array().unwrap() {
+        let Some(items) = store.list(key) else {
+            return caught_error("e.find is not a function");
+        };
+        for old in items {
             if old.is_null() {
                 return null_name_error(true);
             }
@@ -679,14 +683,23 @@ pub fn dispatch(
                 (old, new) => old == new,
             };
             if duplicate {
-                return invalid(
-                    "DUPLICATE_KEY",
-                    &format!("{label} {item_name} already exists."),
-                );
+                if truthy(old) {
+                    return invalid(
+                        "DUPLICATE_KEY",
+                        &format!("{label} {item_name} already exists."),
+                    );
+                }
+                break;
             }
         }
         let top = next["settings"]["appearanceSetting"]["createItemPosition"] == "top";
-        let items = next[key].as_array_mut().unwrap();
+        let Some(items) = next[key].as_array_mut() else {
+            return caught_error(if top {
+                "e.unshift is not a function"
+            } else {
+                "e.push is not a function"
+            });
+        };
         if top {
             items.insert(0, item.clone());
         } else {
@@ -707,6 +720,13 @@ pub fn dispatch(
                     &format!("Unsupported delete mode: {}", js_string(mode)),
                 );
             }
+        }
+        if lookup_failed {
+            return if method == Method::DELETE {
+                caught_error("e.find is not a function")
+            } else {
+                html_error(500, "Internal Server Error")
+            };
         }
         if null_record {
             return null_name_error(method == Method::DELETE);

@@ -52,8 +52,11 @@ before dispatch. Uncaught errors use production HTML responses. Development stac
 bodies and invalid-reference-graph mutations remain unverified.
 Bulk PUT rejects parsed objects, forms and skipped/empty JSON or form bodies with the
 legacy caught-error envelope, before normalizing items or writing either data
-file. JSON Buffer lookalikes remain ordinary objects; live raw-buffer bulk
-replacement is still pending.
+file. Raw-byte bulk PUT retains the legacy Buffer JSON on disk and in exports.
+Live buffers keep their lookup/duplicate/insertion behavior until restore or
+restart, when they become ordinary JSON objects. Failed writes retain both
+files and the previous live identity. JSON Buffer lookalikes submitted as bulk
+bodies remain ordinary objects and are rejected before publication.
 The HTTP entry point selects strict JSON, extended URL-encoded forms or raw
 bytes before routing, including environment requests. Identity-encoded UTF-8
 and UTF-16LE JSON, nested/repeated form fields, settings array/byte spreads and
@@ -66,8 +69,8 @@ The locked decoder rejects UTF-32 with 415.
 Gzip and zlib-wrapped deflate requests stream through the same parsers, applying
 limits to expanded bytes. Concatenated gzip members are decoded before parsing;
 corrupt/truncated streams return 400 and expanded overflow returns 413 without
-publishing data. Other UTF aliases, exotic form overflow collisions and
-raw-buffer bulk replacement remain M2 gaps.
+publishing data. Other UTF aliases and exotic form overflow collisions remain
+M2 gaps.
 Raw JSON exports retain the legacy local-calendar filenames and escaped resource
 names. Manual restore keeps the pre-migration backup in `root.json`'s `sub-store`
 key and preserves unrelated root entries. A private undo record protects the two

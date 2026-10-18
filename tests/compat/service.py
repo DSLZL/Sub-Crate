@@ -619,6 +619,99 @@ def request_bodies(url, state, output, name, origin=None):
     return observations
 
 
+def bulk_buffers(url, state, output, name, phase, origin=None):
+    """Keep live raw-byte lists distinct from their JSON after restore/restart."""
+    parsed = urlsplit(url)
+    observations = []
+
+    def send(path, method="GET", body=None, status=200, error=None):
+        encoded = body if isinstance(body, bytes) else json.dumps(body, ensure_ascii=False).encode() if body is not None else None
+        headers = {"Content-Type": "application/octet-stream" if isinstance(body, bytes) else "application/json"}
+        if origin:
+            headers["Origin"] = origin
+        before = {filename: (state / filename).read_bytes() for filename in ("sub-store.json", "root.json")}
+        connection = BufferedHTTPConnection(parsed.hostname, parsed.port, timeout=5)
+        try:
+            connection.request(method, parsed.path.rstrip("/") + path, body=encoded, headers=headers)
+            response = connection.getresponse()
+            content = response.read()
+            raw = {"method": method, "path": path, "phase": phase, "status": response.status,
+                   "request_headers": headers, "request_body_base64": base64.b64encode(encoded or b"").decode(),
+                   "headers": {key.lower(): value for key, value in response.getheaders()},
+                   "body_base64": base64.b64encode(content).decode(),
+                   "state": json.loads((state / "sub-store.json").read_text(encoding="utf-8")),
+                   "root": json.loads((state / "root.json").read_text(encoding="utf-8")),
+                   "files_before_base64": {key: base64.b64encode(value).decode() for key, value in before.items()},
+                   "files_after_base64": {key: base64.b64encode((state / key).read_bytes()).decode() for key in before}}
+        finally:
+            connection.close()
+        with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
+            evidence.write(json.dumps(raw, ensure_ascii=False) + "\n")
+        assert raw["status"] == status, f"{name} {method} {path}: expected {status}, got {raw['status']} {content!r}"
+        if method == "GET" or status >= 400:
+            assert raw["files_before_base64"] == raw["files_after_base64"], "Buffer read/error changed files"
+        if error == "html":
+            assert content == b'<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>Error</title>\n</head>\n<body>\n<pre>Internal Server Error</pre>\n</body>\n</html>\n'
+            assert raw["headers"]["content-security-policy"] == "default-src 'none'"
+            assert raw["headers"]["x-content-type-options"] == "nosniff" and "etag" not in raw["headers"]
+        else:
+            if error:
+                check_json(json.loads(content)["error"], error)
+            tag = base64.b64encode(hashlib.sha1(content).digest()).decode().rstrip("=")
+            assert raw["headers"]["etag"] == f'W/"{len(content):x}-{tag}"'
+            assert raw["headers"]["content-length"] == str(len(content))
+        observations.append({key: raw[key] for key in ("method", "path", "phase", "status", "body_base64", "state", "root")}
+                             | {"headers": {key: value for key, value in raw["headers"].items()
+                                             if key in ("content-type", "content-length", "etag", "content-security-policy", "x-content-type-options")}})
+        return json.loads(content) if error != "html" else None
+
+    if phase == "restore":
+        original = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+        send("/api/storage", "POST", {"content": json.dumps(original, ensure_ascii=False)})
+        check_json(json.loads(json.loads((state / "root.json").read_text(encoding="utf-8"))["sub-store"]), original)
+    for plural, singular, label in (("subs", "sub", "Subscription"), ("collections", "collection", "Collection")):
+        live = phase in ("live", "live-before-restart")
+        if phase == "live-before-restart":
+            send("/api/" + plural, "PUT", [{"name": "buffer-array"}])
+            check_json(send(f"/api/{singular}/buffer-array")["data"], {"name": "buffer-array"})
+        vectors = (b"A\x00\xff", b"", b"\x00A") if phase == "live" else (b"\x00A",) if live else (None,)
+        for data in vectors:
+            path = "/api/" + plural
+            item_path = f"/api/{singular}/buffer-missing"
+            if live:
+                send(path, "PUT", data)
+            expected = {"type": "Buffer", "data": list(data)} if live else json.loads((state / "sub-store.json").read_text(encoding="utf-8"))[plural]
+            check_json(send(path)["data"], expected)
+            missing_get = "html" if not live or plural == "subs" else {
+                "code": "SUBSCRIPTION_NOT_FOUND", "type": "ResourceNotFoundError",
+                "message": "Collection buffer-missing does not exist", "details": 404}
+            send(item_path, status=500, error=missing_get)
+            missing = {"code": "RESOURCE_NOT_FOUND", "type": "ResourceNotFoundError",
+                       "message": f"{label} buffer-missing does not exist!"}
+            send(item_path, "PATCH", {}, 404 if live else 500, missing if live else "html")
+            send(item_path + "?mode=invalid", "DELETE", status=500,
+                 error={"code": "INVALID_DELETE_MODE", "type": "RequestInvalidError", "message": "Unsupported delete mode: invalid"})
+            send(item_path + "?mode=permanent", "DELETE", status=500,
+                 error=missing if live else {"message": "e.find is not a function"})
+            send(path, "POST", {"name": "buffer-new"}, 500,
+                 {"message": "e.push is not a function" if live else "e.find is not a function"})
+            duplicate = {"code": "DUPLICATE_KEY", "type": "RequestInvalidError",
+                         "message": f"{label} undefined already exists."} if live and data and data[0] else {
+                             "message": "e.push is not a function" if live else "e.find is not a function"}
+            send(path, "POST", {}, 500, duplicate)
+            send(path, "PUT", expected, 500, {"message": "r.forEach is not a function"})
+            send(item_path, status=500, error=missing_get)
+            if live:
+                send("/api/settings", "PATCH", {"appearanceSetting": {"createItemPosition": "top"}})
+                send(path, "POST", {"name": "buffer-new"}, 500, {"message": "e.unshift is not a function"})
+                send("/api/settings", "PATCH", {"appearanceSetting": {"createItemPosition": "bottom"}})
+                send(item_path, status=500, error=missing_get)
+    exported = send("/api/storage")
+    check_json(exported, json.loads((state / "sub-store.json").read_text(encoding="utf-8")))
+    (output / f"{name}.json").write_text(json.dumps(observations, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return observations
+
+
 def api_entities(url, state, output, name, origin=None):
     """Pin send/end response boundaries on direct and forwarded business APIs."""
     parsed = urlsplit(url)
@@ -1117,6 +1210,8 @@ def standalone_resources(frontend_url, backend_url, mount, state, output, name):
         observations.extend(api_entities(frontend_url + mount.rstrip("/"), state, output, name + "-api-http", "https://allowed.invalid"))
         if mount == "/backend":
             observations.extend(request_bodies(frontend_url + mount, state, output, name + "-body-http", "https://allowed.invalid"))
+            for phase in ("live", "restore"):
+                observations.extend(bulk_buffers(frontend_url + mount, state, output, name + "-buffers-" + phase, phase, "https://allowed.invalid"))
     else:
         send("/api/settings", status=404)
         send("/api/settings", {"Accept": "text/html"}, expected=entry)
@@ -1396,6 +1491,59 @@ def main():
             response = request(url, {"path": "/api/storage"})
             check_json(json.loads(response["body"]), final["rust"])
         report["node_reads_rust_written_state"] = True
+        buffer_results = {}
+        for kind in ("node", "rust"):
+            state = output / (kind + "-buffers")
+            state.mkdir()
+            (state / "sub-store.json").write_text(json.dumps({**seed, "subs": [], "collections": []}), encoding="utf-8")
+            (state / "root.json").write_text(json.dumps({"opaque": unknown}), encoding="utf-8")
+            env = {**environment, "NODE_ENV": "production", "SUB_STORE_DATA_BASE_PATH": str(state)}
+            label = kind + "-buffers"
+            manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
+            with manager as url:
+                buffer_results[kind] = bulk_buffers(url, state, output, label + "-live", "live")
+                if kind == "rust":
+                    before = {filename: (state / filename).read_bytes() for filename in ("sub-store.json", "root.json")}
+                    saved = state / "saved-state.json"
+                    (state / "sub-store.json").rename(saved)
+                    (state / "sub-store.json").mkdir()
+                    failures = []
+                    try:
+                        for plural in ("subs", "collections"):
+                            failed = request(url, {"method": "PUT", "path": "/api/" + plural, "body": []})
+                            live_error = request(url, {"method": "POST", "path": "/api/" + plural, "body": {"name": "buffer-new"}})
+                            failures.append({"failed": failed, "live_error": live_error})
+                        failed_restore = request(url, {"method": "POST", "path": "/api/storage",
+                                                       "body": {"content": json.dumps(seed, ensure_ascii=False)}})
+                        live_after_restore = request(url, {"method": "POST", "path": "/api/collections", "body": {"name": "buffer-new"}})
+                    finally:
+                        (state / "sub-store.json").rmdir()
+                        saved.rename(state / "sub-store.json")
+                    failure_record = {"requests": failures, "failed_restore": failed_restore, "live_after_restore": live_after_restore,
+                                      "files_before_base64": {key: base64.b64encode(value).decode() for key, value in before.items()},
+                                      "files_after_base64": {key: base64.b64encode((state / key).read_bytes()).decode() for key in before}}
+                    (output / "buffer-write-failure.json").write_text(json.dumps(failure_record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                    assert failure_record["files_before_base64"] == failure_record["files_after_base64"]
+                    for result in [record["failed"] for record in failures] + [failed_restore]:
+                        assert result["status"] == 500 and json.loads(result["body"])["error"]["code"] == "STATE_WRITE_FAILED"
+                    for result in [record["live_error"] for record in failures] + [live_after_restore]:
+                        assert result["status"] == 500
+                        check_json(json.loads(result["body"]), {"status": "failed", "error": {"message": "e.push is not a function"}})
+                    report["raw_bulk_failed_write_preserves_live_identity"] = True
+                buffer_results[kind].extend(bulk_buffers(url, state, output, label + "-restore", "restore"))
+                buffer_results[kind].extend(bulk_buffers(url, state, output, label + "-before-restart", "live-before-restart"))
+            manager = oracle(args.node, env, output, report, label + "-restart") if kind == "node" else listener(args.binary, env, output, report, label + "-restart", image)
+            with manager as url:
+                buffer_results[kind].extend(bulk_buffers(url, state, output, label + "-restart", "stored"))
+        check_json(buffer_results["rust"], buffer_results["node"])
+        buffer_rollback = output / "buffers-node-rollback"
+        buffer_rollback.mkdir()
+        for filename in ("sub-store.json", "root.json"):
+            shutil.copyfile(output / "rust-buffers" / filename, buffer_rollback / filename)
+        with oracle(args.node, {**environment, "NODE_ENV": "production", "SUB_STORE_DATA_BASE_PATH": str(buffer_rollback)}, output, report, "buffers-node-rollback") as url:
+            rolled_back = bulk_buffers(url, buffer_rollback, output, "buffers-node-rollback", "stored")
+            check_json(rolled_back, json.loads((output / "rust-buffers-restart.json").read_text(encoding="utf-8")))
+        report["raw_bulk_buffer_restore_restart_and_node_rollback_checked"] = True
         if not image:
             corrupt = output / "corrupt-state"
             corrupt.mkdir()
@@ -1404,7 +1552,9 @@ def main():
             assert result.returncode != 0 and (corrupt / "sub-store.json").read_bytes() == b"invalid backup \xff"
             report["corrupt_state_not_reset"] = True
             for label, document in (("invalid-legacy-record", {"settings": {}, "subs": [None]}),
-                                    ("invalid-other-family", {"schemaVersion": "2.0", "settings": {}, "artifacts": [None]})):
+                                    ("invalid-other-family", {"schemaVersion": "2.0", "settings": {}, "artifacts": [None]}),
+                                    ("invalid-buffer-byte", {"schemaVersion": "2.0", "settings": {}, "subs": {"type": "Buffer", "data": [256]}}),
+                                    ("invalid-buffer-shape", {"schemaVersion": "2.0", "settings": {}, "collections": {"type": "Buffer", "data": [0], "extra": True}})):
                 state = output / label
                 state.mkdir()
                 original = json.dumps(document).encode("utf-8")
@@ -1477,6 +1627,7 @@ def main():
             check_json(standalone["rust"], standalone["node"])
         report["standalone_frontend_http_and_state_equal"] = True
         report["standalone_request_body_forwarding_checked"] = True
+        report["standalone_raw_bulk_buffer_lifecycle_checked"] = True
         report["standalone_configurations_checked"] = ["prefixed", "unprefixed", "root", "static-only"]
         report["api_entity_validators_and_head_checked"] = True
         report["api_entity_error_and_mutation_boundaries_checked"] = True
