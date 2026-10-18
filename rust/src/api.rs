@@ -518,10 +518,7 @@ pub fn dispatch(
                 return invalid_backup();
             };
             let original = next.clone();
-            if (!next["settings"].is_object() && !next["settings"].is_array())
-                || migrate(&mut next).is_err()
-                || !valid_records(&next)
-            {
+            if next["settings"].is_null() || migrate(&mut next).is_err() || !valid_records(&next) {
                 return invalid_backup();
             }
             return persisted(store.restore(next, original), success(None, 200));
@@ -529,6 +526,11 @@ pub fn dispatch(
     }
     if path == "/api/settings" {
         if method == Method::GET {
+            if !truthy(&store.data["settings"]) {
+                let mut next = store.data.clone();
+                next["settings"] = json!({});
+                return publish(store, next, success(Some(json!({})), 200));
+            }
             return success(Some(store.data["settings"].clone()), 200);
         }
         if method == Method::PATCH {

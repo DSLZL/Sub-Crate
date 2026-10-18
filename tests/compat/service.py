@@ -418,6 +418,25 @@ def backup_edges(url, state, output, name, offset=None):
                 check_json(json.loads((state / "sub-store.json").read_text(encoding="utf-8"))["settings"], expected)
             if original is empty_legacy:
                 assert all(exported[key] == [] for key in ("subs", "collections", "artifacts", "rules", "files", "tokens"))
+    scalar_settings = [True, False, 0, 1.25, "", "设置🙂\r\n"]
+    for value, encoded in [(value, False) for value in scalar_settings] + [(scalar_settings[-1], True)]:
+        original = {**backup, "settings": value}
+        content = json.dumps(original, ensure_ascii=False)
+        if encoded:
+            content = base64.b64encode(content.encode("utf-8")).decode("ascii")
+        send("POST", "/api/storage", {"content": content})
+        check_json(json.loads(json.loads((state / "root.json").read_text(encoding="utf-8"))["sub-store"]), original)
+        check_json(send("GET", "/api/storage", filename="sub-store_data")["settings"], value)
+        previous = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")}
+        expected = value if value else {}
+        check_json(send("GET", "/api/settings")["data"], expected)
+        check_json(json.loads((state / "sub-store.json").read_text(encoding="utf-8"))["settings"], expected)
+        assert (state / "root.json").read_bytes() == previous["root.json"], "Settings initialization changed root cache"
+        if value:
+            assert (state / "sub-store.json").read_bytes() == previous["sub-store.json"], "Truthy settings read rewrote data"
+        if value is True or type(value) is float:
+            patch = {"defaultTimeout": "1500", "opaque": {"nil": None, "flag": False, "text": "保留🙂\r\n"}}
+            check_json(send("PATCH", "/api/settings", patch)["data"], patch)
     codec_backup = {**backup, "codecText": "ÿÿÿ🙂\r\n", "codecOpaque": {"nil": None, "flag": False, "zero": 0}}
     encodings = backup_encodings(codec_backup)
     assert any(char in encodings["urlsafe-padded"] for char in "-_"), "URL-safe fixture has no alternate symbols"
@@ -438,6 +457,29 @@ def backup_edges(url, state, output, name, offset=None):
     assert all(root[key] == "{}" for key in ("sub-store-cached-resource", "sub-store-cached-headers-resource", "sub-store-cached-script-resource"))
     assert (state / "sub-store.json").read_bytes() == prior_data, "No-Gist refresh changed main state"
     (output / f"{name}.json").write_text(json.dumps(observations, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return observations
+
+
+def settings_reads(url, state, output, name, expected):
+    observations = []
+    for path in ("/api/storage", "/api/settings"):
+        before = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")}
+        response = request(url, {"path": path})
+        after = {key: (state / key).read_bytes() for key in before}
+        stored = json.loads(after["sub-store.json"])
+        record = {"path": path, "response": response, "state": stored,
+                  "root": json.loads(after["root.json"]),
+                  "files_before_base64": {key: base64.b64encode(value).decode("ascii") for key, value in before.items()},
+                  "files_after_base64": {key: base64.b64encode(value).decode("ascii") for key, value in after.items()}}
+        with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
+            evidence.write(json.dumps(record, ensure_ascii=False) + "\n")
+        assert response["status"] == 200, f"{name} {path}: {response}"
+        assert before == after, "Initialized settings read changed durable files"
+        parsed = json.loads(response["body"])
+        check_json(stored["settings"], expected)
+        check_json(parsed if path == "/api/storage" else parsed["data"], stored if path == "/api/storage" else expected)
+        assert response["headers"]["content-type"] == ("application/json; charset=utf-8" if path == "/api/storage" else "text/plain; charset=utf-8")
+        observations.append({"path": path, "json": parsed, "state": stored, "root": record["root"]})
     return observations
 
 
@@ -1447,6 +1489,41 @@ def main():
                             assert all((state / key).read_bytes() == value for key, value in before.items())
                             assert not (state / ".sub-store-restore.pending.json").exists()
                         report["restore_write_failure_preserved_both_files"] = True
+                        original = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+                        imported = request(url, {"method": "POST", "path": "/api/storage",
+                                                 "body": {"content": json.dumps({**original, "settings": False})}})
+                        failure_path = output / "settings-init-write-failure.jsonl"
+                        failure_path.write_text(json.dumps({"phase": "import", "response": imported}) + "\n", encoding="utf-8")
+                        assert imported["status"] == 200
+                        before = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")}
+                        saved = state / "sub-store.json.saved"
+                        (state / "sub-store.json").rename(saved)
+                        (state / "sub-store.json").mkdir()
+                        try:
+                            failed = request(url, {"path": "/api/settings"})
+                            unchanged = request(url, {"path": "/api/storage"})
+                            with failure_path.open("a", encoding="utf-8") as evidence:
+                                evidence.write(json.dumps({"phase": "denied-initialization", "response": failed, "after": unchanged}) + "\n")
+                            assert failed["status"] == 500 and json.loads(failed["body"])["error"]["code"] == "STATE_WRITE_FAILED"
+                            check_json(json.loads(unchanged["body"]), json.loads(before["sub-store.json"]))
+                        finally:
+                            (state / "sub-store.json").rmdir()
+                            saved.rename(state / "sub-store.json")
+                        after = {key: (state / key).read_bytes() for key in before}
+                        recovered = request(url, {"path": "/api/settings"})
+                        with failure_path.open("a", encoding="utf-8") as evidence:
+                            evidence.write(json.dumps({"phase": "recovery", "response": recovered,
+                                                       "files_before_base64": {key: base64.b64encode(value).decode("ascii") for key, value in before.items()},
+                                                       "files_after_base64": {key: base64.b64encode(value).decode("ascii") for key, value in after.items()}}) + "\n")
+                        assert before == after, "Failed settings initialization changed durable files"
+                        assert recovered["status"] == 200
+                        check_json(json.loads(recovered["body"])["data"], {})
+                        restored_array = request(url, {"method": "POST", "path": "/api/storage", "body": {"content": json.dumps(original, ensure_ascii=False)}})
+                        with failure_path.open("a", encoding="utf-8") as evidence:
+                            evidence.write(json.dumps({"phase": "restore", "response": restored_array}) + "\n")
+                        assert restored_array["status"] == 200
+                        check_json(json.loads((state / "sub-store.json").read_text(encoding="utf-8")), original)
+                        report["settings_initialization_failed_write_preserved_state"] = True
                 prefix += "-restart"
                 manager = oracle(args.node, env, output, report, prefix) if kind == "node" else listener(args.binary, env, output, report, prefix, image)
                 with manager as url:
@@ -1493,6 +1570,33 @@ def main():
             response = request(url, {"path": "/api/storage"})
             check_json(json.loads(response["body"]), final["rust"])
         report["node_reads_rust_written_state"] = True
+        for label, value in (("true", True), ("false", False), ("zero", 0), ("number", 1.25), ("empty", ""), ("string", "设置🙂\r\n")):
+            startup = {}
+            expected = value if value else {}
+            for kind in ("node", "rust"):
+                state = output / f"{kind}-settings-{label}"
+                state.mkdir()
+                original = json.dumps({**backup, "settings": value}, ensure_ascii=False).encode("utf-8")
+                (state / "sub-store.json").write_bytes(original)
+                (state / "root.json").write_text(json.dumps(root, ensure_ascii=False), encoding="utf-8")
+                env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}
+                prefix = f"{kind}-settings-{label}"
+                manager = oracle(args.node, env, output, report, prefix) if kind == "node" else listener(args.binary, env, output, report, prefix, image)
+                with manager as url:
+                    startup[kind] = settings_reads(url, state, output, prefix, expected)
+                    if kind == "rust":
+                        assert (state / "sub-store.pre-rust.json").read_bytes() == original
+            check_json(startup["rust"], startup["node"])
+            if value:
+                state = output / f"settings-node-rollback-{label}"
+                state.mkdir()
+                for filename in ("sub-store.json", "root.json"):
+                    shutil.copyfile(output / f"rust-settings-{label}" / filename, state / filename)
+                with oracle(args.node, {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}, output, report, f"settings-rollback-{label}") as url:
+                    check_json(settings_reads(url, state, output, f"settings-rollback-{label}", value), startup["rust"])
+        report["scalar_settings_import_and_startup_checked"] = True
+        report["scalar_settings_node_rollback_checked"] = True
+        report["string_settings_patch_parity"] = "NOT_VERIFIED"
         buffer_results = {}
         for kind in ("node", "rust"):
             state = output / (kind + "-buffers")

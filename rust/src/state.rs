@@ -92,9 +92,6 @@ impl Store {
         if !truthy(&data["settings"]) {
             data["settings"] = json!({});
         }
-        if !data["settings"].is_object() && !data["settings"].is_array() {
-            return Err(io::Error::other("settings must be an object or array"));
-        }
         if !valid_records(&data) {
             return Err(io::Error::other("Invalid state records"));
         }

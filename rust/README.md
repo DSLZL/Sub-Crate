@@ -79,8 +79,11 @@ Legacy Base64 imports and startup data retain the old decoder's URL-safe symbols
 padding/noise cleanup, permissive final bits and UTF-8 replacement behavior.
 Decoded data must still pass JSON, settings and record validation; rejected
 imports preserve both files. Private restore undo-record fields remain strict.
-Object and array settings survive plain/Base64 restore and restart; settings
-PATCH preserves an imported array's numbered fields when merging its changes.
+Non-null JSON settings survive import; truthy booleans, numbers, strings,
+objects and arrays retain their type on reads and startup. Reading imported
+false/zero/empty-string settings durably initializes an empty object. Object
+and array settings retain their existing PATCH behavior; boolean/number PATCH
+spreads no old fields. String property spreading remains an M2 coercion gap.
 Legacy migration treats falsy lists as empty maps, matching the old backend.
 Malformed recovery records stop startup without resetting either file. Let Rust
 recover a pending restore before rolling back to Node. The no-Gist refresh path
