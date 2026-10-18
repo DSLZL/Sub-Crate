@@ -2118,8 +2118,13 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
         }
     }
     if truthy(&proxy["reality-opts"]["public-key"])
-        && proxy["reality-opts"].get("support-x25519mlkem768").is_none()
-        && matches!(proxy["_loon_tls_profile"].as_str(), Some("chrome147" | "safari-ios-26"))
+        && proxy["reality-opts"]
+            .get("support-x25519mlkem768")
+            .is_none()
+        && matches!(
+            proxy["_loon_tls_profile"].as_str(),
+            Some("chrome147" | "safari-ios-26")
+        )
     {
         proxy["reality-opts"]["support-x25519mlkem768"] = json!(true);
     }
@@ -2508,10 +2513,7 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
             parsed_classic = Some(parser);
         } else if full_config && line.starts_with('[') && line.ends_with(']') {
             continue;
-        } else if line.contains("proxies:")
-            || line.starts_with('[')
-            || line.starts_with('{')
-        {
+        } else if line.contains("proxies:") || line.starts_with('[') || line.starts_with('{') {
             return Err(Error::Pending(
                 "This subscription format is not implemented yet",
             ));
