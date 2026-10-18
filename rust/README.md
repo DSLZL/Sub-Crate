@@ -7,6 +7,8 @@ through `/api/proxy/parse`, subscription preview and subscription download.
 V2Ray output also serves the default download target and its three legacy aliases.
 The first conversion slice includes UDP/TFO/UOT, simple obfs, Unicode and IPv6;
 other formats, processors and remote sources return an explicit pending error.
+Raw input starting `<!DOCTYPE html>` is discarded before parsing; SSD imports
+remain explicitly pending.
 The JavaScript feasibility example remains separate. Remaining conversion,
 script execution inside the application, archive actions, Gist/age and integrations are
 still under development; this is not a complete replacement release.

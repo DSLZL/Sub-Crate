@@ -195,6 +195,13 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
             "Non-text subscription parsing is not implemented yet",
         ));
     };
+    if raw.starts_with("<!DOCTYPE html>") {
+        return Ok(Vec::new());
+    }
+    // shortcut: SSD imports must fail explicitly until their native M3 preprocessor is ported.
+    if raw.starts_with("ssd://") {
+        return Err(Error::Pending("SSD preprocessing is not implemented yet"));
+    }
     let raw = String::from_utf16(&codec::units(raw)).map_err(|_| {
         Error::Pending("URI parsing of isolated UTF-16 surrogates is not implemented yet")
     })?;

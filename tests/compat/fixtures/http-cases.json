@@ -1,5 +1,14 @@
 [
   {
+    "id": "P02-input-html-boundary",
+    "source": "backend/src/core/proxy-utils/preprocessors/index.js:40-46; backend/src/core/proxy-utils/index.js:51-68",
+    "steps": [
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"<!DOCTYPE html>\nss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client":"JSON", "type":"internal"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":[]}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"\n<!DOCTYPE html>\nss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client":"JSON", "type":"internal"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"type":"ss","skip-cert-verify":false,"udp":true,"server":"127.0.0.1","port":8388,"cipher":"aes-128-gcm","password":"pass","name":"fixture"}]}}}},
+      {"method":"POST", "path":"/api/proxy/parse", "body":{"data":"<!doctype html>\nss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client":"JSON", "type":"internal"}, "expect":{"status":200,"json":{"status":"success","data":{"par_res":[{"type":"ss","skip-cert-verify":false,"udp":true,"server":"127.0.0.1","port":8388,"cipher":"aes-128-gcm","password":"pass","name":"fixture"}]}}}}
+    ]
+  },
+  {
     "id": "P02-output-v2ray-shapes",
     "source": "backend/src/core/proxy-utils/producers/v2ray.js:8-23; backend/src/core/proxy-utils/producers/index.js:40-42",
     "steps": [
