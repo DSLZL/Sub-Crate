@@ -5,7 +5,7 @@ use crate::state::{Store, decode, legacy_object_order, migrate, truthy, valid_re
 use base64::Engine;
 use http_body_util::Full;
 use hyper::{HeaderMap, Method, Response, body::Bytes};
-use percent_encoding::utf8_percent_encode;
+use percent_encoding::{percent_decode_str, utf8_percent_encode};
 use serde_json::{Value, json};
 use std::io;
 use std::sync::Mutex;
@@ -280,6 +280,7 @@ pub fn conversion_dispatch(
     let (name, path_target) = rest
         .split_once('/')
         .map_or((rest, None), |(name, target)| (name, Some(target)));
+    let name = codec::encode(&percent_decode_str(name).decode_utf8().ok()?);
     let sub = if truthy(&query["fakeSub"]) {
         Some(json!({"name":"fakeSub", "source":"remote", "url":""}))
     } else {
@@ -292,7 +293,7 @@ pub fn conversion_dispatch(
                     "TypeError: Cannot read properties of null (reading 'name')",
                 ));
             }
-            if reference_name_matches(&item["name"], name, true) {
+            if reference_name_matches(&item["name"], &name, true) {
                 found = Some(item.clone());
                 break;
             }
@@ -304,7 +305,7 @@ pub fn conversion_dispatch(
             404,
             "RESOURCE_NOT_FOUND",
             "ResourceNotFoundError",
-            &format!("Subscription {} does not exist!", codec::text(name)),
+            &format!("Subscription {} does not exist!", codec::text(&name)),
         ));
     };
     // shortcut: output hooks, remote flow headers and encryption join this pipeline in their owning batches.
@@ -321,7 +322,7 @@ pub fn conversion_dispatch(
     let target = if truthy(&query["platform"]) {
         js_string(&query["platform"])
     } else if let Some(target) = path_target {
-        target.to_owned()
+        codec::encode(&percent_decode_str(target).decode_utf8().ok()?)
     } else if truthy(&query["target"]) {
         js_string(&query["target"])
     } else {
@@ -370,7 +371,7 @@ pub fn conversion_dispatch(
             error,
             Some(&format!(
                 "Failed to download subscription: {}",
-                codec::text(name)
+                codec::text(&name)
             )),
         ),
     })

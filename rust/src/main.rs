@@ -726,10 +726,7 @@ fn api_path(raw: &str) -> Result<Option<String>, ()> {
             }
         }
         ["", download, name] if download.eq_ignore_ascii_case("download") && !name.is_empty() => {
-            Some(format!(
-                "/download/{}",
-                json::encode(&percent_decode_str(name).decode_utf8().map_err(|_| ())?)
-            ))
+            Some(format!("/download/{name}"))
         }
         ["", download, name, target]
             if download.eq_ignore_ascii_case("download")
@@ -737,11 +734,7 @@ fn api_path(raw: &str) -> Result<Option<String>, ()> {
                 && !target.is_empty()
                 && !name.eq_ignore_ascii_case("collection") =>
         {
-            Some(format!(
-                "/download/{}/{}",
-                json::encode(&percent_decode_str(name).decode_utf8().map_err(|_| ())?),
-                json::encode(&percent_decode_str(target).decode_utf8().map_err(|_| ())?)
-            ))
+            Some(format!("/download/{name}/{target}"))
         }
         _ => None,
     };
