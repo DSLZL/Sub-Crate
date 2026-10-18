@@ -2579,7 +2579,8 @@ fn transport_path(proxy: &Value, embed_ws: bool) -> Option<String> {
                 .filter(|raw| safe_integer(raw).is_some())
         }
     } else {
-        if !upgrade && options.get("max-early-data").is_some()
+        if !upgrade
+            && options.get("max-early-data").is_some()
             && let Some(raw) = path.as_mut()
         {
             *raw = path_ed(raw).0;
@@ -2679,7 +2680,8 @@ fn vless_query(proxy: &Value) -> Option<Vec<(String, String)>> {
         .get("max-early-data")
         .map(codec::js_string)
         .filter(|raw| safe_integer(raw).is_some());
-    if network == "ws" && !upgrade
+    if network == "ws"
+        && !upgrade
         && let Some(value) = early
     {
         push("ed", &json!(value))?;

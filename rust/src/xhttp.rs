@@ -81,8 +81,8 @@ pub fn integer(value: &Value, negative: bool) -> Option<i64> {
         .then_some(number as i64)
 }
 
-fn range(value: &Value, lower: i64, upper: i64, text_only: bool) -> Option<Value> {
-    if !value.is_string() && (text_only || !value.is_number()) {
+fn range(value: &Value, lower: i64, upper: i64, string_output: bool) -> Option<Value> {
+    if !value.is_string() && !value.is_number() {
         return None;
     }
     let raw = codec::js_string(value);
@@ -98,7 +98,7 @@ fn range(value: &Value, lower: i64, upper: i64, text_only: bool) -> Option<Value
     }
     Some(if min != max {
         json!(format!("{min}-{max}"))
-    } else if text_only {
+    } else if string_output {
         json!(min.to_string())
     } else {
         json!(min)

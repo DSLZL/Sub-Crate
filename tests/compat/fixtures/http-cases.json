@@ -2706,13 +2706,15 @@
               "par_res": [
                 {
                   "name": "Unsupported",
+                  "xhttp-opts": {
+                    "session-length": "3"
+                  },
                   "_extra_unsupported": {
                     "headers": {
                       "Bad": 7
                     },
                     "noGRPCHeader": false,
                     "xPaddingBytes": "0-2",
-                    "sessionIDLength": 3,
                     "uplinkChunkSize": "4-2",
                     "xmux": {
                       "maxConnections": "-1"
