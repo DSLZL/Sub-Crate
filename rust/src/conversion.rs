@@ -944,17 +944,6 @@ pub fn tag(proxies: &mut [Value], sub: &Value, preview: bool) {
     }
 }
 
-fn port_text(proxy: &Value) -> String {
-    proxy.get("port").map_or_else(
-        || "undefined".to_owned(),
-        |value| {
-            value
-                .as_str()
-                .map_or_else(|| value.to_string(), str::to_owned)
-        },
-    )
-}
-
 fn uri(proxy: &Value) -> Option<String> {
     let server = codec::text(&field_text(proxy, "server"));
     let server = if server.parse::<Ipv6Addr>().is_ok() {
@@ -962,7 +951,7 @@ fn uri(proxy: &Value) -> Option<String> {
     } else {
         server
     };
-    let port = port_text(proxy);
+    let port = field_text(proxy, "port");
     match proxy["type"].as_str()? {
         "socks5" => {
             let credentials = |field: &str| {
@@ -1272,7 +1261,7 @@ pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str) -> Result<Valu
                 "{} {}:{}",
                 field_text(proxy, "type"),
                 proxy["server"].as_str().unwrap_or("undefined"),
-                port_text(proxy)
+                field_text(proxy, "port")
             ));
         }
         if truthy(&proxy["disable-sni"]) {
