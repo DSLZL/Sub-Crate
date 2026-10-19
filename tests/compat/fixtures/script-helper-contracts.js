@@ -268,4 +268,38 @@ globalThis.runHelperContracts = async function(check, host, operator, assert, eq
       return {result, cacheEntries:Object.keys(headersCache.resourceCache).length};
     });
   } finally { $substore.write(beforeSettings, 'settings'); }
+
+  await check('PC41-script-http-compressed-subscription-responses', async () => {
+    const results = {};
+    for (const mode of ['gzip','x-gzip','deflate','compress','x-compress','nested','status']) {
+      const response = await $substore.http.get({url:probeUpstream+'/host/compressed/'+mode});
+      assert(response.body === '订阅🙂\r\nsecond\n', 'decoded subscription text: '+mode);
+      assert(response.statusCode === (mode === 'status' ? 503 : 200), 'status retained: '+mode);
+      assert(response.headers['content-encoding'] === undefined && response.headers['content-length'] === undefined, 'decoded headers removed: '+mode);
+      results[mode] = {body:response.body,status:response.statusCode};
+    }
+    const raw = await $substore.http.get({url:probeUpstream+'/host/compressed/unknown',encoding:null});
+    const bytes = Array.from(new Uint8Array(raw.body));
+    assert(bytes[0] === 31 && bytes[1] === 139 && Number(raw.headers['content-length']) === bytes.length, 'unknown chain stays raw');
+    assert(raw.headers['content-encoding'] === 'gzip, unknown', 'unknown encoding retained');
+    let message;
+    try { await $substore.http.get({url:probeUpstream+'/host/compressed/too-many'}); } catch (error) { message=error.message; }
+    assert(message === 'too many content-encodings in response: 6, maximum allowed is 5', 'source encoding-chain limit');
+    return {results,raw:bytes,message};
+  });
+
+  await check('PC42-script-http-forward-proxy-and-basic-auth', async () => {
+    const results = [];
+    for (const proxy of [probeUpstream,probeUpstream.replace('http://','http://fixture:secret@')]) {
+      const response = await $substore.http.get({url:'http://ip-api.com/json/1.2.3.4',proxy,headers:{Accept:null}});
+      const body = JSON.parse(response.body);
+      assert(response.statusCode === 200 && body.query === '1.2.3.4' && body.countryCode === 'US', 'actual HTTP forward proxy');
+      results.push(body);
+    }
+    let message;
+    try { await $substore.http.get({url:'http://ip-api.com/json/1.2.3.4',proxy:probeUpstream,headers:{'Proxy-Authorization':'forbidden'}}); }
+    catch (error) { message=error.message; }
+    assert(message === 'Proxy-Authorization should be sent in ProxyAgent constructor', 'proxy credentials have one owner');
+    return {results,message};
+  });
 };

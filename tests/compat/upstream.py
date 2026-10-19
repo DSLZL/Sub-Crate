@@ -1,6 +1,7 @@
 """Loopback-only subscription, Gist and node-info fixtures with observable requests."""
 import copy
 import base64
+import gzip
 from artifact_fixtures import response as artifact_response
 from dns_fixtures import response_bytes
 from gist_fixtures import GistFixture
@@ -8,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import threading
 import time
+import zlib
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 
@@ -124,6 +126,19 @@ class ControlledUpstream:
         if path.startswith('/host/artifact/'):
             return artifact_response(path)
         text = "订阅🙂\r\nsecond\n".encode("utf-8")
+        if path.startswith('/host/compressed/'):
+            mode = path.removeprefix('/host/compressed/')
+            if mode == 'too-many':
+                return 200, b'', [('Content-Encoding', ', '.join(['gzip'] * 6))]
+            encoded = gzip.compress(text, mtime=0)
+            if mode == 'unknown':
+                return 200, encoded, [('Content-Encoding', 'gzip, unknown')]
+            if mode in ('deflate', 'compress', 'x-compress'):
+                encoded = zlib.compress(text)
+            elif mode == 'nested':
+                encoded = zlib.compress(encoded)
+            coding = 'gzip, deflate' if mode == 'nested' else ('gzip' if mode == 'status' else mode)
+            return (503 if mode == 'status' else 200), encoded, [('Content-Encoding', coding)]
         if path.startswith("/host/flow/"):
             mode = path.removeprefix("/host/flow/")
             flow = [("Subscription-Userinfo", "upload=10; download=20; total=1000"),

@@ -6,22 +6,76 @@ use hyper::{
     body::{Bytes, Incoming},
 };
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
-use rquickjs::{Ctx, Exception};
-use serde_json::json;
-use std::{collections::BTreeMap, error::Error, io::Write};
+use rquickjs::{Ctx, Exception, prelude::Opt};
+use serde_json::{Value, json};
+use std::{
+    collections::BTreeMap,
+    error::Error,
+    io::{Read, Write},
+};
+
+#[path = "script_transport.rs"]
+mod transport;
+
+type Failure = Box<dyn Error + Send + Sync>;
+
+fn decoded(
+    status: u16,
+    headers: &mut BTreeMap<String, Value>,
+    mut bytes: Vec<u8>,
+) -> Result<Vec<u8>, Failure> {
+    if status < 200 || [204, 304].contains(&status) {
+        return Ok(bytes);
+    }
+    let encodings = headers
+        .get("content-encoding")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let encodings: Vec<_> = encodings.split(',').map(str::trim).collect();
+    if encodings.len() > 5 {
+        return Err(format!(
+            "too many content-encodings in response: {}, maximum allowed is 5",
+            encodings.len()
+        )
+        .into());
+    }
+    if encodings
+        .iter()
+        .any(|value| !["", "gzip", "x-gzip", "deflate", "compress", "x-compress"].contains(value))
+    {
+        return Ok(bytes);
+    }
+    if encodings.iter().all(|value| value.is_empty()) {
+        return Ok(bytes);
+    }
+    headers.remove("content-encoding");
+    headers.remove("content-length");
+    for encoding in encodings.into_iter().rev().filter(|value| !value.is_empty()) {
+        let input = bytes;
+        bytes = Vec::new();
+        match encoding {
+            "gzip" | "x-gzip" => {
+                flate2::read::MultiGzDecoder::new(input.as_slice()).read_to_end(&mut bytes)?;
+            }
+            _ => {
+                flate2::read::ZlibDecoder::new(input.as_slice()).read_to_end(&mut bytes)?;
+            }
+        }
+    }
+    Ok(bytes)
+}
 
 async fn open_response(
     method: &str,
     url: &str,
     mut headers: BTreeMap<String, String>,
     mut body: Vec<u8>,
-) -> Result<Response<Incoming>, Box<dyn Error>> {
+    options: Option<&Value>,
+) -> Result<Response<Incoming>, Failure> {
     // Hyper permits genuinely absent Accept; reqwest always inserts its default.
-    let connector = hyper_rustls::HttpsConnectorBuilder::new()
-        .try_with_platform_verifier()?
-        .https_or_http()
-        .enable_http1()
-        .build();
+    let transport = transport::Transport::new(options)?;
+    let connector = transport.connector();
     let client = Client::builder(TokioExecutor::new())
         .pool_max_idle_per_host(0)
         .build(connector);
@@ -31,6 +85,18 @@ async fn open_response(
     for followed in 0..=3 {
         url.set_fragment(None);
         let mut request = Request::builder().method(method.as_str()).uri(url.as_str());
+        let uri = url.as_str().parse()?;
+        if let Some(proxy) = transport.proxy(&uri)? {
+            if headers.contains_key("proxy-authorization") {
+                return Err("Proxy-Authorization should be sent in ProxyAgent constructor".into());
+            }
+            if uri.scheme_str() == Some("http")
+                && ["http", "https"].contains(&proxy.scheme())
+                && let Some(auth) = transport::authorization(&proxy)?
+            {
+                request = request.header("proxy-authorization", auth);
+            }
+        }
         for (key, value) in &headers {
             request = request.header(key, value);
         }
@@ -78,13 +144,16 @@ pub(crate) async fn request<'js>(
     url: String,
     headers: String,
     body: Option<String>,
+    options: Opt<String>,
 ) -> rquickjs::Result<String> {
     async fn send(
         method: &str,
         url: &str,
         headers: &str,
         body: Option<&str>,
-    ) -> Result<String, Box<dyn Error>> {
+        options: Option<&str>,
+    ) -> Result<String, Failure> {
+        let options = options.map(serde_json::from_str::<Value>).transpose()?;
         let response = open_response(
             method,
             url,
@@ -92,6 +161,7 @@ pub(crate) async fn request<'js>(
             body.map(serde_json::from_str::<Vec<u8>>)
                 .transpose()?
                 .unwrap_or_default(),
+            options.as_ref(),
         )
         .await?;
         let status = response.status().as_u16();
@@ -113,9 +183,10 @@ pub(crate) async fn request<'js>(
             );
         }
         let bytes = response.into_body().collect().await?.to_bytes();
-        Ok(json!({"statusCode": status, "headers": headers, "bytes": bytes.as_ref()}).to_string())
+        let bytes = decoded(status, &mut headers, bytes.to_vec())?;
+        Ok(json!({"statusCode": status, "headers": headers, "bytes": bytes}).to_string())
     }
-    send(&method, &url, &headers, body.as_deref())
+    send(&method, &url, &headers, body.as_deref(), options.0.as_deref())
         .await
         .map_err(|error| Exception::throw_message(&ctx, &error.to_string()))
 }
@@ -125,8 +196,8 @@ pub(crate) async fn download_file<'js>(
     url: String,
     file: String,
 ) -> rquickjs::Result<String> {
-    async fn save(url: &str, file: &str) -> Result<(), Box<dyn Error>> {
-        let response = open_response("GET", url, BTreeMap::new(), Vec::new()).await?;
+    async fn save(url: &str, file: &str) -> Result<(), Failure> {
+        let response = open_response("GET", url, BTreeMap::new(), Vec::new(), None).await?;
         if response.status() != 200 {
             return Err(format!("Failed to download file from {url}").into());
         }

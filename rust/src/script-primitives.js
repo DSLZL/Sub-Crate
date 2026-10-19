@@ -70,7 +70,9 @@ async function hostSend(method, input) {
     else if (ArrayBuffer.isView(value)) body = Array.from(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
     else throw new TypeError('Unsupported HTTP body');
   }
-  const worker = __hostRequest(method.toUpperCase(), url, JSON.stringify(headers), body == null ? undefined : JSON.stringify(body)).then(raw => {
+  const transport = JSON.stringify({proxy:opts.proxy,
+    strictSSL:opts.strictSSL, insecure:opts.insecure, rejectUnauthorized:opts.rejectUnauthorized});
+  const worker = __hostRequest(method.toUpperCase(), url, JSON.stringify(headers), body == null ? undefined : JSON.stringify(body), transport).then(raw => {
     const response = JSON.parse(raw);
     const bytes = Uint8Array.from(response.bytes);
     return {statusCode: response.statusCode, headers: response.headers,
