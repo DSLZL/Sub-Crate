@@ -1,6 +1,7 @@
 """Real-clock server lifecycle acceptance; invoked only by the Actions service gate."""
 import base64
 import json
+import os
 import time
 
 from reference import HERE, ROOT, execute, oracle
@@ -44,15 +45,20 @@ def run_contracts(binary, node, environment, baseline, root, output, report, ima
             def stored(filename):
                 deadline = time.monotonic() + 1
                 while True:
-                    content = (state / filename).read_text(encoding="utf-8")
                     try:
+                        content = (state / filename).read_text(encoding="utf-8")
                         return json.loads(content)
                     except json.JSONDecodeError:
                         if kind != "node" or time.monotonic() >= deadline:
                             raise
-                        proof.append({"concurrent_reference_file_read": filename, "text": content})
-                        (output / f"{label}.json").write_text(json.dumps(proof, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-                        time.sleep(0.01)
+                        observation = {"concurrent_reference_file_read": filename, "text": content}
+                    except PermissionError as error:
+                        if os.name != "nt" or time.monotonic() >= deadline:
+                            raise
+                        observation = {"concurrent_windows_file_open": filename, "backend": kind, "error": str(error)}
+                    proof.append(observation)
+                    (output / f"{label}.json").write_text(json.dumps(proof, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                    time.sleep(0.01)
 
             def durable():
                 return stored("sub-store.json")
@@ -187,5 +193,5 @@ def run_contracts(binary, node, environment, baseline, root, output, report, ima
                     assert send({"path": "/api/settings"}) is not None, "Scheduled failure stopped HTTP"
                     proof.append({"upstream": upstream.requests, "final_data": durable(), "final_root": stored_root()})
                     (output / f"{label}.json").write_text(json.dumps(proof, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-                    report["phases"].append({"name": label, "cases": 1, "requests": len(proof) - 1, "status": "passed"})
+                    report["phases"].append({"name": label, "cases": 1, "requests": sum("request" in entry for entry in proof), "status": "passed"})
     report["real_cron_artifact_overlap_refresh_stop_global_produce_backup_mmdb_and_startup_checked"] = True
