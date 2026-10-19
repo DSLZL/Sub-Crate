@@ -973,11 +973,10 @@
           "source": "local",
           "process": [
             {
+              "type": "Script Operator",
               "args": {
-                "content": "$UPSTREAM/host/script/top#zero=0&flag=false",
-                "mode": "link"
-              },
-              "type": "Script Operator"
+                "content": "async function operator(proxies, target, context) {\n  const OriginalDate = Date;\n  globalThis.Date = class extends OriginalDate {\n    constructor(...args) { super(...(args.length ? args : [3400000000000])); }\n    static now() { return 3400000000000; }\n  };\n  try { return await ProxyUtils.process(proxies, [{\"args\":{\"content\":\"$UPSTREAM/host/script/top#zero=0&flag=false\",\"mode\":\"link\"},\"type\":\"Script Operator\"}], target, context.source, $options, context.raw); }\n  finally { globalThis.Date = OriginalDate; }\n}"
+              }
             }
           ],
           "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#loading"
@@ -1261,6 +1260,14 @@
         "method": "GET"
       },
       {
+        "method": "GET",
+        "path": "/download/collection/m3-pipeline-http-col?platform=URI&target=JSON",
+        "expect": {
+          "body": "ss://YWVzLTEyOC1nY206cGFzcw==@a.invalid:8388?udp=1#a-col\nss://YWVzLTEyOC1nY206cGFzcw==@b.invalid:8388?udp=1#b-col",
+          "status": 200
+        }
+      },
+      {
         "expect": {
           "headers": {
             "allow": "POST,GET,HEAD"
@@ -1338,8 +1345,28 @@
   },
   {
     "id": "PC-native-http-parser-and-output-stages",
-    "source": "parser download, download request options, flow headers, full/shortcut response transforms and fakeNode; real HTTP routes",
+    "source": "parser download, download request options, flow headers, full/shortcut response transforms and fakeNode; real HTTP routes; body.download uses a temporary cacheThreshold to keep this HTTP-only case from creating a wall-clock cache entry; the fixed-clock download cases retain exact cache assertions",
     "steps": [
+      {
+        "method": "POST",
+        "path": "/api/preview/sub",
+        "body": {
+          "name": "http-cache-setup",
+          "source": "local",
+          "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#clock-control",
+          "process": [
+            {
+              "type": "Script Operator",
+              "args": {
+                "content": "function operator(proxies) { $substore.write({value:$substore.read('settings')}, '#m3-http-settings'); $substore.write({...$substore.read('settings'),cacheThreshold:0.000001}, 'settings'); return proxies; }"
+              }
+            }
+          ]
+        },
+        "expect": {
+          "status": 200
+        }
+      },
       {
         "expect": {
           "status": 200,
@@ -1383,6 +1410,26 @@
         },
         "path": "/api/proxy/parse",
         "method": "POST"
+      },
+      {
+        "method": "POST",
+        "path": "/api/preview/sub",
+        "body": {
+          "name": "http-cache-restore",
+          "source": "local",
+          "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#clock-control",
+          "process": [
+            {
+              "type": "Script Operator",
+              "args": {
+                "content": "function operator(proxies) { $substore.write($substore.read('#m3-http-settings').value, 'settings'); $substore.delete('#m3-http-settings'); return proxies; }"
+              }
+            }
+          ]
+        },
+        "expect": {
+          "status": 200
+        }
       },
       {
         "expect": {
