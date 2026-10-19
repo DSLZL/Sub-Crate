@@ -222,23 +222,21 @@ pub(crate) fn produce<'js>(
         if js.equal(&kind, &js.value("internal")?)? {
             return Ok(input);
         }
-        return crate::js_values::stringify(&js.ctx,input,2);
+        return crate::js_values::stringify(&js.ctx, input, 2);
     }
-    let values = input.as_array().ok_or_else(|| js.error("Invalid producer input"))?
-        .iter::<Value>().map(|value| crate::js_values::project(&js.ctx,value?))
+    let values = input
+        .as_array()
+        .ok_or_else(|| js.error("Invalid producer input"))?
+        .iter::<Value>()
+        .map(|value| crate::js_values::project(&js.ctx, value?))
         .collect::<rquickjs::Result<Vec<_>>>()?;
     let options = crate::js_values::project(&js.ctx, options)?;
-    let output = conversion::produce(
-        values,
-        &target,
-        &js.text(kind)?,
-        &options,
-    )
-    .map_err(|error| {
-        js.error(&match error {
-            conversion::Error::Legacy(message) => message,
-            conversion::Error::Pending(message) => message.to_owned(),
-        })
-    })?;
+    let output =
+        conversion::produce(values, &target, &js.text(kind)?, &options).map_err(|error| {
+            js.error(&match error {
+                conversion::Error::Legacy(message) => message,
+                conversion::Error::Pending(message) => message.to_owned(),
+            })
+        })?;
     crate::js_values::decode(&js.ctx, &output)
 }

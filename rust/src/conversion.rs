@@ -156,7 +156,9 @@ fn normalize_endpoint(proxy: &mut Value) -> Result<(), Error> {
 }
 
 fn fingerprint(pem: &Value) -> Result<Value, Error> {
-    let raw = pem.as_str().ok_or_else(|| Error::Legacy("a.indexOf is not a function".to_owned()))?;
+    let raw = pem
+        .as_str()
+        .ok_or_else(|| Error::Legacy("a.indexOf is not a function".to_owned()))?;
     if !raw.contains("-----BEGIN ") {
         return Err(Error::Legacy("can't find PEM header".to_owned()));
     }
@@ -164,15 +166,29 @@ fn fingerprint(pem: &Value) -> Result<Value, Error> {
     for (index, _) in raw.match_indices("-----BEGIN ") {
         let rest = &raw[index + 11..];
         if let Some((label, body)) = rest.split_once("-----")
-            && !label.is_empty() && !label.contains('-') {
+            && !label.is_empty()
+            && !label.contains('-')
+        {
             encoded = body;
         }
     }
-    if let Some((body, _)) = encoded.split_once("-----END ") {encoded = body;}
-    let encoded: String = encoded.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c,'+'|'/'|'=')).collect();
+    if let Some((body, _)) = encoded.split_once("-----END ") {
+        encoded = body;
+    }
+    let encoded: String = encoded
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '='))
+        .collect();
     let der = codec::decode_base64(&encoded).map_err(|error| Error::Legacy(error.to_string()))?;
     let digest = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, &der);
-    Ok(json!(digest.as_ref().iter().map(|byte|format!("{byte:02X}")).collect::<Vec<_>>().join(":")))
+    Ok(json!(
+        digest
+            .as_ref()
+            .iter()
+            .map(|byte| format!("{byte:02X}"))
+            .collect::<Vec<_>>()
+            .join(":")
+    ))
 }
 
 fn ipv6(address: &str) -> bool {
