@@ -527,7 +527,7 @@
           "json": {
             "status": "success",
             "data": {
-              "par_res": "External=external,exec=\"/usr/bin/ssh\",local-port=1080,args=\"-D\",args=\"localhost:1080\",addresses=1.1.1.1,addresses=2001:db8::1,udp-relay=true,tfo=true,test-url=https://test.example.com,block-quic=on"
+              "par_res": "External=external,exec=\"/usr/bin/ssh\",local-port=1080,args=\"-D\",args=\"localhost:1080\",addresses=1.1.1.1,addresses=2001:db8::1,udp-relay=true"
             }
           }
         }
