@@ -18,6 +18,7 @@ mod script_conversion;
 mod script_dns;
 mod script_download;
 mod script_flow;
+mod script_gist;
 mod script_helpers;
 mod script_http;
 mod script_io;

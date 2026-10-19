@@ -249,8 +249,7 @@ fn native_parse<'js>(ctx: Ctx<'js>, raw: JsValue<'js>) -> rquickjs::Result<JsVal
     }
     let js = Js::new(ctx);
     let raw = crate::js_values::project(&js.ctx, raw)?;
-    let proxies = conversion::parse(&raw)
-        .map_err(|error| js.error(&conversion_message(error)))?;
+    let proxies = conversion::parse(&raw).map_err(|error| js.error(&conversion_message(error)))?;
     crate::js_values::decode(&js.ctx, &json!(proxies))
 }
 
@@ -875,6 +874,7 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     crate::script_download::initialize(ctx, &utils)?;
     crate::script_age::initialize(ctx, &utils)?;
     crate::script_mmdb::initialize(ctx, &utils)?;
+    crate::script_gist::initialize(ctx, &utils)?;
     crate::script_dns::initialize(ctx, &utils)?;
     globals.set("ProxyUtils", utils)?;
     crate::script_pipeline::initialize(ctx)

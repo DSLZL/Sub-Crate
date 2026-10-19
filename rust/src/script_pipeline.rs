@@ -1317,18 +1317,26 @@ async fn artifact<'js>(ctx: Ctx<'js>, options: Value<'js>) -> rquickjs::Result<V
         "rule" => {
             let rule = find(&js, read(&js, "rules")?, name.clone())?;
             if !js.truthy(&rule)? {
-                return Err(js.error(&format!("找不到规则 {}",js.text(name)?)));
+                return Err(js.error(&format!("找不到规则 {}", js.text(name)?)));
             }
-            let urls=js.get(&rule,"urls")?;
-            let length:f64=js.call("number",(js.get(&urls,"length")?,))?;
-            let mut index=0u64;
-            while (index as f64)<length {
-                let url=js.get(&urls,&index.to_string())?;
-                if script_download::source(&js,url,object(&js)?).await.is_err() {js.ctx.catch();}
-                index+=1;
+            let urls = js.get(&rule, "urls")?;
+            let length: f64 = js.call("number", (js.get(&urls, "length")?,))?;
+            let mut index = 0u64;
+            while (index as f64) < length {
+                let url = js.get(&urls, &index.to_string())?;
+                if script_download::source(&js, url, object(&js)?)
+                    .await
+                    .is_err()
+                {
+                    js.ctx.catch();
+                }
+                index += 1;
             }
             // The frozen RuleUtils exports no process method; preserve its failure after downloads.
-            Err(rquickjs::Exception::throw_type(&js.ctx,"RuleUtils.process is not a function"))
+            Err(rquickjs::Exception::throw_type(
+                &js.ctx,
+                "RuleUtils.process is not a function",
+            ))
         }
         _ => Ok(js.undefined()),
     }

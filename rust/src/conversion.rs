@@ -2624,20 +2624,24 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
     let units = codec::units(raw);
     // Rust strings cannot hold lone UTF-16 units; reserve absent tags until parsing finishes.
     let (raw, surrogate_tag) = match String::from_utf16(&units) {
-        Ok(raw) => (raw,None),
+        Ok(raw) => (raw, None),
         Err(_) => {
-            let lower=raw.to_lowercase();
-            let mut index=0;
-            let prefix=loop {
-                let prefix=format!("\u{f0000}{index:x}\u{f0001}");
-                if !lower.contains(&prefix) {break prefix;}
-                index+=1;
+            let lower = raw.to_lowercase();
+            let mut index = 0;
+            let prefix = loop {
+                let prefix = format!("\u{f0000}{index:x}\u{f0001}");
+                if !lower.contains(&prefix) {
+                    break prefix;
+                }
+                index += 1;
             };
-            let text=char::decode_utf16(units).map(|character| match character {
-                Ok(character)=>character.to_string(),
-                Err(error)=>format!("{prefix}{:04x}{prefix}",error.unpaired_surrogate()),
-            }).collect::<String>();
-            (text,Some(prefix))
+            let text = char::decode_utf16(units)
+                .map(|character| match character {
+                    Ok(character) => character.to_string(),
+                    Err(error) => format!("{prefix}{:04x}{prefix}", error.unpaired_surrogate()),
+                })
+                .collect::<String>();
+            (text, Some(prefix))
         }
     };
     let clash = crate::clash::Parser::new()?;
@@ -2721,34 +2725,48 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
     proxies.retain(|proxy| {
         proxy["type"] != "hysteria2" || !truthy(&proxy["obfs"]) || truthy(&proxy["obfs-password"])
     });
-    if let Some(prefix)=surrogate_tag {
-        fn text(mut remaining:&str,prefix:&str)->String {
-            let mut output=String::new();
-            while let Some((before,tail))=remaining.split_once(prefix) {
+    if let Some(prefix) = surrogate_tag {
+        fn text(mut remaining: &str, prefix: &str) -> String {
+            let mut output = String::new();
+            while let Some((before, tail)) = remaining.split_once(prefix) {
                 output.push_str(before);
-                if let Some(unit)=tail.get(..4).and_then(|digits|u16::from_str_radix(digits,16).ok())
+                if let Some(unit) = tail
+                    .get(..4)
+                    .and_then(|digits| u16::from_str_radix(digits, 16).ok())
                     && (0xd800..=0xdfff).contains(&unit)
-                    && tail[4..].starts_with(prefix) {
+                    && tail[4..].starts_with(prefix)
+                {
                     output.push_str(&codec::from_units(&[unit]));
-                    remaining=&tail[4+prefix.len()..];
+                    remaining = &tail[4 + prefix.len()..];
                 } else {
-                    output.push_str(prefix);remaining=tail;
+                    output.push_str(prefix);
+                    remaining = tail;
                 }
             }
-            output.push_str(remaining);output
+            output.push_str(remaining);
+            output
         }
-        fn restore(value:&mut Value,prefix:&str) {
+        fn restore(value: &mut Value, prefix: &str) {
             match value {
-                Value::String(value)=>*value=text(value,prefix),
-                Value::Array(values)=>for value in values {restore(value,prefix);},
-                Value::Object(values)=>{
-                    let old=std::mem::take(values);
-                    for (key,mut value) in old {restore(&mut value,prefix);values.insert(text(&key,prefix),value);}
+                Value::String(value) => *value = text(value, prefix),
+                Value::Array(values) => {
+                    for value in values {
+                        restore(value, prefix);
+                    }
                 }
-                _=>{}
+                Value::Object(values) => {
+                    let old = std::mem::take(values);
+                    for (key, mut value) in old {
+                        restore(&mut value, prefix);
+                        values.insert(text(&key, prefix), value);
+                    }
+                }
+                _ => {}
             }
         }
-        for proxy in &mut proxies {restore(proxy,&prefix);}
+        for proxy in &mut proxies {
+            restore(proxy, &prefix);
+        }
     }
     Ok(proxies)
 }

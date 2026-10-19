@@ -196,7 +196,13 @@ def run_cases(base_url, state_dir, cases, upstream=None):
                     check_json(observed["upstream_state"], step["upstream_state"])
                 if "base64_backup" in step:
                     check_json(observed["base64_backup"], step["base64_backup"]["json"])
-                check_json(outgoing, step.get("upstream", []), subset=True, path="upstream")
+                if step.get("gist_contracts"):
+                    from gist_fixtures import check_gist_requests, check_gist_state
+                    check_gist_requests(outgoing)
+                    observed["gist_state"] = upstream.script_gist.snapshot()
+                    check_gist_state(observed["gist_state"])
+                else:
+                    check_json(outgoing, step.get("upstream", []), subset=True, path="upstream")
         except Exception as error:
             record.update(status="failed", error=f"{type(error).__name__}: {error}")
         results.append(record)

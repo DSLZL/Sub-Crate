@@ -3,7 +3,7 @@ use crate::{conversion, js_language::Js, script_pipeline::optional};
 use rquickjs::{Ctx, Value, prelude::Opt};
 
 fn nonblank<'js>(js: &Js<'js>, value: Value<'js>) -> rquickjs::Result<bool> {
-    Ok(value.is_string() && !js.text(value)?.trim().is_empty())
+    Ok(value.is_string() && js.call::<usize,_>("length",(js.method(value,"trim",vec![])?,))? > 0)
 }
 
 fn is_ip<'js>(js: &Js<'js>, method: &str, value: Value<'js>) -> rquickjs::Result<bool> {
