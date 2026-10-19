@@ -2489,6 +2489,39 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
         }
     }
     if proxy["type"] == "wireguard" {
+        if let Some(peers) = proxy["peers"].as_array().filter(|peers| !peers.is_empty()) {
+            let mut valid = false;
+            for both in [true, false] {
+                for peer in peers {
+                    if peer.is_null() {
+                        return Err(Error::Legacy(
+                            "Cannot read properties of null (reading 'ip')".to_owned(),
+                        ));
+                    }
+                    let ip = truthy(&peer["ip"]);
+                    let ipv6 = truthy(&peer["ipv6"]);
+                    if if both { ip && ipv6 } else { ip || ipv6 } {
+                        valid = true;
+                        break;
+                    }
+                }
+                if valid {
+                    break;
+                }
+            }
+            let first = peers[0].clone();
+            if valid {
+                for key in ["ip", "ipv6"] {
+                    if !truthy(&proxy[key]) {
+                        if let Some(value) = first.get(key) {
+                            proxy[key] = value.clone();
+                        } else {
+                            proxy.as_object_mut().unwrap().shift_remove(key);
+                        }
+                    }
+                }
+            }
+        }
         normalize_wireguard(proxy);
     }
     Ok(())

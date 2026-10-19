@@ -255,7 +255,7 @@
         "method": "POST",
         "path": "/api/proxy/parse",
         "body": {
-          "data": "{\"type\":\"wireguard\",\"name\":\"WGOptions\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":[1,2,3],\"mtu\":1420,\"system\":true,\"_name\":\"wg0\",\"_listen_port\":\"0\",\"_on_demand\":false,\"_udp_nat_max\":\"4294967295\",\"_udp_mapping\":\"endpoint_independent\",\"_udp_filtering\":\"address_dependent\",\"workers\":\"2x\",\"udp-timeout\":\"30s\",\"tfo\":true,\"_dns_server\":\"dns\",\"ip-version\":\"ipv6-prefer\",\"_domain_resolver\":{\"server\":\"override\",\"rewrite_ttl\":60},\"peers\":[{\"server\":\"first.example\",\"port\":\"51820x\",\"public-key\":\"first\",\"pre-shared-key\":\"psk\",\"allowed-ips\":[\"10.0.0.0/8\"],\"reserved\":\"1/2/3\",\"persistent-keepalive-interval\":\"20x\"},{\"public_key\":\"second\",\"allowed_ips\":[],\"reserved\":[]}]}\n{\"type\":\"wireguard\",\"name\":\"WGStrings\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":\"1/2/3\",\"mtu\":1420,\"peers\":[{}],\"_listen_port\":\" 80 \",\"_on_demand\":\"false\",\"_udp_nat_max\":\"4294967296\"}\n{\"type\":\"wireguard\",\"name\":\"BadPeer\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":[1,2,3],\"mtu\":1420,\"peers\":[null]}\n{\"type\":\"tailscale\",\"name\":\"TSControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":{\"server\":\"control\"},\"_listen_port\":65535,\"_on_demand\":true,\"_taildrop_directory\":\"/data/drop\",\"udp-timeout\":\"10s\",\"system-interface\":true,\"system-interface-name\":\"ts0\",\"system-interface-mtu\":\"1280\",\"relay-server-port\":\"8080\",\"relay-server-static-endpoints\":[\"a\"],\"advertise-exit-node\":false,\"exit-node-allow-lan-access\":false,\"ssh-server\":true,\"dialer-proxy\":\"must-not-leak\",\"_dns_server\":\"dns\",\"ip-version\":\"ipv4\"}\n{\"type\":\"tailscale\",\"name\":\"TSEmptyControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":{},\"_listen_port\":\" 80 \",\"ssh-server\":{\"disable-sftp\":true},\"detour\":\"hop\",\"_dns_server\":\"dns\",\"ip-version\":\"ipv4\",\"_domain_resolver\":\"override\"}\n{\"type\":\"tailscale\",\"name\":\"TSFalseControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":false,\"detour\":\"must-not-leak\",\"_domain_resolver\":\"must-not-leak\",\"advertise-routes\":\"wrong\",\"advertise-tags\":\"wrong\",\"relay-server-static-endpoints\":\"wrong\"}",
+          "data": "{\"type\":\"wireguard\",\"name\":\"WGOptions\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":[1,2,3],\"mtu\":1420,\"system\":true,\"_name\":\"wg0\",\"_listen_port\":\"0\",\"_on_demand\":false,\"_udp_nat_max\":\"4294967295\",\"_udp_mapping\":\"endpoint_independent\",\"_udp_filtering\":\"address_dependent\",\"workers\":\"2x\",\"udp-timeout\":\"30s\",\"tfo\":true,\"_dns_server\":\"dns\",\"ip-version\":\"ipv6-prefer\",\"_domain_resolver\":{\"server\":\"override\",\"rewrite_ttl\":60},\"peers\":[{\"server\":\"first.example\",\"port\":\"51820x\",\"public-key\":\"first\",\"pre-shared-key\":\"psk\",\"allowed-ips\":[\"10.0.0.0/8\"],\"reserved\":\"1/2/3\",\"persistent-keepalive-interval\":\"20x\"},{\"public_key\":\"second\",\"allowed_ips\":[],\"reserved\":[]}]}\n{\"type\":\"wireguard\",\"name\":\"WGStrings\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":\"1/2/3\",\"mtu\":1420,\"peers\":[{}],\"_listen_port\":\" 80 \",\"_on_demand\":\"false\",\"_udp_nat_max\":\"4294967296\"}\n{\"type\":\"tailscale\",\"name\":\"TSControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":{\"server\":\"control\"},\"_listen_port\":65535,\"_on_demand\":true,\"_taildrop_directory\":\"/data/drop\",\"udp-timeout\":\"10s\",\"system-interface\":true,\"system-interface-name\":\"ts0\",\"system-interface-mtu\":\"1280\",\"relay-server-port\":\"8080\",\"relay-server-static-endpoints\":[\"a\"],\"advertise-exit-node\":false,\"exit-node-allow-lan-access\":false,\"ssh-server\":true,\"dialer-proxy\":\"must-not-leak\",\"_dns_server\":\"dns\",\"ip-version\":\"ipv4\"}\n{\"type\":\"tailscale\",\"name\":\"TSEmptyControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":{},\"_listen_port\":\" 80 \",\"ssh-server\":{\"disable-sftp\":true},\"detour\":\"hop\",\"_dns_server\":\"dns\",\"ip-version\":\"ipv4\",\"_domain_resolver\":\"override\"}\n{\"type\":\"tailscale\",\"name\":\"TSFalseControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":false,\"detour\":\"must-not-leak\",\"_domain_resolver\":\"must-not-leak\",\"advertise-routes\":\"wrong\",\"advertise-tags\":\"wrong\",\"relay-server-static-endpoints\":\"wrong\"}",
           "client": "singbox",
           "type": "internal",
           "produce": {}
@@ -268,7 +268,7 @@
         "method": "POST",
         "path": "/api/proxy/parse",
         "body": {
-          "data": "{\"type\":\"wireguard\",\"name\":\"WGOptions\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":[1,2,3],\"mtu\":1420,\"system\":true,\"_name\":\"wg0\",\"_listen_port\":\"0\",\"_on_demand\":false,\"_udp_nat_max\":\"4294967295\",\"_udp_mapping\":\"endpoint_independent\",\"_udp_filtering\":\"address_dependent\",\"workers\":\"2x\",\"udp-timeout\":\"30s\",\"tfo\":true,\"_dns_server\":\"dns\",\"ip-version\":\"ipv6-prefer\",\"_domain_resolver\":{\"server\":\"override\",\"rewrite_ttl\":60},\"peers\":[{\"server\":\"first.example\",\"port\":\"51820x\",\"public-key\":\"first\",\"pre-shared-key\":\"psk\",\"allowed-ips\":[\"10.0.0.0/8\"],\"reserved\":\"1/2/3\",\"persistent-keepalive-interval\":\"20x\"},{\"public_key\":\"second\",\"allowed_ips\":[],\"reserved\":[]}]}\n{\"type\":\"wireguard\",\"name\":\"WGStrings\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":\"1/2/3\",\"mtu\":1420,\"peers\":[{}],\"_listen_port\":\" 80 \",\"_on_demand\":\"false\",\"_udp_nat_max\":\"4294967296\"}\n{\"type\":\"wireguard\",\"name\":\"BadPeer\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":[1,2,3],\"mtu\":1420,\"peers\":[null]}\n{\"type\":\"tailscale\",\"name\":\"TSControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":{\"server\":\"control\"},\"_listen_port\":65535,\"_on_demand\":true,\"_taildrop_directory\":\"/data/drop\",\"udp-timeout\":\"10s\",\"system-interface\":true,\"system-interface-name\":\"ts0\",\"system-interface-mtu\":\"1280\",\"relay-server-port\":\"8080\",\"relay-server-static-endpoints\":[\"a\"],\"advertise-exit-node\":false,\"exit-node-allow-lan-access\":false,\"ssh-server\":true,\"dialer-proxy\":\"must-not-leak\",\"_dns_server\":\"dns\",\"ip-version\":\"ipv4\"}\n{\"type\":\"tailscale\",\"name\":\"TSEmptyControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":{},\"_listen_port\":\" 80 \",\"ssh-server\":{\"disable-sftp\":true},\"detour\":\"hop\",\"_dns_server\":\"dns\",\"ip-version\":\"ipv4\",\"_domain_resolver\":\"override\"}\n{\"type\":\"tailscale\",\"name\":\"TSFalseControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":false,\"detour\":\"must-not-leak\",\"_domain_resolver\":\"must-not-leak\",\"advertise-routes\":\"wrong\",\"advertise-tags\":\"wrong\",\"relay-server-static-endpoints\":\"wrong\"}",
+          "data": "{\"type\":\"wireguard\",\"name\":\"WGOptions\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":[1,2,3],\"mtu\":1420,\"system\":true,\"_name\":\"wg0\",\"_listen_port\":\"0\",\"_on_demand\":false,\"_udp_nat_max\":\"4294967295\",\"_udp_mapping\":\"endpoint_independent\",\"_udp_filtering\":\"address_dependent\",\"workers\":\"2x\",\"udp-timeout\":\"30s\",\"tfo\":true,\"_dns_server\":\"dns\",\"ip-version\":\"ipv6-prefer\",\"_domain_resolver\":{\"server\":\"override\",\"rewrite_ttl\":60},\"peers\":[{\"server\":\"first.example\",\"port\":\"51820x\",\"public-key\":\"first\",\"pre-shared-key\":\"psk\",\"allowed-ips\":[\"10.0.0.0/8\"],\"reserved\":\"1/2/3\",\"persistent-keepalive-interval\":\"20x\"},{\"public_key\":\"second\",\"allowed_ips\":[],\"reserved\":[]}]}\n{\"type\":\"wireguard\",\"name\":\"WGStrings\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":\"1/2/3\",\"mtu\":1420,\"peers\":[{}],\"_listen_port\":\" 80 \",\"_on_demand\":\"false\",\"_udp_nat_max\":\"4294967296\"}\n{\"type\":\"tailscale\",\"name\":\"TSControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":{\"server\":\"control\"},\"_listen_port\":65535,\"_on_demand\":true,\"_taildrop_directory\":\"/data/drop\",\"udp-timeout\":\"10s\",\"system-interface\":true,\"system-interface-name\":\"ts0\",\"system-interface-mtu\":\"1280\",\"relay-server-port\":\"8080\",\"relay-server-static-endpoints\":[\"a\"],\"advertise-exit-node\":false,\"exit-node-allow-lan-access\":false,\"ssh-server\":true,\"dialer-proxy\":\"must-not-leak\",\"_dns_server\":\"dns\",\"ip-version\":\"ipv4\"}\n{\"type\":\"tailscale\",\"name\":\"TSEmptyControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":{},\"_listen_port\":\" 80 \",\"ssh-server\":{\"disable-sftp\":true},\"detour\":\"hop\",\"_dns_server\":\"dns\",\"ip-version\":\"ipv4\",\"_domain_resolver\":\"override\"}\n{\"type\":\"tailscale\",\"name\":\"TSFalseControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":false,\"detour\":\"must-not-leak\",\"_domain_resolver\":\"must-not-leak\",\"advertise-routes\":\"wrong\",\"advertise-tags\":\"wrong\",\"relay-server-static-endpoints\":\"wrong\"}",
           "client": "singbox",
           "type": "external",
           "produce": {}
@@ -281,7 +281,7 @@
         "method": "POST",
         "path": "/api/proxy/parse",
         "body": {
-          "data": "{\"type\":\"wireguard\",\"name\":\"WGOptions\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":[1,2,3],\"mtu\":1420,\"system\":true,\"_name\":\"wg0\",\"_listen_port\":\"0\",\"_on_demand\":false,\"_udp_nat_max\":\"4294967295\",\"_udp_mapping\":\"endpoint_independent\",\"_udp_filtering\":\"address_dependent\",\"workers\":\"2x\",\"udp-timeout\":\"30s\",\"tfo\":true,\"_dns_server\":\"dns\",\"ip-version\":\"ipv6-prefer\",\"_domain_resolver\":{\"server\":\"override\",\"rewrite_ttl\":60},\"peers\":[{\"server\":\"first.example\",\"port\":\"51820x\",\"public-key\":\"first\",\"pre-shared-key\":\"psk\",\"allowed-ips\":[\"10.0.0.0/8\"],\"reserved\":\"1/2/3\",\"persistent-keepalive-interval\":\"20x\"},{\"public_key\":\"second\",\"allowed_ips\":[],\"reserved\":[]}]}\n{\"type\":\"wireguard\",\"name\":\"WGStrings\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":\"1/2/3\",\"mtu\":1420,\"peers\":[{}],\"_listen_port\":\" 80 \",\"_on_demand\":\"false\",\"_udp_nat_max\":\"4294967296\"}\n{\"type\":\"wireguard\",\"name\":\"BadPeer\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":[1,2,3],\"mtu\":1420,\"peers\":[null]}\n{\"type\":\"tailscale\",\"name\":\"TSControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":{\"server\":\"control\"},\"_listen_port\":65535,\"_on_demand\":true,\"_taildrop_directory\":\"/data/drop\",\"udp-timeout\":\"10s\",\"system-interface\":true,\"system-interface-name\":\"ts0\",\"system-interface-mtu\":\"1280\",\"relay-server-port\":\"8080\",\"relay-server-static-endpoints\":[\"a\"],\"advertise-exit-node\":false,\"exit-node-allow-lan-access\":false,\"ssh-server\":true,\"dialer-proxy\":\"must-not-leak\",\"_dns_server\":\"dns\",\"ip-version\":\"ipv4\"}\n{\"type\":\"tailscale\",\"name\":\"TSEmptyControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":{},\"_listen_port\":\" 80 \",\"ssh-server\":{\"disable-sftp\":true},\"detour\":\"hop\",\"_dns_server\":\"dns\",\"ip-version\":\"ipv4\",\"_domain_resolver\":\"override\"}\n{\"type\":\"tailscale\",\"name\":\"TSFalseControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":false,\"detour\":\"must-not-leak\",\"_domain_resolver\":\"must-not-leak\",\"advertise-routes\":\"wrong\",\"advertise-tags\":\"wrong\",\"relay-server-static-endpoints\":\"wrong\"}",
+          "data": "{\"type\":\"wireguard\",\"name\":\"WGOptions\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":[1,2,3],\"mtu\":1420,\"system\":true,\"_name\":\"wg0\",\"_listen_port\":\"0\",\"_on_demand\":false,\"_udp_nat_max\":\"4294967295\",\"_udp_mapping\":\"endpoint_independent\",\"_udp_filtering\":\"address_dependent\",\"workers\":\"2x\",\"udp-timeout\":\"30s\",\"tfo\":true,\"_dns_server\":\"dns\",\"ip-version\":\"ipv6-prefer\",\"_domain_resolver\":{\"server\":\"override\",\"rewrite_ttl\":60},\"peers\":[{\"server\":\"first.example\",\"port\":\"51820x\",\"public-key\":\"first\",\"pre-shared-key\":\"psk\",\"allowed-ips\":[\"10.0.0.0/8\"],\"reserved\":\"1/2/3\",\"persistent-keepalive-interval\":\"20x\"},{\"public_key\":\"second\",\"allowed_ips\":[],\"reserved\":[]}]}\n{\"type\":\"wireguard\",\"name\":\"WGStrings\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":\"1/2/3\",\"mtu\":1420,\"peers\":[{}],\"_listen_port\":\" 80 \",\"_on_demand\":\"false\",\"_udp_nat_max\":\"4294967296\"}\n{\"type\":\"tailscale\",\"name\":\"TSControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":{\"server\":\"control\"},\"_listen_port\":65535,\"_on_demand\":true,\"_taildrop_directory\":\"/data/drop\",\"udp-timeout\":\"10s\",\"system-interface\":true,\"system-interface-name\":\"ts0\",\"system-interface-mtu\":\"1280\",\"relay-server-port\":\"8080\",\"relay-server-static-endpoints\":[\"a\"],\"advertise-exit-node\":false,\"exit-node-allow-lan-access\":false,\"ssh-server\":true,\"dialer-proxy\":\"must-not-leak\",\"_dns_server\":\"dns\",\"ip-version\":\"ipv4\"}\n{\"type\":\"tailscale\",\"name\":\"TSEmptyControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":{},\"_listen_port\":\" 80 \",\"ssh-server\":{\"disable-sftp\":true},\"detour\":\"hop\",\"_dns_server\":\"dns\",\"ip-version\":\"ipv4\",\"_domain_resolver\":\"override\"}\n{\"type\":\"tailscale\",\"name\":\"TSFalseControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":false,\"detour\":\"must-not-leak\",\"_domain_resolver\":\"must-not-leak\",\"advertise-routes\":\"wrong\",\"advertise-tags\":\"wrong\",\"relay-server-static-endpoints\":\"wrong\"}",
           "client": "sing-box",
           "type": "internal",
           "produce": {
@@ -296,7 +296,7 @@
         "method": "POST",
         "path": "/api/proxy/parse",
         "body": {
-          "data": "{\"type\":\"wireguard\",\"name\":\"WGOptions\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":[1,2,3],\"mtu\":1420,\"system\":true,\"_name\":\"wg0\",\"_listen_port\":\"0\",\"_on_demand\":false,\"_udp_nat_max\":\"4294967295\",\"_udp_mapping\":\"endpoint_independent\",\"_udp_filtering\":\"address_dependent\",\"workers\":\"2x\",\"udp-timeout\":\"30s\",\"tfo\":true,\"_dns_server\":\"dns\",\"ip-version\":\"ipv6-prefer\",\"_domain_resolver\":{\"server\":\"override\",\"rewrite_ttl\":60},\"peers\":[{\"server\":\"first.example\",\"port\":\"51820x\",\"public-key\":\"first\",\"pre-shared-key\":\"psk\",\"allowed-ips\":[\"10.0.0.0/8\"],\"reserved\":\"1/2/3\",\"persistent-keepalive-interval\":\"20x\"},{\"public_key\":\"second\",\"allowed_ips\":[],\"reserved\":[]}]}\n{\"type\":\"wireguard\",\"name\":\"WGStrings\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":\"1/2/3\",\"mtu\":1420,\"peers\":[{}],\"_listen_port\":\" 80 \",\"_on_demand\":\"false\",\"_udp_nat_max\":\"4294967296\"}\n{\"type\":\"wireguard\",\"name\":\"BadPeer\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":[1,2,3],\"mtu\":1420,\"peers\":[null]}\n{\"type\":\"tailscale\",\"name\":\"TSControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":{\"server\":\"control\"},\"_listen_port\":65535,\"_on_demand\":true,\"_taildrop_directory\":\"/data/drop\",\"udp-timeout\":\"10s\",\"system-interface\":true,\"system-interface-name\":\"ts0\",\"system-interface-mtu\":\"1280\",\"relay-server-port\":\"8080\",\"relay-server-static-endpoints\":[\"a\"],\"advertise-exit-node\":false,\"exit-node-allow-lan-access\":false,\"ssh-server\":true,\"dialer-proxy\":\"must-not-leak\",\"_dns_server\":\"dns\",\"ip-version\":\"ipv4\"}\n{\"type\":\"tailscale\",\"name\":\"TSEmptyControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":{},\"_listen_port\":\" 80 \",\"ssh-server\":{\"disable-sftp\":true},\"detour\":\"hop\",\"_dns_server\":\"dns\",\"ip-version\":\"ipv4\",\"_domain_resolver\":\"override\"}\n{\"type\":\"tailscale\",\"name\":\"TSFalseControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":false,\"detour\":\"must-not-leak\",\"_domain_resolver\":\"must-not-leak\",\"advertise-routes\":\"wrong\",\"advertise-tags\":\"wrong\",\"relay-server-static-endpoints\":\"wrong\"}",
+          "data": "{\"type\":\"wireguard\",\"name\":\"WGOptions\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":[1,2,3],\"mtu\":1420,\"system\":true,\"_name\":\"wg0\",\"_listen_port\":\"0\",\"_on_demand\":false,\"_udp_nat_max\":\"4294967295\",\"_udp_mapping\":\"endpoint_independent\",\"_udp_filtering\":\"address_dependent\",\"workers\":\"2x\",\"udp-timeout\":\"30s\",\"tfo\":true,\"_dns_server\":\"dns\",\"ip-version\":\"ipv6-prefer\",\"_domain_resolver\":{\"server\":\"override\",\"rewrite_ttl\":60},\"peers\":[{\"server\":\"first.example\",\"port\":\"51820x\",\"public-key\":\"first\",\"pre-shared-key\":\"psk\",\"allowed-ips\":[\"10.0.0.0/8\"],\"reserved\":\"1/2/3\",\"persistent-keepalive-interval\":\"20x\"},{\"public_key\":\"second\",\"allowed_ips\":[],\"reserved\":[]}]}\n{\"type\":\"wireguard\",\"name\":\"WGStrings\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":\"1/2/3\",\"mtu\":1420,\"peers\":[{}],\"_listen_port\":\" 80 \",\"_on_demand\":\"false\",\"_udp_nat_max\":\"4294967296\"}\n{\"type\":\"tailscale\",\"name\":\"TSControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":{\"server\":\"control\"},\"_listen_port\":65535,\"_on_demand\":true,\"_taildrop_directory\":\"/data/drop\",\"udp-timeout\":\"10s\",\"system-interface\":true,\"system-interface-name\":\"ts0\",\"system-interface-mtu\":\"1280\",\"relay-server-port\":\"8080\",\"relay-server-static-endpoints\":[\"a\"],\"advertise-exit-node\":false,\"exit-node-allow-lan-access\":false,\"ssh-server\":true,\"dialer-proxy\":\"must-not-leak\",\"_dns_server\":\"dns\",\"ip-version\":\"ipv4\"}\n{\"type\":\"tailscale\",\"name\":\"TSEmptyControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":{},\"_listen_port\":\" 80 \",\"ssh-server\":{\"disable-sftp\":true},\"detour\":\"hop\",\"_dns_server\":\"dns\",\"ip-version\":\"ipv4\",\"_domain_resolver\":\"override\"}\n{\"type\":\"tailscale\",\"name\":\"TSFalseControl\",\"server\":\"node.example\",\"port\":443,\"control-http-client\":false,\"detour\":\"must-not-leak\",\"_domain_resolver\":\"must-not-leak\",\"advertise-routes\":\"wrong\",\"advertise-tags\":\"wrong\",\"relay-server-static-endpoints\":\"wrong\"}",
           "client": "sing-box",
           "type": "external",
           "produce": {
@@ -305,6 +305,86 @@
         },
         "expect": {
           "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"wireguard\",\"name\":\"BadPeer\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":[1,2,3],\"mtu\":1420,\"peers\":[null]}",
+          "client": "singbox",
+          "type": "internal",
+          "produce": {}
+        },
+        "expect": {
+          "status": 500,
+          "json": {
+            "status": "failed",
+            "error": {
+              "message": "Cannot read properties of null (reading 'ip')"
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"wireguard\",\"name\":\"BadPeer\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":[1,2,3],\"mtu\":1420,\"peers\":[null]}",
+          "client": "singbox",
+          "type": "external",
+          "produce": {}
+        },
+        "expect": {
+          "status": 500,
+          "json": {
+            "status": "failed",
+            "error": {
+              "message": "Cannot read properties of null (reading 'ip')"
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"wireguard\",\"name\":\"BadPeer\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":[1,2,3],\"mtu\":1420,\"peers\":[null]}",
+          "client": "sing-box",
+          "type": "internal",
+          "produce": {
+            "include-unsupported-proxy": true
+          }
+        },
+        "expect": {
+          "status": 500,
+          "json": {
+            "status": "failed",
+            "error": {
+              "message": "Cannot read properties of null (reading 'ip')"
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"wireguard\",\"name\":\"BadPeer\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"fd00::2/64\",\"private-key\":\"private\",\"public-key\":\"public\",\"reserved\":[1,2,3],\"mtu\":1420,\"peers\":[null]}",
+          "client": "sing-box",
+          "type": "external",
+          "produce": {
+            "include-unsupported-proxy": true
+          }
+        },
+        "expect": {
+          "status": 500,
+          "json": {
+            "status": "failed",
+            "error": {
+              "message": "Cannot read properties of null (reading 'ip')"
+            }
+          }
         }
       }
     ]
