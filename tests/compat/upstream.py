@@ -129,6 +129,20 @@ class ControlledUpstream:
         if path.startswith('/host/artifact/'):
             return artifact_response(path)
         text = "订阅🙂\r\nsecond\n".encode("utf-8")
+        if path.startswith('/host/script/'):
+            mode = path.removeprefix('/host/script/')
+            if mode == 'missing':
+                return 404, b'no script', []
+            if mode == 'response':
+                script = 'function transformFunction(res) { res.body += $arguments.text; return res; }'
+            else:
+                script = """async function operator(proxies, target, context) {
+  await $substore.wait(1);
+  for(const proxy of proxies) proxy.linked={arguments:$arguments,target,options:$options??null,raw:context.raw??null,source:context.source?.marker??null};
+  return proxies;
+}"""
+            flow = 'upload=3; download=0; total=3' if mode == 'flow' else 'upload=1; download=2; total=100'
+            return 200, script.encode('utf-8'), [('Subscription-Userinfo', flow)]
         if path.startswith('/host/download/'):
             mode = path.removeprefix('/host/download/')
             content = "下载🙂\r\n\0尾\n".encode('utf-8')

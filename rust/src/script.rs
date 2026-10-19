@@ -4,6 +4,7 @@ use rquickjs::{
     AsyncContext, AsyncRuntime, Ctx, Exception, Function, JsLifetime, Object, Promise,
     Value as JsValue,
     function::Args,
+    object::Accessor,
     prelude::{Async, Func, Opt, This},
 };
 use serde_json::{Value, json};
@@ -300,6 +301,7 @@ struct Scope<'js> {
     source: JsValue<'js>,
     options: JsValue<'js>,
     context: JsValue<'js>,
+    execution: JsValue<'js>,
 }
 
 pub(crate) async fn settled<'js>(
@@ -343,7 +345,11 @@ async fn invoke<'js>(
         args.push_arg(value)?;
     }
     let function: Function = factory.call_arg(args)?;
-    let output: JsValue = function.call((input, scope.target.clone(), scope.context.clone()))?;
+    let output: JsValue = if entry == "transformFunction" {
+        function.call((input, scope.context.clone()))?
+    } else {
+        function.call((input, scope.target.clone(), scope.context.clone()))?
+    };
     settled(js, output).await
 }
 
@@ -354,22 +360,8 @@ async fn apply_script<'js>(
     input: JsValue<'js>,
     scope: &Scope<'js>,
 ) -> rquickjs::Result<JsValue<'js>> {
-    let args = js.get(&item, "args")?;
-    let args = if js.truthy(&args)? {
-        args
-    } else {
-        Object::new(js.ctx.clone())?.into_value()
-    };
-    if js.equal(&js.get(&args, "mode")?, &js.value("link")?)? {
-        return Err(js.error("Linked script sources are not implemented yet"));
-    }
-    let script = js.text(js.get(&args, "content")?)?;
-    let arguments = js.get(&args, "arguments")?;
-    let arguments = if js.truthy(&arguments)? {
-        arguments
-    } else {
-        Object::new(js.ctx.clone())?.into_value()
-    };
+    let (script, arguments) = crate::script_loading::load(js, &item, &scope.execution).await?;
+    let script = js.text(script)?;
     js.set(&scope.context, "source", scope.source.clone())?;
     js.set(
         &scope.context,
@@ -498,13 +490,7 @@ async fn process<'js>(
         let name = js.text(name)?;
         if is_script {
             if !["Script Operator", "Script Filter"].contains(&name.as_str()) {
-                let args = js.get(&item, "args")?;
-                if !args.is_null()
-                    && !args.is_undefined()
-                    && js.equal(&js.get(&args, "mode")?, &js.value("link")?)?
-                {
-                    return Err(js.error("Linked script sources are not implemented yet"));
-                }
+                crate::script_loading::load(js, &item, &scope.execution).await?;
                 eprintln!("[sub-store:error] Unknown operator: {name}");
                 continue;
             }
@@ -565,6 +551,7 @@ async fn native_process<'js>(
     source: Opt<JsValue<'js>>,
     options: Opt<JsValue<'js>>,
     raw: Opt<JsValue<'js>>,
+    execution: Opt<JsValue<'js>>,
 ) -> rquickjs::Result<JsValue<'js>> {
     let js = Js::new(ctx);
     let context = Object::new(js.ctx.clone())?.into_value();
@@ -586,6 +573,7 @@ async fn native_process<'js>(
         source: source.0.unwrap_or_else(|| js.undefined()),
         options: options.0.unwrap_or_else(|| js.undefined()),
         context,
+        execution: execution.0.filter(|value| !value.is_undefined()).unwrap_or(Object::new(js.ctx.clone())?.into_value()),
     };
     process(
         &js,
@@ -597,6 +585,92 @@ async fn native_process<'js>(
         scope,
     )
     .await
+}
+
+fn response_headers<'js>(js: &Js<'js>, value: JsValue<'js>) -> rquickjs::Result<JsValue<'js>> {
+    if !value.is_null() && js.call::<String, _>("typeOf", (value.clone(),))? == "object" {
+        Ok(value)
+    } else {
+        Ok(Object::new(js.ctx.clone())?.into_value())
+    }
+}
+
+fn normalize_response<'js>(js: &Js<'js>, input: JsValue<'js>) -> rquickjs::Result<JsValue<'js>> {
+    let input = if input.is_undefined() { Object::new(js.ctx.clone())?.into_value() } else { input };
+    let headers = crate::script_network::prefer(js, [js.get(&input, "header")?, js.get(&input, "headers")?, Object::new(js.ctx.clone())?.into_value()])?;
+    let headers = Rc::new(RefCell::new(response_headers(js, headers)?));
+    let output = Object::new(js.ctx.clone())?;
+    output.set("status", crate::script_network::prefer(js, [js.get(&input, "status")?, js.get(&input, "statusCode")?, js.value(200)?])?)?;
+    let own: bool = js.call("own", (input.clone(), "body"))?;
+    output.set("body", if own { js.get(&input, "body")? } else { js.value("")? })?;
+    for name in ["headers", "header"] {
+        let get = headers.clone();
+        let set = headers.clone();
+        let scope = js.clone();
+        output.prop(name, Accessor::new(
+            move || get.borrow().clone(),
+            move |value: JsValue<'js>| {
+                *set.borrow_mut() = response_headers(&scope, value)?;
+                Ok::<_, rquickjs::Error>(())
+            },
+        ).enumerable())?;
+    }
+    Ok(output.into_value())
+}
+
+async fn apply_transformer<'js>(
+    js: &Js<'js>, item: JsValue<'js>, input: JsValue<'js>, scope: &Scope<'js>,
+) -> rquickjs::Result<JsValue<'js>> {
+    let (script, arguments) = crate::script_loading::load(js, &item, &scope.execution).await?;
+    let script = js.text(script)?;
+    js.set(&scope.context, "source", scope.source.clone())?;
+    js.set(&scope.context, "env", js.ctx.globals().get("__scriptEnvironment")?)?;
+    match invoke(js, "transformFunction", &script, arguments.clone(), scope, input.clone()).await {
+        Ok(value) => if js.truthy(&value)? { Ok(value) } else { Ok(input) },
+        Err(error) => {
+            let first = message(&js.ctx, error);
+            let suppressed = first.contains("$res is not defined");
+            let shortcut = format!("async function transformFunction(res = {{}}, context) {{ let $res = res; {script}\n return $res; }}");
+            match invoke(js, "transformFunction", &shortcut, arguments, scope, input.clone()).await {
+                Ok(value) => if js.truthy(&value)? { Ok(value) } else { Ok(input) },
+                Err(error) => {
+                    let second = message(&js.ctx, error);
+                    let detail = if !suppressed && first == second {
+                        format!("执行失败 {first}")
+                    } else {
+                        format!("{}执行快捷脚本失败 {second}", if suppressed { String::new() } else { format!("执行 function transformFunction 失败 {first}; ") })
+                    };
+                    Err(js.error(&format!("响应修改 {detail}")))
+                }
+            }
+        }
+    }
+}
+
+async fn process_response<'js>(
+    ctx: Ctx<'js>, input: JsValue<'js>, operators: Opt<JsValue<'js>>, target: Opt<JsValue<'js>>,
+    source: Opt<JsValue<'js>>, options: Opt<JsValue<'js>>, execution: Opt<JsValue<'js>>,
+) -> rquickjs::Result<JsValue<'js>> {
+    let js = Js::new(ctx);
+    let scope = Scope {
+        target: target.0.unwrap_or_else(|| js.undefined()),
+        source: source.0.unwrap_or_else(|| js.undefined()),
+        options: options.0.unwrap_or_else(|| js.undefined()),
+        context: Object::new(js.ctx.clone())?.into_value(),
+        execution: execution.0.filter(|value| !value.is_undefined()).unwrap_or(Object::new(js.ctx.clone())?.into_value()),
+    };
+    let items = operators.0.filter(|value| !value.is_undefined()).unwrap_or(js.array([])?);
+    let items: Vec<JsValue> = js.call("iterable", (items,))?;
+    let mut output = normalize_response(&js, input)?;
+    for item in items {
+        if !js.equal(&js.get(&item, "type")?, &js.value("Response Transformer")?)?
+            || skip(&js, &item, &scope.context)? || js.truthy(&js.get(&item, "disabled")?)? {
+            continue;
+        }
+        let result = apply_transformer(&js, item, output, &scope).await?;
+        output = normalize_response(&js, result)?;
+    }
+    Ok(output)
 }
 
 fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
@@ -664,6 +738,7 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     utils.set("parse", Func::from(native_parse))?;
     utils.set("produce", Func::from(native_produce))?;
     utils.set("process", Func::from(Async(native_process)))?;
+    utils.set("processResponse", Func::from(Async(process_response)))?;
     utils.set("Buffer", scripts.get::<_, JsValue>("Buffer")?)?;
     utils.set("Base64", scripts.get::<_, JsValue>("Base64")?)?;
     utils.set("ipAddress", scripts.get::<_, JsValue>("ipAddress")?)?;
@@ -770,6 +845,7 @@ pub async fn local(
                                     source: source.into_value(),
                                     options: js.undefined(),
                                     context,
+                                    execution: Object::new(ctx.clone())?.into_value(),
                                 };
                                 let processed =
                                     process(&js, original.clone(), items, scope).await?;

@@ -15,6 +15,7 @@ mod script_download;
 mod script_flow;
 mod script_helpers;
 mod script_io;
+mod script_loading;
 mod script_network;
 mod singbox_output;
 mod state;
