@@ -3675,7 +3675,10 @@ pub fn produce(
     if matches!(target, "qx" | "QX" | "QuantumultX" | "Loon") {
         return crate::text_output::produce(&proxies, kind, opts, target == "Loon");
     }
-    if matches!(target, "surge" | "Surge" | "SurgeMac" | "surfboard" | "Surfboard") {
+    if matches!(
+        target,
+        "surge" | "Surge" | "SurgeMac" | "surfboard" | "Surfboard"
+    ) {
         return crate::surge_output::produce(proxies, target, kind, opts);
     }
     if matches!(target, "json" | "JSON") {
