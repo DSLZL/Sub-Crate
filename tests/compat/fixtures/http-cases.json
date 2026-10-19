@@ -120,6 +120,18 @@
         "expect": {
           "status": 200
         }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"vmess\",\"name\":\"WSInjected\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"cipher\":\"auto\",\"alterId\":0,\"tls\":false,\"network\":\"ws\",\"ws-headers\":{\"Host\":\"front.example\\nX-Extra:first,second\"},\"ws-path\":\"/legacy?x=1&ed=0\"}",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 200
+        }
       }
     ]
   },
