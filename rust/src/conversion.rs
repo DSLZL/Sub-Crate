@@ -2191,7 +2191,18 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
         proxy["cipher"] = json!(cipher.to_lowercase());
     }
     if proxy["password"].is_number() {
-        proxy["password"] = json!(field_text(proxy, "password"));
+        let number = proxy["password"].as_f64().unwrap();
+        if number.fract() != 0.0 {
+            return Err(Error::Legacy(format!(
+                "The number {} cannot be converted to a BigInt because it is not an integer",
+                field_text(proxy, "password")
+            )));
+        }
+        proxy["password"] = json!(if number == 0.0 {
+            "0".to_owned()
+        } else {
+            format!("{number:.0}")
+        });
     }
     if matches!(proxy["type"].as_str(), Some("trojan" | "vmess" | "vless"))
         && !truthy(&proxy["network"])
@@ -2217,7 +2228,19 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
     }
     if matches!(
         proxy["type"].as_str(),
-        Some("trojan" | "tuic" | "hysteria" | "hysteria2" | "anytls")
+        Some(
+            "trojan"
+                | "tuic"
+                | "hysteria"
+                | "hysteria2"
+                | "juicity"
+                | "anytls"
+                | "trusttunnel"
+                | "h2-connect"
+                | "naive"
+                | "masque"
+                | "shadowquic"
+        )
     ) {
         proxy["tls"] = json!(true);
     }

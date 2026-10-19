@@ -148,7 +148,7 @@
         "method": "POST",
         "path": "/api/proxy/parse",
         "body": {
-          "data": "{type:'vmess',name:'JSON5 VM',server:' [2001:db8::1] ',port:'00443',uuid:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',cipher:'CHACHA20-IETF-POLY1305',servername:'sni.example',fingerprint:'final-cert','server-cert-fingerprint':'old-cert','dialer-proxy':'base','benchmark-url':'https://test.example','benchmark-timeout':1500,network:'ws','WS-OPTS':{Path:'socket',Headers:{host:'cdn.example'}},'unknown-field':null,numbers:[0x10,.5,1e2,-0],}\n{type:'vless',name:'JSON5 VL',server:'v.example',port:443,uuid:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',network:'http','http-opts':{path:'request',headers:{host:'cdn.example'}},flow:'null',udp:'off'}\n{type:'ss',name:42,server:123,port:8388,cipher:'AES-128-GCM',password:12.5,udp:false,unknown:{nested:[null,true,'\\ud800']}}",
+          "data": "{type:'vmess',name:'JSON5 VM',server:' [2001:db8::1] ',port:'00443',uuid:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',cipher:'CHACHA20-IETF-POLY1305',servername:'sni.example',fingerprint:'final-cert','server-cert-fingerprint':'old-cert','dialer-proxy':'base','benchmark-url':'https://test.example','benchmark-timeout':1500,network:'ws','WS-OPTS':{Path:'socket',Headers:{host:'cdn.example'}},'unknown-field':null,numbers:[0x10,.5,1e2,-0],}\n{type:'vless',name:'JSON5 VL',server:'v.example',port:443,uuid:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',network:'http','http-opts':{path:'request',headers:{host:'cdn.example'}},flow:'null',udp:'off'}\n{type:'ss',name:42,server:123,port:8388,cipher:'AES-128-GCM',password:12345,udp:false,unknown:{nested:[null,true,'\\ud800']}}",
           "client": "JSON",
           "type": "internal"
         },
@@ -195,7 +195,7 @@
                   "type": "ss",
                   "name": "42",
                   "server": "123",
-                  "password": "12.5",
+                  "password": "12345",
                   "unknown": {
                     "nested": [
                       null,
@@ -205,6 +205,24 @@
                   }
                 }
               ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{type:'ss',name:'Fractional password',server:'fraction.example',port:8388,cipher:'aes-128-gcm',password:12.5}",
+          "client": "JSON",
+          "type": "internal"
+        },
+        "expect": {
+          "status": 500,
+          "json": {
+            "status": "failed",
+            "error": {
+              "message": "The number 12.5 cannot be converted to a BigInt because it is not an integer"
             }
           }
         }

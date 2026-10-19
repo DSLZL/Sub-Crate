@@ -26,9 +26,10 @@ fn yaml<'js>(ctx: &Ctx<'js>, raw: &str) -> rquickjs::Result<JsValue<'js>> {
                 replaced.push_str(part.trim_start_matches(codec::is_space));
             }
             let value: JsValue = parse.call((replaced, options.clone()))?;
-            let text = ctx.json_stringify(value)?.ok_or_else(|| {
-                Exception::throw_type(ctx, "Value is not JSON serializable")
-            })?.to_string()?;
+            let text = ctx
+                .json_stringify(value)?
+                .ok_or_else(|| Exception::throw_type(ctx, "Value is not JSON serializable"))?
+                .to_string()?;
             let value = ctx.json_parse(text)?;
             let dump: Function = utilities.get("stringifyYaml")?;
             let text: String = dump.call((value,))?;
@@ -105,7 +106,8 @@ impl Parser {
                 let mut output = String::new();
                 if let Some(array) = proxies.as_array() {
                     for value in array.iter::<JsValue>() {
-                        let text = ctx.json_stringify(value?)?
+                        let text = ctx
+                            .json_stringify(value?)?
                             .map(|text| text.to_string())
                             .transpose()?
                             .unwrap_or_else(|| "undefined".to_owned());
@@ -145,19 +147,44 @@ impl Parser {
                 let kind = kind.as_string().and_then(|kind| kind.to_string().ok());
                 if !kind.as_deref().is_some_and(|kind| {
                     [
-                        "zerotier", "shadowquic", "gost-relay", "openvpn", "tailscale",
-                        "easytier", "trusttunnel", "h2-connect", "naive", "anytls",
-                        "mieru", "masque", "masque-surge", "sudoku", "juicity", "ss",
-                        "ssr", "vmess", "socks5", "http", "snell", "trojan", "tuic",
-                        "vless", "hysteria", "hysteria2", "wireguard", "ssh", "direct",
-                    ].contains(&kind)
+                        "zerotier",
+                        "shadowquic",
+                        "gost-relay",
+                        "openvpn",
+                        "tailscale",
+                        "easytier",
+                        "trusttunnel",
+                        "h2-connect",
+                        "naive",
+                        "anytls",
+                        "mieru",
+                        "masque",
+                        "masque-surge",
+                        "sudoku",
+                        "juicity",
+                        "ss",
+                        "ssr",
+                        "vmess",
+                        "socks5",
+                        "http",
+                        "snell",
+                        "trojan",
+                        "tuic",
+                        "vless",
+                        "hysteria",
+                        "hysteria2",
+                        "wireguard",
+                        "ssh",
+                        "direct",
+                    ]
+                    .contains(&kind)
                 }) {
                     return Ok(None);
                 }
                 let stringify: Function = ctx.eval(
                     "(value) => { let nonfinite = false; const text = JSON.stringify(value, \
                     (_, field) => { if (typeof field === 'number' && !Number.isFinite(field)) \
-                    nonfinite = true; return field; }); return [text, nonfinite]; }"
+                    nonfinite = true; return field; }); return [text, nonfinite]; }",
                 )?;
                 let serialized: Array = match stringify.call((value,)) {
                     Ok(value) => value,
@@ -183,7 +210,9 @@ impl Parser {
             };
             // shortcut: non-finite and cyclic typed values need the M3 script/value bridge.
             let Parsed::Proxy(mut proxy) = parsed else {
-                return Err(Error::Pending("Non-finite or cyclic Clash values are not implemented yet"));
+                return Err(Error::Pending(
+                    "Non-finite or cyclic Clash values are not implemented yet",
+                ));
             };
             if matches!(proxy["type"].as_str(), Some("vmess" | "vless"))
                 && truthy(&proxy["servername"])
