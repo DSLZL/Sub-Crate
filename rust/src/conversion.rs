@@ -2553,6 +2553,14 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
         proxy.as_object_mut().unwrap().shift_remove("ca_str");
         proxy["ca-str"] = ca.clone();
     }
+    if !truthy(&ca)
+        && let Some(path) = proxy["_ca"].as_str()
+    {
+        match std::fs::read(codec::text(path)) {
+            Ok(bytes) => ca = json!(codec::encode(&String::from_utf8_lossy(&bytes))),
+            Err(error) => eprintln!("[sub-store:error] Read ca file failed: {error}"),
+        }
+    }
     if !truthy(&proxy["tls-fingerprint"]) && truthy(&ca) {
         proxy["tls-fingerprint"] = fingerprint(&ca)?;
     }

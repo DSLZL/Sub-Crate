@@ -1845,6 +1845,11 @@ def main():
             state.mkdir()
             (state / "sub-store.json").write_text(json.dumps(final["node"], ensure_ascii=False), encoding="utf-8")
             (state / "root.json").write_text(json.dumps(baseline_root, ensure_ascii=False), encoding="utf-8")
+            ca_file = state / "native-ca.pem"
+            ca_file.write_text("-----BEGIN CERTIFICATE-----\nAAECAw==\n-----END CERTIFICATE-----", encoding="utf-8")
+            conversion_cases = json.loads(json.dumps(conversion_cases))
+            helper = next(case for case in conversion_cases if case["id"] == "PC-native-conversion-helper-contracts")
+            helper["steps"][0]["body"]["process"][0]["args"]["arguments"]["caFile"] = "/data/native-ca.pem" if kind == "rust" and image else str(ca_file)
             env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}
             env.update(SUB_STORE_MMDB_COUNTRY_PATH=str(HERE / "fixtures/mmdb/GeoIP2-Country-Test.mmdb"),
                        SUB_STORE_MMDB_ASN_PATH=str(HERE / "fixtures/mmdb/GeoLite2-ASN-Test.mmdb"))

@@ -53,6 +53,9 @@ fn script_response(output: Value) -> Result<Reply, ConversionError> {
                 .into_iter()
                 .map(|value| {
                     let mut text = js_string(value);
+                    if key == "content-type" && !binary && body.is_string() {
+                        text = crate::body::response_content_type(&text).unwrap_or(text);
+                    }
                     if key == "profile-web-page-url"
                         && let Ok(url) = reqwest::Url::parse(&codec::text(&text))
                     {

@@ -42,6 +42,13 @@ async function operator(proxies) {
     equal(nested.transport,[{'ws-opts':{path:'/p',headers:{Host:'example.com'}}}],'nested Trojan transport paths and array creation');
     equal(ProxyUtils.parse('trojan://p@127.0.0.1:443?type=__proto__.bad&path=%2Fp'),[],'unsafe transport path is rejected');
     passed.push('NC-native-nested-trojan-paths');
+    const caPath=$arguments.caFile;
+    const certificate=ProxyUtils.parse(JSON.stringify({type:'trojan',name:'file-ca',server:'127.0.0.1',port:443,password:'p',_ca:caPath}))[0];
+    equal(certificate['tls-fingerprint'],'05:4E:DE:C1:D0:21:1F:62:4F:ED:0C:BC:A9:D4:F9:40:0B:0E:49:1C:43:74:2A:F2:C5:B0:AB:EB:F0:C9:90:D8','CA file fingerprint');
+    assert(certificate._ca===caPath && !Object.hasOwn(certificate,'ca-str'),'CA path remains data');
+    const missing=ProxyUtils.parse(JSON.stringify({type:'trojan',name:'missing-ca',server:'127.0.0.1',port:443,password:'p',_ca:caPath+'.missing'}))[0];
+    assert(!missing['tls-fingerprint'],'missing CA file does not stop parsing');
+    passed.push('NC-native-ca-file-and-read-failure');
   } catch(error) {
     return proxies.map(proxy=>({...proxy,conversionHelpersError:String(error),conversionHelpersPassed:passed}));
   }
