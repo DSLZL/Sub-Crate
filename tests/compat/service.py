@@ -190,6 +190,7 @@ def sharing_contracts(binary, node, environment, baseline, root, output, report,
                 env["SUB_STORE_BACKEND_MERGE"] = "true"
             else:
                 env.pop("SUB_STORE_BACKEND_MERGE", None)
+            env.pop("NODE_ENV", None)
             selected = json.loads(json.dumps(cases))
             if mode == "standalone":
                 for case in selected:
@@ -259,6 +260,10 @@ def sharing_contracts(binary, node, environment, baseline, root, output, report,
                 if actual["path"] == "/api/utils/env":
                     continue  # Environment metadata retains its accepted M2 runtime differences.
                 a, b = actual["response"], reference["response"]
+                if mode == "standalone" and actual["path"].startswith("/share/") and actual["method"] != "GET":
+                    for response, kind in ((a, "rust"), (b, "node")):
+                        diagnostic_response(response, "default", kind, 500, "Error: Method not allowed", True)
+                    continue
                 assert (a["status"], a["body"]) == (b["status"], b["body"]), (mode, index, a, b)
                 for key in ("content-type", "content-length", "etag", "allow"):
                     assert a["headers"].get(key) == b["headers"].get(key), (mode, index, key, a, b)
@@ -1824,8 +1829,31 @@ def configuration_probes(url, state, output, name, limit, allowed, denied, wildc
     return [{key: value for key, value in row.items() if not key.startswith("files_")} for row in observations]
 
 
-def error_diagnostics(url, state, output, name, mode, kind):
-    parsed = urlsplit(url)
+def diagnostic_response(response, mode, kind, status, detail, exact):
+    content = response["body"].encode("utf-8")
+    headers = response["headers"]
+    assert response["status"] == status, response
+    assert headers["content-type"] == "text/html; charset=utf-8"
+    assert headers["content-security-policy"] == "default-src 'none'"
+    assert headers["x-content-type-options"] == "nosniff"
+    assert int(headers["content-length"]) == len(content)
+    assert "etag" not in headers
+    prefix = '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>Error</title>\n</head>\n<body>\n<pre>'
+    suffix = '</pre>\n</body>\n</html>\n'
+    text = content.decode("utf-8")
+    assert text.startswith(prefix) and text.endswith(suffix), "HTML envelope changed"
+    diagnostic = unescape_html(text[len(prefix):-len(suffix)].replace("<br>", "\n"))
+    if mode == "production":
+        assert diagnostic == {400: "Bad Request", 403: "Forbidden", 412: "Precondition Failed", 413: "Payload Too Large",
+                              415: "Unsupported Media Type", 416: "Range Not Satisfiable", 500: "Internal Server Error"}[status]
+        return diagnostic
+    first, separator, frames = diagnostic.partition("\n")
+    assert first == detail if exact else first.startswith(detail), first
+    assert separator and re.search(r"(?m)^\s+at " if kind == "node" else r"(?m)^\s*\d+: ", frames), "Native trace missing"
+    return first if exact else detail + " [parser-specific wording]"
+
+
+def error_diagnostics(url, state, output, name, mode, kind, frontend_url):
     observations = []
     cases = [
         ("missing-subscription", "GET", "/api/sub/missing", b"", {}, 500,
@@ -1834,6 +1862,8 @@ def error_diagnostics(url, state, output, name, mode, kind):
          "TypeError: Cannot convert object to primitive value", True),
         ("module-invalid-status", "GET", "/api/module/bad-status", b"", {}, 500,
          "RangeError [ERR_HTTP_INVALID_STATUS_CODE]: Invalid status code: 0", True),
+        ("standalone-share-method", "POST", "/share/file/diagnostic?token=unused", b"", {}, 500,
+         "Error: Method not allowed", True),
         ("parameter-decoding", "GET", "/api/sub/%FF", b"", {}, 400,
          "URIError: Failed to decode param '%FF'", True),
         ("static-precondition", "GET", "/chunks/main-84da2e86.js", b"", {"If-Match": '"wrong"'}, 412,
@@ -1852,14 +1882,12 @@ def error_diagnostics(url, state, output, name, mode, kind):
          "TypeError [ERR_UNKNOWN_ENCODING]: Unknown encoding: utf-16be", True),
         ("invalid-gzip", "PATCH", "/api/settings", b"not-gzip", {"Content-Encoding": "gzip"}, 400, "Error:", False),
     ]
-    prefix = '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>Error</title>\n</head>\n<body>\n<pre>'
-    suffix = '</pre>\n</body>\n</html>\n'
-    reasons = {400: "Bad Request", 403: "Forbidden", 412: "Precondition Failed", 413: "Payload Too Large",
-               415: "Unsupported Media Type", 416: "Range Not Satisfiable", 500: "Internal Server Error"}
     for case_id, method, path, body, headers, status, detail, exact in cases:
         before = {filename: (state / filename).read_bytes() for filename in ("sub-store.json", "root.json")}
+        public = path.startswith(("/chunks/", "/share/"))
+        parsed = urlsplit(frontend_url if public else url)
         connection = BufferedHTTPConnection(parsed.hostname, parsed.port, timeout=5)
-        sent_path = path if path.startswith("/chunks/") else parsed.path.rstrip("/") + path
+        sent_path = path if public else parsed.path.rstrip("/") + path
         headers = {"Content-Type": "application/json", **headers}
         try:
             connection.request(method, sent_path, body=body, headers=headers)
@@ -1879,21 +1907,8 @@ def error_diagnostics(url, state, output, name, mode, kind):
             evidence.write(json.dumps(raw, ensure_ascii=False) + "\n")
         assert actual_status == status, f"{name}/{case_id}: {actual_status}: {content!r}"
         assert before == after, f"{name}/{case_id}: rejected request changed durable state"
-        assert actual_headers["content-type"] == "text/html; charset=utf-8"
-        assert actual_headers["content-security-policy"] == "default-src 'none'"
-        assert actual_headers["x-content-type-options"] == "nosniff"
-        assert int(actual_headers["content-length"]) == len(content)
-        text = content.decode("utf-8")
-        assert text.startswith(prefix) and text.endswith(suffix), f"{name}/{case_id}: HTML envelope changed"
-        diagnostic = unescape_html(text[len(prefix):-len(suffix)].replace("<br>", "\n"))
-        if mode == "production":
-            assert diagnostic == reasons[status]
-            comparison = diagnostic
-        else:
-            first, separator, frames = diagnostic.partition("\n")
-            assert first == detail if exact else first.startswith(detail), f"{name}/{case_id}: {first!r}"
-            assert separator and re.search(r"(?m)^\s+at " if kind == "node" else r"(?m)^\s*\d+: ", frames), f"{name}/{case_id}: native trace missing"
-            comparison = first if exact else detail + " [parser-specific wording]"
+        comparison = diagnostic_response({"status": actual_status, "headers": actual_headers,
+                                          "body": content.decode("utf-8")}, mode, kind, status, detail, exact)
         observations.append({"case_id": case_id, "status": status, "diagnostic": comparison,
                              "state": json.loads(after["sub-store.json"]), "root": json.loads(after["root.json"])})
     return observations
@@ -2087,14 +2102,28 @@ def main():
                 (state / "sub-store.json").write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
                 (state / "root.json").write_text(json.dumps(baseline_root, ensure_ascii=False), encoding="utf-8")
                 static_fixture(state / "frontend")
-                env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state), "SUB_STORE_BACKEND_MERGE": "true",
+                with socket.socket() as reserved:
+                    reserved.bind(("127.0.0.1", 0))
+                    frontend_port = reserved.getsockname()[1]
+                env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state), "SUB_STORE_FRONTEND_HOST": "127.0.0.1",
+                       "SUB_STORE_FRONTEND_PORT": str(frontend_port),
                        "SUB_STORE_FRONTEND_PATH": str(state / "frontend"), "SUB_STORE_BODY_JSON_LIMIT": "64b"}
                 env.pop("NODE_ENV", None)
                 if mode != "default":
                     env["NODE_ENV"] = mode
                 manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
                 with manager as url:
-                    observed[kind] = error_diagnostics(url, state, output, label, mode, kind)
+                    frontend_url = f"http://127.0.0.1:{frontend_port}"
+                    deadline = time.monotonic() + 30
+                    while True:
+                        try:
+                            if request(frontend_url, {"path": "/"})["status"] == 200:
+                                break
+                        except OSError:
+                            pass
+                        assert time.monotonic() < deadline, "Diagnostic frontend readiness timeout"
+                        time.sleep(0.1)
+                    observed[kind] = error_diagnostics(url, state, output, label, mode, kind, frontend_url)
             check_json(observed["rust"], observed["node"])
         report["error_environment_modes_checked"] = ["default", "development", "production"]
         report["development_error_stack_parity"] = "Native frames and parser-specific wording differ; raw responses retained; fixed reasons, classes, envelopes and rejected-state boundaries match"

@@ -696,25 +696,50 @@ async fn frontend_handle(
     let head = request.method() == Method::HEAD;
     let mut response = api::not_found();
     if !config.frontend_backend_path.is_empty() && path.starts_with("/share/") {
-        if request.method() != Method::GET {
-            return Ok(api::send(500, "text/plain; charset=utf-8", format!("Error occurred while trying to proxy: {}{}", header(request.headers(), "host"), request.uri())));
-        }
         let parts = path.split('/').collect::<Vec<_>>();
         if parts.len() >= 4 && !parts[2].is_empty() && !parts[3].is_empty() {
-            let decode = |part: &str| percent_decode_str(part).decode_utf8().map(|part| json::encode(&part));
+            if request.method() != Method::GET {
+                let mut response = api::uncaught_error(500, "Error: Method not allowed");
+                response
+                    .headers_mut()
+                    .insert("x-powered-by", "Express".parse().unwrap());
+                if head {
+                    strip_head_body(&mut response);
+                }
+                return Ok(response);
+            }
+            let decode = |part: &str| {
+                percent_decode_str(part)
+                    .decode_utf8()
+                    .map(|part| json::encode(&part))
+            };
             let (Ok(kind), Ok(name)) = (decode(parts[2]), decode(parts[3])) else {
                 return Ok(api::uncaught_error(400, "URIError: Failed to decode param"));
             };
             let query = body::query(request.uri().query().unwrap_or(""));
-            let token = tokens::consume(&mut store.lock().unwrap(), &query["token"], &json!(kind), &json!(name), "");
+            let token = tokens::consume(
+                &mut store.lock().unwrap(),
+                &query["token"],
+                &json!(kind),
+                &json!(name),
+                "",
+            );
             let (mut target, fake) = match token {
                 Ok(Some(token)) => {
-                    if state::truthy(&token["age-public-key"]) && let Ok(value) = json::js_string(&token["age-public-key"]).parse() {
-                        request.headers_mut().insert("x-sub-store-share-age-public-key", value);
+                    if state::truthy(&token["age-public-key"])
+                        && let Ok(value) = json::js_string(&token["age-public-key"]).parse()
+                    {
+                        request
+                            .headers_mut()
+                            .insert("x-sub-store-share-age-public-key", value);
                     }
                     (path.clone(), false)
                 }
-                Ok(None) if state::truthy(&store.lock().unwrap().data["settings"]["appearanceSetting"]["invalidShareFakeNode"]) => {
+                Ok(None)
+                    if state::truthy(
+                        &store.lock().unwrap().data["settings"]["appearanceSetting"]["invalidShareFakeNode"],
+                    ) =>
+                {
                     (format!("/share/sub/{}", parts[3..].join("/")), true)
                 }
                 Ok(None) => ("/404".to_owned(), false),
@@ -729,7 +754,11 @@ async fn frontend_handle(
             }
             let prefix = config.prefix.as_deref().unwrap_or("").trim_end_matches('/');
             let Ok(uri) = format!("{prefix}{target}").parse() else {
-                return Ok(api::text(400, "text/plain; charset=utf-8", "Invalid proxy URL"));
+                return Ok(api::text(
+                    400,
+                    "text/plain; charset=utf-8",
+                    "Invalid proxy URL",
+                ));
             };
             *request.uri_mut() = uri;
             return handle(request, config, store).await;
@@ -798,7 +827,9 @@ fn api_path(raw: &str) -> Result<Option<String>, ()> {
         }
         ["", share, kind, name]
             if share.eq_ignore_ascii_case("share")
-                && ["file", "sub", "col"].iter().any(|kind_name| kind.eq_ignore_ascii_case(kind_name))
+                && ["file", "sub", "col"]
+                    .iter()
+                    .any(|kind_name| kind.eq_ignore_ascii_case(kind_name))
                 && !name.is_empty() =>
         {
             Some(format!(
@@ -814,9 +845,13 @@ fn api_path(raw: &str) -> Result<Option<String>, ()> {
         ["", share, kind, name, target]
             if share.eq_ignore_ascii_case("share")
                 && (kind.eq_ignore_ascii_case("sub") || kind.eq_ignore_ascii_case("col"))
-                && !name.is_empty() && !target.is_empty() =>
+                && !name.is_empty()
+                && !target.is_empty() =>
         {
-            Some(format!("/share/{}/{name}/{target}", kind.to_ascii_lowercase()))
+            Some(format!(
+                "/share/{}/{name}/{target}",
+                kind.to_ascii_lowercase()
+            ))
         }
         ["", download, name] if download.eq_ignore_ascii_case("download") && !name.is_empty() => {
             Some(format!("/download/{name}"))
@@ -884,8 +919,7 @@ async fn route(
     let mut share_token = Value::Null;
     let path = if let Some(prefix) = &config.prefix {
         let matches = if prefix == "/" {
-            backend_route(&raw_path)
-                && !(config.merge && raw_path.starts_with("/share/"))
+            backend_route(&raw_path) && !(config.merge && raw_path.starts_with("/share/"))
         } else {
             raw_path.starts_with(prefix)
         };
@@ -895,8 +929,13 @@ async fn route(
             } else {
                 raw_path.strip_prefix(prefix).unwrap_or("")
             };
-            if stripped.is_empty() { "/".to_owned() } else { stripped.to_owned() }
-        } else if config.merge && raw_path.starts_with("/share/") && state::truthy(&query["token"]) {
+            if stripped.is_empty() {
+                "/".to_owned()
+            } else {
+                stripped.to_owned()
+            }
+        } else if config.merge && raw_path.starts_with("/share/") && state::truthy(&query["token"])
+        {
             if request_method != "GET" {
                 return api::send(405, "text/plain; charset=utf-8", "Method not allowed");
             }
@@ -905,14 +944,27 @@ async fn route(
                 Err(_) => return api::uncaught_error(500, "URIError: URI malformed"),
             };
             let mut state = store.lock().unwrap();
-            match tokens::consume(&mut state, &query["token"], &Value::Null, &Value::Null, &decoded) {
+            match tokens::consume(
+                &mut state,
+                &query["token"],
+                &Value::Null,
+                &Value::Null,
+                &decoded,
+            ) {
                 Ok(Some(token)) => {
                     share_token = token;
                     raw_path.clone()
                 }
-                Ok(None) if state::truthy(&state.data["settings"]["appearanceSetting"]["invalidShareFakeNode"]) => {
+                Ok(None)
+                    if state::truthy(
+                        &state.data["settings"]["appearanceSetting"]["invalidShareFakeNode"],
+                    ) =>
+                {
                     query["_fakeNode"] = json!(true);
-                    let tail = raw_path.strip_prefix("/share/").and_then(|tail| tail.split_once('/')).map_or("", |(_, tail)| tail);
+                    let tail = raw_path
+                        .strip_prefix("/share/")
+                        .and_then(|tail| tail.split_once('/'))
+                        .map_or("", |(_, tail)| tail);
                     format!("/share/sub/{tail}")
                 }
                 Ok(None) => return api::not_found(),

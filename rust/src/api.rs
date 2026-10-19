@@ -407,18 +407,41 @@ pub async fn conversion_dispatch(
         (rest, false)
     } else {
         let rest = path.strip_prefix("/download/")?;
-        (rest.strip_prefix("collection/").unwrap_or(rest), rest.starts_with("collection/"))
+        (
+            rest.strip_prefix("collection/").unwrap_or(rest),
+            rest.starts_with("collection/"),
+        )
     };
     if share && !collection {
         let invalid = if truthy(&query["fakeSub"]) {
-            Some(("UNSUPPORTED_SHARE_FAKE_SUB", "share/sub 不支持 fakeSub 参数"))
-        } else if ["url", "content"].iter().any(|key| !query[*key].is_null() && query[*key] != "") {
-            Some(("UNSUPPORTED_SHARE_SUB_SOURCE_OVERRIDE", "share/sub 不支持 url 或 content 参数"))
+            Some((
+                "UNSUPPORTED_SHARE_FAKE_SUB",
+                "share/sub 不支持 fakeSub 参数",
+            ))
+        } else if ["url", "content"]
+            .iter()
+            .any(|key| !query[*key].is_null() && query[*key] != "")
+        {
+            Some((
+                "UNSUPPORTED_SHARE_SUB_SOURCE_OVERRIDE",
+                "share/sub 不支持 url 或 content 参数",
+            ))
         } else if truthy(&query["mergeSources"]) {
-            Some(("UNSUPPORTED_SHARE_SUB_MERGE_SOURCES", "share/sub 不支持 mergeSources 参数"))
-        } else { None };
+            Some((
+                "UNSUPPORTED_SHARE_SUB_MERGE_SOURCES",
+                "share/sub 不支持 mergeSources 参数",
+            ))
+        } else {
+            None
+        };
         if let Some((code, message)) = invalid {
-            return Some(failure_details(400, code, "RequestInvalidError", message, Some(json!("详情请查看日志"))));
+            return Some(failure_details(
+                400,
+                code,
+                "RequestInvalidError",
+                message,
+                Some(json!("详情请查看日志")),
+            ));
         }
     }
     let (name, path_target) = rest
@@ -538,7 +561,12 @@ pub async fn conversion_dispatch(
         fields.insert("produceOpts".to_owned(), Value::Object(produce));
     }
     let mut request = request.clone();
-    if let Some(key) = crate::tokens::output_key(&store.lock().unwrap(), &request, if collection { "col" } else { "sub" }, &json!(name)) {
+    if let Some(key) = crate::tokens::output_key(
+        &store.lock().unwrap(),
+        &request,
+        if collection { "col" } else { "sub" },
+        &json!(name),
+    ) {
         request["outputAgePublicKey"] = key;
     }
     let mut params = json!({"name":name});
@@ -565,7 +593,15 @@ pub async fn conversion_dispatch(
             500,
             "INTERNAL_SERVER_ERROR",
             "InternalServerError",
-            &format!("Failed to download {}: {}", if collection { "collection" } else { "subscription" }, codec::text(&name)),
+            &format!(
+                "Failed to download {}: {}",
+                if collection {
+                    "collection"
+                } else {
+                    "subscription"
+                },
+                codec::text(&name)
+            ),
             Some(json!("详情请查看日志")),
         ),
         Err(error) => conversion_error(

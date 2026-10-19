@@ -10,7 +10,7 @@ pub(crate) struct Error {
     pub code: String,
     pub kind: &'static str,
     pub message: String,
-    pub details: Option<Value>,
+    pub details: Option<Box<Value>>,
 }
 
 impl Error {
@@ -37,7 +37,7 @@ impl Error {
             code: code.to_owned(),
             kind: "InternalServerError",
             message: message.to_owned(),
-            details: Some(json!(format!("Reason: {reason}"))),
+            details: Some(Box::new(json!(format!("Reason: {reason}")))),
         }
     }
 
@@ -52,7 +52,13 @@ impl Error {
     }
 
     pub fn reply(self, status: u16) -> api::Reply {
-        api::failure_details(status, &self.code, self.kind, &self.message, self.details)
+        api::failure_details(
+            status,
+            &self.code,
+            self.kind,
+            &self.message,
+            self.details.map(|value| *value),
+        )
     }
 }
 
@@ -240,7 +246,9 @@ fn content(value: Option<&Value>) -> api::Reply {
             ),
             None => api::uncaught_error(
                 500,
-                &format!("RangeError [ERR_HTTP_INVALID_STATUS_CODE]: Invalid status code: {number}"),
+                &format!(
+                    "RangeError [ERR_HTTP_INVALID_STATUS_CODE]: Invalid status code: {number}"
+                ),
             ),
         };
     }

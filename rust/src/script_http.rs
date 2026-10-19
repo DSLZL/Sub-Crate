@@ -276,7 +276,11 @@ pub(crate) async fn download<'js>(
     let input = object(js)?;
     js.set(&input, "headers", headers)?;
     js.set(&input, "body", output)?;
-    js.set(&input, "agePublicKey", optional(js, &request, "outputAgePublicKey")?)?;
+    js.set(
+        &input,
+        "agePublicKey",
+        optional(js, &request, "outputAgePublicKey")?,
+    )?;
     let source = object(js)?;
     js.set(
         &source,
@@ -453,7 +457,11 @@ pub(crate) async fn file<'js>(
     let input = object(js)?;
     js.set(&input, "headers", headers)?;
     let body = optional(js, &output, "$content")?;
-    js.set(&input, "agePublicKey", optional(js, &request, "outputAgePublicKey")?)?;
+    js.set(
+        &input,
+        "agePublicKey",
+        optional(js, &request, "outputAgePublicKey")?,
+    )?;
     js.set(
         &input,
         "body",
