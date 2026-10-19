@@ -92,11 +92,14 @@ def run_contracts(binary, node, environment, baseline, root, output, report, ima
                 manager = oracle(node, env, output, report, label) if kind == "node" else listener(binary, env, output, report, label, image, host_network=bool(image))
                 with manager as url:
                     if mode == "artifact":
-                        source = file("artifact-source", "function operator(input){const n=Number($substore.read('#cron-attempt')||0)+1;$substore.write(String(n),'#cron-attempt');if(n===1)throw new Error('fixture scheduled failure');return input;}")
+                        source = {**file("artifact-source", "function operator(input){const n=Number($substore.read('#cron-attempt')||0)+1;$substore.write(String(n),'#cron-attempt');return input;}"),
+                                  "source": "remote", "url": upstream.url + "/host/runtime-artifact"}
+                        upstream.runtime_files["/host/runtime-artifact"] = (503, b"fixture scheduled failure")
                         send({"method": "POST", "path": "/api/files", "body": source})
                         send({"method": "POST", "path": "/api/artifacts", "body": {"name": "scheduled", "displayName": "定时🙂", "type": "file",
                              "source": "artifact-source", "sync": True, "upload": False, "cron": "* * * * * *"}})
-                        wait(lambda: any("fixture scheduled failure" in message for message in messages()))
+                        wait(lambda: any("[ARTIFACT CRON] scheduled (定时🙂) * * * * * * error:" in message for message in messages()))
+                        upstream.runtime_files["/host/runtime-artifact"] = (200, b"fixture recovered")
                         wait(lambda: durable()["artifacts"][0].get("updated"))
                         wait(lambda: any("[ARTIFACT CRON] scheduled (定时🙂) * * * * * * finished" in message for message in messages()))
                         send({"method": "PATCH", "path": "/api/artifact/scheduled", "body": {"name": "renamed", "cron": "*/2 * * * * *"}})

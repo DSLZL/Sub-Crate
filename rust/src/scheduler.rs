@@ -25,14 +25,12 @@ enum Action {
 }
 
 fn log(store: &Arc<Mutex<Store>>, error: bool, text: &str) {
-    let level = if error { "ERROR" } else { "INFO" };
-    let text = format!("[sub-store] {level}: {text}");
-    eprintln!("{text}");
-    logs::append(
-        &mut store.lock().unwrap(),
-        if error { "error" } else { "info" },
-        &text,
-    );
+    let mut store = store.lock().unwrap();
+    if error {
+        logs::error(&mut store, text);
+    } else {
+        logs::info(&mut store, text);
+    }
 }
 
 async fn job(store: &Arc<Mutex<Store>>, operation: &str, input: Value) -> Result<(), Error> {

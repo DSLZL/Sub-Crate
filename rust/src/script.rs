@@ -290,7 +290,7 @@ pub(crate) fn console_text(js: &Js<'_>, level: &str, text: &str) {
 pub(crate) fn log(js: &Js<'_>, level: &str, text: &str) {
     console_text(
         js,
-        level,
+        "log",
         &format!("[sub-store] {}: {text}", level.to_ascii_uppercase()),
     );
 }
@@ -1063,7 +1063,7 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
                             codec::js_string(&text)
                         );
                         eprintln!("{}", codec::text(&text));
-                        record(&js, level, &text);
+                        record(&js, "log", &text);
                     }
                     Ok::<_, rquickjs::Error>(())
                 },

@@ -284,6 +284,9 @@ def notification_contracts(binary, node, environment, baseline, root, output, re
                     (output / f"{label}.json").write_text(json.dumps({"triggers": triggers, "upstream": upstream.requests, **paired[kind]}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
                     assert request(url, {"path": "/api/settings"})["status"] == 200, "Notification failure stopped the backend"
         check_json(paired["rust"], paired["node"])
+        for kind in ("node", "rust"):
+            report["phases"].append({"name": f"{kind}-notification-{mode}", "cases": 1,
+                "requests": len(steps) if steps else 1, "notifications": expected, "status": "passed"})
     report["native_notification_templates_providers_get_bodies_parallel_delivery_and_recovery_checked"] = True
 
 
@@ -336,6 +339,8 @@ def business_logs_contracts(binary, node, environment, baseline, root, output, r
                 assert len(entries) >= 25, (label, entries)
                 (output / f"{label}.json").write_text(json.dumps({"logs": entries, "triggers": proof, "upstream": upstream.requests}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     check_json(paired["rust"], paired["node"])
+    for kind in ("node", "rust"):
+        report["phases"].append({"name": kind + "-business-logs", "cases": 1, "requests": len(steps) + 1, "status": "passed"})
     report["native_business_resource_sync_settings_and_backup_log_callers_checked"] = True
 
 
@@ -381,6 +386,7 @@ def logs_contracts(binary, node, environment, baseline, root, output, report, im
                 console.debug('fixture-debug');
                 $substore.debug=true; $substore.log('fixture-host-debug'); $substore.debug=false;
                 $substore.log('fixture-host-hidden'); $substore.info('fixture-host-info');
+                $substore.warn('fixture-host-warn'); $substore.error('fixture-host-error');
                 console.log('Sub-Store -- v2.42.4'); console.log('URI Parser is activated!');
                 const logs = JSON.parse($substore.read('#sub-store-logs'));
                 if (!logs.some(entry => entry.message.includes('fixture-host-info'))) throw new Error('live root logs are stale');
@@ -393,8 +399,11 @@ def logs_contracts(binary, node, environment, baseline, root, output, report, im
             messages = [entry["message"] for entry in selected]
             expected = ["[unknown] INFO: fixture-format {\"zero\":0,\"flag\":false,\"nil\":null} undefined null [object Object]",
                         "[custom] WARN: fixture-scoped", "[scope] iNfO: fixture-preserve", "[unknown] DEBUG: fixture-debug",
-                        "[sub-store] LOG: fixture-host-debug", "[sub-store] INFO: fixture-host-info"]
+                        "[sub-store] LOG: fixture-host-debug", "[sub-store] INFO: fixture-host-info",
+                        "[sub-store] WARN: fixture-host-warn", "[sub-store] ERROR: fixture-host-error"]
             assert set(messages) == set(expected) and len(messages) == len(expected), messages
+            assert {entry["message"]: entry["level"] for entry in selected} == dict(zip(expected,
+                ("info", "warn", "error", "debug", "log", "log", "log", "log"), strict=True)), selected
             assert all(lower <= entry["time"] <= upper and re.fullmatch(r"[0-9]+-[a-z0-9]+", entry["id"]) for entry in selected)
             if kind == "rust":
                 concurrent = [script(f"function operator(proxies){{console.log('fixture-concurrent-{index}');return proxies;}}") for index in range(8)]
@@ -446,6 +455,12 @@ def utilities_contracts(binary, node, environment, baseline, root, output, repor
             with manager as url:
                 paired[kind] = check_cases(url, state, cases, output, label, upstream)
                 report["phases"].append({"name": label, "cases": len(cases), "requests": sum(len(case["steps"]) for case in paired[kind])})
+                metadata = [{"path": path, "response": request(url, {"path": path})} for path in ("/api/utils/env", "/")]
+                (output / f"{kind}-root-env-alias.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                assert all(item["response"]["status"] == 200 for item in metadata), metadata
+                assert metadata[0]["response"]["body"] == metadata[1]["response"]["body"], metadata
+                assert metadata[0]["response"]["headers"]["content-type"] == metadata[1]["response"]["headers"]["content-type"]
+                report["phases"].append({"name": kind + "-root-env-alias", "cases": 1, "requests": 2, "status": "passed"})
                 final[kind] = {filename: json.loads((state / filename).read_text(encoding="utf-8")) for filename in ("sub-store.json", "root.json")}
     for actual_case, reference_case in zip(paired["rust"], paired["node"], strict=True):
         assert actual_case["id"] == reference_case["id"]
