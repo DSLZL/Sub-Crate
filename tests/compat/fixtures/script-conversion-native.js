@@ -27,6 +27,12 @@ async function operator(proxies) {
     let cycleMessage='';try{ProxyUtils.produce([parsedCycle],'JSON');}catch(error){cycleMessage=error.message;}
     assert(cycleMessage.includes("property 'self' closes the circle"),'JSON cyclic error identifies the back reference');
     passed.push('NC-native-yaml-cycles-and-unused-fields');
+    const lone=String.fromCharCode(0xd800),low=String.fromCharCode(0xdfff);
+    const literal=String.fromCodePoint(0xf0000)+'0'+String.fromCodePoint(0xf0001);
+    const unpaired=ProxyUtils.parse('{type:"ss",name:"'+lone+'",server:"127.0.0.1",port:443,cipher:"none",password:"p",extra:{"'+low+'":"'+literal+'"}}')[0];
+    assert(unpaired.name===lone && unpaired.extra[low]===literal,'isolated UTF16 fields and keys survive parse without tag collisions');
+    assert(JSON.parse(ProxyUtils.produce([unpaired],'JSON'))[0].name===lone,'isolated UTF16 survives JSON wire');
+    passed.push('NC-native-isolated-utf16-input-and-wire');
   } catch(error) {
     return proxies.map(proxy=>({...proxy,conversionHelpersError:String(error),conversionHelpersPassed:passed}));
   }

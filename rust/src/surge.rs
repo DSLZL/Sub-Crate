@@ -441,19 +441,10 @@ pub fn matches(line: &str) -> bool {
 }
 
 pub fn parse(line: &str) -> Result<Option<Value>, crate::conversion::Error> {
-    let mut non_finite = false;
-    let proxy = parse_line(line, &mut non_finite);
-    // shortcut: non-finite fields need the M3 production script/value bridge.
-    if non_finite {
-        Err(crate::conversion::Error::Pending(
-            "Non-finite proxy numeric fields are not implemented yet",
-        ))
-    } else {
-        Ok(proxy)
-    }
+    Ok(parse_line(line))
 }
 
-fn parse_line(line: &str, non_finite: &mut bool) -> Option<Value> {
+fn parse_line(line: &str) -> Option<Value> {
     let (name, raw) = line.split_once('=')?;
     if name.contains(',') {
         return None;
@@ -602,7 +593,7 @@ fn parse_line(line: &str, non_finite: &mut bool) -> Option<Value> {
             | "udp-port"
             | "shadow-tls-version"
             | "port-hopping-interval" => {
-                if let Some(value) = digits(raw, non_finite)? {
+                if let Some(value) = digits(raw)? {
                     if key == "shadow-tls-version" {
                         shadow["version"] = value;
                     } else {
@@ -620,10 +611,10 @@ fn parse_line(line: &str, non_finite: &mut bool) -> Option<Value> {
                     if raw.is_empty() || !raw.bytes().all(|byte| byte.is_ascii_digit()) {
                         None
                     } else {
-                        digits(raw, non_finite)?
+                        digits(raw)?
                     }
                 } else {
-                    digits(raw, non_finite)?
+                    digits(raw)?
                 };
                 if let Some(value) = number {
                     proxy[output_key] = value;

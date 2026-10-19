@@ -2,7 +2,7 @@ async function operator(proxies) {
   const assert=(value,message)=>{if(!value)throw new Error(message);};
   const equal=(actual,expected,message)=>assert(JSON.stringify(actual)===JSON.stringify(expected),message+': '+JSON.stringify({actual,expected}));
   const rejects=async(callback,message)=>{try{await callback();}catch(error){assert(error.message.includes(message),'pipeline error '+error.message);return;}throw new Error('expected '+message);};
-  const DateBefore=Date,subsBefore=$substore.read('subs'),colsBefore=$substore.read('collections');
+  const DateBefore=Date,subsBefore=$substore.read('subs'),colsBefore=$substore.read('collections'),rulesBefore=$substore.read('rules');
   globalThis.Date=class extends DateBefore {constructor(...args){super(...(args.length?args:[3300000000000]));}static now(){return 3300000000000;}};
   const passed=[],results={};
   const check=async(id,callback)=>{results[id]=await callback();passed.push(id);};
@@ -82,6 +82,16 @@ async function operator(proxies) {
       await rejects(()=>produce({type:'collection',name:'child-fallback'}),'不含有效节点');
       return {result,empty:true,childFallback:true};
     });
+    await check('PL-native-rule-artifact-source-failures',async()=>{
+      $substore.write([],'rules');
+      await rejects(()=>produceArtifact({type:'rule',name:'missing',platform:'Surge'}),'找不到规则 missing');
+      $substore.write([{name:'empty-rule',urls:[]}],'rules');
+      let error;try{await produceArtifact({type:'rule',name:'empty-rule',platform:'Surge'});}catch(value){error=value;}
+      assert(error instanceof TypeError && error.message.includes('.process is not a function'),'preserve unavailable RuleUtils.process');
+      return {missing:true,legacyProcessFailure:true};
+    });
     proxies[0].pipelineVerified=passed;proxies[0].pipelineResults=results;return proxies;
-  } finally {$substore.write(subsBefore,'subs');$substore.write(colsBefore,'collections');globalThis.Date=DateBefore;}
+  } catch(error) {
+    return proxies.map(proxy=>({...proxy,pipelineError:String(error),pipelinePassed:passed}));
+  } finally {$substore.write(subsBefore,'subs');$substore.write(colsBefore,'collections');$substore.write(rulesBefore,'rules');globalThis.Date=DateBefore;}
 }

@@ -248,8 +248,8 @@ fn native_parse<'js>(ctx: Ctx<'js>, raw: JsValue<'js>) -> rquickjs::Result<JsVal
         return Err(Exception::throw_type(&ctx, "raw.split is not a function"));
     }
     let js = Js::new(ctx);
-    let raw = js.text(raw)?;
-    let proxies = conversion::parse(&json!(codec::encode(&raw)))
+    let raw = crate::js_values::project(&js.ctx, raw)?;
+    let proxies = conversion::parse(&raw)
         .map_err(|error| js.error(&conversion_message(error)))?;
     crate::js_values::decode(&js.ctx, &json!(proxies))
 }

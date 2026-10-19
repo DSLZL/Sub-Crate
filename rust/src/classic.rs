@@ -26,7 +26,7 @@ pub(crate) fn strip_quotes(raw: &str, single: bool, trim: bool) -> &str {
     }
 }
 
-pub(crate) fn digits(raw: &str, _non_finite: &mut bool) -> Option<Option<Value>> {
+pub(crate) fn digits(raw: &str) -> Option<Option<Value>> {
     let end = raw.bytes().take_while(u8::is_ascii_digit).count();
     if end == 0 {
         return Some(None);
@@ -212,7 +212,7 @@ fn fixed_token<'a>(raw: &'a str, values: &[&str]) -> Option<Option<&'a str>> {
     }
 }
 
-fn loon_line(line: &str, non_finite: &mut bool) -> Option<Value> {
+fn loon_line(line: &str) -> Option<Value> {
     let (name, raw) = line.split_once('=')?;
     if name.contains(',') {
         return None;
@@ -223,7 +223,7 @@ fn loon_line(line: &str, non_finite: &mut bool) -> Option<Value> {
         .to_ascii_lowercase();
     let kind = kind.as_str();
     if kind == "wireguard" {
-        return loon_wireguard(line, non_finite);
+        return loon_wireguard(line);
     }
     if ![
         "shadowsocks",
@@ -375,7 +375,7 @@ fn loon_line(line: &str, non_finite: &mut bool) -> Option<Value> {
             | "idle-session-timeout"
             | "min-idle-session"
             | "max-stream-count" => {
-                if let Some(value) = digits(raw, non_finite)? {
+                if let Some(value) = digits(raw)? {
                     if key == "shadow-tls-version" {
                         shadow["version"] = value;
                     } else {
@@ -988,7 +988,7 @@ fn wg_text<'a>(raw: &'a str, key: &str) -> Option<&'a str> {
     None
 }
 
-fn wg_number(raw: &str, key: &str, _non_finite: &mut bool) -> Option<Value> {
+fn wg_number(raw: &str, key: &str) -> Option<Value> {
     for tail in wg_values(raw, key) {
         let value = tail.trim_start_matches(char::is_whitespace);
         let value = value.strip_prefix('"').unwrap_or(value);
@@ -1063,7 +1063,7 @@ fn wg_server_dns(raw: &str) -> Option<Value> {
     None
 }
 
-fn loon_wireguard(line: &str, non_finite: &mut bool) -> Option<Value> {
+fn loon_wireguard(line: &str) -> Option<Value> {
     let (name, raw) = line.split_once('=')?;
     let (_, raw) = raw.split_once(',')?;
     let peer_tail = wg_values(raw, "peers").into_iter().find_map(|tail| {
@@ -1107,7 +1107,7 @@ fn loon_wireguard(line: &str, non_finite: &mut bool) -> Option<Value> {
         proxy["public-key"] = json!(value);
     }
     for key in ["mtu", "keepalive"] {
-        if let Some(value) = wg_number(raw, key, non_finite) {
+        if let Some(value) = wg_number(raw, key) {
             proxy[key] = value;
         }
     }
@@ -1171,11 +1171,7 @@ fn try_loon(line: &str) -> Result<Option<(Value, Parser)>, Error> {
     let Some(kind) = loon_kind(line) else {
         return Ok(None);
     };
-    let mut non_finite = false;
-    let proxy = loon_line(line, &mut non_finite);
-    if non_finite {
-        return Err(Error::Pending("non-finite Loon values"));
-    }
+    let proxy = loon_line(line);
     Ok(proxy.map(|proxy| (proxy, Parser::Loon(kind))))
 }
 
