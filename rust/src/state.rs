@@ -95,6 +95,26 @@ impl Store {
         Ok(())
     }
 
+    pub fn script_root(&self) -> io::Result<Value> {
+        codec::parse(std::str::from_utf8(&fs::read(self.path.with_file_name("root.json"))?).map_err(io::Error::other)?)
+    }
+
+    pub fn script_commit(&mut self, root: bool, baseline: &Value, next: &Value) -> io::Result<()> {
+        // A job may have awaited while another request committed unrelated keys.
+        // Merge only its explicit changes into the current published document.
+        if root {
+            let current = self.script_root()?;
+            let merged = script_delta(&current, baseline, next);
+            atomic_write(&self.path.with_file_name("root.json"), &codec::pretty(&merged))
+        } else {
+            let merged = script_delta(&self.data, baseline, next);
+            let changed_lists: Vec<_> = self.live_buffers.iter().copied().filter(|key| codec::stringify(&baseline[*key]) != codec::stringify(&next[*key])).collect();
+            self.commit(merged)?;
+            for key in changed_lists { self.live_buffers.remove(key); }
+            Ok(())
+        }
+    }
+
     pub fn list(&self, key: &str) -> Option<&[Value]> {
         let value = if self.live_buffers.contains(key) {
             &self.data[key]["data"]
@@ -166,6 +186,21 @@ impl Store {
         }
         atomic_write(&path, &codec::pretty(&root))
     }
+}
+
+fn script_delta(current: &Value, baseline: &Value, next: &Value) -> Value {
+    if codec::stringify(current) == codec::stringify(baseline) {
+        return next.clone();
+    }
+    let (Some(base), Some(new), Some(existing)) = (baseline.as_object(), next.as_object(), current.as_object()) else { return next.clone(); };
+    let mut merged = existing.clone();
+    for key in base.keys().filter(|key| !new.contains_key(*key)) { merged.shift_remove(key); }
+    for (key, value) in new {
+        if base.get(key).is_none_or(|old| codec::stringify(old) != codec::stringify(value)) {
+            merged.insert(key.clone(), value.clone());
+        }
+    }
+    Value::Object(merged)
 }
 
 fn recover_restore(path: &Path) -> io::Result<()> {

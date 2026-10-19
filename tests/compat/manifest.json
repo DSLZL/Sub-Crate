@@ -81,9 +81,24 @@
       "P02-input-html", "P02-input-html-boundary", "P02-input-ss-extensions",
       "P02-input-base64", "P02-input-ssd", "P02-input-proxy-ssr-uris", "P02-input-base64-ssd-boundary", "P02-input-trojan-native", "P02-input-hysteria-native", "P02-input-tuic-native", "P02-input-wireguard-native", "P02-output-v2ray-native-tls-uris", "P02-input-vmess-native", "P02-input-vless-native", "P02-input-vless-xhttp-native", "P02-input-anytls-native", "P02-output-vmess-vless-anytls-native", "P05-local-vmess-vless-anytls-paths", "P02-input-loon-native", "P02-input-loon-options", "P02-input-qx-native", "P02-input-qx-options", "P02-input-classic-cache-recovery", "P02-input-loon-wireguard", "P05-local-classic-paths", "P02-input-surge-native", "P02-input-surge-headers-options", "P02-input-surge-recovery", "P02-input-full-config", "P05-local-surge-paths", "P05-local-uri-paths",
       "P04-invalid-proxy-target", "P04-invalid-proxy-missing-target",
-      "P05-local-subscription-paths"
+      "P05-local-subscription-paths",
+      "PC-native-local-filters",
+      "PC-native-local-conditional",
+      "PC-native-local-quick-settings",
+      "PC-native-local-flags",
+      "PC-native-local-sort",
+      "PC-native-local-rename-delete",
+      "PC-native-local-duplicates",
+      "PC-native-script-full-operator",
+      "PC-native-script-filter-identity",
+      "PC-native-script-fallback-and-returns",
+      "PC-native-script-context-order",
+      "PC-native-script-nested-processing",
+      "PC-native-script-storage-and-errors",
+      "PC-native-script-pending-http",
+      "PC-native-saved-download"
     ],
-    "conversion-local-restart": ["P05-local-subscription-restart"],
+    "conversion-local-restart": ["P05-local-subscription-restart", "PC-native-script-restart"],
     "service-state": [
       "D01-backup-seed", "C01-subscription-crud", "C02-rename-references",
       "D02-export-preserves-unknown", "C01-invalid-input",
@@ -421,7 +436,7 @@
       "N05-node-info-missing-server-and-recovery"
     ]
   },
-  "coverage_state": "133 scoped scenarios; full suite intentionally fails until M1 inventory and fixtures are complete",
+  "coverage_state": "207 executable fixtures; full suite intentionally fails until the complete inventory is accepted",
   "pending_domains": [
     "artifacts",
     "files",

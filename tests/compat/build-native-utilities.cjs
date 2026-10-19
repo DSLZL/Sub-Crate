@@ -6,11 +6,11 @@ const {createRequire} = require('node:module');
 if (process.env.GITHUB_ACTIONS !== 'true') throw new Error('Build native utilities in GitHub Actions only');
 const root = path.resolve(__dirname, '../..');
 const fromBackend = createRequire(path.join(root, 'backend/package.json'));
-const pins = new Map([['json5', '2.2.3'], ['yaml', '2.9.0']]);
+function snapshot(pins, contents, globalName, filenames) {
 const build = fromBackend('esbuild').buildSync({
   absWorkingDir: root,
   stdin: {
-    contents: "import JSON5 from 'json5'; import {parse as parseYaml, stringify as stringifyYaml} from 'yaml'; export {JSON5, parseYaml, stringifyYaml};",
+    contents,
     resolveDir: path.join(root, 'backend'),
   },
   bundle: true,
@@ -18,7 +18,7 @@ const build = fromBackend('esbuild').buildSync({
   metafile: true,
   platform: 'browser',
   format: 'iife',
-  globalName: 'SubStoreUtilities',
+  globalName,
   target: 'es2020',
   minify: true,
   legalComments: 'none',
@@ -50,7 +50,7 @@ for (const input of Object.keys(build.metafile.inputs).sort()) {
   if (!license) throw new Error('Missing license text for ' + key);
   notices.set(key, fs.readFileSync(path.join(directory, license), 'utf8').replace(/\r\n/g, '\n').trim());
 }
-if (notices.size !== pins.size) throw new Error('Expected both locked utility packages');
+if (notices.size !== pins.size) throw new Error('Expected every locked utility package');
 const bundle = build.outputFiles[0].text;
 const licenses = [...notices].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
   .map(([name, license]) => name + '\n' + license + '\n').join('\n');
@@ -65,7 +65,7 @@ const output = path.join(root, 'rust/vendor');
 const evidence = path.join(__dirname, 'evidence/native-utilities');
 fs.mkdirSync(output, {recursive: true});
 fs.mkdirSync(evidence, {recursive: true});
-for (const [name, contents] of [['utilities.js', bundle], ['LICENSES.txt', licenses], ['utilities.json', manifest]]) {
+for (const [name, contents] of [[filenames[0], bundle], [filenames[1], licenses], [filenames[2], manifest]]) {
   const file = path.join(output, name);
   if (fs.existsSync(file) && !fs.readFileSync(file).equals(Buffer.from(contents))) {
     throw new Error('Locked production utility snapshot changed: ' + name);
@@ -73,4 +73,14 @@ for (const [name, contents] of [['utilities.js', bundle], ['LICENSES.txt', licen
   fs.writeFileSync(file, contents);
   fs.writeFileSync(path.join(evidence, name), contents);
 }
-console.log('Pinned JSON5/YAML utilities: ' + sha256(bundle));
+console.log('Pinned ' + globalName + ': ' + sha256(bundle));
+}
+
+snapshot(new Map([['json5', '2.2.3'], ['yaml', '2.9.0']]),
+  "import JSON5 from 'json5'; import {parse as parseYaml, stringify as stringifyYaml} from 'yaml'; export {JSON5, parseYaml, stringifyYaml};",
+  'SubStoreUtilities', ['utilities.js', 'LICENSES.txt', 'utilities.json']);
+snapshot(new Map([
+  ['lodash', '4.18.1'], ['buffer', '6.0.3'], ['js-base64', '3.7.8'],
+  ['ip-address', '10.3.1'], ['base64-js', '1.5.1'], ['ieee754', '1.2.1'],
+]), "import lodash from 'lodash'; import {Buffer} from 'buffer'; import {Base64} from 'js-base64'; import * as ipAddress from 'ip-address'; export {lodash, Buffer, Base64, ipAddress};",
+  'SubStoreScriptUtilities', ['script-utilities.js', 'SCRIPT-LICENSES.txt', 'script-utilities.json']);

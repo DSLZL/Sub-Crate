@@ -1,6 +1,7 @@
 """CI acceptance for the actual Rust HTTP listener, separate from the JS probe."""
 import argparse
 import base64
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from html import unescape as unescape_html
@@ -20,6 +21,7 @@ import zlib
 
 from reference import BACKEND, HERE, ROOT, execute, oracle, source_provenance
 from runner import BufferedHTTPConnection, check_json, load_cases, request, run_cases
+from upstream import ControlledUpstream
 
 
 def wall_time():
@@ -107,11 +109,48 @@ def listener(binary, environment, output, report, log_prefix="rust", image=None)
                 record["exit_code"] = child.wait(timeout=5)
 
 
-def check_cases(url, state, cases, output, name):
-    results = run_cases(url, state, cases)
+def check_cases(url, state, cases, output, name, upstream=None):
+    results = run_cases(url, state, cases, upstream)
     (output / f"{name}.json").write_text(json.dumps(results, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     assert len(results) == len(cases) and all(case["status"] == "passed" for case in results), f"{name}: {[(case['id'], case.get('error')) for case in results if case['status'] != 'passed']}"
     return results
+
+
+def script_concurrency(url, state, output, name):
+    """A pending script must observe and preserve a concurrent ordinary write."""
+    step = {"method": "POST", "path": "/api/preview/sub", "body": {
+        "name": "concurrent-script", "source": "local",
+        "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#concurrent",
+        "process": [{"type": "Script Operator", "args": {"content": """
+async function operator(proxies) {
+  $substore.write({started: true}, 'm3-script-await');
+  const deadline = Date.now() + 3000;
+  while (!$substore.read('settings').m3Concurrent) {
+    if (Date.now() > deadline) throw new Error('Concurrent write was blocked');
+    await $substore.wait(10);
+  }
+  $substore.write({completed: true}, 'm3-script-await');
+  return proxies;
+}
+"""}}]}}
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(request, url, step)
+        deadline = time.monotonic() + 4
+        while True:
+            durable = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+            if durable.get("m3-script-await", {}).get("started"):
+                break
+            assert not pending.done() and time.monotonic() < deadline, "Script did not publish the await barrier"
+            time.sleep(0.01)
+        patch = request(url, {"method": "PATCH", "path": "/api/settings", "body": {"m3Concurrent": True}})
+        response = pending.result(timeout=5)
+    assert patch["status"] == response["status"] == 200, (patch, response)
+    durable = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+    assert durable["settings"]["m3Concurrent"] is True and durable["m3-script-await"] == {"completed": True}
+    observation = {"patch": {key: patch[key] for key in ("status", "body")},
+                   "script": {key: response[key] for key in ("status", "body")}}
+    (output / f"{name}-script-concurrency.json").write_text(json.dumps(observation, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return observation
 
 
 def state_edges(url, state, keys, output, name):
@@ -1666,7 +1705,7 @@ def main():
     try:
         report.update(source_provenance(environment, output))
         report["sources"] = {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
-                             for path in [ROOT / "rust/Cargo.toml", ROOT / "rust/Cargo.lock", *sorted((ROOT / "rust/src").glob("*.rs")), *sorted((ROOT / "rust/vendor").iterdir())]}
+                             for path in [ROOT / "rust/Cargo.toml", ROOT / "rust/Cargo.lock", ROOT / "rust/Dockerfile", *sorted(path for path in (ROOT / "rust/src").iterdir() if path.is_file()), *sorted((ROOT / "rust/vendor").iterdir())]}
         report["harness_sha256"] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
         version = execute([args.node, "--version"], ROOT, environment, output, "node-version")
         assert version.returncode == 0 and version.stdout.strip() == "v24.16.0", "Pinned Node required"
@@ -1726,6 +1765,7 @@ def main():
         _, conversion_restart = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "conversion-local-restart")
         conversion_state = {}
         conversion_responses = {}
+        conversion_concurrency = {}
         for kind in ("node", "rust"):
             state = output / f"{kind}-conversion-local"
             state.mkdir()
@@ -1734,11 +1774,12 @@ def main():
             env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}
             label = kind + "-conversion-local"
             manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
-            with manager as url:
-                results = check_cases(url, state, conversion_cases, output, label)
+            with manager as url, ControlledUpstream() as upstream:
+                results = check_cases(url, state, conversion_cases, output, label, upstream)
                 conversion_responses[kind] = list(results)
                 report["phases"].append({"name": label, "cases": len(results), "requests": sum(len(case["steps"]) for case in results)})
-                conversion_state[kind] = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+                conversion_concurrency[kind] = script_concurrency(url, state, output, label)
+                conversion_state[kind] = {key: json.loads((state / key).read_text(encoding="utf-8")) for key in ("sub-store.json", "root.json")}
                 if kind == "rust":
                     before_pending = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")}
                     pending_steps = [
@@ -1749,7 +1790,6 @@ def main():
                         {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "Huge = snell, 127.0.0.1, 443, psk=p, version=" + "9" * 400, "client": "JSON"}},
                         {"method": "POST", "path": "/api/proxy/parse", "body": {"data": 'Huge = AnyTLS, 127.0.0.1, 443, "password", min-idle-session=' + "9" * 400, "client": "JSON"}},
                         {"method": "POST", "path": "/api/proxy/parse", "body": {"data": 'WG = WireGuard, private-key=p, peers=[{public-key=k}]', "client": "JSON"}},
-                        {"method": "POST", "path": "/api/preview/sub", "body": {"name": "later", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#later", "process": [{"type": "Script Operator", "args": {"mode": "script", "content": "$substore.write('must-not-write', true);"}}]}},
                         {"path": "/download/native-local/URI?$options=response-hook"},
                     ]
                     pending_responses = [{"request": step, "response": request(url, step)} for step in pending_steps]
@@ -1772,6 +1812,8 @@ def main():
                 for key in ("content-type", "content-length", "etag", "allow"):
                     assert actual["headers"].get(key) == expected["headers"].get(key), (rust_case["id"], key, actual, expected)
         check_json(conversion_state["rust"], conversion_state["node"])
+        check_json(conversion_concurrency["rust"], conversion_concurrency["node"])
+        report["native_script_concurrency_and_state_checked"] = True
         report["native_local_ss_conversion_checked"] = True
         configurations = [
             ("default", {}, 1048576, [("https://sub-store.vercel.app", "https://sub-store.vercel.app")], "https://denied.invalid", False),

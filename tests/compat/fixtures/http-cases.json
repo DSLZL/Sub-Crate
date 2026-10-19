@@ -1,5 +1,2024 @@
 [
 {
+  "id": "PC-native-local-filters",
+  "source": "backend/src/core/proxy-utils/processors/index.js:1366-1485",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Useless Filter",
+            "args": {}
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Region Filter",
+            "args": [
+              "HK",
+              "JP"
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "JP three"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Region Filter",
+            "args": {
+              "value": [
+                "HK",
+                "US"
+              ],
+              "keep": false
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Region Filter",
+            "args": {
+              "value": "invalid"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": []
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Regex Filter",
+            "args": {
+              "regex": [
+                "(?i)^hk",
+                "three$"
+              ]
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "JP three"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Regex Filter",
+            "args": {
+              "regex": [
+                "(?i)^hk"
+              ],
+              "keep": false
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Type Filter",
+            "args": [
+              "http"
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Type Filter",
+            "args": {
+              "value": [
+                "ss"
+              ],
+              "keep": false
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-local-conditional",
+  "source": "backend/src/core/proxy-utils/processors/index.js:92-133",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Conditional Filter",
+            "args": {
+              "rule": {
+                "operator": "AND",
+                "child": [
+                  {
+                    "attr": "type",
+                    "proposition": "IN",
+                    "value": [
+                      "ss"
+                    ]
+                  },
+                  {
+                    "operator": "NOT",
+                    "child": {
+                      "attr": "name",
+                      "proposition": "CONTAINS",
+                      "value": "流量"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Conditional Filter",
+            "args": {
+              "rule": {
+                "attr": "notThere",
+                "proposition": "EXISTS"
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Conditional Filter",
+            "args": {
+              "rule": {
+                "operator": "OR",
+                "child": [
+                  {
+                    "attr": "port",
+                    "proposition": "EQUALS",
+                    "value": 8080
+                  },
+                  {
+                    "attr": "name",
+                    "proposition": "EQUALS",
+                    "value": "US two"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "US two"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-local-quick-settings",
+  "source": "backend/src/core/proxy-utils/processors/index.js:135-239",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Quick Setting Operator",
+            "args": {
+              "useless": "ENABLED",
+              "udp": "DISABLED",
+              "tfo": "ENABLED",
+              "scert": "ENABLED",
+              "block-quic": "off",
+              "ip-version": "ipv4"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "data": {
+            "processed": [
+              {
+                "name": "HK one",
+                "udp": false,
+                "tfo": true,
+                "fast-open": true,
+                "skip-cert-verify": true,
+                "block-quic": "off",
+                "ip-version": "ipv4"
+              },
+              {
+                "name": "US two",
+                "udp": false
+              },
+              {
+                "name": "JP three",
+                "udp": false
+              },
+              {
+                "name": "DE four",
+                "udp": false
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Quick Setting Operator",
+            "args": {}
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-local-flags",
+  "source": "backend/src/core/proxy-utils/processors/index.js:202-240; backend/src/utils/geo.js:728-780",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Flag Operator",
+            "args": {
+              "mode": "add",
+              "tw": "tw"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "🇭🇰 HK one"
+              },
+              {
+                "name": "🇺🇸 US two"
+              },
+              {
+                "name": "🇯🇵 JP three"
+              },
+              {
+                "name": "🏴‍☠️ 流量 remaining"
+              },
+              {
+                "name": "🇩🇪 DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"🇹🇼 台湾 节点\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"内蒙古\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"未知\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}]",
+        "process": [
+          {
+            "type": "Flag Operator",
+            "args": {
+              "mode": "add",
+              "tw": "ws"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "🇼🇸 台湾 节点"
+              },
+              {
+                "name": "🇨🇳 内蒙古"
+              },
+              {
+                "name": "🏴‍☠️ 未知"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"🇹🇼 台湾 节点\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"🏳️‍🌈 🏴‍☠️ 未知\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}]",
+        "process": [
+          {
+            "type": "Flag Operator",
+            "args": {
+              "mode": "remove"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "台湾 节点"
+              },
+              {
+                "name": "未知"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-local-sort",
+  "source": "backend/src/core/proxy-utils/processors/index.js:285-370",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Sort Operator",
+            "args": "asc"
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "DE four"
+              },
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "流量 remaining"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Sort Operator",
+            "args": "desc"
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Regex Sort Operator",
+            "args": [
+              "^JP",
+              "(?i)^hk"
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "DE four"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "流量 remaining"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Regex Sort Operator",
+            "args": {
+              "expressions": [
+                "^JP"
+              ],
+              "order": "original"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { Math.random = () => 0; return proxies; }"
+            }
+          },
+          {
+            "type": "Sort Operator",
+            "args": "random"
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              },
+              {
+                "name": "HK one"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-local-rename-delete",
+  "source": "backend/src/core/proxy-utils/processors/index.js:377-410",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Regex Rename Operator",
+            "args": [
+              {
+                "expr": "(?i)^hk",
+                "now": " 港 "
+              },
+              {
+                "expr": "one$",
+                "now": "一"
+              }
+            ]
+          },
+          {
+            "type": "Regex Delete Operator",
+            "args": [
+              "^US\\s*",
+              "three"
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "港  一"
+              },
+              {
+                "name": "two"
+              },
+              {
+                "name": "JP"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-local-duplicates",
+  "source": "backend/src/core/proxy-utils/processors/index.js:242-335",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"same\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"same\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"other\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}]",
+        "process": [
+          {
+            "type": "Handle Duplicate Operator",
+            "args": {}
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "same-1"
+              },
+              {
+                "name": "same-2"
+              },
+              {
+                "name": "other"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"same\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"same\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"same\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":false}}]",
+        "process": [
+          {
+            "type": "Handle Duplicate Operator",
+            "args": {
+              "action": "delete",
+              "field": [
+                "name",
+                "note.zero"
+              ]
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "same"
+              },
+              {
+                "name": "same"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"same\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"same\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}]",
+        "process": [
+          {
+            "type": "Handle Duplicate Operator",
+            "args": {
+              "position": "front",
+              "link": ":",
+              "template": "⓪ ① ② ③ ④ ⑤ ⑥ ⑦ ⑧ ⑨"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "①:same"
+              },
+              {
+                "name": "②:same"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-script-full-operator",
+  "source": "backend/src/core/proxy-utils/processors/index.js:411-577; tests/compat/fixtures/script-processor-contracts.js:PC01",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "async function operator(proxies, targetPlatform, context) { await $substore.wait(1); if (targetPlatform !== 'JSON' || context.source['processors-local'].displayName !== '处理🙂' || $arguments.zero !== 0 || typeof $options !== 'undefined' || context.env.backend !== ($substore.env.isNode ? 'Node' : 'Rust')) throw new Error('lost parameters'); if (!$substore.env.isNode && (typeof require !== 'undefined' || typeof process !== 'undefined' || typeof $substore.node !== 'undefined')) throw new Error('Node API leaked'); if (context.raw.length !== 1 || typeof context.raw[0] !== 'string') throw new Error('raw missing'); proxies[0].note.zero = 1; return proxies.map(p => ({...p,name:b64d(b64e(p.name)) + lodash.get($arguments,'suffix')})); }",
+              "arguments": {
+                "zero": 0,
+                "suffix": "-全🙂"
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one-全🙂"
+              },
+              {
+                "name": "US two-全🙂"
+              },
+              {
+                "name": "JP three-全🙂"
+              },
+              {
+                "name": "流量 remaining-全🙂"
+              },
+              {
+                "name": "DE four-全🙂"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-script-filter-identity",
+  "source": "backend/src/core/proxy-utils/processors/index.js:1487-1535; tests/compat/fixtures/script-processor-contracts.js:PC03",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Script Filter",
+            "args": {
+              "content": "async function filter(proxies) { await $substore.wait(1); proxies[0].name += '-mutated'; return proxies.map((p,i) => i === 0 || i === 4); }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one-mutated"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Script Filter",
+            "args": {
+              "content": "await $substore.wait(1); return $server.type === 'http';"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Script Filter",
+            "args": {
+              "content": "$server.type === 'http';"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": []
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-script-fallback-and-returns",
+  "source": "backend/src/core/proxy-utils/processors/index.js:411-577; tests/compat/fixtures/script-processor-contracts.js:PC04-PC05",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { proxies[0].name += '-before-error'; throw new Error('operator failed'); }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one-before-error"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { proxies[0].name = 'retained'; return undefined; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "retained"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { proxies[0].name = 'retained'; return null; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "retained"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { proxies[0].name = 'retained'; return false; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "retained"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { proxies[0].name = 'retained'; return 0; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "retained"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { proxies[0].name = 'retained'; return \"\"; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "retained"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator() { return []; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": []
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-script-context-order",
+  "source": "backend/src/core/proxy-utils/processors/index.js:138-277",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies,target,context) { context.process = {type:'disable',customNames:['skip']}; return proxies; }"
+            }
+          },
+          {
+            "type": "Regex Rename Operator",
+            "args": [
+              {
+                "expr": "^",
+                "now": "must-not-"
+              }
+            ],
+            "customName": "skip"
+          },
+          {
+            "type": "Regex Rename Operator",
+            "args": [
+              {
+                "expr": "$",
+                "now": "-yes"
+              }
+            ],
+            "customName": "keep"
+          },
+          {
+            "type": "Script Operator",
+            "args": {
+              "content": "throw new Error('disabled ran')"
+            },
+            "disabled": true
+          },
+          {
+            "type": "Unknown Operator",
+            "args": {}
+          },
+          {
+            "type": "Response Transformer",
+            "args": {
+              "content": "throw new Error('response transformer ran early')"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one-yes"
+              },
+              {
+                "name": "US two-yes"
+              },
+              {
+                "name": "JP three-yes"
+              },
+              {
+                "name": "流量 remaining-yes"
+              },
+              {
+                "name": "DE four-yes"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-script-nested-processing",
+  "source": "backend/src/core/proxy-utils/processors/index.js:138-277",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "async function operator(proxies) { const parsed = ProxyUtils.parse('ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#nested'); const processed = await ProxyUtils.process(parsed,[{type:'Regex Rename Operator',args:[{expr:'$',now:'-nested'}]}],'JSON'); if (!ProxyUtils.produce(processed,'URI').includes('#nested-nested')) throw new Error('nested native conversion failed'); proxies[0].name = processed[0].name; return proxies; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "nested-nested"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-script-storage-and-errors",
+  "source": "backend/src/core/proxy-utils/processors/index.js:411-577; backend/src/vendor/open-api.js:68-408",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { const value = {unknown:{nil:null,zero:0,flag:false},name:'持久🙂'}; $substore.write(value,'m3-script-state'); if ($substore.read('m3-script-state') !== value) throw new Error('storage identity lost'); $substore.write({persisted:true},'#m3-script-root'); if ($substore.read('#m3-script-root').persisted !== true) throw new Error('root write failed'); $substore.write('remove','m3-script-delete'); $substore.delete('m3-script-delete'); if ($substore.read('m3-script-delete') !== undefined) throw new Error('delete failed'); return proxies; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      },
+      "state": {
+        "m3-script-state": {
+          "unknown": {
+            "nil": null,
+            "zero": 0,
+            "flag": false
+          },
+          "name": "持久🙂"
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "$substore.write('must-not-write', true);"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 500,
+        "json_contains": {
+          "status": "failed"
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "throw new Error('fixture broken');"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 500,
+        "json_contains": {
+          "status": "failed",
+          "error": {
+            "details": "Reason: 脚本操作 执行失败 fixture broken"
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { if ($substore.read('m3-script-state').name !== '持久🙂') throw new Error('lost state'); return proxies; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-script-pending-http",
+  "source": "backend/src/core/proxy-utils/processors/index.js:411-577; tests/compat/fixtures/script-processor-contracts.js:PC02",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "const response = await $substore.http.get({url:$arguments.url,headers:{'X-Probe':'native-script'}}); if (JSON.parse(response.body).probe !== 'native-script') throw new Error('HTTP response lost'); await $substore.wait(1); $server.name += '-快捷🙂';",
+              "arguments": {
+                "url": "$UPSTREAM/host/echo"
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one-快捷🙂"
+              },
+              {
+                "name": "US two-快捷🙂"
+              },
+              {
+                "name": "JP three-快捷🙂"
+              },
+              {
+                "name": "流量 remaining-快捷🙂"
+              },
+              {
+                "name": "DE four-快捷🙂"
+              }
+            ]
+          }
+        }
+      },
+      "upstream": [
+        {
+          "method": "GET",
+          "path": "/host/echo",
+          "headers": {
+            "x-probe": "native-script"
+          },
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/host/echo",
+          "headers": {
+            "x-probe": "native-script"
+          },
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/host/echo",
+          "headers": {
+            "x-probe": "native-script"
+          },
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/host/echo",
+          "headers": {
+            "x-probe": "native-script"
+          },
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/host/echo",
+          "headers": {
+            "x-probe": "native-script"
+          },
+          "body": ""
+        }
+      ]
+    }
+  ]
+},
+{
+  "id": "PC-native-saved-download",
+  "source": "backend/src/core/proxy-utils/processors/index.js:138-277; backend/src/utils/artifacts.js:271-479",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/subs",
+      "body": {
+        "name": "native-processors",
+        "source": "local",
+        "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#saved",
+        "process": [
+          {
+            "type": "Regex Rename Operator",
+            "args": [
+              {
+                "expr": "$",
+                "now": "-native"
+              }
+            ]
+          },
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { if ($substore.read('m3-script-state').unknown.flag !== false) throw new Error('saved storage read failed'); return proxies; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 201,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "name": "native-processors"
+          }
+        }
+      }
+    },
+    {
+      "path": "/download/native-processors/URI",
+      "expect": {
+        "status": 200,
+        "body": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388?udp=1#saved-native"
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-script-restart",
+  "source": "backend/src/vendor/open-api.js:68-408; backend/src/utils/artifacts.js:271-479",
+  "steps": [
+    {
+      "path": "/download/native-processors/URI",
+      "expect": {
+        "status": 200,
+        "body": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388?udp=1#saved-native"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "[{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}},{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"},{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}]",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { if ($substore.read('#m3-script-root').persisted !== true || $substore.read('m3-script-state').name !== '持久🙂') throw new Error('restart lost script writes'); return proxies; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
     "id": "R04-type-mappings",
     "source": "backend/src/core/rule-utils/index.js:7-65; parsers.js:1-59; preprocessors.js:1-18; producers.js:3-101; restful/parser.js:48-61",
     "steps": [

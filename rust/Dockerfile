@@ -9,6 +9,7 @@ FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595
 COPY --from=build /work/rust/target/release/sub-store-rust /usr/local/bin/sub-store-rust
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=build /work/rust/vendor/*LICENSES.txt /usr/share/licenses/sub-store/
 RUN ! command -v node && ! command -v nodejs && ! command -v npm
 WORKDIR /data
 ENV SUB_STORE_DATA_BASE_PATH=/data SUB_STORE_BACKEND_API_HOST=0.0.0.0 SUB_STORE_BACKEND_API_PORT=3000
