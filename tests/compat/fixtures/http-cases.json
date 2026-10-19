@@ -21,7 +21,7 @@
         },
         "expect": {
           "status": 200,
-          "json": {
+          "json_contains": {
             "data": {
               "processed": [
                 {
@@ -62,7 +62,7 @@
         },
         "expect": {
           "status": 200,
-          "json": {
+          "json_contains": {
             "data": {
               "processed": [
                 {
@@ -106,7 +106,7 @@
         },
         "expect": {
           "status": 200,
-          "json": {
+          "json_contains": {
             "data": {
               "processed": [
                 {

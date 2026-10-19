@@ -382,6 +382,11 @@ pub fn initialize<'js>(ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs::Result<
         }
     };
     cache.set("resourceCache", value)?;
-    cache_cleanup(ctx.clone(), This(cache.clone().into_value()), Opt(None), Opt(None))?;
+    cache_cleanup(
+        ctx.clone(),
+        This(cache.clone().into_value()),
+        Opt(None),
+        Opt(None),
+    )?;
     ctx.globals().set("scriptResourceCache", cache)
 }
