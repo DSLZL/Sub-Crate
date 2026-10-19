@@ -6,6 +6,7 @@ mod classic;
 mod conversion;
 mod dns_transport;
 mod egern_output;
+mod files;
 mod js_language;
 mod js_values;
 mod json;
@@ -750,7 +751,7 @@ fn api_path(raw: &str) -> Result<Option<String>, ()> {
         ["", api, resource, name] if api.eq_ignore_ascii_case("api") && !name.is_empty() => {
             let resource = resource.to_ascii_lowercase();
             match resource.as_str() {
-                "sub" | "collection" | "module" => Some(format!(
+                "sub" | "collection" | "module" | "file" | "wholefile" => Some(format!(
                     "/api/{resource}/{}",
                     json::encode(&percent_decode_str(name).decode_utf8().map_err(|_| ())?)
                 )),
@@ -760,6 +761,16 @@ fn api_path(raw: &str) -> Result<Option<String>, ()> {
                 }
                 _ => None,
             }
+        }
+        ["", share, file, name]
+            if share.eq_ignore_ascii_case("share")
+                && file.eq_ignore_ascii_case("file")
+                && !name.is_empty() =>
+        {
+            Some(format!(
+                "/share/file/{}",
+                json::encode(&percent_decode_str(name).decode_utf8().map_err(|_| ())?)
+            ))
         }
         ["", download, name] if download.eq_ignore_ascii_case("download") && !name.is_empty() => {
             Some(format!("/download/{name}"))
@@ -901,6 +912,9 @@ async fn route(
         "responseHeaders":base.headers().iter().map(|(key,value)|(key.as_str().to_owned(),json!(value.to_str().unwrap_or("")))).collect::<serde_json::Map<String,Value>>()
     });
     if let Some(response) = resources::dispatch(&method, &path, &body, store).await {
+        return response;
+    }
+    if let Some(response) = files::dispatch(&method, &path, &query, &body, store, &request).await {
         return response;
     }
     if let Some(response) =

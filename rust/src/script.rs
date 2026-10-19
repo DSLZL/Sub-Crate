@@ -1026,6 +1026,15 @@ pub async fn run(
                                         )
                                         .await?
                                     }
+                                    "preview-file" => {
+                                        crate::script_pipeline::file(
+                                            &js,
+                                            input,
+                                            crate::script_pipeline::object(&js)?,
+                                            true,
+                                        )
+                                        .await?
+                                    }
                                     "artifact" => {
                                         let function: Function =
                                             ctx.globals().get("produceArtifact")?;
@@ -1037,6 +1046,14 @@ pub async fn run(
                                             operation == "download-collection",
                                             js.get(&input, "item")?,
                                             js.get(&input, "options")?,
+                                            js.get(&input, "request")?,
+                                        )
+                                        .await?
+                                    }
+                                    "download-file" => {
+                                        crate::script_http::file(
+                                            &js,
+                                            js.get(&input, "item")?,
                                             js.get(&input, "request")?,
                                         )
                                         .await?

@@ -9428,6 +9428,49 @@
     ]
   },
   {
+    "id": "F02-file-normalization-and-order",
+    "source": "backend/src/restful/file.js:452,523,537; backend/src/utils/file-type.js; shared age/editor normalization and create-item-position",
+    "steps": [
+      {"method": "PUT", "path": "/api/files", "body": [], "expect": {"status": 200, "json": {"status": "success"}}},
+      {"method": "PATCH", "path": "/api/settings", "body": {"appearanceSetting": {"createItemPosition": "top"}}, "expect": {"status": 200}},
+      {"method": "POST", "path": "/api/files", "body": {"name": 0, "type": "mihomoProfile", "sourceType": "none", "age-public-key": "  ", "editorLanguage": "invalid", "previewLanguage": "yaml", "process": [{"type": "unknown", "args": {"editorLanguage": "javascript", "previewLanguage": "INVALID", "custom": false}}], "custom": {"nil": null, "empty": ""}}, "expect": {"status": 201, "json": {"status": "success", "data": {"name": "0", "type": "mihomoConfig", "sourceType": "none", "previewLanguage": "yaml", "process": [{"type": "unknown", "args": {"editorLanguage": "javascript", "custom": false}}], "custom": {"nil": null, "empty": ""}}}}},
+      {"method": "POST", "path": "/api/files", "body": {"name": "文件/a", "source": "local", "content": "slash", "unknown": [0, false]}, "expect": {"status": 201}},
+      {"path": "/api/files", "expect": {"status": 200, "json_contains": {"status": "success", "data": [{"name": "文件/a", "unknown": [0, false]}, {"name": "0", "type": "mihomoConfig"}]}}},
+      {"path": "/API/FILE/%E6%96%87%E4%BB%B6%2Fa", "expect": {"status": 200, "body": "slash"}},
+      {"method": "PATCH", "path": "/api/file/0", "body": {"name": false, "editorLanguage": "ini", "previewLanguage": null}, "expect": {"status": 200, "json": {"status": "success", "data": {"name": "0", "type": "mihomoConfig", "sourceType": "none", "process": [{"type": "unknown", "args": {"editorLanguage": "javascript", "custom": false}}], "custom": {"nil": null, "empty": ""}, "editorLanguage": "ini"}}}},
+      {"method": "POST", "path": "/api/files", "body": {"name": "bad", "age-public-key": "invalid"}, "expect": {"status": 500, "json_contains": {"status": "failed", "error": {"code": "INVALID_AGE_PUBLIC_KEY"}}}},
+      {"method": "PUT", "path": "/api/files", "body": [{"name": "bulk", "type": "mihomoProfile", "sourceType": "none", "editorLanguage": "plaintext", "previewLanguage": "bad", "age-public-key": "", "unknown": {"nil": null}}], "expect": {"status": 200, "json": {"status": "success"}}},
+      {"path": "/api/wholeFiles", "expect": {"status": 200, "json": {"status": "success", "data": [{"name": "bulk", "type": "mihomoConfig", "sourceType": "none", "editorLanguage": "plaintext", "unknown": {"nil": null}}]}}},
+      {"method": "PATCH", "path": "/api/settings", "body": {"appearanceSetting": {"createItemPosition": "bottom"}}, "expect": {"status": 200}},
+      {"method": "PUT", "path": "/api/files", "body": [], "expect": {"status": 200, "json": {"status": "success"}}}
+    ]
+  },
+  {
+    "id": "F03-file-preview-and-response",
+    "source": "backend/src/restful/preview.js:33; backend/src/restful/file.js:39,118; shared production file pipeline and response transformers",
+    "steps": [
+      {"method": "POST", "path": "/api/preview/file", "body": {"name": "preview", "source": "local", "content": [["one", null], 0, false, ""]}, "expect": {"status": 200, "json": {"status": "success", "data": {"original": "one\n0\nfalse", "processed": "one\n0\nfalse"}}}},
+      {"method": "POST", "path": "/api/preview/file", "body": {"name": "preview", "source": "local", "content": "before", "process": [{"type": "Script Operator", "args": {"content": "$content += ':' + $file.name;"}}]}, "expect": {"status": 200, "json": {"status": "success", "data": {"original": "before", "processed": "before:preview"}}}},
+      {"method": "POST", "path": "/api/preview/file", "body": {"name": "mihomo", "type": "mihomoProfile", "sourceType": "none"}, "expect": {"status": 200, "json": {"status": "success", "data": {"original": "{}\n", "processed": "{}\n"}}}},
+      {"method": "POST", "path": "/api/files", "body": {"name": "file-response", "source": "local", "content": "base", "process": [{"type": "Script Operator", "args": {"content": "function operator(input) { if ($options._req.params.name !== 'file-response') throw new Error('file request'); input.$content += ':generated'; input.$options._res = {status:201,headers:{'x-file-generated':'yes'}}; return input; }"}}, {"type": "Response Transformer", "args": {"content": "function transformFunction(res, context) { if (!context.source.$file || res.status !== 201 || res.headers['x-file-generated'] !== 'yes') throw new Error('file response'); res.body += ':response'; res.status = 202; res.headers['x-file-response'] = 'yes'; delete res.headers['x-file-generated']; return res; }"}}]}, "expect": {"status": 201}},
+      {"path": "/api/file/file-response", "expect": {"status": 202, "body": "base:generated:response", "headers": {"x-file-response": "yes"}, "absent_headers": ["x-file-generated"]}, "state": {"files": [{"name": "file-response", "content": "base"}]}},
+      {"method": "HEAD", "path": "/api/file/file-response", "expect": {"status": 202, "body": "", "headers": {"content-length": "23", "x-file-response": "yes"}}},
+      {"method": "OPTIONS", "path": "/api/file/file-response", "expect": {"status": 200, "body": "GET,PATCH,DELETE,HEAD", "headers": {"allow": "GET,PATCH,DELETE,HEAD"}}},
+      {"method": "OPTIONS", "path": "/api/preview/file", "expect": {"status": 200, "body": "POST,GET,HEAD"}},
+      {"method": "DELETE", "path": "/api/file/file-response", "expect": {"status": 200, "json": {"status": "success"}}, "state": {"files": []}},
+      {"method": "DELETE", "path": "/api/file/file-response", "expect": {"status": 500, "json_contains": {"status": "failed", "error": {"code": "RESOURCE_NOT_FOUND"}}}},
+      {"method": "POST", "path": "/api/preview/file", "body": {"name": "missing", "source": "remote", "url": ""}, "expect": {"status": 500, "json": {"status": "failed", "error": {"code": "INTERNAL_SERVER_ERROR", "type": "InternalServerError", "message": "Failed to preview file", "details": "Reason: 文件 missing 未配置远程文件 URL"}}}}
+    ]
+  },
+  {
+    "id": "F04-file-restart",
+    "source": "backend/src/restful/file.js whole/file reads after durable process restart; original M4 business state",
+    "steps": [
+      {"path": "/api/wholeFile/file-renamed", "expect": {"status": 200, "json_contains": {"status": "success", "data": {"name": "file-renamed", "source": "local", "content": "first\r\n第二🙂\n", "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}}},
+      {"path": "/api/file/file-renamed", "expect": {"status": 200, "body": "first\r\n第二🙂\n"}}
+    ]
+  },
+  {
     "id": "F01-file-crud-and-runtime",
     "source": "backend/src/restful/file.js:39,118,419,452,510,537; backend/src/test/restful/file.spec.js:318,366,411",
     "steps": [

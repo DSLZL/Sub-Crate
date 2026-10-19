@@ -15,7 +15,7 @@ pub type Reply = Response<Full<Bytes>>;
 #[derive(Clone)]
 pub struct TransformedResponse;
 
-fn script_response(output: Value) -> Result<Reply, ConversionError> {
+pub(crate) fn script_response(output: Value) -> Result<Reply, ConversionError> {
     let status = output["status"].as_f64().unwrap_or(200.0) as u16;
     let body = &output["body"];
     let binary = output["binary"] == true;
@@ -139,13 +139,16 @@ pub fn options(path: &str) -> Reply {
     let methods = match path {
         "/api/settings" => "GET,PATCH,HEAD",
         "/api/storage" => "GET,POST,HEAD",
-        "/api/subs" | "/api/collections" | "/api/modules" => "GET,POST,PUT,HEAD",
-        "/api/proxy/parse" | "/api/rule/parse" | "/api/preview/sub" | "/api/preview/collection" => {
-            "POST,GET,HEAD"
-        }
+        "/api/subs" | "/api/collections" | "/api/modules" | "/api/files" => "GET,POST,PUT,HEAD",
+        "/api/proxy/parse"
+        | "/api/rule/parse"
+        | "/api/preview/sub"
+        | "/api/preview/collection"
+        | "/api/preview/file" => "POST,GET,HEAD",
         _ if path.starts_with("/api/sub/")
             || path.starts_with("/api/collection/")
-            || path.starts_with("/api/module/") =>
+            || path.starts_with("/api/module/")
+            || path.starts_with("/api/file/") =>
         {
             "GET,PATCH,DELETE,HEAD"
         }
@@ -195,7 +198,7 @@ pub fn uncaught_error(status: u16, detail: &str) -> Reply {
     html_error(status, &diagnostic(status, detail))
 }
 
-fn caught_error(message: &str) -> Reply {
+pub(crate) fn caught_error(message: &str) -> Reply {
     send(
         500,
         "text/plain; charset=utf-8",
@@ -228,12 +231,24 @@ pub(crate) fn success(data: Option<Value>, status: u16) -> Reply {
 }
 
 pub fn failure(status: u16, code: &str, kind: &str, message: &str) -> Reply {
+    failure_details(status, code, kind, message, None)
+}
+
+pub(crate) fn failure_details(
+    status: u16,
+    code: &str,
+    kind: &str,
+    message: &str,
+    details: Option<Value>,
+) -> Reply {
+    let mut error = json!({"code":code, "type":kind, "message":message});
+    if let Some(details) = details {
+        error["details"] = details;
+    }
     send(
         status,
         "text/plain; charset=utf-8",
-        codec::stringify(&json!({
-            "status":"failed", "error":{"code":code, "type":kind, "message":message}
-        })),
+        codec::stringify(&json!({"status":"failed", "error":error})),
     )
 }
 
@@ -562,7 +577,7 @@ fn invalid_backup() -> Reply {
     )
 }
 
-fn download(value: &Value, name: &str) -> Reply {
+pub(crate) fn download(value: &Value, name: &str) -> Reply {
     let Ok(name) = String::from_utf16(&codec::units(name)) else {
         return uncaught_error(500, "URIError: URI malformed");
     };
@@ -616,18 +631,18 @@ fn editor_languages(value: &mut Value) {
                     ["javascript", "json", "json5", "yaml", "ini", "plaintext"].contains(&language)
                 })
             {
-                object.remove(field);
+                object.shift_remove(field);
             }
         }
     }
 }
 
-fn normalize_item(item: &mut Value, subscription: bool) -> Result<(), &'static str> {
+pub(crate) fn normalize_item(item: &mut Value, subscription: bool) -> Result<(), &'static str> {
     let Some(object) = item.as_object_mut() else {
         return Ok(());
     };
     if subscription {
-        object.remove("subscriptions");
+        object.shift_remove("subscriptions");
     }
     let key = object
         .get("age-public-key")
@@ -636,7 +651,7 @@ fn normalize_item(item: &mut Value, subscription: bool) -> Result<(), &'static s
         .unwrap_or_default();
     let key = codec::trim(&key);
     if key.is_empty() {
-        object.remove("age-public-key");
+        object.shift_remove("age-public-key");
     } else if valid_recipient(key) {
         object.insert("age-public-key".to_owned(), json!(key));
     } else {
@@ -907,22 +922,12 @@ pub fn dispatch(
     if method == Method::GET {
         let key = match path {
             "/api/artifacts" => Some("artifacts"),
-            "/api/wholefiles" | "/api/files" => Some("files"),
             "/api/tokens" => Some("tokens"),
             "/api/archives" => Some("archives"),
             _ => None,
         };
         if let Some(key) = key {
-            let mut value = store.data[key].clone();
-            if path == "/api/files"
-                && let Some(items) = value.as_array_mut()
-            {
-                for item in items {
-                    if let Some(item) = item.as_object_mut() {
-                        item.remove("content");
-                    }
-                }
-            }
+            let value = store.data[key].clone();
             return success((!value.is_null()).then_some(value), 200);
         }
     }
@@ -971,7 +976,7 @@ pub fn dispatch(
                 store.data[key][position]
                     .as_object_mut()
                     .unwrap()
-                    .remove("subscriptions");
+                    .shift_remove("subscriptions");
             }
             let item = store.data[key][position].clone();
             if truthy(&query["raw"]) {
@@ -1132,7 +1137,7 @@ pub fn dispatch(
         }
         let mut patch = body.fields();
         if subscription {
-            patch.remove("subscriptions");
+            patch.shift_remove("subscriptions");
         }
         if !patch.get("name").is_some_and(truthy) {
             patch.insert("name".to_owned(), json!(name));

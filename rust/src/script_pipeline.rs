@@ -603,10 +603,11 @@ fn join_files<'js>(js: &Js<'js>, raw: Value<'js>) -> rquickjs::Result<Value<'js>
     js.method(files, "join", vec![js.value("\n")?])
 }
 
-async fn file<'js>(
+pub(crate) async fn file<'js>(
     js: &Js<'js>,
     file: Value<'js>,
     options: Value<'js>,
+    preview: bool,
 ) -> rquickjs::Result<Value<'js>> {
     let raw = if mihomo(js, &file)? {
         let source = js.text(js.get(&file, "sourceType")?)?;
@@ -702,8 +703,11 @@ async fn file<'js>(
     }
     let input = object(js)?;
     js.set(&input, "$files", files.clone())?;
-    js.set(&input, "$content", join_files(js, files)?)?;
-    js.set(&input, "$options", optional(js, &options, "$options")?)?;
+    let original = join_files(js, files)?;
+    js.set(&input, "$content", original.clone())?;
+    if !preview {
+        js.set(&input, "$options", optional(js, &options, "$options")?)?;
+    }
     let items = js.get(&file, "process")?;
     let processed = if items.is_array() && js.truthy(&js.get(&items, "length")?)? {
         js.set(&input, "$file", file)?;
@@ -727,7 +731,9 @@ async fn file<'js>(
         let plain = object(js)?;
         js.set(&plain, "$content", js.get(&input, "$content")?)?;
         js.set(&plain, "$files", js.get(&input, "$files")?)?;
-        js.set(&plain, "$options", optional(js, &options, "$options")?)?;
+        if !preview {
+            js.set(&plain, "$options", optional(js, &options, "$options")?)?;
+        }
         plain
     };
     let content = optional(js, &processed, "$content")?;
@@ -743,6 +749,12 @@ async fn file<'js>(
             },
         )?,
     )?;
+    if preview {
+        let output = object(js)?;
+        js.set(&output, "original", original)?;
+        js.set(&output, "processed", js.get(&processed, "$content")?)?;
+        return Ok(output);
+    }
     if js.truthy(&optional(js, &options, "all")?)? {
         Ok(processed)
     } else {
@@ -1312,7 +1324,7 @@ async fn artifact<'js>(ctx: Ctx<'js>, options: Value<'js>) -> rquickjs::Result<V
             } else {
                 file
             };
-            self::file(&js, file, options).await
+            self::file(&js, file, options, false).await
         }
         "rule" => {
             let rule = find(&js, read(&js, "rules")?, name.clone())?;

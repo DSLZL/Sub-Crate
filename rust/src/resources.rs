@@ -56,7 +56,7 @@ fn modules(method: &Method, path: &str, body: &Body, item: Value, store: &mut St
                 );
             }
             let mut fields = Body::Json(item.clone()).fields();
-            fields.remove("content");
+            fields.shift_remove("content");
             metadata.push(Value::Object(fields));
         }
         return api::success(Some(json!(metadata)), 200);
