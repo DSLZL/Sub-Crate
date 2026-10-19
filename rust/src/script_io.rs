@@ -8,7 +8,7 @@ use hyper::{
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use rquickjs::{Ctx, Exception};
 use serde_json::json;
-use std::{collections::BTreeMap, error::Error, io::Write, path::Path};
+use std::{collections::BTreeMap, error::Error, io::Write};
 
 async fn open_response(
     method: &str,
@@ -120,7 +120,11 @@ pub(crate) async fn request<'js>(
         .map_err(|error| Exception::throw_message(&ctx, &error.to_string()))
 }
 
-pub(crate) async fn download_file<'js>(ctx: Ctx<'js>, url: String, file: String) -> rquickjs::Result<String> {
+pub(crate) async fn download_file<'js>(
+    ctx: Ctx<'js>,
+    url: String,
+    file: String,
+) -> rquickjs::Result<String> {
     async fn save(url: &str, file: &str) -> Result<(), Box<dyn Error>> {
         let response = open_response("GET", url, BTreeMap::new(), Vec::new()).await?;
         if response.status() != 200 {

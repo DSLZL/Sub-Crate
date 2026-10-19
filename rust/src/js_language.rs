@@ -1,5 +1,7 @@
 //! ECMAScript primitives for native processors; business dispatch stays in Rust.
-use rquickjs::{Array, Ctx, Exception, FromJs, Function, IntoJs, Object, Value, function::IntoArgs};
+use rquickjs::{
+    Array, Ctx, Exception, FromJs, Function, IntoJs, Object, Value, function::IntoArgs,
+};
 
 #[derive(Clone)]
 pub struct Js<'js> {
@@ -11,7 +13,11 @@ impl<'js> Js<'js> {
         Self { ctx }
     }
 
-    pub fn call<R: FromJs<'js>, A: IntoArgs<'js>>(&self, name: &str, args: A) -> rquickjs::Result<R> {
+    pub fn call<R: FromJs<'js>, A: IntoArgs<'js>>(
+        &self,
+        name: &str,
+        args: A,
+    ) -> rquickjs::Result<R> {
         let primitives: Object = self.ctx.globals().get("__language")?;
         let function: Function = primitives.get(name)?;
         function.call(args)
@@ -45,7 +51,10 @@ impl<'js> Js<'js> {
         self.call("equal", (a.clone(), b.clone()))
     }
 
-    pub fn array(&self, values: impl IntoIterator<Item = Value<'js>>) -> rquickjs::Result<Value<'js>> {
+    pub fn array(
+        &self,
+        values: impl IntoIterator<Item = Value<'js>>,
+    ) -> rquickjs::Result<Value<'js>> {
         let array = Array::new(self.ctx.clone())?;
         for (index, value) in values.into_iter().enumerate() {
             array.set(index, value)?;
@@ -53,7 +62,12 @@ impl<'js> Js<'js> {
         Ok(array.into_value())
     }
 
-    pub fn method(&self, value: Value<'js>, name: &str, args: Vec<Value<'js>>) -> rquickjs::Result<Value<'js>> {
+    pub fn method(
+        &self,
+        value: Value<'js>,
+        name: &str,
+        args: Vec<Value<'js>>,
+    ) -> rquickjs::Result<Value<'js>> {
         self.call("method", (value, name, self.array(args)?))
     }
 
@@ -92,7 +106,10 @@ impl<'js> Js<'js> {
 
     pub fn json_clone(&self, value: Value<'js>) -> rquickjs::Result<Value<'js>> {
         let text = self.ctx.json_stringify(value)?;
-        self.call("jsonParse", (text.map_or_else(|| self.undefined(), |text| text.into_value()),))
+        self.call(
+            "jsonParse",
+            (text.map_or_else(|| self.undefined(), |text| text.into_value()),),
+        )
     }
 
     pub fn regex(&self, mut pattern: Value<'js>, flags: &str) -> rquickjs::Result<Value<'js>> {
@@ -100,7 +117,13 @@ impl<'js> Js<'js> {
         if insensitive {
             pattern = self.method(pattern, "substring", vec![self.value(4)?])?;
         }
-        self.call("regex", (pattern, format!("{}{flags}", if insensitive { "i" } else { "" })))
+        self.call(
+            "regex",
+            (
+                pattern,
+                format!("{}{flags}", if insensitive { "i" } else { "" }),
+            ),
+        )
     }
 
     pub fn regex_test(&self, expression: Value<'js>, value: Value<'js>) -> rquickjs::Result<bool> {
@@ -116,9 +139,16 @@ impl<'js> Js<'js> {
 // The two ordered tables are data from utils/geo.js, including its KOP-XIAO and
 // surgioproject attribution. No old application function is evaluated here.
 pub fn get_flag<'js>(js: &Js<'js>, name: Value<'js>) -> rquickjs::Result<String> {
-    let expression: Value = js.call("regex", (r"[\uD83C][\uDDE6-\uDDFF][\uD83C][\uDDE6-\uDDFF]", ""))?;
+    let expression: Value = js.call(
+        "regex",
+        (r"[\uD83C][\uDDE6-\uDDFF][\uD83C][\uDDE6-\uDDFF]", ""),
+    )?;
     let found = js.method(name.clone(), "match", vec![expression])?;
-    let fallback = if js.truthy(&found)? { js.text(js.get(&found, "0")?)? } else { "🏴‍☠️".to_owned() };
+    let fallback = if js.truthy(&found)? {
+        js.text(js.get(&found, "0")?)?
+    } else {
+        "🏴‍☠️".to_owned()
+    };
     let data: Object = js.ctx.globals().get("__geo")?;
     for table in ["names", "iso"] {
         let rows: Array = data.get(table)?;
@@ -128,8 +158,13 @@ pub fn get_flag<'js>(js: &Js<'js>, name: Value<'js>) -> rquickjs::Result<String>
             let words: Array = row.get(1)?;
             for word in words.iter::<String>() {
                 let word = word?;
-                let pattern = if table == "iso" { format!("(^|[^a-zA-Z]){word}([^a-zA-Z]|$)") } else { word };
-                let regex: Value = js.call("regex", (pattern, if table == "iso" { "" } else { "i" }))?;
+                let pattern = if table == "iso" {
+                    format!("(^|[^a-zA-Z]){word}([^a-zA-Z]|$)")
+                } else {
+                    word
+                };
+                let regex: Value =
+                    js.call("regex", (pattern, if table == "iso" { "" } else { "i" }))?;
                 if !js.regex_test(regex, name.clone())? {
                     continue;
                 }
@@ -153,7 +188,10 @@ pub fn get_flag<'js>(js: &Js<'js>, name: Value<'js>) -> rquickjs::Result<String>
 }
 
 pub fn remove_flag<'js>(js: &Js<'js>, name: Value<'js>) -> rquickjs::Result<Value<'js>> {
-    let expression: Value = js.call("regex", (r"[\uD83C][\uDDE6-\uDDFF][\uD83C][\uDDE6-\uDDFF]|🏴‍☠️|🏳️‍🌈", "g"))?;
+    let expression: Value = js.call(
+        "regex",
+        (r"[\uD83C][\uDDE6-\uDDFF][\uD83C][\uDDE6-\uDDFF]|🏴‍☠️|🏳️‍🌈", "g"),
+    )?;
     let result = js.method(name, "replace", vec![expression, js.value("")?])?;
     js.method(result, "trim", vec![])
 }

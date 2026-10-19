@@ -5,8 +5,8 @@ mod clash_output;
 mod classic;
 mod conversion;
 mod egern_output;
-mod json;
 mod js_language;
+mod json;
 mod processors;
 mod rules;
 mod script;
@@ -850,7 +850,8 @@ async fn route(
             })),
         );
     }
-    if let Some(response) = api::conversion_dispatch(&method, &path, &query, &body, &headers, store).await
+    if let Some(response) =
+        api::conversion_dispatch(&method, &path, &query, &body, &headers, store).await
     {
         return response;
     }

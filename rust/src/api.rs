@@ -233,7 +233,9 @@ fn header_platform(headers: &HeaderMap) -> &'static str {
 }
 
 fn has_processors(sub: &Value) -> bool {
-    sub.get("process").is_some_and(|process| truthy(process) && process.as_array().is_none_or(|items| !items.is_empty()))
+    sub.get("process").is_some_and(|process| {
+        truthy(process) && process.as_array().is_none_or(|items| !items.is_empty())
+    })
 }
 
 pub async fn conversion_dispatch(
@@ -294,11 +296,17 @@ pub async fn conversion_dispatch(
     if method == Method::POST && path == "/api/preview/sub" {
         let sub = Value::Object(body.fields());
         if has_processors(&sub) {
-            let target = if truthy(&query["target"]) { js_string(&query["target"]) } else { "JSON".to_owned() };
-            return Some(match crate::script::local(store.clone(), sub, target, None, true).await {
-                Ok(output) => success(Some(output), 200),
-                Err(error) => conversion_error(error, Some("Failed to preview subscription")),
-            });
+            let target = if truthy(&query["target"]) {
+                js_string(&query["target"])
+            } else {
+                "JSON".to_owned()
+            };
+            return Some(
+                match crate::script::local(store.clone(), sub, target, None, true).await {
+                    Ok(output) => success(Some(output), 200),
+                    Err(error) => conversion_error(error, Some("Failed to preview subscription")),
+                },
+            );
         }
         return Some(match conversion::local(&sub, None) {
             Ok(mut proxies) => {
@@ -381,9 +389,13 @@ pub async fn conversion_dispatch(
         return Some(pending("Raw source output is not implemented yet"));
     }
     let result = if has_processors(&sub) {
-        crate::script::local(store.clone(), sub.clone(), target.clone(), content, false).await.and_then(|output| {
-            output["processed"].as_array().cloned().ok_or_else(|| ConversionError::Legacy("proxies.filter is not a function".to_owned()))
-        })
+        crate::script::local(store.clone(), sub.clone(), target.clone(), content, false)
+            .await
+            .and_then(|output| {
+                output["processed"].as_array().cloned().ok_or_else(|| {
+                    ConversionError::Legacy("proxies.filter is not a function".to_owned())
+                })
+            })
     } else {
         conversion::local(&sub, content.as_ref()).map(|mut proxies| {
             conversion::tag(&mut proxies, &sub, false);
