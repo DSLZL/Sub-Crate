@@ -3573,11 +3573,8 @@ pub fn produce(
     match target {
         "json" | "JSON" | "uri" | "URI" | "v2" | "v2ray" | "V2Ray" | "qx" | "QX"
         | "QuantumultX" | "Loon" | "surge" | "Surge" | "SurgeMac" | "surfboard" | "Surfboard"
-        | "egern" | "Egern" => {}
+        | "egern" | "Egern" | "singbox" | "sing-box" => {}
         _ if family.is_some() => {}
-        "singbox" | "sing-box" => {
-            return Err(Error::Pending("This output format is not implemented yet"));
-        }
         _ => {
             return Err(Error::Legacy(format!(
                 "Target platform: {target} is not supported!"
@@ -3703,6 +3700,9 @@ pub fn produce(
     }
     if matches!(target, "egern" | "Egern") {
         return crate::egern_output::produce(proxies, kind, opts);
+    }
+    if matches!(target, "singbox" | "sing-box") {
+        return crate::singbox_output::produce(proxies, kind, opts);
     }
     if matches!(target, "json" | "JSON") {
         let value = Value::Array(proxies);

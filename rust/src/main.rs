@@ -6,6 +6,7 @@ mod classic;
 mod conversion;
 mod egern_output;
 mod json;
+mod singbox_output;
 mod state;
 mod surge;
 mod surge_output;

@@ -3,6 +3,15 @@
   "frontend_commit": "4bd7b0acbe65466b933ccea14fc61dbebe036ead",
   "suites": {
     "conversion-local": [
+      "P02-output-singbox-native",
+      "P02-output-singbox-transports",
+      "P02-output-singbox-tls",
+      "P02-output-singbox-plugins",
+      "P02-output-singbox-endpoints",
+      "P02-output-singbox-filters",
+      "P02-output-singbox-options",
+      "P01-output-singbox",
+      "P01-output-sing-box",
       "P02-output-egern-native",
       "P02-output-egern-transports",
       "P02-output-egern-filters",
@@ -88,6 +97,13 @@
       "T03-share-datetime-archive"
     ],
     "full": [
+      "P02-output-singbox-native",
+      "P02-output-singbox-transports",
+      "P02-output-singbox-tls",
+      "P02-output-singbox-plugins",
+      "P02-output-singbox-endpoints",
+      "P02-output-singbox-filters",
+      "P02-output-singbox-options",
       "P02-output-egern-native",
       "P02-output-egern-transports",
       "P02-output-egern-filters",
@@ -235,6 +251,13 @@
       "M1-complete-inventory-and-fixtures"
     ],
     "conversion": [
+      "P02-output-singbox-native",
+      "P02-output-singbox-transports",
+      "P02-output-singbox-tls",
+      "P02-output-singbox-plugins",
+      "P02-output-singbox-endpoints",
+      "P02-output-singbox-filters",
+      "P02-output-singbox-options",
       "P02-output-egern-native",
       "P02-output-egern-transports",
       "P02-output-egern-filters",
@@ -375,7 +398,7 @@
       "N05-node-info-missing-server-and-recovery"
     ]
   },
-  "coverage_state": "122 scoped scenarios; full suite intentionally fails until M1 inventory and fixtures are complete",
+  "coverage_state": "129 scoped scenarios; full suite intentionally fails until M1 inventory and fixtures are complete",
   "pending_domains": [
     "artifacts",
     "files",
