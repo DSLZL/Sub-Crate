@@ -84,3 +84,9 @@ snapshot(new Map([
   ['ip-address', '10.3.1'], ['base64-js', '1.5.1'], ['ieee754', '1.2.1'],
 ]), "import lodash from 'lodash'; import {Buffer} from 'buffer'; import {Base64} from 'js-base64'; import * as ipAddress from 'ip-address'; export {lodash, Buffer, Base64, ipAddress};",
   'SubStoreScriptUtilities', ['script-utilities.js', 'SCRIPT-LICENSES.txt', 'script-utilities.json']);
+const fromAge = createRequire(fromBackend.resolve('age-encryption'));
+snapshot(new Map([['@noble/hashes', '2.2.0']]),
+  'import {md5} from ' + JSON.stringify(fromAge.resolve('@noble/hashes/legacy.js')) + '; ' +
+  'import {bytesToHex} from ' + JSON.stringify(fromAge.resolve('@noble/hashes/utils.js')) + '; ' +
+  'export const hexMd5 = bytes => bytesToHex(md5(bytes));',
+  'SubStoreHashUtilities', ['hash-utilities.js', 'HASH-LICENSES.txt', 'hash-utilities.json']);

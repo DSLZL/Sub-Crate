@@ -55,6 +55,41 @@ fn get_iso<'js>(ctx: Ctx<'js>, name: Opt<Value<'js>>) -> rquickjs::Result<Value<
     Ok(js.undefined())
 }
 
+fn md5<'js>(ctx: Ctx<'js>, input: Opt<Value<'js>>) -> rquickjs::Result<String> {
+    let js = Js::new(ctx);
+    let input = input.0.unwrap_or_else(|| js.undefined());
+    let units: Vec<u16> = js.call("units", (input,))?;
+    let mut bytes = Vec::new();
+    for character in char::decode_utf16(units) {
+        match character {
+            Ok(character) => {
+                bytes.extend_from_slice(character.encode_utf8(&mut [0; 4]).as_bytes());
+            }
+            Err(error) => {
+                // The legacy MD5 helper encodes an unpaired surrogate as three bytes.
+                let word = error.unpaired_surrogate();
+                bytes.extend([
+                    (0xe0 | (word >> 12)) as u8,
+                    (0x80 | ((word >> 6) & 0x3f)) as u8,
+                    (0x80 | (word & 0x3f)) as u8,
+                ]);
+            }
+        }
+    }
+    let array = Array::new(js.ctx.clone())?;
+    for (index, byte) in bytes.into_iter().enumerate() {
+        array.set(index, byte)?;
+    }
+    let bytes = js.method(
+        js.ctx.globals().get("Uint8Array")?,
+        "from",
+        vec![array.into_value()],
+    )?;
+    let utility: Object = js.ctx.globals().get("SubStoreHashUtilities")?;
+    let hash: Function = utility.get("hexMd5")?;
+    hash.call((bytes,))
+}
+
 fn yaml_parse<'js>(
     ctx: Ctx<'js>,
     input: Opt<Value<'js>>,
@@ -330,6 +365,7 @@ pub fn initialize<'js>(ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs::Result<
         }),
     )?;
     utils.set("getISO", Func::from(get_iso))?;
+    utils.set("hex_md5", Func::from(md5))?;
     let yaml = Object::new(ctx.clone())?;
     let load = Function::new(ctx.clone(), yaml_parse)?;
     let dump = Function::new(ctx.clone(), yaml_dump)?;

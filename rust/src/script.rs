@@ -32,7 +32,7 @@ fn job(ctx: &Ctx<'_>) -> rquickjs::Result<Job> {
         .ok_or_else(|| Exception::throw_message(ctx, "Missing script job"))
 }
 
-fn message(ctx: &Ctx<'_>, error: rquickjs::Error) -> String {
+pub(crate) fn message(ctx: &Ctx<'_>, error: rquickjs::Error) -> String {
     if !error.is_exception() {
         return error.to_string();
     }
@@ -615,6 +615,7 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     )?;
     ctx.eval::<(), _>(include_bytes!("../vendor/utilities.js").as_slice())?;
     ctx.eval::<(), _>(include_bytes!("../vendor/script-utilities.js").as_slice())?;
+    ctx.eval::<(), _>(include_bytes!("../vendor/hash-utilities.js").as_slice())?;
     ctx.eval::<(), _>(include_str!("script-bootstrap.js"))?;
     ctx.eval::<(), _>(include_str!("script-primitives.js"))?;
     globals.set("__geo", ctx.json_parse(include_str!("geo-flags.json"))?)?;
@@ -663,6 +664,7 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     utils.set("ipAddress", scripts.get::<_, JsValue>("ipAddress")?)?;
     utils.set("JSON5", utilities.get::<_, JsValue>("JSON5")?)?;
     crate::script_helpers::initialize(ctx, &utils)?;
+    crate::script_flow::initialize(ctx)?;
     globals.set("ProxyUtils", utils)?;
     Ok(())
 }

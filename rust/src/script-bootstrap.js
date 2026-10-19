@@ -28,7 +28,15 @@ globalThis.__language = {
   dateTime: () => new Date().getTime(),
   number: value => Number(value),
   multiply: (a, b) => a * b,
+  divide: (a, b) => a / b,
+  subtract: (a, b) => a - b,
+  construct: (constructor, args) => Reflect.construct(constructor, args),
   entries: value => Object.entries(value),
+  units: value => {
+    const units = [];
+    for (let index = 0; index < value.length; index++) units.push(value.charCodeAt(index));
+    return units;
+  },
   spread: (base, value) => ({...base, ...value}),
   except: (value, excluded) => Object.fromEntries(Reflect.ownKeys(Object(value))
     .filter(key => !excluded.includes(key) && Object.prototype.propertyIsEnumerable.call(value, key))

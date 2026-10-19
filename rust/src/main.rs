@@ -10,6 +10,7 @@ mod json;
 mod processors;
 mod rules;
 mod script;
+mod script_flow;
 mod script_helpers;
 mod script_io;
 mod singbox_output;
