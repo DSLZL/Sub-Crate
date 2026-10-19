@@ -220,6 +220,42 @@ fn done<'js>(ctx: Ctx<'js>, value: Opt<JsValue<'js>>) -> rquickjs::Result<()> {
     Ok(())
 }
 
+fn log_text<'js>(js: &Js<'js>, value: JsValue<'js>) -> rquickjs::Result<String> {
+    let text: JsValue = js.call("text", (value,))?;
+    let text = crate::js_values::project(&js.ctx, text)?;
+    Ok(codec::text(&codec::js_string(&text)))
+}
+
+fn notify<'js>(
+    ctx: Ctx<'js>,
+    title: Opt<JsValue<'js>>,
+    subtitle: Opt<JsValue<'js>>,
+    content: Opt<JsValue<'js>>,
+    options: Opt<JsValue<'js>>,
+) -> rquickjs::Result<()> {
+    let js = Js::new(ctx);
+    let options = options
+        .0
+        .filter(|value| !value.is_undefined())
+        .unwrap_or(Object::new(js.ctx.clone())?.into_value());
+    for key in ["open-url", "media-url"] {
+        js.get(&options, key)?;
+    }
+    let mut text = Vec::new();
+    for (index, value) in [title, subtitle, content].into_iter().enumerate() {
+        let value = value.0.filter(|value| !value.is_undefined());
+        let value = match value {
+            Some(value) => value,
+            None if index == 0 => js.undefined(),
+            None => js.value("")?,
+        };
+        text.push(log_text(&js, value)?);
+    }
+    // shortcut: configured notification delivery belongs to the M4 provider workflow.
+    eprintln!("[sub-store:notify] {}", text.join("\n"));
+    Ok(())
+}
+
 fn persist<'js>(ctx: Ctx<'js>, This(this): This<JsValue<'js>>) -> rquickjs::Result<()> {
     let js = Js::new(ctx);
     let job = job(&js.ctx)?;
@@ -888,15 +924,11 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
                     if level != "log" || js.truthy(&js.get(&this, "debug")?)? {
                         let name = js.get(&this, "name")?;
                         let text = value.0.unwrap_or_else(|| js.undefined());
-                        let name: JsValue = js.call("text", (name,))?;
-                        let text: JsValue = js.call("text", (text,))?;
-                        let name = crate::js_values::project(&js.ctx, name)?;
-                        let text = crate::js_values::project(&js.ctx, text)?;
                         eprintln!(
                             "[{}] {}: {}",
-                            codec::text(&codec::js_string(&name)),
+                            log_text(&js, name)?,
                             level.to_uppercase(),
-                            codec::text(&codec::js_string(&text))
+                            log_text(&js, text)?
                         );
                     }
                     Ok::<_, rquickjs::Error>(())
@@ -904,16 +936,7 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
             ),
         )?;
     }
-    host.set(
-        "notify",
-        Func::from(|title: String, subtitle: Opt<String>, text: Opt<String>| {
-            eprintln!(
-                "[sub-store:notify] {title}\n{}\n{}",
-                subtitle.0.unwrap_or_default(),
-                text.0.unwrap_or_default()
-            )
-        }),
-    )?;
+    host.set("notify", Func::from(notify))?;
     globals.set("$substore", host)?;
     let utilities: Object = globals.get("SubStoreUtilities")?;
     let scripts: Object = globals.get("SubStoreScriptUtilities")?;
