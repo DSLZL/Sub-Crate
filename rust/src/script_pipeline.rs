@@ -57,7 +57,10 @@ fn fallback(mode: &str) -> bool {
     matches!(mode, "fallbackNotify" | "fallbackQuiet")
 }
 
-pub(crate) fn failure_text(js: &Js<'_>, error: rquickjs::Error) -> rquickjs::Result<(String, String)> {
+pub(crate) fn failure_text(
+    js: &Js<'_>,
+    error: rquickjs::Error,
+) -> rquickjs::Result<(String, String)> {
     if !error.is_exception() {
         let text = error.to_string();
         return Ok((text.clone(), text));

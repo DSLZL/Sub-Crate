@@ -1103,6 +1103,9 @@ async fn route(
     if let Some(response) = backup::dispatch(&method, &path, &query, store).await {
         return response;
     }
+    if path.starts_with("/api/sub/flow/") && method != Method::GET {
+        return not_found();
+    }
     if let Some(response) = utilities::dispatch(&method, &path, &query, &body, store).await {
         return response;
     }

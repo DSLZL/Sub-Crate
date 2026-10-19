@@ -4,6 +4,7 @@
     "source":"backend/src/restful/subscriptions.js:49-251; actual flow endpoint, existing native flow/cache primitives",
     "steps":[
       {"path":"/api/sub/flow/flow-missing","expect":{"status":404,"json":{"status":"failed","error":{"code":"RESOURCE_NOT_FOUND","type":"ResourceNotFoundError","message":"Subscription flow-missing does not exist!"}}}},
+      {"method":"PATCH","path":"/api/sub/flow/flow-missing","body":{"mustNotWrite":true},"expect":{"status":404,"headers":{"content-type":"text/html; charset=utf-8"}}},
       {"method":"POST","path":"/api/subs","body":{"name":"流量🙂","source":"local","subUserinfo":"upload=3; download=7; total=100; expire=4102444800; reset_day=4; app_url=https%3A%2F%2Fexample.invalid%2Flocal; plan_name=Local%20plan"},"expect":{"status":201}},
       {"path":"/API/SUB/FLOW/%E6%B5%81%E9%87%8F%F0%9F%99%82/","expect":{"status":200,"json":{"status":"success","data":{"usage":{"upload":3,"download":7},"total":100,"expires":4102444800,"remainingDays":4,"appUrl":"https://example.invalid/local","planName":"Local plan"}}}},
       {"method":"HEAD","path":"/api/sub/flow/%E6%B5%81%E9%87%8F%F0%9F%99%82","expect":{"status":200,"body":""}},

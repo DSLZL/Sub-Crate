@@ -438,7 +438,7 @@ def logs_contracts(binary, node, environment, baseline, root, output, report, im
 
 def utilities_contracts(binary, node, environment, baseline, root, output, report, image):
     _, cases = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "utilities-core")
-    paired, final, upstream_port = {}, {}, 0
+    paired, final, cache_values, upstream_port = {}, {}, {}, 0
     for kind in ("node", "rust"):
         label = kind + "-utilities"
         state = output / label
@@ -453,8 +453,30 @@ def utilities_contracts(binary, node, environment, baseline, root, output, repor
                    "NO_PROXY": "127.0.0.1,localhost", "no_proxy": "127.0.0.1,localhost"}
             manager = oracle(node, env, output, report, label) if kind == "node" else listener(binary, env, output, report, label, image, host_network=bool(image))
             with manager as url:
+                cache_earliest = int(wall_time().timestamp()) * 1000
                 paired[kind] = check_cases(url, state, cases, output, label, upstream)
                 report["phases"].append({"name": label, "cases": len(cases), "requests": sum(len(case["steps"]) for case in paired[kind])})
+                cache_latest = (int(wall_time(latest=True).timestamp()) + 1) * 1000
+                cached_root = json.loads((state / "root.json").read_text(encoding="utf-8"))
+                cache_values[kind] = {}
+                for key, ttl in (("sub-store-cached-resource", 3600000), ("sub-store-cached-headers-resource", 60000)):
+                    cached = json.loads(cached_root[key])
+                    assert cached, (label, key, "Real download/flow did not persist its cache")
+                    for entry in cached.values():
+                        assert set(entry) == {"time", "data"} and type(entry["time"]) is int
+                        assert cache_earliest + ttl <= entry["time"] <= cache_latest + ttl, (label, key, entry)
+                    cache_values[kind][key] = {identity: entry["data"] for identity, entry in cached.items()}
+                before_data = (state / "sub-store.json").read_bytes()
+                refreshed = request(url, {"path": "/api/utils/refresh"})
+                assert refreshed["status"] == 200
+                check_json(json.loads(refreshed["body"]), {"status": "success"})
+                assert (state / "sub-store.json").read_bytes() == before_data
+                expected_root = {**cached_root, **{key: "{}" for key in ("sub-store-cached-resource", "sub-store-cached-headers-resource", "sub-store-cached-script-resource")}}
+                cleared_root = json.loads((state / "root.json").read_text(encoding="utf-8"))
+                check_json(cleared_root, expected_root)
+                (output / f"{label}-cache-refresh.json").write_text(json.dumps({"earliest_ms": cache_earliest, "latest_ms": cache_latest,
+                    "cached_root": cached_root, "refresh_response": refreshed, "cleared_root": cleared_root}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                report["phases"].append({"name": label + "-cache-refresh", "cases": 1, "requests": 1, "status": "passed"})
                 metadata = [{"path": path, "response": request(url, {"path": path})} for path in ("/api/utils/env", "/")]
                 (output / f"{kind}-root-env-alias.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
                 assert all(item["response"]["status"] == 200 for item in metadata), metadata
@@ -469,7 +491,9 @@ def utilities_contracts(binary, node, environment, baseline, root, output, repor
                 assert json.loads(actual["response"]["body"])["data"]["meta"]["rust"]["complete"] is False
                 continue  # Retain the accepted M2 runtime metadata qualification.
             compare_step(actual, reference, actual_case["id"])
+    check_json(cache_values["rust"], cache_values["node"])
     check_json(final["rust"], final["node"])
+    report["native_utilities_cache_ttl_data_and_refresh_checked"] = True
     report["native_age_rest_and_node_info_checked"] = True
 
 
