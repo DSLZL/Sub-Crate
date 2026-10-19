@@ -33,7 +33,7 @@ fn mark(item: &mut Value, updated: u64, result: &Value) {
     }
 }
 
-async fn one(store: &Arc<Mutex<Store>>, requested: &str) -> Result<Value, Error> {
+pub(crate) async fn one(store: &Arc<Mutex<Store>>, requested: &str) -> Result<Value, Error> {
     let snapshot = store
         .lock()
         .unwrap()

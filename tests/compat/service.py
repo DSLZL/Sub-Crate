@@ -23,6 +23,7 @@ import zlib
 from reference import BACKEND, HERE, ROOT, execute, oracle, source_provenance
 from runner import BufferedHTTPConnection, check_json, load_cases, request, run_cases
 from upstream import ControlledUpstream
+from scheduling import run_contracts as scheduling_contracts
 
 
 def wall_time(latest=False):
@@ -68,7 +69,9 @@ def listener(binary, environment, output, report, log_prefix="rust", image=None,
             argv.extend(["--mount", f"type=bind,source={environment['SUB_STORE_FRONTEND_PATH']},target=/frontend,readonly"])
             if not environment.get("SUB_STORE_BACKEND_MERGE") and not host_network:
                 argv.extend(["-p", f"127.0.0.1:{environment['SUB_STORE_FRONTEND_PORT']}:3001"])
-        if environment.get("SUB_STORE_MMDB_COUNTRY_PATH"):
+        database_base = Path(environment['SUB_STORE_DATA_BASE_PATH'])
+        if any(environment.get(key) and not Path(environment[key]).is_relative_to(database_base)
+               for key in ("SUB_STORE_MMDB_COUNTRY_PATH", "SUB_STORE_MMDB_ASN_PATH")):
             argv.extend(["--mount", f"type=bind,source={HERE / 'fixtures/mmdb'},target=/mmdb,readonly"])
         for key, value in environment.items():
             if key.startswith("SUB_STORE_") or key in ("TZ", "NODE_ENV", "HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy"):
@@ -76,7 +79,8 @@ def listener(binary, environment, output, report, log_prefix="rust", image=None,
                          "SUB_STORE_BACKEND_API_HOST": value if host_network else "0.0.0.0", "SUB_STORE_FRONTEND_PATH": "/frontend",
                          "SUB_STORE_FRONTEND_HOST": value if host_network else "0.0.0.0", "SUB_STORE_FRONTEND_PORT": value if host_network else "3001"}.get(key, value)
                 if key in ("SUB_STORE_MMDB_COUNTRY_PATH", "SUB_STORE_MMDB_ASN_PATH"):
-                    value = "/mmdb/" + Path(value).name
+                    value = ("/data/" + Path(value).relative_to(database_base).as_posix()
+                             if Path(value).is_relative_to(database_base) else "/mmdb/" + Path(value).name)
                 argv.extend(["--env", f"{key}={value}"])
         argv.append(image)
     else:
@@ -2395,6 +2399,7 @@ def main():
         utilities_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
         logs_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
         notification_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
+        scheduling_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image, listener)
         configurations = [
             ("default", {}, 1048576, [("https://sub-store.vercel.app", "https://sub-store.vercel.app")], "https://denied.invalid", False),
             ("custom-name", {"SUB_STORE_BACKEND_CUSTOM_NAME": "configuration-fixture", "SUB_STORE_BODY_JSON_LIMIT": "+1GB"}, 1073741824,

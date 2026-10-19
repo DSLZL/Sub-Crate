@@ -119,6 +119,9 @@ async fn restore(store: &Arc<Mutex<Store>>, id: &str) -> Result<Value, Error> {
     };
     next["archives"].as_array_mut().unwrap().remove(index);
     store.commit(next).map_err(Error::state)?;
+    if entry["itemType"] == "artifact" {
+        store.cron_refresh.send_replace(());
+    }
     Ok(item)
 }
 

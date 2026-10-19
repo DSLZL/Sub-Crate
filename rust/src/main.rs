@@ -19,6 +19,7 @@ mod mmdb;
 mod processors;
 mod resources;
 mod rules;
+mod scheduler;
 mod script;
 mod script_age;
 mod script_backup;
@@ -35,6 +36,7 @@ mod script_mmdb;
 mod script_network;
 mod script_notify;
 mod script_pipeline;
+mod script_runtime;
 mod script_sync;
 mod script_tokens;
 mod settings;
@@ -1142,6 +1144,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         env!("CARGO_PKG_VERSION"),
         listener.local_addr()?
     );
+    scheduler::start(store.clone())?;
     if config.frontend.is_some() && !config.merge {
         let frontend = TcpListener::bind((
             configured(

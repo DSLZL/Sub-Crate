@@ -12,6 +12,7 @@ pub struct Store {
     pub data: Value,
     live_buffers: HashSet<&'static str>,
     pub(crate) logs_max_cache: Option<(u64, usize)>,
+    pub(crate) cron_refresh: tokio::sync::watch::Sender<()>,
 }
 
 pub fn decode(text: &str) -> Result<Value, String> {
@@ -85,6 +86,7 @@ impl Store {
             data,
             live_buffers: HashSet::new(),
             logs_max_cache: None,
+            cron_refresh: tokio::sync::watch::channel(()).0,
         };
         atomic_write(&store.path, &codec::pretty(&store.data))?;
         Ok(store)

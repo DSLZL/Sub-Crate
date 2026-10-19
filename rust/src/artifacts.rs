@@ -203,7 +203,9 @@ async fn restore(store: &Arc<Mutex<Store>>) -> Result<(), Error> {
     let mut store = store.lock().unwrap();
     let mut next = store.data.clone();
     next["artifacts"] = items;
-    store.commit(next).map_err(Error::state)
+    store.commit(next).map_err(Error::state)?;
+    store.cron_refresh.send_replace(());
+    Ok(())
 }
 
 fn manage(method: &Method, path: &str, body: &Body, store: &mut Store) -> api::Reply {
@@ -215,6 +217,7 @@ fn manage(method: &Method, path: &str, body: &Body, store: &mut Store) -> api::R
         if path == "/api/artifacts" && method == Method::POST {
             let item = prepare_create(store, &mut next, body.clone().into_json())?;
             store.commit(next).map_err(Error::state)?;
+            store.cron_refresh.send_replace(());
             return Ok(api::success(Some(item), 201));
         }
         if path == "/api/artifacts" && method == Method::PUT {
@@ -230,6 +233,7 @@ fn manage(method: &Method, path: &str, body: &Body, store: &mut Store) -> api::R
             }
             next["artifacts"] = items;
             store.commit(next).map_err(Error::state)?;
+            store.cron_refresh.send_replace(());
             return Ok(api::success(None, 200));
         }
         let Some(name) = path.strip_prefix("/api/artifact/") else {
@@ -280,6 +284,7 @@ fn manage(method: &Method, path: &str, body: &Body, store: &mut Store) -> api::R
         normalize_cron(&mut item)?;
         next["artifacts"][index] = item.clone();
         store.commit(next).map_err(Error::state)?;
+        store.cron_refresh.send_replace(());
         Ok(api::success(Some(item), 200))
     })();
     result.unwrap_or_else(|error| error.reply(500))
@@ -350,5 +355,6 @@ async fn delete(store: &Arc<Mutex<Store>>, name: &str, query: &Value) -> Result<
         items.remove(index);
     }
     store.commit(next).map_err(Error::state)?;
+    store.cron_refresh.send_replace(());
     Ok(json!({"artifact":artifact,"remote":remote}))
 }

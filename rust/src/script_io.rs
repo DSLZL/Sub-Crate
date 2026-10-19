@@ -260,9 +260,12 @@ pub(crate) async fn download_file<'js>(
         }
         Ok(())
     }
+    let js = crate::js_language::Js::new(ctx.clone());
+    crate::script::log(&js, "info", &format!("Downloading file...\nURL: {url}\nFile: {file}"));
     save(&url, &file)
         .await
         .map_err(|error| Exception::throw_message(&ctx, &error.to_string()))?;
+    crate::script::log(&js, "info", &format!("File downloaded from {url} to {file}"));
     Ok(file)
 }
 
