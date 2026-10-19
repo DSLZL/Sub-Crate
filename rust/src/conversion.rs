@@ -3555,8 +3555,8 @@ pub fn produce(
         "json" | "JSON" | "uri" | "URI" | "v2" | "v2ray" | "V2Ray" | "qx" | "QX"
         | "QuantumultX" | "Loon" => {}
         _ if family.is_some() => {}
-        "surge" | "Surge" | "SurgeMac" | "surfboard"
-        | "Surfboard" | "singbox" | "sing-box" | "egern" | "Egern" => {
+        "surge" | "Surge" | "SurgeMac" | "surfboard" | "Surfboard" | "singbox" | "sing-box"
+        | "egern" | "Egern" => {
             return Err(Error::Pending("This output format is not implemented yet"));
         }
         _ => {
