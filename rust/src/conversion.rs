@@ -1275,6 +1275,7 @@ fn modern_uri(line: &str) -> Result<Option<Value>, Error> {
                         .unwrap()
                         .split(',')
                         .filter_map(|raw| finite_int(raw).ok())
+                        .filter(Value::is_number)
                         .collect();
                     if items.len() == 3 {
                         proxy["reserved"] = json!(items);
@@ -1291,7 +1292,9 @@ fn modern_uri(line: &str) -> Result<Option<Value>, Error> {
                     }
                 }
                 "mtu" => {
-                    if let Ok(mtu) = finite_int(value.as_str().unwrap()) {
+                    if let Ok(mtu) = finite_int(value.as_str().unwrap())
+                        && mtu.is_number()
+                    {
                         proxy["mtu"] = mtu;
                     }
                 }

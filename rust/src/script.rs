@@ -184,6 +184,42 @@ fn read<'js>(
     js.call("get", (cache, key))
 }
 
+fn init_cache<'js>(ctx: Ctx<'js>, This(this): This<JsValue<'js>>) -> rquickjs::Result<()> {
+    let js = Js::new(ctx);
+    let job = job(&js.ctx)?;
+    let (cache, root) = {
+        let store = job
+            .store
+            .lock()
+            .map_err(|_| js.error("State lock poisoned"))?;
+        (
+            store.data.clone(),
+            store
+                .script_root()
+                .map_err(|error| js.error(&error.to_string()))?,
+        )
+    };
+    js.set(&this, "cache", js.ctx.json_parse(codec::stringify(&cache))?)?;
+    js.set(&this, "root", js.ctx.json_parse(codec::stringify(&root))?)?;
+    job.baseline.replace((cache, root));
+    Ok(())
+}
+
+fn done<'js>(ctx: Ctx<'js>, value: Opt<JsValue<'js>>) -> rquickjs::Result<()> {
+    let js = Js::new(ctx);
+    let context: JsValue = js.ctx.globals().get("$context")?;
+    if !context.is_undefined() {
+        let value = value
+            .0
+            .filter(|value| !value.is_undefined())
+            .unwrap_or(Object::new(js.ctx.clone())?.into_value());
+        for key in ["headers", "statusCode", "body"] {
+            js.set(&context, key, js.get(&value, key)?)?;
+        }
+    }
+    Ok(())
+}
+
 fn persist<'js>(ctx: Ctx<'js>, This(this): This<JsValue<'js>>) -> rquickjs::Result<()> {
     let js = Js::new(ctx);
     let job = job(&js.ctx)?;
@@ -828,22 +864,44 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
         ctx.json_parse(r#"{"backend":"Rust","version":"2.42.4","feature":{},"meta":{}}"#)?,
     )?;
     let host = Object::new(ctx.clone())?;
+    host.set("name", "sub-store")?;
+    host.set("debug", false)?;
     host.set("cache", ctx.json_parse(codec::stringify(&cache))?)?;
     host.set("root", ctx.json_parse(codec::stringify(&root))?)?;
     host.set("env", ctx.json_parse(r#"{"isNode":false,"isQX":false,"isLoon":false,"isSurge":false,"isStash":false,"isShadowRocket":false,"isLanceX":false,"isEgern":false,"isGUIforCores":false}"#)?)?;
     host.set("read", Func::from(read))?;
     host.set("write", Func::from(write))?;
     host.set("delete", Func::from(delete))?;
+    host.set("initCache", Func::from(init_cache))?;
     host.set("persistCache", Func::from(persist))?;
+    host.set("done", Func::from(done))?;
     let wait: Function = ctx.eval("delay => new Promise(resolve => setTimeout(resolve, delay))")?;
     host.set("wait", wait)?;
     let http: Object = ctx.eval("createHostHTTP()")?;
     host.set("http", http)?;
     for level in ["log", "info", "warn", "error"] {
-        let name = level.to_owned();
         host.set(
             level,
-            Func::from(move |text: String| eprintln!("[sub-store:{name}] {text}")),
+            Func::from(
+                move |ctx: Ctx<'js>, This(this): This<JsValue<'js>>, value: Opt<JsValue<'js>>| {
+                    let js = Js::new(ctx);
+                    if level != "log" || js.truthy(&js.get(&this, "debug")?)? {
+                        let name = js.get(&this, "name")?;
+                        let text = value.0.unwrap_or_else(|| js.undefined());
+                        let name: JsValue = js.call("text", (name,))?;
+                        let text: JsValue = js.call("text", (text,))?;
+                        let name = crate::js_values::project(&js.ctx, name)?;
+                        let text = crate::js_values::project(&js.ctx, text)?;
+                        eprintln!(
+                            "[{}] {}: {}",
+                            codec::text(&codec::js_string(&name)),
+                            level.to_uppercase(),
+                            codec::text(&codec::js_string(&text))
+                        );
+                    }
+                    Ok::<_, rquickjs::Error>(())
+                },
+            ),
         )?;
     }
     host.set(
