@@ -1178,11 +1178,16 @@ pub async fn run(
                                     "notification-send" => {
                                         crate::script_notify::send(&js, input).await?
                                     }
-                                    "startup-data" => crate::script_runtime::startup(&js, input).await?,
+                                    "startup-data" => {
+                                        crate::script_runtime::startup(&js, input).await?
+                                    }
                                     "runtime-download-file" => {
                                         let url = js.text(js.get(&input, "url")?)?;
                                         let file = js.text(js.get(&input, "file")?)?;
-                                        js.value(crate::script_io::download_file(ctx.clone(), url, file).await?)?
+                                        js.value(
+                                            crate::script_runtime::download(ctx.clone(), url, file)
+                                                .await?,
+                                        )?
                                     }
                                     "backup-serialize" => {
                                         crate::script_backup::serialize(&js, input)?

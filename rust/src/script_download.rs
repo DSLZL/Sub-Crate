@@ -552,6 +552,6 @@ pub(crate) fn initialize<'js>(_ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs:
     utils.set("download", Func::from(Async(download)))?;
     utils.set(
         "downloadFile",
-        Func::from(Async(crate::script_io::download_file)),
+        Func::from(Async(crate::script_runtime::download)),
     )
 }

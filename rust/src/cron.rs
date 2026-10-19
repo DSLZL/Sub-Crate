@@ -154,35 +154,60 @@ pub(crate) fn next(masks: &[u64; 6], start: &jiff::Zoned) -> Result<jiff::Timest
     for _ in 0..(366 * 8) {
         let dom = contains(3, date.day());
         let dow = contains(5, date.weekday().to_sunday_zero_offset());
-        let day_matches = if masks[3].count_ones() == 31 { dow }
-            else if masks[5].count_ones() == 7 { dom } else { dom || dow };
+        let day_matches = if masks[3].count_ones() == 31 {
+            dow
+        } else if masks[5].count_ones() == 7 {
+            dom
+        } else {
+            dom || dow
+        };
         if contains(4, date.month()) && day_matches {
             for hour in (0..24).filter(|value| contains(2, *value)) {
-                if date == start.date() && hour < start.hour() { continue; }
+                if date == start.date() && hour < start.hour() {
+                    continue;
+                }
                 for minute in (0..60).filter(|value| contains(1, *value)) {
-                    if date == start.date() && hour == start.hour() && minute < start.minute() { continue; }
+                    if date == start.date() && hour == start.hour() && minute < start.minute() {
+                        continue;
+                    }
                     for second in (0..60).filter(|value| contains(0, *value)) {
                         let civil = date.at(hour, minute, second, 0);
-                        if civil <= start.datetime() { continue; }
+                        if civil <= start.datetime() {
+                            continue;
+                        }
                         let ambiguous = zone.to_ambiguous_zoned(civil);
                         let mut stamp = match ambiguous.offset() {
-                            jiff::tz::AmbiguousOffset::Fold { after, .. } if start.offset() == after => after.to_timestamp(civil),
+                            jiff::tz::AmbiguousOffset::Fold { after, .. }
+                                if start.offset() == after =>
+                            {
+                                after.to_timestamp(civil)
+                            }
                             _ => ambiguous.compatible().map(|value| value.timestamp()),
-                        }.map_err(|error| error.to_string())?;
+                        }
+                        .map_err(|error| error.to_string())?;
                         if stamp.to_zoned(zone.clone()).datetime() != civil {
                             // cron 3.1.6 runs skipped wall times at the start of the DST gap's end.
-                            if !contains(4, date.month() + 1) || !dom || !dow { continue; }
+                            if !contains(4, date.month() + 1) || !dom || !dow {
+                                continue;
+                            }
                             let mut before = stamp.as_second() - 86400;
                             let mut after = stamp.as_second();
                             while after - before > 1 {
                                 let middle = before + (after - before) / 2;
-                                let value = jiff::Timestamp::from_second(middle).map_err(|error| error.to_string())?;
-                                if value.to_zoned(zone.clone()).datetime() < civil { before = middle; }
-                                else { after = middle; }
+                                let value = jiff::Timestamp::from_second(middle)
+                                    .map_err(|error| error.to_string())?;
+                                if value.to_zoned(zone.clone()).datetime() < civil {
+                                    before = middle;
+                                } else {
+                                    after = middle;
+                                }
                             }
-                            stamp = jiff::Timestamp::from_second(after).map_err(|error| error.to_string())?;
+                            stamp = jiff::Timestamp::from_second(after)
+                                .map_err(|error| error.to_string())?;
                         }
-                        if stamp > start.timestamp() { return Ok(stamp); }
+                        if stamp > start.timestamp() {
+                            return Ok(stamp);
+                        }
                     }
                 }
             }
@@ -199,16 +224,50 @@ mod tests {
     #[test]
     fn real_calendar_next_ticks_and_local_dst() {
         for (expression, start, expected) in [
-            ("*/15 * * * * *", "2024-07-01T00:00:14.1+00[UTC]", "2024-07-01T00:00:15Z"),
-            ("0 9 * * *", "2024-07-01T08:59:59+08[Asia/Shanghai]", "2024-07-01T01:00:00Z"),
-            ("0 0 0 29 feb *", "2025-03-01T00:00:00+00[UTC]", "2028-02-29T00:00:00Z"),
-            ("0 0 0 13 * fri", "2024-07-01T00:00:00+00[UTC]", "2024-07-05T00:00:00Z"),
-            ("0 30 2 * * *", "2024-03-10T01:00:00-05[America/New_York]", "2024-03-10T07:00:00Z"),
-            ("0 30 1 * * *", "2024-11-03T01:45:00-04[America/New_York]", "2024-11-04T06:30:00Z"),
-            ("0 30 1 * * *", "2024-11-03T01:00:00-05[America/New_York]", "2024-11-03T06:30:00Z"),
+            (
+                "*/15 * * * * *",
+                "2024-07-01T00:00:14.1+00[UTC]",
+                "2024-07-01T00:00:15Z",
+            ),
+            (
+                "0 9 * * *",
+                "2024-07-01T08:59:59+08[Asia/Shanghai]",
+                "2024-07-01T01:00:00Z",
+            ),
+            (
+                "0 0 0 29 feb *",
+                "2025-03-01T00:00:00+00[UTC]",
+                "2028-02-29T00:00:00Z",
+            ),
+            (
+                "0 0 0 13 * fri",
+                "2024-07-01T00:00:00+00[UTC]",
+                "2024-07-05T00:00:00Z",
+            ),
+            (
+                "0 30 2 * * *",
+                "2024-03-10T01:00:00-05[America/New_York]",
+                "2024-03-10T07:00:00Z",
+            ),
+            (
+                "0 30 1 * * *",
+                "2024-11-03T01:45:00-04[America/New_York]",
+                "2024-11-04T06:30:00Z",
+            ),
+            (
+                "0 30 1 * * *",
+                "2024-11-03T01:00:00-05[America/New_York]",
+                "2024-11-03T06:30:00Z",
+            ),
         ] {
             let start: jiff::Zoned = start.parse().unwrap();
-            assert_eq!(next(&parse(expression).unwrap(), &start).unwrap().to_string(), expected, "{expression} {start}");
+            assert_eq!(
+                next(&parse(expression).unwrap(), &start)
+                    .unwrap()
+                    .to_string(),
+                expected,
+                "{expression} {start}"
+            );
         }
     }
 

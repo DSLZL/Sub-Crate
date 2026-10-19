@@ -29,10 +29,13 @@ globalThis.crypto = {
     return array;
   },
 };
-// shortcut: Response consumes age bodies; extend when another caller needs Fetch.
+// The pinned age and notification utilities share this body reader.
 class Response {
   #used = false;
-  constructor(body = null) {
+  constructor(body = null, init = {}) {
+    this.status = init.status === undefined ? 200 : Number(init.status);
+    if (!Number.isInteger(this.status) || this.status < 200 || this.status > 599) throw new RangeError('Invalid response status');
+    this.ok = this.status >= 200 && this.status < 300;
     this.body = body === null || body instanceof ReadableStream ? body : new ReadableStream({
       start(controller) {
         controller.enqueue(typeof body === 'string' ? new TextEncoder().encode(body)
@@ -44,6 +47,8 @@ class Response {
     });
   }
   get bodyUsed() { return this.#used; }
+  async text() { return new TextDecoder().decode(await this.arrayBuffer()); }
+  async json() { return JSON.parse(await this.text()); }
   async arrayBuffer() {
     if (this.#used || this.body?.locked) throw new TypeError('Body is unusable');
     if (!this.body) return new ArrayBuffer(0);

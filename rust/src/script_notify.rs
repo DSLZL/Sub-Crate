@@ -23,18 +23,7 @@ async fn transport<'js>(
         "method",
         network::prefer(&js, [optional(&js, &init, "method")?, js.value("GET")?])?,
     )?;
-    let constructor: Value = js.ctx.globals().get("Headers")?;
-    let headers: Value = js.call(
-        "construct",
-        (constructor, js.array([optional(&js, &init, "headers")?])?),
-    )?;
-    let entries = js.method(headers, "entries", vec![])?;
-    let constructor: Value = js.ctx.globals().get("Object")?;
-    js.set(
-        &request,
-        "headers",
-        js.method(constructor, "fromEntries", vec![entries])?,
-    )?;
+    js.set(&request, "headers", optional(&js, &init, "headers")?)?;
     js.set(&request, "body", optional(&js, &init, "body")?)?;
     js.set(&request, "encoding", Value::new_null(js.ctx.clone()))?;
     js.set(&request, "timeout", js.value(8000)?)?;
