@@ -590,7 +590,8 @@ async fn process<'js>(
                 }
             }
         } else if name == "Resolve Domain Operator" {
-            return Err(js.error(&format!("{name} is not implemented yet")));
+            let args = crate::script_network::prefer(js, [js.get(&item, "args")?, Object::new(js.ctx.clone())?.into_value()])?;
+            input = crate::script_dns::apply(js, input, args).await?;
         }
     }
     Ok(input)
@@ -902,6 +903,7 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     crate::script_download::initialize(ctx, &utils)?;
     crate::script_age::initialize(ctx, &utils)?;
     crate::script_mmdb::initialize(ctx, &utils)?;
+    crate::script_dns::initialize(ctx, &utils)?;
     globals.set("ProxyUtils", utils)?;
     crate::script_pipeline::initialize(ctx)
 }

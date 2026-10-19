@@ -275,7 +275,7 @@ pub(crate) async fn download<'js>(
     let status = network::prefer(js, [optional(js, &res, "status")?, js.value(200)?])?;
     let input = object(js)?;
     js.set(&input, "status", status)?;
-    let current = js.call("spread", (object(js)?, headers.clone()))?;
+    let current: Value = js.call("spread", (object(js)?, headers.clone()))?;
     js.set(&input, "headers", current.clone())?;
     js.set(&input, "body", output)?;
     let source = object(js)?;

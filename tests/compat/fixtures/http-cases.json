@@ -1,5 +1,100 @@
 [
   {
+    "id": "PC-native-dns-mmdb-and-resolve",
+    "source": "native DNS packet/cache/provider and Resolve Domain Operator plus MMDB through real Script Operator",
+    "steps": [
+      {
+        "body": {
+          "source": "local",
+          "name": "native-dns-mmdb",
+          "content": "ss://YWVzLTEyOC1nY206cGFzcw==@dns.invalid:8388#dns",
+          "process": [
+            {
+              "type": "Script Operator",
+              "args": {
+                "content": "async function operator(proxies) {\n  const assert=(value,message)=>{if(!value)throw new Error(message);};\n  const equal=(actual,expected,message)=>assert(JSON.stringify(actual)===JSON.stringify(expected),message+': '+JSON.stringify({actual,expected}));\n  const DateBefore=Date,random=Math.random;\n  globalThis.Date=class extends DateBefore {constructor(...args){super(...(args.length?args:[3600000000000]));}static now(){return 3600000000000;}};\n  const passed=[],check=async(id,run)=>{await run();passed.push(id);};\n  const url='$UPSTREAM/host/dns/';\n  try {\n    await check('DN-native-packet-edns-and-doh',async()=>{\n      const result=await ProxyUtils.doh({url:url+'good',domain:'native-doh.fixture',edns:'203.0.113.99',timeout:2000});\n      equal(result.answers.filter(item=>item.type==='A').map(item=>item.data),['198.51.100.7','198.51.100.9'],'DoH packet');\n      assert(result.rcode==='NOERROR','response flags');\n    });\n    await check('DN-native-cache-identity-and-winner',async()=>{\n      const run=()=>DOMAIN_RESOLVERS.Custom('native-cache.fixture','IPv4',false,2000,undefined,url+'good',false,1,5000);\n      const first=await run(),second=await run();\n      equal(first,['198.51.100.7','198.51.100.9'],'cached answers');\n      assert(first===second && second._resolverUrl===url+'good','live cached identity and resolver metadata');\n      assert(!Object.keys(first).includes('_resolverUrl'),'winner metadata is not enumerable');\n      const result=await DOMAIN_RESOLVERS.Custom('native-fallback.fixture','IPv4',false,2000,undefined,url+'empty\\n'+url+'good',false,1);\n      equal(result,first,'serial fallback');assert(result._resolverUrl===url+'good','fallback winner');\n    });\n    await check('DN-native-domain-processor-dedup-and-filters',async()=>{\n      Math.random=()=>0;\n      const input=[{name:'first',server:'native-operator.fixture'},{name:'second',server:'native-operator.fixture'},{name:'skip',server:'skip.fixture','no-resolve':true},{name:'literal',server:'192.0.2.1'}];\n      const result=await ProxyUtils.process(input,[{type:'Resolve Domain Operator',args:{provider:'Custom',url:url+'good',type:'IPv4',filter:'IPv4Only',concurrency:1,dnsConcurrency:1,timeout:2000}}]);\n      equal(result.map(item=>[item.name,item.server]),[['first','198.51.100.7'],['second','198.51.100.7'],['literal','192.0.2.1']],'ordered resolution and filter');\n      assert(result[0]._resolved_ips===result[1]._resolved_ips && result[0]._domain==='native-operator.fixture' && result[0]._IPv4==='198.51.100.7','resolved annotations');\n      equal(input.map(item=>item.server),['native-operator.fixture','native-operator.fixture','skip.fixture','192.0.2.1'],'operator clones input');\n    });\n    await check('DN-native-mmdb-and-public-reader-methods',async()=>{\n      const db=new ProxyUtils.MMDB();\n      equal([db.geoip('81.2.69.160'),db.geoip('2001:218::1'),db.ipasn('2001:1700::1'),db.ipaso('2001:1700::1')],['GB','JP',6730,'Sunrise Communications AG'],'native country and ASN');\n      db.countryReader={country:()=>({country:{isoCode:false}})};db.asnReader={asn:()=>({autonomousSystemNumber:0,autonomousSystemOrganization:''})};\n      equal([db.geoip('x'),db.ipasn('x'),db.ipaso('x')],[false,0,''],'public readers preserve falsy values');\n      delete db.countryReader;delete db.asnReader;\n      assert(db.geoip('x')===undefined && db.ipasn('x')===undefined,'optional readers');\n      let rejected=false;try{new ProxyUtils.MMDB(null);}catch(error){rejected=error.name==='TypeError';}assert(rejected,'invalid options');\n    });\n    $substore.write({passed},'m3-native-dns-mmdb');\n    return proxies.map(proxy=>({...proxy,dnsMmdbVerified:passed.length}));\n  } finally {globalThis.Date=DateBefore;Math.random=random;}\n}\n"
+              }
+            }
+          ]
+        },
+        "expect": {
+          "json_contains": {
+            "data": {
+              "processed": [
+                {
+                  "dnsMmdbVerified": 4,
+                  "name": "dns"
+                }
+              ]
+            }
+          },
+          "status": 200
+        },
+        "path": "/api/preview/sub",
+        "method": "POST",
+        "upstream": [
+          {
+            "body": "",
+            "headers": {
+              "accept": "application/dns-message"
+            },
+            "path": "/host/dns/good?dns=AAABAAABAAAAAAABCm5hdGl2ZS1kb2gHZml4dHVyZQAAAQABAAApEAAAAAAAAAsACAAHAAEYAMsAcQ",
+            "method": "GET"
+          },
+          {
+            "body": "",
+            "headers": {
+              "accept": "application/dns-message"
+            },
+            "path": "/host/dns/good?dns=AAABAAABAAAAAAAADG5hdGl2ZS1jYWNoZQdmaXh0dXJlAAABAAE",
+            "method": "GET"
+          },
+          {
+            "body": "",
+            "headers": {
+              "accept": "application/dns-message"
+            },
+            "path": "/host/dns/empty?dns=AAABAAABAAAAAAAAD25hdGl2ZS1mYWxsYmFjawdmaXh0dXJlAAABAAE",
+            "method": "GET"
+          },
+          {
+            "body": "",
+            "headers": {
+              "accept": "application/dns-message"
+            },
+            "path": "/host/dns/good?dns=AAABAAABAAAAAAAAD25hdGl2ZS1mYWxsYmFjawdmaXh0dXJlAAABAAE",
+            "method": "GET"
+          },
+          {
+            "body": "",
+            "headers": {
+              "accept": "application/dns-message"
+            },
+            "path": "/host/dns/good?dns=AAABAAABAAAAAAABD25hdGl2ZS1vcGVyYXRvcgdmaXh0dXJlAAABAAEAACkQAAAAAAAACwAIAAcAARgA3wYG",
+            "method": "GET"
+          }
+        ]
+      },
+      {
+        "expect": {
+          "json_contains": {
+            "m3-native-dns-mmdb": {
+              "passed": [
+                "DN-native-packet-edns-and-doh",
+                "DN-native-cache-identity-and-winner",
+                "DN-native-domain-processor-dedup-and-filters",
+                "DN-native-mmdb-and-public-reader-methods"
+              ]
+            }
+          },
+          "status": 200
+        },
+        "path": "/api/storage",
+        "method": "GET"
+      }
+    ]
+  },
+  {
     "id": "PC-native-script-yaml-cache",
     "source": "PC13-PC17 retained assertions; utils/yaml.js and utils/script-resource-cache.js",
     "steps": [
