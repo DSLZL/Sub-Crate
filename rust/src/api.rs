@@ -139,11 +139,14 @@ pub fn options(path: &str) -> Reply {
     let methods = match path {
         "/api/settings" => "GET,PATCH,HEAD",
         "/api/storage" => "GET,POST,HEAD",
-        "/api/subs" | "/api/collections" => "GET,POST,PUT,HEAD",
+        "/api/subs" | "/api/collections" | "/api/modules" => "GET,POST,PUT,HEAD",
         "/api/proxy/parse" | "/api/rule/parse" | "/api/preview/sub" | "/api/preview/collection" => {
             "POST,GET,HEAD"
         }
-        _ if path.starts_with("/api/sub/") || path.starts_with("/api/collection/") => {
+        _ if path.starts_with("/api/sub/")
+            || path.starts_with("/api/collection/")
+            || path.starts_with("/api/module/") =>
+        {
             "GET,PATCH,DELETE,HEAD"
         }
         // shortcut: remaining route families gain their method inventories with M4.
@@ -211,7 +214,7 @@ fn null_name_error(caught: bool) -> Reply {
     }
 }
 
-fn success(data: Option<Value>, status: u16) -> Reply {
+pub(crate) fn success(data: Option<Value>, status: u16) -> Reply {
     let mut value = json!({"status":"success"});
     if let Some(data) = data {
         value["data"] = legacy_object_order(data);
@@ -588,7 +591,7 @@ fn publish(store: &mut Store, next: Value, response: Reply) -> Reply {
     persisted(store.commit(next), response)
 }
 
-fn persisted(result: io::Result<()>, response: Reply) -> Reply {
+pub(crate) fn persisted(result: io::Result<()>, response: Reply) -> Reply {
     match result {
         Ok(()) => response,
         Err(error) => {
@@ -905,7 +908,6 @@ pub fn dispatch(
         let key = match path {
             "/api/artifacts" => Some("artifacts"),
             "/api/wholefiles" | "/api/files" => Some("files"),
-            "/api/modules" => Some("modules"),
             "/api/tokens" => Some("tokens"),
             "/api/archives" => Some("archives"),
             _ => None,

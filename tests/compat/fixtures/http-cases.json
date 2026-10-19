@@ -9468,6 +9468,43 @@
     ]
   },
   {
+    "id": "M02-module-names-order-and-missing-delete",
+    "source": "backend/src/restful/module.js:23,64,91; backend/src/utils/database.js:9",
+    "steps": [
+      {"method": "PUT", "path": "/api/modules", "body": [], "expect": {"status": 200}},
+      {"method": "POST", "path": "/api/modules", "body": {}, "expect": {"status": 201, "json": {"status": "success", "data": {"name": "99914b932bd37a50b983c5e7c90ae93b"}}}},
+      {"method": "POST", "path": "/api/modules", "body": {}, "expect": {"status": 500, "json_contains": {"error": {"code": "DUPLICATE_KEY"}}}},
+      {"method": "POST", "path": "/api/modules", "body": {"name": false, "content": "false name"}, "expect": {"status": 201, "json": {"status": "success", "data": {"name": "false", "content": "false name"}}}},
+      {"method": "POST", "path": "/api/modules", "body": {"name": 0, "content": "zero name"}, "expect": {"status": 201, "json": {"status": "success", "data": {"name": "0", "content": "zero name"}}}},
+      {"path": "/api/modules", "expect": {"status": 200, "json": {"status": "success", "data": [{"name": "99914b932bd37a50b983c5e7c90ae93b"}, {"name": "false"}, {"name": "0"}]}}},
+      {"method": "PATCH", "path": "/api/module/false", "body": {"name": "", "extra": [null, false, 0]}, "expect": {"status": 200, "json": {"status": "success", "data": {"name": "", "content": "false name", "extra": [null, false, 0]}}}},
+      {"method": "DELETE", "path": "/api/module/missing", "expect": {"status": 200}, "state": {"modules": [{"name": "99914b932bd37a50b983c5e7c90ae93b"}, {"name": "", "content": "false name", "extra": [null, false, 0]}]}},
+      {"method": "DELETE", "path": "/api/module/missing-again", "expect": {"status": 200}, "state": {"modules": [{"name": "99914b932bd37a50b983c5e7c90ae93b"}]}},
+      {"path": "/api/module/99914b932bd37a50b983c5e7c90ae93b", "expect": {"status": 200, "body": ""}},
+      {"method": "DELETE", "path": "/api/module/99914b932bd37a50b983c5e7c90ae93b", "expect": {"status": 200}, "state": {"modules": []}}
+    ]
+  },
+  {
+    "id": "M03-module-content-methods-and-encoded-name",
+    "source": "backend/src/restful/module.js:11,44,109",
+    "steps": [
+      {"method": "PUT", "path": "/api/modules", "body": [{"name": "json", "content": {"2": false, "1": 0, "extra": null}}, {"name": "array", "content": [null, false, 0, ""]}, {"name": "nil", "content": null}, {"name": "unset"}, {"name": "status", "content": 202}, {"name": "bad-status", "content": 0}, {"name": "flag", "content": false}], "expect": {"status": 200}},
+      {"path": "/api/module/json", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "{\"1\":0,\"2\":false,\"extra\":null}"}},
+      {"path": "/api/module/array", "expect": {"status": 200, "body": "[null,false,0,\"\"]"}},
+      {"path": "/api/module/nil", "expect": {"status": 200, "body": ""}},
+      {"path": "/api/module/unset", "expect": {"status": 200, "body": ""}},
+      {"path": "/api/module/status", "expect": {"status": 202, "body": "Accepted"}},
+      {"path": "/api/module/bad-status", "expect": {"status": 500}},
+      {"path": "/api/module/flag", "expect": {"status": 200, "body": "false"}},
+      {"method": "HEAD", "path": "/api/module/json", "expect": {"status": 200, "body": ""}},
+      {"method": "OPTIONS", "path": "/api/module/json", "expect": {"status": 200, "headers": {"allow": "GET,PATCH,DELETE,HEAD"}}},
+      {"method": "OPTIONS", "path": "/api/modules", "expect": {"status": 200, "headers": {"allow": "GET,POST,PUT,HEAD"}}},
+      {"method": "POST", "path": "/api/modules", "body": {"name": "module/路径🙂", "content": "// 模块🙂\r\n"}, "expect": {"status": 201}},
+      {"path": "/API/MODULE/module%2F%E8%B7%AF%E5%BE%84%F0%9F%99%82", "expect": {"status": 200, "body": "// 模块🙂\r\n"}},
+      {"method": "PUT", "path": "/api/modules", "body": [], "expect": {"status": 200}, "state": {"modules": []}}
+    ]
+  },
+  {
     "id": "M01-module-crud",
     "source": "backend/src/restful/module.js:11,23,44,64,91,100",
     "steps": [

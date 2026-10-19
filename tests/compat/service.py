@@ -1832,6 +1832,8 @@ def main():
         report["full_document_equal_after_shared_suite"] = True
         baseline_root = json.loads((output / "node-state/root.json").read_text(encoding="utf-8"))
         _, conversion_cases = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "conversion-local")
+        _, business_cases = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "business-local")
+        conversion_cases += business_cases
         _, conversion_restart = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "conversion-local-restart")
         conversion_state = {}
         conversion_responses = {}

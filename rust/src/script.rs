@@ -1003,6 +1003,16 @@ pub async fn run(
                                 let input = ctx.json_parse(codec::stringify(&input))?;
                                 let result = match operation.as_str() {
                                     "parse" => crate::script_http::parse(&js, input).await?,
+                                    "module-name" => {
+                                        let name = js.get(&input, "name")?;
+                                        let name = if name.is_null() || name.is_undefined() {
+                                            let text = js.value(serialized(&ctx, input)?)?;
+                                            crate::script_helpers::md5(ctx.clone(), Opt(Some(text)))?
+                                        } else {
+                                            js.text(name)?
+                                        };
+                                        js.value(name)?
+                                    }
                                     "preview-sub" | "preview-collection" => {
                                         crate::script_pipeline::preview(
                                             &js,

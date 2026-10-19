@@ -11,6 +11,7 @@ mod js_values;
 mod json;
 mod mmdb;
 mod processors;
+mod resources;
 mod rules;
 mod script;
 mod script_age;
@@ -749,7 +750,7 @@ fn api_path(raw: &str) -> Result<Option<String>, ()> {
         ["", api, resource, name] if api.eq_ignore_ascii_case("api") && !name.is_empty() => {
             let resource = resource.to_ascii_lowercase();
             match resource.as_str() {
-                "sub" | "collection" => Some(format!(
+                "sub" | "collection" | "module" => Some(format!(
                     "/api/{resource}/{}",
                     json::encode(&percent_decode_str(name).decode_utf8().map_err(|_| ())?)
                 )),
@@ -899,6 +900,9 @@ async fn route(
         "headers":headers.iter().map(|(key,value)|(key.as_str().to_owned(),json!(value.to_str().unwrap_or("")))).collect::<serde_json::Map<String,Value>>(),
         "responseHeaders":base.headers().iter().map(|(key,value)|(key.as_str().to_owned(),json!(value.to_str().unwrap_or("")))).collect::<serde_json::Map<String,Value>>()
     });
+    if let Some(response) = resources::dispatch(&method, &path, &body, store).await {
+        return response;
+    }
     if let Some(response) =
         api::conversion_dispatch(&method, &path, &query, &body, &headers, store, &request).await
     {
