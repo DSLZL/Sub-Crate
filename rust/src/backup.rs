@@ -73,20 +73,71 @@ pub(crate) async fn action(store: &Arc<Mutex<Store>>, query: &Value) -> Result<(
     } else {
         "base64"
     };
+    let strategy = if query["action"] == "download" {
+        if let Some(strategy) = query.get("tokenStrategy") {
+            if strategy != "overwrite" && strategy != "keep" {
+                return Err(Error::invalid(
+                    "INVALID_GIST_DOWNLOAD_TOKEN_STRATEGY",
+                    "Token 处理方式仅支持 overwrite 或 keep",
+                ));
+            }
+            codec::js_string(strategy)
+        } else if let Some(keep) = query.get("keep") {
+            if codec::js_string(keep)
+                .split(',')
+                .any(|path| path == "settings.gistToken")
+            {
+                "keep"
+            } else {
+                "overwrite"
+            }
+            .to_owned()
+        } else if settings["gistDownloadTokenStrategy"] == "keep" {
+            "keep".to_owned()
+        } else {
+            "overwrite".to_owned()
+        }
+    } else {
+        "undefined".to_owned()
+    };
+    let text = |value: Option<&Value>| {
+        value
+            .map(codec::js_string)
+            .unwrap_or_else(|| "undefined".to_owned())
+    };
+    crate::logs::info(
+        &mut store.lock().unwrap(),
+        &format!(
+            "Gist backup action: {}, keep: {}, token strategy: {}, settings token strategy: {}, final token strategy: {}, encode: {}, settings encode: {}, final encoding: {}",
+            text(query.get("action")),
+            text(query.get("keep")),
+            text(query.get("tokenStrategy")),
+            text(settings.get("gistDownloadTokenStrategy")),
+            strategy,
+            text(query.get("encode")),
+            text(settings.get("gistUpload")),
+            encoding,
+        ),
+    );
     if query["action"] == "upload" {
-        let before = serialize(store, encoding).await?;
-        crate::logs::info(&mut store.lock().unwrap(), "下载备份, 与本地内容对比...");
-        if let Ok(downloaded) = gist(store, "download", Value::Null).await {
+        let comparison = async {
+            let before = serialize(store, encoding).await?;
+            crate::logs::info(&mut store.lock().unwrap(), "下载备份, 与本地内容对比...");
+            let downloaded = gist(store, "download", Value::Null).await?;
             let armored = downloaded.as_str().is_some_and(|body| {
                 codec::trim(body).starts_with("-----BEGIN AGE ENCRYPTED FILE-----")
             });
-            if let Ok(online) = crypt(store, downloaded, &settings, encoding, false).await
-                && (encoding != "age" || armored)
-                && online == before
-            {
+            let online = crypt(store, downloaded, &settings, encoding, false).await?;
+            Ok::<_, Error>((encoding != "age" || armored) && online == before)
+        }
+        .await;
+        match comparison {
+            Ok(true) => {
                 crate::logs::info(&mut store.lock().unwrap(), "内容一致, 无需上传备份");
                 return Ok(());
             }
+            Err(error) => crate::logs::error(&mut store.lock().unwrap(), &error.message),
+            Ok(false) => {}
         }
         {
             let mut store = store.lock().unwrap();
@@ -124,29 +175,6 @@ pub(crate) async fn action(store: &Arc<Mutex<Store>>, query: &Value) -> Result<(
         }
         crate::logs::info(&mut store.lock().unwrap(), "上传备份完成");
     } else if query["action"] == "download" {
-        let strategy = if let Some(strategy) = query.get("tokenStrategy") {
-            if strategy != "overwrite" && strategy != "keep" {
-                return Err(Error::invalid(
-                    "INVALID_GIST_DOWNLOAD_TOKEN_STRATEGY",
-                    "Token 处理方式仅支持 overwrite 或 keep",
-                ));
-            }
-            codec::js_string(strategy)
-        } else if let Some(keep) = query.get("keep") {
-            if codec::js_string(keep)
-                .split(',')
-                .any(|path| path == "settings.gistToken")
-            {
-                "keep"
-            } else {
-                "overwrite"
-            }
-            .to_owned()
-        } else if settings["gistDownloadTokenStrategy"] == "keep" {
-            "keep".to_owned()
-        } else {
-            "overwrite".to_owned()
-        };
         let mut keep: Vec<String> = query
             .get("keep")
             .filter(|value| truthy(value))

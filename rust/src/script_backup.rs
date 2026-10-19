@@ -152,6 +152,11 @@ pub(crate) fn decode<'js>(js: &Js<'js>, input: Value<'js>) -> rquickjs::Result<V
         }
     }
     let keep = js.get(&input, "keep")?;
+    script::log(
+        js,
+        "info",
+        &format!("保留原有设置 {}", js.text(keep.clone())?),
+    );
     let current = js.get(&input, "current")?;
     let lodash: Value = js.ctx.globals().get("lodash")?;
     let paths: Vec<Value> = js.call("iterable", (keep,))?;

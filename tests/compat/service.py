@@ -305,6 +305,19 @@ def business_logs_contracts(binary, node, environment, baseline, root, output, r
             upstream_port = upstream.server.server_address[1]
             manager = oracle(node, env, output, report, label) if kind == "node" else listener(binary, env, output, report, label, image, host_network=bool(image))
             with manager as url:
+                warmup = request(url, {"method": "POST", "path": "/api/preview/sub?target=JSON", "body": {
+                    "name": "log-warmup", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture",
+                    "process": [{"type": "Script Operator", "args": {"content":
+                        "async function operator(proxies) { await $substore.http.get(" +
+                        json.dumps(upstream.url + "/host/text") + "); return proxies; }"}}]}})
+                startup = request(url, {"path": "/api/logs?limit=1000"})
+                cleared = request(url, {"method": "DELETE", "path": "/api/logs"})
+                empty = request(url, {"path": "/api/logs?limit=1000"})
+                (output / f"{label}-startup.json").write_text(json.dumps({"warmup": warmup, "startup": startup,
+                    "clear": cleared, "empty": empty}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                assert all(response["status"] == 200 for response in (warmup, startup, cleared, empty)), label
+                assert any(entry["method"] == "GET" and entry["path"] == "/host/text" for entry in upstream.requests), label
+                assert json.loads(empty["body"])["data"]["logs"] == [], (label, empty)
                 steps = [
                     {"method": "POST", "path": "/api/subs", "body": {"name": "log-sub", "source": "local", "content": ""}},
                     {"method": "PATCH", "path": "/api/sub/log-sub", "body": {"displayName": "日志🙂"}},
