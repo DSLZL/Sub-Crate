@@ -10,6 +10,14 @@ pub enum Error {
     Legacy(String),
 }
 
+pub(crate) const ALIASES: [&str; 33] = [
+    "qx", "QX", "QuantumultX", "surge", "Surge", "SurgeMac", "Loon", "Clash",
+    "meta", "clashmeta", "clash.meta", "Clash.Meta", "ClashMeta", "mihomo", "Mihomo",
+    "uri", "URI", "v2", "v2ray", "V2Ray", "json", "JSON", "stash", "Stash",
+    "shadowrocket", "Shadowrocket", "ShadowRocket", "surfboard", "Surfboard",
+    "singbox", "sing-box", "egern", "Egern",
+];
+
 fn component(raw: &str) -> Option<String> {
     if raw.as_bytes().iter().enumerate().any(|(index, byte)| {
         *byte == b'%'
@@ -3573,16 +3581,10 @@ pub fn produce(
         "shadowrocket" | "Shadowrocket" | "ShadowRocket" => Some(Family::Shadowrocket),
         _ => None,
     };
-    match target {
-        "json" | "JSON" | "uri" | "URI" | "v2" | "v2ray" | "V2Ray" | "qx" | "QX"
-        | "QuantumultX" | "Loon" | "surge" | "Surge" | "SurgeMac" | "surfboard" | "Surfboard"
-        | "egern" | "Egern" | "singbox" | "sing-box" => {}
-        _ if family.is_some() => {}
-        _ => {
-            return Err(Error::Legacy(format!(
-                "Target platform: {target} is not supported!"
-            )));
-        }
+    if !ALIASES.contains(&target) {
+        return Err(Error::Legacy(format!(
+            "Target platform: {target} is not supported!"
+        )));
     }
     if opts.is_null() && !proxies.is_empty() {
         return Err(Error::Legacy(

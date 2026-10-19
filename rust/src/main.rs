@@ -13,6 +13,7 @@ mod processors;
 mod rules;
 mod script;
 mod script_age;
+mod script_conversion;
 mod script_download;
 mod script_dns;
 mod script_flow;

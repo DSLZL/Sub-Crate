@@ -254,40 +254,6 @@ fn native_parse<'js>(ctx: Ctx<'js>, raw: JsValue<'js>) -> rquickjs::Result<JsVal
     js.ctx.json_parse(codec::stringify(&json!(proxies)))
 }
 
-fn native_produce<'js>(
-    ctx: Ctx<'js>,
-    input: JsValue<'js>,
-    target: JsValue<'js>,
-    kind: Opt<JsValue<'js>>,
-    options: Opt<JsValue<'js>>,
-) -> rquickjs::Result<JsValue<'js>> {
-    let js = Js::new(ctx);
-    let input =
-        codec::parse(&serialized(&js.ctx, input)?).map_err(|error| js.error(&error.to_string()))?;
-    let input = input
-        .as_array()
-        .ok_or_else(|| Exception::throw_type(&js.ctx, "proxies.filter is not a function"))?
-        .clone();
-    let target = js.text(target)?;
-    let kind = kind
-        .0
-        .map(|value| js.text(value))
-        .transpose()?
-        .unwrap_or_default();
-    let options = options
-        .0
-        .filter(|value| !value.is_undefined())
-        .map(|value| serialized(&js.ctx, value))
-        .transpose()?
-        .map(|text| codec::parse(&text))
-        .transpose()
-        .map_err(|error| js.error(&error.to_string()))?
-        .unwrap_or_else(|| json!({}));
-    let output = conversion::produce(input, &target, &kind, &options)
-        .map_err(|error| js.error(&conversion_message(error)))?;
-    js.ctx.json_parse(codec::stringify(&output))
-}
-
 fn conversion_message(error: conversion::Error) -> String {
     match error {
         conversion::Error::Legacy(message) => message,
@@ -891,7 +857,7 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     let scripts: Object = globals.get("SubStoreScriptUtilities")?;
     let utils = Object::new(ctx.clone())?;
     utils.set("parse", Func::from(native_parse))?;
-    utils.set("produce", Func::from(native_produce))?;
+    utils.set("produce", Func::from(crate::script_conversion::produce))?;
     utils.set("process", Func::from(Async(native_process)))?;
     utils.set("processResponse", Func::from(Async(process_response)))?;
     utils.set("Buffer", scripts.get::<_, JsValue>("Buffer")?)?;

@@ -305,7 +305,8 @@ pub(crate) async fn download<'js>(
     )
     .await?;
     let next = js.get(&transformed, "headers")?;
-    let entries: Vec<Value> = js.call("iterable", (js.call::<Value, _>("entries", (current,))?,))?;
+    let entries: Vec<Value> =
+        js.call("iterable", (js.call::<Value, _>("entries", (current,))?,))?;
     for pair in entries {
         let key = js.get(&pair, "0")?;
         if !js.call::<bool, _>("own", (next.clone(), key.clone()))? {
