@@ -112,7 +112,7 @@ snapshot(new Map([
   ['buffer', '6.0.3'], ['base64-js', '1.5.1'], ['ieee754', '1.2.1'],
 ]), "import * as dnsPacket from 'dns-packet'; export {dnsPacket};",
   'SubStoreDnsUtilities', ['dns-utilities.js', 'DNS-LICENSES.txt', 'dns-utilities.json']);
-const notificationEntry = fromBackend.resolve('shoutrrr-ts');
+const notificationEntry = path.join(root, 'backend/node_modules/shoutrrr-ts/dist/index.js');
 const adapterPath = path.join(__dirname, 'notification-adapter.cjs');
 const notification = require(adapterPath)(fs.readFileSync(notificationEntry));
 const nativeEntry = path.join(path.dirname(notificationEntry), 'native.js');
