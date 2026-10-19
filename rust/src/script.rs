@@ -556,7 +556,13 @@ async fn process<'js>(
                 }
             }
         } else if name == "Resolve Domain Operator" {
-            let args = crate::script_network::prefer(js, [js.get(&item, "args")?, Object::new(js.ctx.clone())?.into_value()])?;
+            let args = crate::script_network::prefer(
+                js,
+                [
+                    js.get(&item, "args")?,
+                    Object::new(js.ctx.clone())?.into_value(),
+                ],
+            )?;
             input = crate::script_dns::apply(js, input, args).await?;
         }
     }

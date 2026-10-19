@@ -1093,8 +1093,7 @@ fn loon_wireguard(line: &str, non_finite: &mut bool) -> Option<Value> {
         return None;
     };
     let port = port.parse::<f64>().ok()?;
-    let mut proxy =
-        json!({"type":"wireguard","name":codec::trim(name),"server":server,"port":codec::numeric(port)});
+    let mut proxy = json!({"type":"wireguard","name":codec::trim(name),"server":server,"port":codec::numeric(port)});
     for (output, input) in [
         ("ip", "interface-ip"),
         ("ipv6", "interface-ipv6"),

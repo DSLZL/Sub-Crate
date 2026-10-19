@@ -11,11 +11,39 @@ pub enum Error {
 }
 
 pub(crate) const ALIASES: [&str; 33] = [
-    "qx", "QX", "QuantumultX", "surge", "Surge", "SurgeMac", "Loon", "Clash",
-    "meta", "clashmeta", "clash.meta", "Clash.Meta", "ClashMeta", "mihomo", "Mihomo",
-    "uri", "URI", "v2", "v2ray", "V2Ray", "json", "JSON", "stash", "Stash",
-    "shadowrocket", "Shadowrocket", "ShadowRocket", "surfboard", "Surfboard",
-    "singbox", "sing-box", "egern", "Egern",
+    "qx",
+    "QX",
+    "QuantumultX",
+    "surge",
+    "Surge",
+    "SurgeMac",
+    "Loon",
+    "Clash",
+    "meta",
+    "clashmeta",
+    "clash.meta",
+    "Clash.Meta",
+    "ClashMeta",
+    "mihomo",
+    "Mihomo",
+    "uri",
+    "URI",
+    "v2",
+    "v2ray",
+    "V2Ray",
+    "json",
+    "JSON",
+    "stash",
+    "Stash",
+    "shadowrocket",
+    "Shadowrocket",
+    "ShadowRocket",
+    "surfboard",
+    "Surfboard",
+    "singbox",
+    "sing-box",
+    "egern",
+    "Egern",
 ];
 
 fn component(raw: &str) -> Option<String> {
@@ -60,9 +88,7 @@ fn finite_int(raw: &str) -> Result<Value, Error> {
         .skip(usize::from(raw.starts_with(['+', '-'])))
         .find(|(_, c)| !c.is_ascii_digit())
         .map_or(raw.len(), |(index, _)| index);
-    let number = raw[..end]
-        .parse::<f64>()
-        .unwrap_or(f64::NAN);
+    let number = raw[..end].parse::<f64>().unwrap_or(f64::NAN);
     Ok(codec::numeric(number))
 }
 
@@ -1656,7 +1682,11 @@ fn ssr(line: &str) -> Result<Option<Value>, Error> {
         }
     }
     proxy["udp"] = json!(true);
-    proxy["port"] = if port.is_empty() {codec::numeric(f64::NAN)} else {normalized_port(port)};
+    proxy["port"] = if port.is_empty() {
+        codec::numeric(f64::NAN)
+    } else {
+        normalized_port(port)
+    };
     normalize_endpoint(&mut proxy)?;
     Ok(Some(proxy))
 }
@@ -2167,25 +2197,26 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
         let range = raw
             .split_once('-')
             .map(|(min, max)| (codec::trim(min), codec::trim(max)));
-        let interval =
-            if let Some((min, max)) = range.filter(|(min, max)| digits(min) && digits(max)) {
-                let min = finite_int(min)?;
-                let max = finite_int(max)?;
-                if codec::to_number(&min) > 0.0 && codec::to_number(&min) <= codec::to_number(&max) {
-                    Some((min, Some(max)))
-                } else {
-                    None
-                }
-            } else if digits(raw) {
-                let value = finite_int(raw)?;
-                if codec::to_number(&value) > 0.0 {
-                    Some((value, None))
-                } else {
-                    None
-                }
+        let interval = if let Some((min, max)) =
+            range.filter(|(min, max)| digits(min) && digits(max))
+        {
+            let min = finite_int(min)?;
+            let max = finite_int(max)?;
+            if codec::to_number(&min) > 0.0 && codec::to_number(&min) <= codec::to_number(&max) {
+                Some((min, Some(max)))
             } else {
                 None
-            };
+            }
+        } else if digits(raw) {
+            let value = finite_int(raw)?;
+            if codec::to_number(&value) > 0.0 {
+                Some((value, None))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         if let Some((min, max)) = interval {
             proxy["hop-interval"] = min;
             if let Some(max) = max {
@@ -2208,7 +2239,10 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
         proxy["interface-name"] = proxy["interface"].clone();
         proxy.as_object_mut().unwrap().shift_remove("interface");
     }
-    if let Some(port) = proxy["port"].as_str().filter(|_| codec::nonfinite(&proxy["port"]).is_none()) {
+    if let Some(port) = proxy["port"]
+        .as_str()
+        .filter(|_| codec::nonfinite(&proxy["port"]).is_none())
+    {
         proxy["port"] = normalized_port(port);
     }
     if let Some(cipher) = proxy["cipher"].as_str() {
@@ -2291,8 +2325,9 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
         let network = field_text(proxy, "network");
         let key = format!("{network}-opts");
         let format_path = |value: &Value| {
-            if let Some(path) = value.as_str() {
-                let path = codec::trim(path);
+            if value.is_string() || value.is_number() {
+                let path = codec::js_string(value);
+                let path = codec::trim(&path);
                 json!(if path.starts_with('/') {
                     path.to_owned()
                 } else {
@@ -3731,7 +3766,11 @@ mod tests {
             random_port("0x1bb").ok().and_then(|value| value.as_f64()),
             Some(443.0)
         );
-        assert!(codec::nonfinite(&random_port("443;443").unwrap()).unwrap().is_nan());
+        assert!(
+            codec::nonfinite(&random_port("443;443").ok().unwrap())
+                .unwrap()
+                .is_nan()
+        );
     }
 
     #[test]

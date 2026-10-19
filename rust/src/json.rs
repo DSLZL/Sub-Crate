@@ -53,8 +53,20 @@ pub fn nonfinite(value: &Value) -> Option<f64> {
 }
 
 pub fn numeric(value: f64) -> Value {
-    if let Some(value) = serde_json::Number::from_f64(value) { Value::Number(value) }
-    else { Value::String(format!("{MARKER}number:{}", if value.is_nan() {"NaN"} else if value.is_sign_positive() {"Infinity"} else {"-Infinity"})) }
+    if let Some(value) = serde_json::Number::from_f64(value) {
+        Value::Number(value)
+    } else {
+        Value::String(format!(
+            "{MARKER}number:{}",
+            if value.is_nan() {
+                "NaN"
+            } else if value.is_sign_positive() {
+                "Infinity"
+            } else {
+                "-Infinity"
+            }
+        ))
+    }
 }
 
 pub fn trim(value: &str) -> &str {
@@ -205,7 +217,13 @@ pub fn stringify(value: &Value) -> String {
 
 pub fn js_string(value: &Value) -> String {
     if let Some(number) = nonfinite(value) {
-        return if number.is_nan() { "NaN".to_owned() } else if number.is_sign_positive() { "Infinity".to_owned() } else { "-Infinity".to_owned() };
+        return if number.is_nan() {
+            "NaN".to_owned()
+        } else if number.is_sign_positive() {
+            "Infinity".to_owned()
+        } else {
+            "-Infinity".to_owned()
+        };
     }
     match value {
         Value::String(value) => value.clone(),
@@ -231,7 +249,9 @@ pub fn pretty(value: &Value) -> Vec<u8> {
 }
 
 pub fn to_number(value: &Value) -> f64 {
-    if let Some(number) = nonfinite(value) { return number; }
+    if let Some(number) = nonfinite(value) {
+        return number;
+    }
     match value {
         Value::Null => 0.0,
         Value::Bool(value) => {
@@ -294,7 +314,11 @@ pub fn number(value: &serde_json::Number) -> String {
 }
 
 fn serialized(input: &str) -> String {
-    let input = ["NaN", "Infinity", "-Infinity"].into_iter().fold(input.to_owned(), |input, number| input.replace(&format!("\"{MARKER}number:{number}\""), "null"));
+    let input = ["NaN", "Infinity", "-Infinity"]
+        .into_iter()
+        .fold(input.to_owned(), |input, number| {
+            input.replace(&format!("\"{MARKER}number:{number}\""), "null")
+        });
     let mut input = input.as_str();
     let mut output = String::with_capacity(input.len());
     let mut quoted = false;
@@ -387,9 +411,16 @@ mod tests {
         let literal = parse(r#""\ue000number:NaN""#).unwrap();
         assert!(nonfinite(&literal).is_none());
         assert_eq!(parse(&stringify(&literal)).unwrap(), literal);
-        let numbers = json!([numeric(f64::NAN), numeric(f64::INFINITY), numeric(f64::NEG_INFINITY)]);
+        let numbers = json!([
+            numeric(f64::NAN),
+            numeric(f64::INFINITY),
+            numeric(f64::NEG_INFINITY)
+        ]);
         assert_eq!(stringify(&numbers), "[null,null,null]");
-        assert_eq!(String::from_utf8(pretty(&numbers)).unwrap(), "[\n  null,\n  null,\n  null\n]");
+        assert_eq!(
+            String::from_utf8(pretty(&numbers)).unwrap(),
+            "[\n  null,\n  null,\n  null\n]"
+        );
         assert!(to_number(&numbers[0]).is_nan());
         assert_eq!(js_string(&numbers[1]), "Infinity");
         assert!(!crate::state::truthy(&numbers[0]));
