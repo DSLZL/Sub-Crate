@@ -662,6 +662,7 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     utils.set("Base64", scripts.get::<_, JsValue>("Base64")?)?;
     utils.set("ipAddress", scripts.get::<_, JsValue>("ipAddress")?)?;
     utils.set("JSON5", utilities.get::<_, JsValue>("JSON5")?)?;
+    crate::script_helpers::initialize(ctx, &utils)?;
     globals.set("ProxyUtils", utils)?;
     Ok(())
 }

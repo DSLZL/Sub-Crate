@@ -1,4 +1,133 @@
 [
+  {
+    "id": "PC-native-script-yaml-cache",
+    "source": "PC13-PC17 retained assertions; utils/yaml.js and utils/script-resource-cache.js",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/preview/sub",
+        "body": {
+          "name": "public-helpers",
+          "source": "local",
+          "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#helper",
+          "process": [
+            {
+              "type": "Script Operator",
+              "args": {
+                "content": "async function operator(proxies) {\n  const OriginalDate = Date;\n  let probeNow = 4102444800000;\n  globalThis.Date = class extends OriginalDate {\n    constructor(...args) { super(...(args.length ? args : [probeNow])); }\n    static now() { return probeNow; }\n  };\n  try {\n  const passed = [], observations = {};\n  const assert = (value, message) => { if (!value) throw new Error(message); };\n  const equal = (actual, expected, message) => assert(JSON.stringify(actual) === JSON.stringify(expected), message);\n  const copy = value => JSON.parse(JSON.stringify(value));\n  const check = async (id, callback) => { observations[id] = await callback(); passed.push(id); };\n  const processorHost = {scriptResourceCache, YAML: yaml};\n  const cache = processorHost.scriptResourceCache;\r\n  await check('PC13-script-cache-defaults-and-ttl-coercion', async () => {\r\n    const now = Date.now();\r\n    const initial = copy($substore.read('settings'));\r\n    cache.revokeAll();\r\n    for (const ttl of [undefined, null, 0, -1, '', false, 'invalid', Infinity]) {\r\n      assert(cache.set('default', false, ttl) === undefined, 'set returns undefined');\r\n      assert(cache.gettime('default') === now + 172800000, 'invalid TTL uses 48 hours');\r\n    }\r\n    for (const [ttl, milliseconds] of [['12.5', 12.5], [true, 1], [20, 20]]) {\r\n      cache.set('explicit', 0, ttl);\r\n      assert(cache.gettime('explicit') === now + milliseconds, 'positive TTL is milliseconds');\r\n    }\r\n    $substore.write({...initial, scriptCacheTtl: '1.5'}, 'settings');\r\n    cache.set('settings', '', NaN);\r\n    assert(cache.gettime('settings') === now + 1500, 'settings TTL is seconds');\r\n    for (const ttl of ['invalid', -2, Infinity]) {\r\n      $substore.write({...initial, scriptCacheTtl: ttl === Infinity ? 'Infinity' : ttl}, 'settings');\r\n      cache.set('settings', null);\r\n      assert(cache.gettime('settings') === now + 172800000, 'invalid settings fallback');\r\n    }\r\n    $substore.write(initial, 'settings');\r\n    cache.revokeAll();\r\n    return {defaultMs: 172800000, explicitMs: [12.5, 1, 20], settingsMs: 1500};\r\n  });\r\n\r\n  await check('PC14-script-cache-expiry-removal-and-prefix', async () => {\r\n    const start = probeNow;\r\n    cache.set('zero', 0, 10);\r\n    cache.set('false', false, 10);\r\n    cache.set('nil', null, 10);\r\n    cache.set('empty', '', 10);\r\n    probeNow += 10;\r\n    equal([cache.get('zero'), cache.get('false'), cache.get('nil'), cache.get('empty')], [0, false, null, ''], 'inclusive expiry retains falsy values');\r\n    assert(cache.gettime('zero') === start + 10, 'gettime inclusive boundary');\r\n    assert(cache.get('zero', 1) === null && cache.resourceCache.zero !== undefined, 'future threshold does not remove');\r\n    probeNow += 1;\r\n    assert(cache.gettime('zero') === null && cache.get('zero', 0, true) === null, 'expired remove');\r\n    assert(!Object.hasOwn(cache.resourceCache, 'zero'), 'remove persists deletion');\r\n    cache.set('prefix-a', {unknown: false}, 20);\r\n    cache.set('other-a', '保留🙂\\r\\n', 20);\r\n    cache._cleanup('prefix-', 21);\r\n    assert(!Object.hasOwn(cache.resourceCache, 'prefix-a') && cache.get('other-a') === '保留🙂\\r\\n', 'prefix cleanup threshold');\r\n    cache._cleanup();\r\n    equal(Object.keys(cache.resourceCache), ['other-a'], 'expired keys cleaned');\r\n    assert(cache.get('missing') === null && cache.gettime('missing') === null, 'missing cache results');\r\n    probeNow = start;\r\n    cache.revokeAll();\r\n    return {inclusive: [0, false, null, ''], missing: null, prefixRetained: '保留🙂\\r\\n'};\r\n  });\r\n\r\n  await check('PC15-script-cache-root-persistence-and-aliases', async () => {\r\n    const value = {unknown: {nil: null, zero: 0, flag: false, empty: ''}, text: '订阅🙂\\r\\n', script: \"require('node:fs')\"};\r\n    cache.set('restart', value, 60000);\r\n    assert(cache.get('restart') === value, 'cache retains value aliases');\r\n    value.unknown.zero = false;\r\n    cache._persist();\r\n    equal(JSON.parse($substore.read('#sub-store-cached-script-resource')), cache.resourceCache, 'public root contains JSON string');\r\n    assert(!Object.hasOwn($substore.cache, '#sub-store-cached-script-resource'), 'script cache belongs to root');\r\n    assert(typeof $substore.root['sub-store-cached-script-resource'] === 'string', 'serialized cache is not an object');\r\n    return copy(cache.resourceCache);\r\n  });\r\n\r\n  await check('PC16-project-yaml-parse-merge-tags-and-errors', async () => {\r\n    const yaml = processorHost.YAML;\r\n    const merged = yaml.safeLoad('base: &base {unknown: false, zero: 0}\\nchild: {<<: *base, text: \"订阅🙂\"}\\n');\r\n    equal(merged, {base: {unknown: false, zero: 0}, child: {unknown: false, zero: 0, text: '订阅🙂'}}, 'merge enabled by default');\r\n    equal(yaml.safeLoad('port: !<str> 0123\\n'), {port: '0123'}, 'legacy string tag retry');\r\n    assert(yaml.load('nil: null\\n').nil === null && yaml.parse('false') === false, 'public parse aliases');\r\n    let rejected = false;\r\n    try { yaml.safeLoad('x: 1\\nx: 2\\n'); } catch (error) { rejected = error.name === 'YAMLParseError'; }\r\n    assert(rejected, 'duplicate keys reject');\r\n    return merged;\r\n  });\r\n\r\n  await check('PC17-project-yaml-dump-options-and-json-boundary', async () => {\r\n    const yaml = processorHost.YAML;\r\n    const result = yaml.safeDump({z: ['订阅🙂'], a: {flag: false, zero: 0}}, {sortKeys: true, forceQuotes: true, quotingType: \"'\", noArrayIndent: true, lineWidth: -1});\r\n    equal(result, \"'a':\\n  'flag': false\\n  'zero': 0\\n'z':\\n- '订阅🙂'\\n\", 'legacy option aliases');\r\n    const shared = {nil: null};\r\n    const serialized = yaml.dump({a: shared, b: shared, missing: undefined}, {noRefs: true});\r\n    assert(!serialized.includes('&') && !serialized.includes('*') && !serialized.includes('missing'), 'JSON boundary and no references');\r\n    let rejected = false;\r\n    const circular = {}; circular.self = circular;\r\n    try { yaml.stringify(circular); } catch (error) { rejected = error instanceof TypeError; }\r\n    assert(rejected, 'circular input rejects');\r\n    return {options: result, serialized};\r\n  });\r\n\r\n\n    proxies[0].helpersVerified = passed;\n    proxies[0].helperResults = observations;\n    return proxies;\n  } finally { globalThis.Date = OriginalDate; }\n}"
+              }
+            }
+          ]
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "data": {
+              "processed": [
+                {
+                  "helpersVerified": [
+                    "PC13-script-cache-defaults-and-ttl-coercion",
+                    "PC14-script-cache-expiry-removal-and-prefix",
+                    "PC15-script-cache-root-persistence-and-aliases",
+                    "PC16-project-yaml-parse-merge-tags-and-errors",
+                    "PC17-project-yaml-dump-options-and-json-boundary"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "PC-native-script-pure-helpers",
+    "source": "PC18-PC25 retained assertions; utils/index.js, utils/geo.js and pinned utility packages",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/preview/sub",
+        "body": {
+          "name": "public-helpers",
+          "source": "local",
+          "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#helper",
+          "process": [
+            {
+              "type": "Script Operator",
+              "args": {
+                "content": "async function operator(proxies) {\n  const passed = [], observations = {};\n  const assert = (value, message) => { if (!value) throw new Error(message); };\n  const equal = (actual, expected, message) => assert(JSON.stringify(actual) === JSON.stringify(expected), message);\n  const copy = value => JSON.parse(JSON.stringify(value));\n  const check = async (id, callback) => { observations[id] = await callback(); passed.push(id); };\nglobalThis.runHelperContracts = async function(check, host, operator, assert, equal) {\n  const utils = host.ProxyUtils;\n  const flow = host.flowUtils;\n  function errorName(callback) {\n    try { callback(); } catch (error) { return error.name; }\n    throw new Error('Expected helper rejection');\n  }\n\n  await check('PC18-ip-validation-and-coercion', () => {\n    const valid4 = ['0.0.0.0', '127.0.0.1', '255.255.255.255'];\n    const valid6 = ['::', '::1', '2001:db8::1', '::ffff:192.0.2.1', 'fe80::1%eth0'];\n    const invalid = ['01.2.3.4', '256.1.1.1', '1.2.3', '127.0.0.1/24', '[::1]', '2001:::1', ' ::1', '', null, false, 0, undefined];\n    assert(valid4.every(ip => utils.isIPv4(ip) && !utils.isIPv6(ip) && utils.isIP(ip)), 'IPv4 boundaries');\n    assert(valid6.every(ip => utils.isIPv6(ip) && !utils.isIPv4(ip) && utils.isIP(ip)), 'IPv6 compressed/mapped/zone');\n    assert(invalid.every(ip => !utils.isIP(ip)), 'invalid addresses');\n    const coerced = {toString: () => '192.0.2.1'};\n    assert(utils.isIPv4(coerced) && utils.isIP(['::1']), 'regex string coercion is retained');\n    assert(errorName(() => utils.isIP(Symbol('ip'))) === 'TypeError', 'Symbol coercion rejects');\n    return {valid4, valid6, invalidCount: invalid.length, coerced: true};\n  });\n\n  await check('PC19-address4-construction-subnets-and-bigint', () => {\n    const {Address4, AddressError} = utils.ipAddress;\n    const ip = new Address4('192.168.1.42/24');\n    const result = {form: ip.correctForm(), start: ip.startAddress().correctForm(), end: ip.endAddress().correctForm(),\n      bytes: ip.toArray(), integer: ip.bigInt().toString(), member: ip.isInSubnet(new Address4('192.168.1.0/24')),\n      outside: ip.isInSubnet(new Address4('192.168.2.0/24')), private: ip.isPrivate(), mask: ip.subnetMask};\n    equal(result, {form: '192.168.1.42', start: '192.168.1.0', end: '192.168.1.255', bytes: [192,168,1,42],\n      integer: '3232235818', member: true, outside: false, private: true, mask: 24}, 'Address4 values');\n    assert(Address4.isValid('192.0.2.1/24') && !Address4.isValid('300.1.1.1'), 'CIDR validation differs from public regex');\n    assert(Address4.fromInteger(0xffffffff).correctForm() === '255.255.255.255', 'integer boundary');\n    try { new Address4('invalid'); throw new Error('accepted invalid IPv4'); }\n    catch (error) { assert(error instanceof AddressError && error.message === 'Invalid IPv4 address.', 'public AddressError identity/message'); }\n    return result;\n  });\n\n  await check('PC20-address6-construction-mapping-and-url', () => {\n    const {Address6} = utils.ipAddress;\n    const ip = new Address6('2001:db8::1234/64');\n    const url = Address6.fromURL('http://[2001:db8::1]:8080/');\n    const result = {form: ip.correctForm(), canonical: ip.canonicalForm(), start: ip.startAddress().correctForm(),\n      end: ip.endAddress().correctForm(), mask: ip.subnetMask, mapped: Address6.fromAddress4('192.0.2.1').to4in6(),\n      loopback: new Address6('::1').isLoopback(), linkLocal: new Address6('fe80::1').isLinkLocal(),\n      integer: Address6.fromBigInt(1n).bigInt().toString(), url: url.address.correctForm(), port: url.port};\n    equal(result, {form: '2001:db8::1234', canonical: '2001:0db8:0000:0000:0000:0000:0000:1234', start: '2001:db8::',\n      end: '2001:db8::ffff:ffff:ffff:ffff', mask: 64, mapped: '::ffff:192.0.2.1', loopback: true, linkLocal: true,\n      integer: '1', url: '2001:db8::1', port: 8080}, 'Address6 values');\n    assert(new Address6('fe80::1%eth0').zone === '%eth0' && Address6.isValid('2001:db8::1/64'), 'zone and CIDR');\n    assert(errorName(() => new Address6('2001:::1')) === 'AddressError', 'IPv6 parse rejection');\n    return result;\n  });\n\n  await check('PC21-uuid-shape-and-types', () => {\n    const values = ['00000000-0000-0000-0000-000000000000', 'ABCDEFAB-CDEF-FFFF-0000-ABCDEFABCDEF',\n      'abcdefabcdefabcdefabcdefabcdefab', '00000000-0000-0000-0000-00000000000g', '', 0, null, undefined,\n      {toString: () => '00000000-0000-0000-0000-000000000000'}];\n    const result = values.map(utils.isValidUUID);\n    equal(result, [true, true, false, false, false, false, false, false, false], 'UUID is a string shape check, not a version check');\n    return result;\n  });\n\n  await check('PC22-port-selection-boundaries-and-legacy-inputs', () => {\n    const original = Math.random;\n    const choose = (input, draws) => {\n      let index = 0;\n      Math.random = () => { assert(index < draws.length, 'unexpected random draw'); return draws[index++]; };\n      const value = utils.getRandomPort(input);\n      assert(index === draws.length, 'all expected draws consumed');\n      return value;\n    };\n    try {\n      const result = [choose('80,443/1000-1002', [0]), choose('80,443/1000-1002', [.4]),\n        choose('80,443/1000-1002', [.99, 0]), choose('80,443/1000-1002', [.99, .999]),\n        choose(' 8080 ', [0]), choose('', [0]), choose('10-5', [0, 0])];\n      equal(result, [80, 443, 1000, 1002, 8080, 0, 10], 'part selection, inclusive range and legacy coercion');\n      assert(Number.isNaN(choose('invalid', [0])), 'invalid numeric input yields NaN');\n      assert(errorName(() => utils.getRandomPort(80)) === 'TypeError', 'non-string port rejects');\n      return result;\n    } finally { Math.random = original; }\n  });\n\n  await check('PC23-country-flags-iso-and-unicode-removal', () => {\n    const names = ['香港 01', 'Tokyo', 'us-01', 'US-01', 'CN2', '内蒙古', '剩余流量', '🇯🇵 mystery', '🇯🇵 美国', 'mystery'];\n    const result = names.map(name => ({flag: utils.getFlag(name), iso: utils.getISO(name) ?? null}));\n    equal(result, [{flag:'🇭🇰',iso:'HK'}, {flag:'🇯🇵',iso:'JP'}, {flag:'🏴‍☠️',iso:null}, {flag:'🇺🇸',iso:'US'},\n      {flag:'🏴‍☠️',iso:null}, {flag:'🇨🇳',iso:'CN'}, {flag:'🏳️‍🌈',iso:'EXP'}, {flag:'🇯🇵',iso:'JP'},\n      {flag:'🇺🇸',iso:'US'}, {flag:'🏴‍☠️',iso:null}], 'keyword priority, case-sensitive ISO and existing flags');\n    assert(utils.removeFlag(' 🇭🇰 🇯🇵🏴‍☠️🏳️‍🌈 节点🙂 ') === '节点🙂', 'remove full Unicode flag sequences');\n    assert(errorName(() => utils.getFlag(null)) === 'TypeError' && errorName(() => utils.removeFlag(0)) === 'TypeError', 'name type errors');\n    return result;\n  });\n\n  await check('PC24-json5-parsing-reviver-and-own-properties', () => {\n    const parsed = utils.JSON5.parse(\"// source\\n{unquoted:'订阅🙂', hex:0x10, plus:+2, trailing:[false,0,null,], infinity:Infinity, nan:NaN, '__proto__':{polluted:true}}\", (key, value) => key === 'hex' ? value + 1 : value);\n    assert(parsed.unquoted === '订阅🙂' && parsed.hex === 17 && parsed.plus === 2 && parsed.infinity === Infinity && Number.isNaN(parsed.nan), 'JSON5 extensions/reviver');\n    equal(parsed.trailing, [false,0,null], 'falsy values retained');\n    assert(Object.hasOwn(parsed, '__proto__') && parsed.__proto__.polluted === true && ({}).polluted === undefined, 'own prototype-named property');\n    assert(errorName(() => utils.JSON5.parse('{broken:}')) === 'SyntaxError', 'invalid JSON5');\n    return {text: parsed.unquoted, integer: parsed.hex, values: parsed.trailing, infinity: parsed.infinity === Infinity, nan: Number.isNaN(parsed.nan)};\n  });\n\n  await check('PC25-json5-stringify-options-and-errors', () => {\n    const source = {z:'订阅🙂', a:NaN, inf:Infinity, missing:undefined, values:[false,0,null,undefined]};\n    const text = utils.JSON5.stringify(source, ['z','a','values'], 2);\n    equal(text, \"{\\n  z: '订阅🙂',\\n  a: NaN,\\n  values: [\\n    false,\\n    0,\\n    null,\\n    null,\\n  ],\\n}\", 'JSON5 formatting and replacer');\n    assert(utils.JSON5.stringify(undefined) === undefined && utils.JSON5.stringify({inf:Infinity}) === '{inf:Infinity}', 'undefined and non-JSON numbers');\n    const circular = {}; circular.self = circular;\n    assert(errorName(() => utils.JSON5.stringify(circular)) === 'TypeError', 'circular JSON5 rejects');\n    return text;\n  });\n\n};\nawait runHelperContracts(check, {ProxyUtils}, undefined, assert, equal);\nproxies[0].helpersVerified = passed;\nproxies[0].helperResults = observations;\nreturn proxies;\n}"
+              }
+            }
+          ]
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "data": {
+              "processed": [
+                {
+                  "helpersVerified": [
+                    "PC18-ip-validation-and-coercion",
+                    "PC19-address4-construction-subnets-and-bigint",
+                    "PC20-address6-construction-mapping-and-url",
+                    "PC21-uuid-shape-and-types",
+                    "PC22-port-selection-boundaries-and-legacy-inputs",
+                    "PC23-country-flags-iso-and-unicode-removal",
+                    "PC24-json5-parsing-reviver-and-own-properties",
+                    "PC25-json5-stringify-options-and-errors"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "PC-native-script-cache-restart",
+    "source": "PC15 root cache persistence in a fresh actual service",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/preview/sub",
+        "body": {
+          "name": "public-helpers",
+          "source": "local",
+          "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#helper",
+          "process": [
+            {
+              "type": "Script Operator",
+              "args": {
+                "content": "function operator(proxies) { const value = scriptResourceCache.get('restart'); if (!value || value.unknown.zero !== false || value.unknown.flag !== false || value.script !== \"require('node:fs')\") throw new Error('cache restart lost data'); proxies[0].cacheRestart = value; return proxies; }"
+              }
+            }
+          ]
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "data": {
+              "processed": [
+                {
+                  "cacheRestart": {
+                    "unknown": {
+                      "nil": null,
+                      "zero": false,
+                      "flag": false,
+                      "empty": ""
+                    },
+                    "text": "订阅🙂\r\n",
+                    "script": "require('node:fs')"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
 {
   "id": "PC-native-local-filters",
   "source": "backend/src/core/proxy-utils/processors/index.js:1366-1485",

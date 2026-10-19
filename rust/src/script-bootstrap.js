@@ -25,6 +25,14 @@ globalThis.__language = {
   iterable: value => [...value],
   random: () => Math.random(),
   now: () => Date.now(),
+  dateTime: () => new Date().getTime(),
+  number: value => Number(value),
+  multiply: (a, b) => a * b,
+  entries: value => Object.entries(value),
+  spread: (base, value) => ({...base, ...value}),
+  except: (value, excluded) => Object.fromEntries(Reflect.ownKeys(Object(value))
+    .filter(key => !excluded.includes(key) && Object.prototype.propertyIsEnumerable.call(value, key))
+    .map(key => [key, value[key]])),
   resolve: value => Promise.resolve(value),
   sameType: (a, b) => typeof a === typeof b && (a === null) === (b === null),
 };

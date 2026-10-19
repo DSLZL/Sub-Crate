@@ -3,6 +3,8 @@
   "frontend_commit": "4bd7b0acbe65466b933ccea14fc61dbebe036ead",
   "suites": {
     "conversion-local": [
+      "PC-native-script-yaml-cache",
+      "PC-native-script-pure-helpers",
       "R04-type-mappings",
       "R04-options-duplicates-missing-content",
       "R04-preprocess-boundaries",
@@ -98,7 +100,11 @@
       "PC-native-script-pending-http",
       "PC-native-saved-download"
     ],
-    "conversion-local-restart": ["P05-local-subscription-restart", "PC-native-script-restart"],
+    "conversion-local-restart": [
+      "PC-native-script-cache-restart",
+      "P05-local-subscription-restart",
+      "PC-native-script-restart"
+    ],
     "service-state": [
       "D01-backup-seed", "C01-subscription-crud", "C02-rename-references",
       "D02-export-preserves-unknown", "C01-invalid-input",
@@ -436,7 +442,7 @@
       "N05-node-info-missing-server-and-recovery"
     ]
   },
-  "coverage_state": "207 executable fixtures; full suite intentionally fails until the complete inventory is accepted",
+  "coverage_state": "210 executable fixtures; full suite intentionally fails until the complete inventory is accepted",
   "pending_domains": [
     "artifacts",
     "files",
