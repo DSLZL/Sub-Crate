@@ -16,6 +16,8 @@
     "archive-core": ["F01-file-crud-and-runtime", "A01-file-archive-restore-conflict",
       "A05-subscription-collection-share-archive-lifecycle", "Y04-artifact-crud-and-archive-validation",
       "O01-sort-resources", "A03-sort-delete-and-artifact-restore", "A04-archive-errors"],
+    "sync-core": ["Y01-artifact-crud-and-sync", "Y02-artifact-errors",
+      "Y03-gist-artifact-create-update-delete", "Y06-native-batch-partial-and-local-sync"],
     "conversion-local": [
       "PC-native-conversion-helper-contracts",
       "PC-native-typed-input-boundaries",
@@ -159,6 +161,7 @@
       "T03-share-datetime-archive"
     ],
     "full": [
+      "Y06-native-batch-partial-and-local-sync",
       "M02-module-names-order-and-missing-delete",
       "M03-module-content-methods-and-encoded-name",
       "F02-file-normalization-and-order",
@@ -476,7 +479,7 @@
       "N05-node-info-missing-server-and-recovery"
     ]
   },
-  "coverage_state": "230 executable fixtures; full suite intentionally fails until the complete inventory is accepted",
+  "coverage_state": "231 executable fixtures; full suite intentionally fails until the complete inventory is accepted",
   "pending_domains": [
     "artifacts",
     "files",

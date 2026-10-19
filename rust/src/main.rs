@@ -32,9 +32,11 @@ mod script_mmdb;
 mod script_network;
 mod script_pipeline;
 mod script_tokens;
+mod script_sync;
 mod singbox_output;
 mod sort;
 mod state;
+mod sync;
 mod surge;
 mod surge_output;
 mod text_output;
@@ -824,11 +826,20 @@ fn api_path(raw: &str) -> Result<Option<String>, ()> {
                     json::encode(&percent_decode_str(name).decode_utf8().map_err(|_| ())?)
                 )),
                 "utils" => Some(format!("/api/utils/{}", name.to_ascii_lowercase())),
+                "sync" | "artifacts" => Some(format!("/api/{resource}/{}", name.to_ascii_lowercase())),
                 "proxy" | "rule" | "preview" | "sort" => {
                     Some(format!("/api/{resource}/{}", name.to_ascii_lowercase()))
                 }
                 _ => None,
             }
+        }
+        ["", api, sync, artifact, name]
+            if api.eq_ignore_ascii_case("api")
+                && sync.eq_ignore_ascii_case("sync")
+                && artifact.eq_ignore_ascii_case("artifact")
+                && !name.is_empty() =>
+        {
+            Some(format!("/api/sync/artifact/{}", json::encode(&percent_decode_str(name).decode_utf8().map_err(|_| ())?)))
         }
         ["", api, archives, id, restore]
             if api.eq_ignore_ascii_case("api")
@@ -1049,6 +1060,9 @@ async fn route(
         "responseHeaders":base.headers().iter().map(|(key,value)|(key.as_str().to_owned(),json!(value.to_str().unwrap_or("")))).collect::<serde_json::Map<String,Value>>()
     });
     if let Some(response) = archives::dispatch(&method, &path, &body, store).await {
+        return response;
+    }
+    if let Some(response) = sync::dispatch(&method, &path, store).await {
         return response;
     }
     if let Some(response) = artifacts::dispatch(&method, &path, &query, &body, store).await {

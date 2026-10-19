@@ -1007,6 +1007,18 @@ pub async fn run(
                                     "artifact-upload" => {
                                         crate::script_gist::artifact_upload(&js, input).await?
                                     }
+                                    "artifact-output" => crate::script_sync::output(&js, input).await
+                                        .map_err(|error| crate::script_sync::reason(&js, error))?,
+                                    "artifact-upload-result" => crate::script_sync::upload_result(&js, input)
+                                        .map_err(|error| crate::script_sync::reason(&js, error))?,
+                                    "artifact-warm" => {
+                                        crate::script_pipeline::artifact(ctx.clone(), input).await?;
+                                        js.value(true)?
+                                    }
+                                    "artifact-batch-size" => {
+                                        let size: f64 = js.call("number", (input,))?;
+                                        js.value(if size.is_finite() && size.floor() > 0.0 { size.floor() } else { 10.0 })?
+                                    }
                                     "module-name" => {
                                         let name = js.get(&input, "name")?;
                                         let name = if name.is_null() || name.is_undefined() {

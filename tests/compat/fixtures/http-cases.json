@@ -1,5 +1,25 @@
 [
   {
+    "id":"Y06-native-batch-partial-and-local-sync",
+    "source":"backend/src/restful/sync.js:1143,1234,1266,1279,1282; single and batch native production callers",
+    "steps":[
+      {"method":"PUT","path":"/api/artifacts","body":[],"expect":{"status":200}},
+      {"method":"POST","path":"/api/files","body":{"name":"batch-local","source":"local","content":"batch🙂\n"},"expect":{"status":201}},
+      {"method":"POST","path":"/api/artifacts","body":{"name":"local-only","type":"file","source":"batch-local","sync":true,"upload":false,"updated":1,"url":"https://stale.invalid/old","unknown":{"nil":null,"zero":0,"flag":false}},"expect":{"status":201}},
+      {"method":"POST","path":"/api/artifacts","body":{"name":"broken-output","type":"file","source":"missing-source","sync":true,"upload":false},"expect":{"status":201}},
+      {"path":"/api/sync/artifacts","expect":{"status":500,"json":{"status":"failed","error":{"code":"FAILED_TO_SYNC_ARTIFACTS","type":"InternalServerError","message":"Failed to sync all artifacts","details":"Reason: 同步配置成功 1 个, 失败 1 个, 详情请查看日志"}}}},
+      {"path":"/api/artifacts","capture":{"BATCH_LOCAL_UPDATED":{"pointer":"/data/0/updated","type":"integer"}},"expect":{"status":200,"json":{"status":"success","data":[{"name":"local-only","type":"file","source":"batch-local","sync":true,"upload":false,"updated":"{{BATCH_LOCAL_UPDATED}}","unknown":{"nil":null,"zero":0,"flag":false}},{"name":"broken-output","type":"file","source":"missing-source","sync":true,"upload":false}]}}},
+      {"path":"/api/sync/artifact/broken-output","expect":{"status":500,"json":{"status":"failed","error":{"code":"FAILED_TO_SYNC_ARTIFACT","type":"InternalServerError","message":"Failed to sync artifact broken-output","details":"Reason: Error: 找不到文件 missing-source"}}}},
+      {"method":"PATCH","path":"/api/artifact/broken-output","body":{"sync":false},"expect":{"status":200}},
+      {"path":"/api/sync/artifacts","expect":{"status":200,"json":{"status":"success"}}},
+      {"method":"PUT","path":"/api/artifacts","body":[{"name":"broken-only","type":"file","source":"missing-source","sync":true,"upload":false}],"expect":{"status":200}},
+      {"path":"/api/sync/artifacts","expect":{"status":500,"json":{"status":"failed","error":{"code":"FAILED_TO_SYNC_ARTIFACTS","type":"InternalServerError","message":"Failed to sync all artifacts","details":"Reason: 同步配置 broken-only 生成失败 详情请查看日志"}}},"state":{"artifacts":[{"name":"broken-only","type":"file","source":"missing-source","sync":true,"upload":false}]}},
+      {"method":"PUT","path":"/api/artifacts","body":[],"expect":{"status":200}},
+      {"path":"/api/sync/artifacts","expect":{"status":200,"json":{"status":"success"}}},
+      {"method":"DELETE","path":"/api/file/batch-local?mode=permanent","expect":{"status":200}}
+    ]
+  },
+  {
     "id": "PC-native-conversion-helper-contracts",
     "source": "PC89-PC104 retained conversion helper contracts bound to the actual Rust service",
     "steps": [
