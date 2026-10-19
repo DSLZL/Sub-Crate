@@ -1,7 +1,7 @@
 use crate::conversion::Error;
 use crate::json as codec;
 use crate::state::truthy;
-use rquickjs::{Array, Context, Ctx, Exception, Function, Object, Runtime, Value as JsValue};
+use rquickjs::{Context, Ctx, Exception, Function, Object, Runtime, Value as JsValue};
 use serde_json::Value;
 
 enum Parsed {
@@ -88,7 +88,7 @@ impl Parser {
             let result = (|| -> rquickjs::Result<String> {
                 let utilities: Object = ctx.globals().get("SubStoreUtilities")?;
                 let dump: Function = utilities.get("stringifyYaml")?;
-                let content = ctx.json_parse(codec::stringify(value))?;
+                let content = crate::js_values::decode(&ctx, value)?;
                 let text: String = if defaults {
                     dump.call((content,))?
                 } else {
@@ -221,23 +221,14 @@ impl Parser {
                 }) {
                     return Ok(None);
                 }
-                let stringify: Function = ctx.eval(
-                    "(value) => { let nonfinite = false; const text = JSON.stringify(value, \
-                    (_, field) => { if (typeof field === 'number' && !Number.isFinite(field)) \
-                    nonfinite = true; return field; }); return [text, nonfinite]; }",
-                )?;
-                let serialized: Array = match stringify.call((value,)) {
+                let projected = match crate::js_values::project(&ctx, value) {
                     Ok(value) => value,
                     Err(_) => {
                         ctx.catch();
                         return Ok(Some(Parsed::Deferred));
                     }
                 };
-                if serialized.get::<bool>(1)? {
-                    return Ok(Some(Parsed::Deferred));
-                }
-                let text: String = serialized.get(0)?;
-                Ok(codec::parse(&text).ok().map(Parsed::Proxy))
+                Ok(Some(Parsed::Proxy(projected)))
             })();
             let Some(parsed) = (match result {
                 Ok(value) => value,

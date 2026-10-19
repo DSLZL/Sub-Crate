@@ -39,5 +39,7 @@ async function operator(proxies) {
     });
     $substore.write({passed},'m3-native-dns-mmdb');
     return proxies.map(proxy=>({...proxy,dnsMmdbVerified:passed.length}));
+  } catch(error) {
+    return proxies.map(proxy=>({...proxy,dnsMmdbError:String(error),dnsMmdbPassed:passed}));
   } finally {globalThis.Date=DateBefore;Math.random=random;}
 }

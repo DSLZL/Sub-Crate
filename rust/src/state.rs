@@ -357,6 +357,7 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
 }
 
 pub fn truthy(value: &Value) -> bool {
+    if let Some(number) = crate::json::nonfinite(value) { return !number.is_nan(); }
     match value {
         Value::Null => false,
         Value::Bool(value) => *value,

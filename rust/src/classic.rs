@@ -26,7 +26,7 @@ pub(crate) fn strip_quotes(raw: &str, single: bool, trim: bool) -> &str {
     }
 }
 
-pub(crate) fn digits(raw: &str, non_finite: &mut bool) -> Option<Option<Value>> {
+pub(crate) fn digits(raw: &str, _non_finite: &mut bool) -> Option<Option<Value>> {
     let end = raw.bytes().take_while(u8::is_ascii_digit).count();
     if end == 0 {
         return Some(None);
@@ -35,11 +35,7 @@ pub(crate) fn digits(raw: &str, non_finite: &mut bool) -> Option<Option<Value>> 
         return None;
     }
     let number = raw[..end].parse::<f64>().ok()?;
-    if !number.is_finite() {
-        *non_finite = true;
-        return None;
-    }
-    Some(Some(json!(number)))
+    Some(Some(codec::numeric(number)))
 }
 
 pub(crate) fn boolean(raw: &str) -> Option<Option<Value>> {
@@ -992,7 +988,7 @@ fn wg_text<'a>(raw: &'a str, key: &str) -> Option<&'a str> {
     None
 }
 
-fn wg_number(raw: &str, key: &str, non_finite: &mut bool) -> Option<Value> {
+fn wg_number(raw: &str, key: &str, _non_finite: &mut bool) -> Option<Value> {
     for tail in wg_values(raw, key) {
         let value = tail.trim_start_matches(char::is_whitespace);
         let value = value.strip_prefix('"').unwrap_or(value);
@@ -1006,11 +1002,7 @@ fn wg_number(raw: &str, key: &str, non_finite: &mut bool) -> Option<Value> {
             .trim_start_matches(char::is_whitespace);
         if rest.is_empty() || rest.starts_with(',') {
             let number = value[..end].parse::<f64>().ok()?;
-            if !number.is_finite() {
-                *non_finite = true;
-                return None;
-            }
-            return Some(json!(number));
+            return Some(codec::numeric(number));
         }
     }
     None
@@ -1101,12 +1093,8 @@ fn loon_wireguard(line: &str, non_finite: &mut bool) -> Option<Value> {
         return None;
     };
     let port = port.parse::<f64>().ok()?;
-    if !port.is_finite() {
-        *non_finite = true;
-        return None;
-    }
     let mut proxy =
-        json!({"type":"wireguard","name":codec::trim(name),"server":server,"port":port});
+        json!({"type":"wireguard","name":codec::trim(name),"server":server,"port":codec::numeric(port)});
     for (output, input) in [
         ("ip", "interface-ip"),
         ("ipv6", "interface-ipv6"),

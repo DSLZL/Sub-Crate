@@ -251,7 +251,7 @@ fn native_parse<'js>(ctx: Ctx<'js>, raw: JsValue<'js>) -> rquickjs::Result<JsVal
     let raw = js.text(raw)?;
     let proxies = conversion::parse(&json!(codec::encode(&raw)))
         .map_err(|error| js.error(&conversion_message(error)))?;
-    js.ctx.json_parse(codec::stringify(&json!(proxies)))
+    crate::js_values::decode(&js.ctx, &json!(proxies))
 }
 
 fn conversion_message(error: conversion::Error) -> String {

@@ -7,6 +7,7 @@ mod conversion;
 mod dns_transport;
 mod egern_output;
 mod js_language;
+mod js_values;
 mod json;
 mod mmdb;
 mod processors;
