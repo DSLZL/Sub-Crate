@@ -95,13 +95,13 @@ async function operator(proxies) {
     });
     await check('DL09-native-flow-ttl-and-cache-before-validation', async () => {
       await fetch('/text/flow#headersCacheTtl=2&validCheck&noFlow');
-      equal(entry(id('/text/flow'),'headers'),{time:probeNow+2000,data:'upload=1; download=2; total=100; expire=4102444800'},'flow TTL');
+      equal(entry(id('/text/flow'),'headers-resource'),{time:probeNow+2000,data:'upload=1; download=2; total=100; expire=4102444800'},'flow TTL');
       equal(await fetch('/text/flow-options#validCheck',{noFlow:true}),text,'options bypass');
       equal(await fetch('/text/flow-valid#validCheck'),text,'valid flow reuses headers');
       await rejects(()=>fetch('/text/flow-exhausted#validCheck'),'流量已用完');
       equal(entry(id('/text/flow-exhausted')).data,text,'cache write precedes quota validation');
       equal(await fetch('/text/flow-exhausted#validCheck&noFlow'),text,'fragment bypasses exhausted cached flow');
-      return {header:entry(id('/text/flow'),'headers'),bypass:true,validation:true,exhaustedCached:true};
+      return {header:entry(id('/text/flow'),'headers-resource'),bypass:true,validation:true,exhaustedCached:true};
     });
     await check('DL10-native-status-empty-timeout-and-recovery', async () => {
       await rejects(()=>fetch('/status/404'),'statusCode: 404');

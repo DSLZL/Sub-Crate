@@ -5,7 +5,7 @@ use rquickjs::{
     Value as JsValue,
     function::Args,
     object::Accessor,
-    prelude::{Async, Func, Opt, This},
+    prelude::{Async, Func, Opt, Rest, This},
 };
 use serde_json::{Value, json};
 use std::{
@@ -542,18 +542,19 @@ async fn process<'js>(
     Ok(input)
 }
 
-#[allow(clippy::too_many_arguments)] // Match the existing seven-argument public JS helper.
 async fn native_process<'js>(
     ctx: Ctx<'js>,
-    input: JsValue<'js>,
-    operators: Opt<JsValue<'js>>,
-    target: Opt<JsValue<'js>>,
-    source: Opt<JsValue<'js>>,
-    options: Opt<JsValue<'js>>,
-    raw: Opt<JsValue<'js>>,
-    execution: Opt<JsValue<'js>>,
+    Rest(arguments): Rest<JsValue<'js>>,
 ) -> rquickjs::Result<JsValue<'js>> {
     let js = Js::new(ctx);
+    let argument = |index| arguments.get(index).cloned().unwrap_or_else(|| js.undefined());
+    let input = argument(0);
+    let operators = Opt(Some(argument(1)));
+    let target = Opt(Some(argument(2)));
+    let source = Opt(Some(argument(3)));
+    let options = Opt(Some(argument(4)));
+    let raw = Opt(Some(argument(5)));
+    let execution = Opt(Some(argument(6)));
     let context = Object::new(js.ctx.clone())?.into_value();
     if let Some(raw) = raw.0.filter(|value| !value.is_undefined()) {
         let is_object =
@@ -573,7 +574,10 @@ async fn native_process<'js>(
         source: source.0.unwrap_or_else(|| js.undefined()),
         options: options.0.unwrap_or_else(|| js.undefined()),
         context,
-        execution: execution.0.filter(|value| !value.is_undefined()).unwrap_or(Object::new(js.ctx.clone())?.into_value()),
+        execution: execution
+            .0
+            .filter(|value| !value.is_undefined())
+            .unwrap_or(Object::new(js.ctx.clone())?.into_value()),
     };
     process(
         &js,
@@ -596,49 +600,127 @@ fn response_headers<'js>(js: &Js<'js>, value: JsValue<'js>) -> rquickjs::Result<
 }
 
 fn normalize_response<'js>(js: &Js<'js>, input: JsValue<'js>) -> rquickjs::Result<JsValue<'js>> {
-    let input = if input.is_undefined() { Object::new(js.ctx.clone())?.into_value() } else { input };
-    let headers = crate::script_network::prefer(js, [js.get(&input, "header")?, js.get(&input, "headers")?, Object::new(js.ctx.clone())?.into_value()])?;
+    let input = if input.is_undefined() {
+        Object::new(js.ctx.clone())?.into_value()
+    } else {
+        input
+    };
+    let headers = crate::script_network::prefer(
+        js,
+        [
+            js.get(&input, "header")?,
+            js.get(&input, "headers")?,
+            Object::new(js.ctx.clone())?.into_value(),
+        ],
+    )?;
     let headers = Rc::new(RefCell::new(response_headers(js, headers)?));
     let output = Object::new(js.ctx.clone())?;
-    output.set("status", crate::script_network::prefer(js, [js.get(&input, "status")?, js.get(&input, "statusCode")?, js.value(200)?])?)?;
+    output.set(
+        "status",
+        crate::script_network::prefer(
+            js,
+            [
+                js.get(&input, "status")?,
+                js.get(&input, "statusCode")?,
+                js.value(200)?,
+            ],
+        )?,
+    )?;
     let own: bool = js.call("own", (input.clone(), "body"))?;
-    output.set("body", if own { js.get(&input, "body")? } else { js.value("")? })?;
+    output.set(
+        "body",
+        if own {
+            js.get(&input, "body")?
+        } else {
+            js.value("")?
+        },
+    )?;
     for name in ["headers", "header"] {
         let get = headers.clone();
         let set = headers.clone();
         let scope = js.clone();
-        output.prop(name, Accessor::new(
-            move || get.borrow().clone(),
-            move |value: JsValue<'js>| {
-                *set.borrow_mut() = response_headers(&scope, value)?;
-                Ok::<_, rquickjs::Error>(())
-            },
-        ).enumerable())?;
+        output.prop(
+            name,
+            Accessor::new(
+                move || get.borrow().clone(),
+                move |value: JsValue<'js>| {
+                    *set.borrow_mut() = response_headers(&scope, value)?;
+                    Ok::<_, rquickjs::Error>(())
+                },
+            )
+            .enumerable(),
+        )?;
     }
     Ok(output.into_value())
 }
 
 async fn apply_transformer<'js>(
-    js: &Js<'js>, item: JsValue<'js>, input: JsValue<'js>, scope: &Scope<'js>,
+    js: &Js<'js>,
+    item: JsValue<'js>,
+    input: JsValue<'js>,
+    scope: &Scope<'js>,
 ) -> rquickjs::Result<JsValue<'js>> {
     let (script, arguments) = crate::script_loading::load(js, &item, &scope.execution).await?;
     let script = js.text(script)?;
     js.set(&scope.context, "source", scope.source.clone())?;
-    js.set(&scope.context, "env", js.ctx.globals().get("__scriptEnvironment")?)?;
-    match invoke(js, "transformFunction", &script, arguments.clone(), scope, input.clone()).await {
-        Ok(value) => if js.truthy(&value)? { Ok(value) } else { Ok(input) },
+    js.set(
+        &scope.context,
+        "env",
+        js.ctx.globals().get("__scriptEnvironment")?,
+    )?;
+    match invoke(
+        js,
+        "transformFunction",
+        &script,
+        arguments.clone(),
+        scope,
+        input.clone(),
+    )
+    .await
+    {
+        Ok(value) => {
+            if js.truthy(&value)? {
+                Ok(value)
+            } else {
+                Ok(input)
+            }
+        }
         Err(error) => {
             let first = message(&js.ctx, error);
             let suppressed = first.contains("$res is not defined");
-            let shortcut = format!("async function transformFunction(res = {{}}, context) {{ let $res = res; {script}\n return $res; }}");
-            match invoke(js, "transformFunction", &shortcut, arguments, scope, input.clone()).await {
-                Ok(value) => if js.truthy(&value)? { Ok(value) } else { Ok(input) },
+            let shortcut = format!(
+                "async function transformFunction(res = {{}}, context) {{ let $res = res; {script}\n return $res; }}"
+            );
+            match invoke(
+                js,
+                "transformFunction",
+                &shortcut,
+                arguments,
+                scope,
+                input.clone(),
+            )
+            .await
+            {
+                Ok(value) => {
+                    if js.truthy(&value)? {
+                        Ok(value)
+                    } else {
+                        Ok(input)
+                    }
+                }
                 Err(error) => {
                     let second = message(&js.ctx, error);
                     let detail = if !suppressed && first == second {
                         format!("执行失败 {first}")
                     } else {
-                        format!("{}执行快捷脚本失败 {second}", if suppressed { String::new() } else { format!("执行 function transformFunction 失败 {first}; ") })
+                        format!(
+                            "{}执行快捷脚本失败 {second}",
+                            if suppressed {
+                                String::new()
+                            } else {
+                                format!("执行 function transformFunction 失败 {first}; ")
+                            }
+                        )
                     };
                     Err(js.error(&format!("响应修改 {detail}")))
                 }
@@ -648,8 +730,13 @@ async fn apply_transformer<'js>(
 }
 
 async fn process_response<'js>(
-    ctx: Ctx<'js>, input: JsValue<'js>, operators: Opt<JsValue<'js>>, target: Opt<JsValue<'js>>,
-    source: Opt<JsValue<'js>>, options: Opt<JsValue<'js>>, execution: Opt<JsValue<'js>>,
+    ctx: Ctx<'js>,
+    input: JsValue<'js>,
+    operators: Opt<JsValue<'js>>,
+    target: Opt<JsValue<'js>>,
+    source: Opt<JsValue<'js>>,
+    options: Opt<JsValue<'js>>,
+    execution: Opt<JsValue<'js>>,
 ) -> rquickjs::Result<JsValue<'js>> {
     let js = Js::new(ctx);
     let scope = Scope {
@@ -657,14 +744,22 @@ async fn process_response<'js>(
         source: source.0.unwrap_or_else(|| js.undefined()),
         options: options.0.unwrap_or_else(|| js.undefined()),
         context: Object::new(js.ctx.clone())?.into_value(),
-        execution: execution.0.filter(|value| !value.is_undefined()).unwrap_or(Object::new(js.ctx.clone())?.into_value()),
+        execution: execution
+            .0
+            .filter(|value| !value.is_undefined())
+            .unwrap_or(Object::new(js.ctx.clone())?.into_value()),
     };
-    let items = operators.0.filter(|value| !value.is_undefined()).unwrap_or(js.array([])?);
+    let items = operators
+        .0
+        .filter(|value| !value.is_undefined())
+        .unwrap_or(js.array([])?);
     let items: Vec<JsValue> = js.call("iterable", (items,))?;
     let mut output = normalize_response(&js, input)?;
     for item in items {
         if !js.equal(&js.get(&item, "type")?, &js.value("Response Transformer")?)?
-            || skip(&js, &item, &scope.context)? || js.truthy(&js.get(&item, "disabled")?)? {
+            || skip(&js, &item, &scope.context)?
+            || js.truthy(&js.get(&item, "disabled")?)?
+        {
             continue;
         }
         let result = apply_transformer(&js, item, output, &scope).await?;

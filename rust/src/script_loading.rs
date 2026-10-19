@@ -7,10 +7,22 @@ pub(crate) async fn load<'js>(
     item: &Value<'js>,
     execution: &Value<'js>,
 ) -> rquickjs::Result<(Value<'js>, Value<'js>)> {
-    let args = network::prefer(js, [js.get(item, "args")?, Object::new(js.ctx.clone())?.into_value()])?;
+    let args = network::prefer(
+        js,
+        [
+            js.get(item, "args")?,
+            Object::new(js.ctx.clone())?.into_value(),
+        ],
+    )?;
     let content = js.get(&args, "content")?;
     if !js.equal(&js.get(&args, "mode")?, &js.value("link")?)? {
-        let arguments = network::prefer(js, [js.get(&args, "arguments")?, Object::new(js.ctx.clone())?.into_value()])?;
+        let arguments = network::prefer(
+            js,
+            [
+                js.get(&args, "arguments")?,
+                Object::new(js.ctx.clone())?.into_value(),
+            ],
+        )?;
         return Ok((content, arguments));
     }
     let raw = network::prefer(js, [content, js.value("")?])?;
@@ -22,7 +34,9 @@ pub(crate) async fn load<'js>(
     } else {
         let no_cache: Value = js.call("optional", (arguments.clone(), "noCache"))?;
         let insecure: Value = js.call("optional", (arguments.clone(), "insecure"))?;
-        if (!no_cache.is_null() && !no_cache.is_undefined()) || (!insecure.is_null() && !insecure.is_undefined()) {
+        if (!no_cache.is_null() && !no_cache.is_undefined())
+            || (!insecure.is_null() && !insecure.is_undefined())
+        {
             Some(js.get(&parts, "1")?)
         } else {
             None
@@ -34,15 +48,32 @@ pub(crate) async fn load<'js>(
         clean.clone()
     };
     let path = js.text(clean.clone())?;
-    let internal = if path.strip_prefix("/api/module/").is_some_and(|name| !name.is_empty()) { Some("module") }
-        else if path.strip_prefix("/api/file/").is_some_and(|name| !name.is_empty()) { Some("file") } else { None };
+    let internal = if path
+        .strip_prefix("/api/module/")
+        .is_some_and(|name| !name.is_empty())
+    {
+        Some("module")
+    } else if path
+        .strip_prefix("/api/file/")
+        .is_some_and(|name| !name.is_empty())
+    {
+        Some("file")
+    } else {
+        None
+    };
     let options = Object::new(js.ctx.clone())?;
-    options.set("noFlow", js.call::<Value, _>("optional", (execution.clone(), "noFlow"))?)?;
+    options.set(
+        "noFlow",
+        js.call::<Value, _>("optional", (execution.clone(), "noFlow"))?,
+    )?;
     let loaded = if let Some(kind) = internal {
         match script_download::source(js, clean, options.into_value()).await {
             Ok(value) => value,
             Err(error) => {
-                eprintln!("[sub-store:error] Error when loading {kind}: {}", script::message(&js.ctx, error));
+                eprintln!(
+                    "[sub-store:error] Error when loading {kind}: {}",
+                    script::message(&js.ctx, error)
+                );
                 return Err(js.error(&format!("无法加载 {kind}: {}", js.text(url)?)));
             }
         }
@@ -58,7 +89,10 @@ pub(crate) async fn load<'js>(
         match script_download::source(js, url.clone(), options.into_value()).await {
             Ok(value) => value,
             Err(error) => {
-                eprintln!("[sub-store:error] Error when downloading remote script: {}", script::message(&js.ctx, error));
+                eprintln!(
+                    "[sub-store:error] Error when downloading remote script: {}",
+                    script::message(&js.ctx, error)
+                );
                 return Err(js.error(&format!("无法下载脚本: {}", js.text(url)?)));
             }
         }
