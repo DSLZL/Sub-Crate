@@ -6,7 +6,6 @@ use serde_json::{Map, Value, json};
 use std::net::Ipv6Addr;
 
 pub enum Error {
-    Pending(&'static str),
     Legacy(String),
 }
 
@@ -628,12 +627,6 @@ fn vless(line: &str, protocol: &str) -> Result<Option<Value>, Error> {
             } else {
                 json!({"Host":host})
             };
-            if !options["headers"].is_null() && !options["headers"].is_object() {
-                // shortcut: non-object headers need the production script/value bridge.
-                return Err(Error::Pending(
-                    "Non-object transport headers are not implemented yet",
-                ));
-            }
             if network == "xhttp" && truthy(&options["headers"]["Host"]) {
                 options["host"] = options["headers"]["Host"].clone();
                 options["headers"]
@@ -1369,7 +1362,7 @@ fn modern_uri(line: &str) -> Result<Option<Value>, Error> {
     Ok(Some(proxy))
 }
 
-fn trojan(line: &str) -> Result<Option<Value>, Error> {
+fn trojan(line: &str, language: &crate::clash::Parser) -> Result<Option<Value>, Error> {
     let (before_query, query) = line
         .split_once('?')
         .map_or((line, None), |(raw, query)| (raw, Some(query)));
@@ -1500,12 +1493,6 @@ fn trojan(line: &str) -> Result<Option<Value>, Error> {
                 {
                     return Ok(None);
                 }
-                // shortcut: exotic nested transport property paths need the M3 value bridge.
-                if network.contains(['.', '[', ']']) {
-                    return Err(Error::Pending(
-                        "Nested Trojan transport property paths are not implemented yet",
-                    ));
-                }
             }
             let mut early = None;
             if truthy(&params["path"]) {
@@ -1520,10 +1507,18 @@ fn trojan(line: &str) -> Result<Option<Value>, Error> {
                 } else {
                     params["path"].clone()
                 };
-                proxy[&key]["path"] = path;
+                if network.contains(['.', '[', ']']) {
+                    language.set_path(&mut proxy, &format!("{key}.path"), &path)?;
+                } else {
+                    proxy[&key]["path"] = path;
+                }
             }
             if truthy(&params["host"]) {
-                proxy[&key]["headers"]["Host"] = params["host"].clone();
+                if network.contains(['.', '[', ']']) {
+                    language.set_path(&mut proxy, &format!("{key}.headers.Host"), &params["host"])?;
+                } else {
+                    proxy[&key]["headers"]["Host"] = params["host"].clone();
+                }
             }
             if upgrade {
                 let ed = early.or_else(|| {
@@ -2686,7 +2681,7 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
                 proxies.push(proxy);
             }
         } else if line.starts_with("trojan://") {
-            if let Some(proxy) = trojan(line)? {
+            if let Some(proxy) = trojan(line, &clash)? {
                 proxies.push(proxy);
             }
         } else if line.split_once("://").is_some_and(|(scheme, _)| {

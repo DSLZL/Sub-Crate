@@ -33,6 +33,15 @@ async function operator(proxies) {
     assert(unpaired.name===lone && unpaired.extra[low]===literal,'isolated UTF16 fields and keys survive parse without tag collisions');
     assert(JSON.parse(ProxyUtils.produce([unpaired],'JSON'))[0].name===lone,'isolated UTF16 survives JSON wire');
     passed.push('NC-native-isolated-utf16-input-and-wire');
+    for(const headers of [["a",2],"raw",true,7,null]) {
+      const proxy=ProxyUtils.parse('vless://id@127.0.0.1:443?type=ws&obfsParam='+encodeURIComponent(JSON.stringify(headers))+'#headers')[0];
+      equal(proxy['ws-opts'].headers,headers,'non-object transport headers retain their type');
+    }
+    passed.push('NC-native-transport-header-values');
+    const nested=ProxyUtils.parse('trojan://p@127.0.0.1:443?type=transport%5B0%5D.ws&path=%2Fp&host=example.com#nested')[0];
+    equal(nested.transport,[{'ws-opts':{path:'/p',headers:{Host:'example.com'}}}],'nested Trojan transport paths and array creation');
+    equal(ProxyUtils.parse('trojan://p@127.0.0.1:443?type=__proto__.bad&path=%2Fp'),[],'unsafe transport path is rejected');
+    passed.push('NC-native-nested-trojan-paths');
   } catch(error) {
     return proxies.map(proxy=>({...proxy,conversionHelpersError:String(error),conversionHelpersPassed:passed}));
   }

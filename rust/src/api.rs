@@ -217,7 +217,6 @@ pub fn failure(status: u16, code: &str, kind: &str, message: &str) -> Reply {
 
 fn conversion_error(error: ConversionError, context: Option<&str>) -> Reply {
     match error {
-        ConversionError::Pending(message) => pending(message),
         ConversionError::Legacy(reason) => {
             if let Some(message) = context {
                 send(

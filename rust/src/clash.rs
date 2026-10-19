@@ -1,7 +1,7 @@
 use crate::conversion::Error;
 use crate::json as codec;
 use crate::state::truthy;
-use rquickjs::{Context, Ctx, Exception, Function, Object, Runtime, Value as JsValue};
+use rquickjs::{Array, Context, Ctx, Exception, Function, Object, Runtime, Value as JsValue};
 use serde_json::Value;
 
 pub struct Parser(Context);
@@ -76,6 +76,56 @@ impl Parser {
 
     pub fn dump_default(&self, value: &Value) -> Result<String, Error> {
         self.dump_with_options(value, true)
+    }
+
+    pub fn set_path(&self, value: &mut Value, path: &str, item: &Value) -> Result<(), Error> {
+        let parts: Vec<_> = path
+            .split(['.', '[', ']'])
+            .filter(|part| !part.is_empty())
+            .collect();
+        if parts
+            .iter()
+            .any(|part| ["__proto__", "constructor", "prototype"].contains(part))
+        {
+            return Err(Error::Legacy("Unsafe property path".to_owned()));
+        }
+        self.0.with(|ctx| {
+            let result = (|| -> rquickjs::Result<Value> {
+                let root = crate::js_values::decode(&ctx, value)?;
+                let child: Function = ctx.eval("(object,key) => Object.hasOwn(object,key) && Object(object[key]) === object[key] ? object[key] : undefined")?;
+                let array_key: Function = ctx.eval("key => (Math.abs(key) >> 0) === +key")?;
+                let mut current = root.clone();
+                for (index, key) in parts
+                    .iter()
+                    .take(parts.len().saturating_sub(1))
+                    .enumerate()
+                {
+                    let mut next: JsValue = child.call((current.clone(), *key))?;
+                    if !next.is_object() {
+                        let is_array: bool = array_key.call((parts[index + 1],))?;
+                        next = if is_array {
+                            Array::new(ctx.clone())?.into_value()
+                        } else {
+                            Object::new(ctx.clone())?.into_value()
+                        };
+                        current.as_object().unwrap().set(*key, next.clone())?;
+                    }
+                    current = next;
+                }
+                if let Some(key) = parts.last() {
+                    current
+                        .as_object()
+                        .unwrap()
+                        .set(*key, crate::js_values::decode(&ctx, item)?)?;
+                }
+                crate::js_values::project(&ctx, root)
+            })();
+            *value = result.map_err(|error| {
+                ctx.catch();
+                Error::Legacy(error.to_string())
+            })?;
+            Ok(())
+        })
     }
 
     fn dump_with_options(&self, value: &Value, defaults: bool) -> Result<String, Error> {

@@ -256,7 +256,6 @@ fn native_parse<'js>(ctx: Ctx<'js>, raw: JsValue<'js>) -> rquickjs::Result<JsVal
 fn conversion_message(error: conversion::Error) -> String {
     match error {
         conversion::Error::Legacy(message) => message,
-        conversion::Error::Pending(message) => message.to_owned(),
     }
 }
 

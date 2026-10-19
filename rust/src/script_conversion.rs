@@ -3,7 +3,8 @@ use crate::{conversion, js_language::Js, script_pipeline::optional};
 use rquickjs::{Ctx, Value, prelude::Opt};
 
 fn nonblank<'js>(js: &Js<'js>, value: Value<'js>) -> rquickjs::Result<bool> {
-    Ok(value.is_string() && js.call::<usize,_>("length",(js.method(value,"trim",vec![])?,))? > 0)
+    Ok(value.is_string()
+        && js.call::<usize, _>("length", (js.method(value, "trim", vec![])?,))? > 0)
 }
 
 fn is_ip<'js>(js: &Js<'js>, method: &str, value: Value<'js>) -> rquickjs::Result<bool> {
@@ -235,7 +236,6 @@ pub(crate) fn produce<'js>(
         conversion::produce(values, &target, &js.text(kind)?, &options).map_err(|error| {
             js.error(&match error {
                 conversion::Error::Legacy(message) => message,
-                conversion::Error::Pending(message) => message.to_owned(),
             })
         })?;
     crate::js_values::decode(&js.ctx, &output)
