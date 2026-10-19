@@ -1,8 +1,11 @@
 mod api;
 mod body;
+mod clash;
+mod classic;
 mod conversion;
 mod json;
 mod state;
+mod surge;
 mod xhttp;
 
 use hyper::body::{Body, Incoming};

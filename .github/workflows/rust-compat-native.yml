@@ -48,6 +48,7 @@ jobs:
           npm install --global pnpm@11.0.9
           pnpm --dir backend install --frozen-lockfile
           pnpm --dir tests/compat install --frozen-lockfile
+          node tests/compat/build-native-utilities.cjs
       - name: Install Rust toolchain
         run: |
           rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
@@ -130,6 +131,7 @@ jobs:
           npm install --global pnpm@11.0.9 agent-browser@0.27.3 2>&1 | tee tests/compat/evidence/frontend-setup/tools.log
           pnpm --dir backend install --frozen-lockfile 2>&1 | tee tests/compat/evidence/frontend-setup/backend-install.log
           pnpm --dir .compat-frontend install --frozen-lockfile 2>&1 | tee tests/compat/evidence/frontend-setup/frontend-install.log
+          node tests/compat/build-native-utilities.cjs
       - name: Build the unchanged frontend with type checks
         run: pnpm --dir .compat-frontend build 2>&1 | tee tests/compat/evidence/frontend-setup/frontend-build.log
       - name: Install headless Chrome and Linux dependencies
@@ -196,6 +198,7 @@ jobs:
           npm install --global pnpm@11.0.9
           pnpm --dir backend install --frozen-lockfile
           pnpm --dir tests/compat install --frozen-lockfile
+          node tests/compat/build-native-utilities.cjs
       - name: Runner self-checks
         run: python -m unittest discover -s tests/compat -p test_runner.py
       - name: Build general JS helpers
