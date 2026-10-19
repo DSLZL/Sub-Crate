@@ -1,0 +1,378 @@
+//! Existing subscription, collection and generated-file pipeline over live JS values.
+use crate::{js_language::Js, script, script_download, script_network as network};
+use rquickjs::{Ctx, Function, Object, Promise, Value, prelude::{Async, Func}};
+
+fn object<'js>(js: &Js<'js>) -> rquickjs::Result<Value<'js>> {
+    Ok(Object::new(js.ctx.clone())?.into_value())
+}
+
+fn optional<'js>(js: &Js<'js>, value: &Value<'js>, key: &str) -> rquickjs::Result<Value<'js>> {
+    js.call("optional", (value.clone(), key))
+}
+
+fn nullish(value: &Value<'_>) -> bool { value.is_null() || value.is_undefined() }
+
+fn array<'js>(js: &Js<'js>, value: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    if value.is_array() { Ok(value) } else { js.array([value]) }
+}
+
+fn merge_mode<'js>(js: &Js<'js>, value: Value<'js>) -> rquickjs::Result<bool> {
+    Ok(js.equal(&value, &js.value("localFirst")?)? || js.equal(&value, &js.value("remoteFirst")?)?)
+}
+
+fn mode<'js>(js: &Js<'js>, values: impl IntoIterator<Item=Value<'js>>) -> rquickjs::Result<String> {
+    for value in values {
+        if nullish(&value) || js.equal(&value, &js.value("")?)? { continue; }
+        if js.equal(&value, &js.value(true)?)? { return Ok("quiet".to_owned()); }
+        if js.equal(&value, &js.value(false)?)? { return Ok("disabled".to_owned()); }
+        return js.text(value);
+    }
+    Ok("disabled".to_owned())
+}
+
+fn fallback(mode: &str) -> bool { matches!(mode, "fallbackNotify" | "fallbackQuiet") }
+
+fn failed(js: &Js<'_>, mode: &str, message: &str) -> rquickjs::Result<()> {
+    if mode == "disabled" || fallback(mode) { return Err(js.error(message)); }
+    if mode == "enabled" { eprintln!("[sub-store:notify] {message}"); }
+    Ok(())
+}
+
+fn read<'js>(js: &Js<'js>, key: &str) -> rquickjs::Result<Value<'js>> {
+    js.method(network::host(js)?, "read", vec![js.value(key)?])
+}
+
+fn find<'js>(js: &Js<'js>, items: Value<'js>, name: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    let scope = js.clone();
+    let predicate = Function::new(js.ctx.clone(), move |item: Value<'js>| {
+        scope.equal(&scope.get(&item, "name")?, &name)
+    })?;
+    js.method(items, "find", vec![predicate.into_value()])
+}
+
+async fn utility<'js>(js: &Js<'js>, name: &str, args: Vec<Value<'js>>) -> rquickjs::Result<Value<'js>> {
+    let utils: Value = js.ctx.globals().get("ProxyUtils")?;
+    script::settled(js, js.method(utils, name, args)?).await
+}
+
+async fn all<'js>(js: &Js<'js>, promises: Vec<Value<'js>>) -> rquickjs::Result<Value<'js>> {
+    let constructor: Value = js.ctx.globals().get("Promise")?;
+    script::settled(js, js.method(constructor, "all", vec![js.array(promises)?])?).await
+}
+
+async fn sources<'js>(
+    js: &Js<'js>, sub: Value<'js>, options: Value<'js>, preview: bool,
+) -> rquickjs::Result<(Value<'js>, Value<'js>)> {
+    let content = optional(js, &options, "content")?;
+    let override_merge = optional(js, &options, "mergeSources")?;
+    let url = optional(js, &options, "url")?;
+    if !preview && js.truthy(&content)? && !merge_mode(js, override_merge.clone())? {
+        return Ok((content.clone(), content));
+    }
+    let override_url = !preview && js.truthy(&url)?;
+    let merge = if override_url { override_merge } else { js.get(&sub, "mergeSources")? };
+    if !override_url && js.equal(&js.get(&sub, "source")?, &js.value("local")?)? && !merge_mode(js, merge.clone())? {
+        let content = js.get(&sub, "content")?;
+        return Ok((content.clone(), content));
+    }
+    let url = if override_url { url } else { js.get(&sub, "url")? };
+    let lines = js.method(url, "split", vec![js.call("regex", (r"[\r\n]+", ""))?])?;
+    let trim = js.clone();
+    let lines = js.map(lines, move |value| trim.method(value, "trim", vec![]))?;
+    let trim = js.clone();
+    let lines = js.filter(lines, move |value, _| trim.truthy(&trim.get(&value, "length")?))?;
+    let lines: Vec<Value> = js.call("iterable", (lines,))?;
+    let errors = object(js)?;
+    let ua = network::prefer(js, [optional(js, &options, "ua")?, js.get(&sub, "ua")?])?;
+    let proxy = network::prefer(js, [optional(js, &options, "proxy")?, js.get(&sub, "proxy")?])?;
+    let no_cache = network::prefer(js, [optional(js, &options, "noCache")?, js.get(&sub, "noCache")?])?;
+    let await_cache = optional(js, &options, "awaitCustomCache")?;
+    let no_flow = if preview { js.undefined() } else {
+        network::prefer(js, [optional(js, &options, "noFlow")?, js.get(&sub, "noFlow")?])?
+    };
+    let download_options = object(js)?;
+    js.set(&download_options, "returnRaw", js.value(true)?)?;
+    if !preview { js.set(&download_options, "noFlow", no_flow)?; }
+    let mut pending = Vec::new();
+    for url in lines {
+        let worker = js.clone();
+        let errors = errors.clone();
+        let args = vec![url.clone(), ua.clone(), js.undefined(), proxy.clone(), js.undefined(), await_cache.clone(), no_cache.clone(), js.value(true)?, download_options.clone()];
+        let promise = Promise::wrap_future(&js.ctx, async move {
+            match utility(&worker, "download", args).await {
+                Ok(value) => Ok(value),
+                Err(error) => {
+                    eprintln!("[sub-store:error] {}", script::message(&worker.ctx, error));
+                    worker.set(&errors, &worker.text(url)?, worker.value(true)?)?;
+                    worker.value("")
+                }
+            }
+        })?;
+        pending.push(promise.into_value());
+    }
+    let downloaded = all(js, pending).await?;
+    let count: usize = js.call("length", (js.call::<Value, _>("entries", (errors.clone(),))?,))?;
+    if count > 0 {
+        let entries: Vec<Value> = js.call("iterable", (js.call::<Value, _>("entries", (errors,))?,))?;
+        let mut urls = Vec::new();
+        for entry in entries { urls.push(script_download::mask_url(js, js.get(&entry, "0")?)?); }
+        let resolved = mode(js, [optional(js, &options, "ignoreFailedRemoteSub")?, js.get(&sub, "ignoreFailedRemoteSub")?])?;
+        failed(js, &resolved, &format!("订阅 {} 的远程订阅 {} 发生错误, 请查看日志", js.text(js.get(&sub, "name")?)?, urls.join(", ")))?;
+    }
+    let result_scope = js.clone();
+    let raw = js.map(downloaded.clone(), move |value| {
+        let result = result_scope.get(&value, "result")?;
+        Ok(if nullish(&result) { value } else { result })
+    })?;
+    let raw_scope = js.clone();
+    let source_raw = js.map(downloaded, move |value| {
+        let raw = raw_scope.get(&value, "raw")?;
+        Ok(if nullish(&raw) { value } else { raw })
+    })?;
+    let content = if override_url { content } else { js.get(&sub, "content")? };
+    for value in [&raw, &source_raw] {
+        if js.equal(&merge, &js.value("localFirst")?)? { js.method(value.clone(), "unshift", vec![content.clone()])?; }
+        else if js.equal(&merge, &js.value("remoteFirst")?)? { js.method(value.clone(), "push", vec![content.clone()])?; }
+    }
+    Ok((raw, source_raw))
+}
+
+fn parse<'js>(js: &Js<'js>, raw: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    let scope = js.clone();
+    let parsed = js.map(array(js, raw)?, move |value| {
+        let utils: Value = scope.ctx.globals().get("ProxyUtils")?;
+        scope.method(utils, "parse", vec![value])
+    })?;
+    js.method(parsed, "flat", vec![])
+}
+
+fn tag<'js>(js: &Js<'js>, values: Value<'js>, sub: Option<Value<'js>>, collection: Option<Value<'js>>, preview: bool) -> rquickjs::Result<()> {
+    let items: Vec<Value> = js.call("iterable", (values,))?;
+    for (index, item) in items.into_iter().enumerate() {
+        if preview { js.set(&item, "id", js.value(index)?)?; }
+        if let Some(sub) = &sub {
+            js.set(&item, "_subName", js.get(sub, "name")?)?;
+            js.set(&item, "_subDisplayName", js.get(sub, "displayName")?)?;
+        }
+        if let Some(collection) = &collection {
+            js.set(&item, "_collectionName", js.get(collection, "name")?)?;
+            js.set(&item, "_collectionDisplayName", js.get(collection, "displayName")?)?;
+        }
+    }
+    Ok(())
+}
+
+fn packaged<'js>(js: &Js<'js>, result: Value<'js>, raw: Value<'js>, options: &Value<'js>) -> rquickjs::Result<Value<'js>> {
+    if !js.truthy(&optional(js, options, "includeRaw")?)? { return Ok(result); }
+    let value = object(js)?;
+    js.set(&value, "result", result)?;
+    js.set(&value, "raw", raw)?;
+    Ok(value)
+}
+
+fn preview_result<'js>(js: &Js<'js>, original: Value<'js>, processed: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    let result = object(js)?;
+    js.set(&result, "original", original)?;
+    js.set(&result, "processed", processed)?;
+    Ok(result)
+}
+
+async fn empty<'js>(js: &Js<'js>, options: &Value<'js>) -> rquickjs::Result<Value<'js>> {
+    if js.equal(&optional(js, options, "produceType")?, &js.value("raw")?)? { return js.value("[]"); }
+    utility(js, "produce", vec![js.array([])?, network::prefer(js, [optional(js, options, "platform")?, js.value("JSON")?])?, optional(js, options, "produceType")?, optional(js, options, "produceOpts")?]).await
+}
+
+async fn subscription<'js>(js: &Js<'js>, sub: Value<'js>, options: Value<'js>, preview: bool) -> rquickjs::Result<Value<'js>> {
+    let resolved = mode(js, [optional(js, &options, "ignoreFailedRemoteSub")?, js.get(&sub, "ignoreFailedRemoteSub")?])?;
+    let mut source_raw = js.array([])?;
+    let result = async {
+        let (raw, source) = sources(js, sub.clone(), options.clone(), preview).await?;
+        source_raw = source;
+        if !preview && js.equal(&optional(js, &options, "produceType")?, &js.value("raw")?)? {
+            let result = js.ctx.json_stringify(js.method(array(js, raw)?, "flat", vec![])?)?.ok_or_else(|| js.error("Cannot stringify raw sources"))?.into_value();
+            return packaged(js, result, array(js, source_raw.clone())?, &options);
+        }
+        let original = parse(js, raw)?;
+        tag(js, original.clone(), Some(sub.clone()), None, preview)?;
+        let source = object(js)?;
+        js.set(&source, &js.text(js.get(&sub, "name")?)?, sub.clone())?;
+        let target = network::prefer(js, [optional(js, &options, "platform")?, js.value("JSON")?])?;
+        let execution = object(js)?;
+        if !preview { js.set(&execution, "noFlow", network::prefer(js, [optional(js, &options, "noFlow")?, js.get(&sub, "noFlow")?])?)?; }
+        let processed = utility(js, "process", vec![original.clone(), network::prefer(js, [js.get(&sub, "process")?, js.array([])?])?, target.clone(), source, optional(js, &options, "$options")?, source_raw.clone(), execution]).await?;
+        if preview { return preview_result(js, original, processed); }
+        if js.equal(&js.get(&processed, "length")?, &js.value(0)?)? {
+            return Err(js.error(&format!("订阅 {} 中不含有效节点", js.text(optional(js, &options, "name")?)?)));
+        }
+        let result = utility(js, "produce", vec![processed, target, optional(js, &options, "produceType")?, optional(js, &options, "produceOpts")?]).await?;
+        packaged(js, result, array(js, source_raw.clone())?, &options)
+    }.await;
+    match result {
+        Ok(value) => Ok(value),
+        Err(error) if fallback(&resolved) => {
+            eprintln!("[sub-store:error] {}", script::message(&js.ctx, error));
+            if preview { preview_result(js, js.array([])?, js.array([])?) }
+            else { packaged(js, empty(js, &options).await?, array(js, source_raw)?, &options) }
+        }
+        Err(error) => Err(error),
+    }
+}
+
+async fn collection<'js>(js: &Js<'js>, collection: Value<'js>, options: Value<'js>, preview: bool) -> rquickjs::Result<Value<'js>> {
+    let resolved = mode(js, [optional(js, &options, "ignoreFailedRemoteSub")?, js.get(&collection, "ignoreFailedRemoteSub")?])?;
+    let raw_results = object(js)?;
+    let result = async {
+        let all_subs = read(js, "subs")?;
+        let mut names: Vec<Value> = js.call("iterable", (js.get(&collection, "subscriptions")?,))?;
+        let tags = js.get(&collection, "subscriptionTags")?;
+        if tags.is_array() && js.truthy(&js.get(&tags, "length")?)? {
+            let subs: Vec<Value> = js.call("iterable", (all_subs.clone(),))?;
+            for sub in subs {
+                let sub_tags = js.get(&sub, "tag")?;
+                if !sub_tags.is_array() { continue; }
+                let name = js.get(&sub, "name")?;
+                let mut exists = false;
+                for prior in &names { exists |= js.equal(prior, &name)?; }
+                if exists { continue; }
+                let values: Vec<Value> = js.call("iterable", (sub_tags,))?;
+                for tag in values {
+                    if js.truthy(&js.method(tags.clone(), "includes", vec![tag])?)? { names.push(name.clone()); break; }
+                }
+            }
+        }
+        let results = object(js)?;
+        let errors = object(js)?;
+        let target = if preview { js.value("JSON")? } else { network::prefer(js, [optional(js, &options, "platform")?, js.value("JSON")?])? };
+        let mut pending = Vec::new();
+        for name in &names {
+            let worker = js.clone();
+            let name = name.clone();
+            let all_subs = all_subs.clone();
+            let collection = collection.clone();
+            let options = options.clone();
+            let results = results.clone();
+            let raw_results = raw_results.clone();
+            let errors = errors.clone();
+            let target = target.clone();
+            let promise = Promise::wrap_future(&js.ctx, async move {
+                let sub = find(&worker, all_subs, name.clone())?;
+                // The source reads sub.ignoreFailedRemoteSub before its per-child try.
+                let child_mode = mode(&worker, [worker.get(&sub, "ignoreFailedRemoteSub")?])?;
+                let key = worker.text(name)?;
+                let child = async {
+                    let child_options = object(&worker)?;
+                    if !preview {
+                        let ua = if worker.truthy(&worker.get(&sub, "passThroughUA")?)? { optional(&worker, &options, "ua")? } else { worker.get(&sub, "ua")? };
+                        worker.set(&child_options, "ua", ua)?;
+                        worker.set(&child_options, "proxy", network::prefer(&worker, [optional(&worker, &options, "proxy")?, worker.get(&sub, "proxy")?, worker.get(&collection, "proxy")?])?)?;
+                        worker.set(&child_options, "noCache", optional(&worker, &options, "noCache")?)?;
+                        worker.set(&child_options, "noFlow", network::prefer(&worker, [optional(&worker, &options, "noFlow")?, worker.get(&collection, "noFlow")?])?)?;
+                    }
+                    let (raw, source_raw) = sources(&worker, sub.clone(), child_options.clone(), preview).await?;
+                    let original = parse(&worker, raw)?;
+                    tag(&worker, original.clone(), Some(sub.clone()), Some(collection.clone()), false)?;
+                    let source = object(&worker)?;
+                    worker.set(&source, &key, sub.clone())?;
+                    worker.set(&source, "_collection", collection.clone())?;
+                    if !preview { worker.set(&source, "$options", optional(&worker, &options, "$options")?)?; }
+                    let execution = object(&worker)?;
+                    if !preview { worker.set(&execution, "noFlow", network::prefer(&worker, [optional(&worker, &child_options, "noFlow")?, worker.get(&sub, "noFlow")?])?)?; }
+                    let raw = array(&worker, source_raw)?;
+                    let output = utility(&worker, "process", vec![original, network::prefer(&worker, [worker.get(&sub, "process")?, worker.array([])?])?, target, source, worker.undefined(), raw.clone(), execution]).await?;
+                    worker.set(&results, &key, output)?;
+                    worker.set(&raw_results, &key, raw)?;
+                    Ok::<_, rquickjs::Error>(())
+                }.await;
+                if let Err(error) = child {
+                    eprintln!("[sub-store:error] {}", script::message(&worker.ctx, error));
+                    if fallback(&child_mode) {
+                        worker.set(&results, &key, worker.array([])?)?;
+                        worker.set(&raw_results, &key, worker.array([])?)?;
+                    } else {
+                        worker.set(&errors, &key, worker.value(true)?)?;
+                        worker.set(&raw_results, &key, worker.undefined())?;
+                    }
+                }
+                Ok::<_, rquickjs::Error>(worker.undefined())
+            })?;
+            pending.push(promise.into_value());
+        }
+        all(js, pending).await?;
+        let errors: Vec<Value> = js.call("iterable", (js.call::<Value, _>("entries", (errors,))?,))?;
+        if !errors.is_empty() {
+            let count: usize = js.call("length", (js.call::<Value, _>("entries", (results.clone(),))?,))?;
+            if count > 0 && fallback(&resolved) {
+                for entry in errors { js.set(&raw_results, &js.text(js.get(&entry, "0")?)?, js.array([])?)?; }
+            } else {
+                let mut failed_names = Vec::new();
+                for entry in errors { failed_names.push(js.text(js.get(&entry, "0")?)?); }
+                failed(js, &resolved, &format!("组合订阅 {} 的子订阅 {} 发生错误, 请查看日志", js.text(js.get(&collection, "name")?)?, failed_names.join(", ")))?;
+            }
+        }
+        let mut ordered = Vec::new();
+        for name in names { ordered.push(network::prefer(js, [js.get(&results, &js.text(name)?)?, js.array([])?])?); }
+        let original = js.method(js.array(ordered)?, "flat", vec![])?;
+        tag(js, original.clone(), None, Some(collection.clone()), preview)?;
+        let source = object(js)?;
+        js.set(&source, "_collection", collection.clone())?;
+        let execution = object(js)?;
+        if !preview { js.set(&execution, "noFlow", network::prefer(js, [optional(js, &options, "noFlow")?, js.get(&collection, "noFlow")?])?)?; }
+        let processed = utility(js, "process", vec![original.clone(), network::prefer(js, [js.get(&collection, "process")?, js.array([])?])?, target.clone(), source, optional(js, &options, "$options")?, raw_results.clone(), execution]).await?;
+        if preview { return preview_result(js, original, processed); }
+        if js.equal(&js.get(&processed, "length")?, &js.value(0)?)? { return Err(js.error(&format!("组合订阅 {} 中不含有效节点", js.text(optional(js, &options, "name")?)?))); }
+        let result = utility(js, "produce", vec![processed, target, optional(js, &options, "produceType")?, optional(js, &options, "produceOpts")?]).await?;
+        packaged(js, result, raw_results.clone(), &options)
+    }.await;
+    match result {
+        Ok(value) => Ok(value),
+        Err(error) if fallback(&resolved) => {
+            eprintln!("[sub-store:error] {}", script::message(&js.ctx, error));
+            if preview { preview_result(js, js.array([])?, js.array([])?) }
+            else { packaged(js, empty(js, &options).await?, raw_results, &options) }
+        }
+        Err(error) => Err(error),
+    }
+}
+
+pub(crate) async fn preview<'js>(js: &Js<'js>, kind: &str, item: Value<'js>, target: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    let options = object(js)?;
+    js.set(&options, "platform", target)?;
+    if kind == "collection" { collection(js, item, options, true).await }
+    else { subscription(js, item, options, true).await }
+}
+
+pub(crate) async fn generate<'js>(js: &Js<'js>, kind: &str, item: Value<'js>, options: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    if kind == "collection" { collection(js, item, options, false).await }
+    else { subscription(js, item, options, false).await }
+}
+
+async fn artifact<'js>(ctx: Ctx<'js>, options: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    let js = Js::new(ctx);
+    let kind = js.text(js.get(&options, "type")?)?;
+    let name = js.get(&options, "name")?;
+    match kind.as_str() {
+        "sub" | "subscription" => {
+            let sub = if js.truthy(&name)? {
+                let sub = find(&js, read(&js, "subs")?, name.clone())?;
+                if !js.truthy(&sub)? { return Err(js.error(&format!("找不到订阅 {}", js.text(name)?))); }
+                sub
+            } else {
+                let sub = js.get(&options, "subscription")?;
+                if !js.truthy(&sub)? { return Err(js.error("未提供订阅名称或订阅数据")); }
+                sub
+            };
+            subscription(&js, sub, options, false).await
+        }
+        "col" | "collection" => {
+            let col = find(&js, read(&js, "collections")?, name.clone())?;
+            if !js.truthy(&col)? { return Err(js.error(&format!("找不到组合订阅 {}", js.text(name)?))); }
+            collection(&js, col, options, false).await
+        }
+        // File and rule generators join their existing native owners in this module.
+        _ => Ok(js.undefined()),
+    }
+}
+
+pub(crate) fn initialize<'js>(ctx: &Ctx<'js>) -> rquickjs::Result<()> {
+    ctx.globals().set("produceArtifact", Func::from(Async(artifact)))
+}

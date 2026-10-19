@@ -2636,49 +2636,6 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
     Ok(proxies)
 }
 
-pub fn local(sub: &Value, content: Option<&Value>) -> Result<Vec<Value>, Error> {
-    if content.is_none()
-        && (sub["source"] != "local"
-            || matches!(
-                sub["mergeSources"].as_str(),
-                Some("localFirst" | "remoteFirst")
-            ))
-    {
-        return Err(Error::Pending(
-            "Remote and merged subscription sources are not implemented yet",
-        ));
-    }
-    if sub.get("process").is_some_and(|process| {
-        truthy(process) && process.as_array().is_none_or(|items| !items.is_empty())
-    }) {
-        return Err(Error::Pending(
-            "Subscription processors are not implemented yet",
-        ));
-    }
-    let content = content.unwrap_or(&sub["content"]);
-    let sources = content
-        .as_array()
-        .map_or_else(|| vec![content], |items| items.iter().collect());
-    let mut result = Vec::new();
-    for source in sources {
-        result.extend(parse(source)?);
-    }
-    Ok(result)
-}
-
-pub fn tag(proxies: &mut [Value], sub: &Value, preview: bool) {
-    for (index, proxy) in proxies.iter_mut().enumerate() {
-        if preview {
-            proxy["id"] = json!(index);
-        }
-        for (source, field) in [("name", "_subName"), ("displayName", "_subDisplayName")] {
-            if let Some(value) = sub.get(source) {
-                proxy[field] = value.clone();
-            }
-        }
-    }
-}
-
 fn transport_path(proxy: &Value, embed_ws: bool) -> Option<String> {
     let network = proxy["network"].as_str()?;
     let options = &proxy[format!("{network}-opts")];

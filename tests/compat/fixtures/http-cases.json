@@ -720,7 +720,7 @@
           "process": [
             {
               "args": {
-                "content": "async function operator(proxies) {\n  const passed=[], observations={};\n  const assert=(value,message)=>{if(!value)throw new Error(message);};\n  const equal=(a,b,message)=>assert(JSON.stringify(a)===JSON.stringify(b),message);\n  const check=async(id,callback)=>{observations[id]=await callback();passed.push(id);};\n  const rejects=async(callback,message)=>{try{await callback();}catch(error){assert(error.message.includes(message),'loader/response error: '+error.message);return;}throw new Error('expected error');};\n  const OriginalDate=Date;\n  globalThis.Date=class extends OriginalDate {\n    constructor(...args){super(...(args.length?args:[3200000000000]));}\n    static now(){return 3200000000000;}\n  };\n  const modules=$substore.read('modules');\n  const base='$UPSTREAM/host/script/';\n  const source={marker:'source-marker'},options={zero:0,flag:false};\n  const link=(content,type='Script Operator')=>({type,args:{mode:'link',content}});\n  const process=(items,execution={})=>ProxyUtils.process([{name:'linked',server:'example.invalid',port:443}],items,'JSON',source,options,false,execution);\n  const transformed=(input,items,execution={})=>ProxyUtils.processResponse(input,items,'JSON',source,options,execution);\n  const transform=content=>({type:'Response Transformer',args:{content}});\n  try {\n    await check('SC-native-linked-remote-arguments-cache-and-two-fragments',async()=>{\n      const args={zero:0,flag:false,text:'链接🙂'};\n      let result=await process([link(base+'operator#'+encodeURIComponent(JSON.stringify(args)))]);\n      equal(result[0].linked,{arguments:args,target:'JSON',options,raw:[false],source:'source-marker'},'full linked injection');\n      equal((await process([link(base+'operator#zero=0&flag=false&empty=&enabled')]))[0].linked.arguments,\n        {zero:'0',flag:'false',empty:true,enabled:true},'paired arguments share the cached source');\n      const headers=JSON.stringify({'User-Agent':'linked-script-native','X-Script-Token':'two-fragments'});\n      result=await process([link(base+'headers#'+encodeURIComponent(JSON.stringify(args))+'#headers='+encodeURIComponent(headers))]);\n      equal(result[0].linked.arguments,args,'third fragment only controls download');\n      return {jsonArguments:true,pairArguments:true,sourceCached:true,thirdFragment:true};\n    });\n    await check('SC-native-linked-no-cache-and-execution-context',async()=>{\n      await process([link(base+'nocache#noCache')]);\n      await process([link(base+'nocache#noCache')]);\n      await process([link(base+'flow#zero=0#validCheck&noCache')],{noFlow:true});\n      await rejects(()=>process([link(base+'flow#zero=0#validCheck&noCache')]),'无法下载脚本:');\n      return {refreshRequests:2,noFlowPropagates:true,flowError:true};\n    });\n    await check('SC-native-linked-modules-filter-and-errors',async()=>{\n      $substore.write([{name:'模块🙂',content:'function operator(proxies) { proxies[0].module=$arguments.text; return proxies; }'},\n        {name:'过滤',content:'return $server.port===443;'}],'modules');\n      equal((await process([link('/api/module/'+encodeURIComponent('模块🙂')+'#text='+encodeURIComponent('内容🙂'))]))[0].module,'内容🙂','module source and args');\n      equal((await process([link('/api/module/'+encodeURIComponent('过滤'),'Script Filter')])).length,1,'linked shortcut filter');\n      await rejects(()=>process([link('/api/module/missing#x=1')]),'无法加载 module: /api/module/missing');\n      await rejects(()=>process([link(base+'missing')]),'无法下载脚本:');\n      await process([link(base+'unknown','Unknown Script Operator')]);\n      return {modules:true,filter:true,missing:true,unknownStillLoads:true};\n    });\n    await check('RS-native-normalization-aliases-and-full-transform',async()=>{\n      const input={statusCode:201,headers:{before:'yes'},body:'响应🙂\\r\\n',unknown:false};\n      const output=await transformed(input,[transform(`async function transformFunction(res,context) {\n        if(context.source.marker!=='source-marker'||$options.zero!==0)throw new Error('response injection');\n        if(res.header!==res.headers)throw new Error('headers are aliases');\n        await $substore.wait(1);res.header={changed:false};res.headers.zero=0;res.body+='after';return res;\n      }`)]);\n      equal(output,{status:201,body:'响应🙂\\r\\nafter',headers:{changed:false,zero:0},header:{changed:false,zero:0}},'normalized full response');\n      assert(output.header===output.headers&&!Object.hasOwn(output,'unknown'),'aliases and selected fields');\n      equal(input.headers,{before:'yes'},'replaced aliases retain original header object');\n      output.header=null;assert(output.header===output.headers&&Object.keys(output.headers).length===0,'invalid alias setter');\n      return {status:201,body:'响应🙂\\r\\nafter',aliases:true,unknownDropped:true};\n    });\n    await check('RS-native-shortcut-http-and-falsy-results',async()=>{\n      const output=await transformed({status:202,body:'响应🙂\\r\\n',header:{}},[transform(`const response=await $substore.http.post({url:'$UPSTREAM/host/echo',body:$res.body,headers:{'X-Probe':'native-response'}});\n        $res.headers.echo=JSON.parse(response.body).body;$res.body+='shortcut';`)]);\n      equal(output,{status:202,body:'响应🙂\\r\\nshortcut',headers:{echo:'响应🙂\\r\\n'},header:{echo:'响应🙂\\r\\n'}},'shortcut native HTTP');\n      for(const value of ['undefined','null','false','0','\"\"']) {\n        const result=await transformed({body:'start'},[transform('function transformFunction(res){res.body=\"mutated\";return '+value+';}')]);\n        equal(result.body,'mutated','falsy result retains mutation');\n      }\n      equal(await transformed({status:0,statusCode:203,header:false,headers:{zero:0}},[]),\n        {status:203,body:'',headers:{zero:0},header:{zero:0}},'truthy precedence and missing body');\n      return {nativeHttp:true,falsyResults:5,precedence:true};\n    });\n    await check('RS-native-control-linked-transform-errors-and-recovery',async()=>{\n      const output=await transformed({body:'a'},[\n        {type:'Script Operator',args:{content:'throw new Error(\"wrong stage\");'}},\n        {...transform('throw new Error(\"disabled\");'),disabled:true},\n        transform('function transformFunction(res,context){context.process={type:\"disable\",customNames:[\"skip\"]};res.body+=\"b\";return res;}'),\n        {...transform('throw new Error(\"skipped\");'),customName:'skip'},\n        link(base+'response#text='+encodeURIComponent('链接🙂'),'Response Transformer'),\n      ]);\n      equal(output.body,'ab链接🙂','stage skipping and linked transform');\n      await rejects(()=>transformed({body:''},[transform('throw new Error(\"response-sentinel\");')]),'响应修改 执行失败 response-sentinel');\n      equal((await transformed({body:'recovered'},[])).body,'recovered','response error recovery');\n      return {controls:true,linked:true,error:true,recovery:true};\n    });\n    proxies[0].loadingResponseVerified=passed;proxies[0].loadingResponseResults=observations;\n    return proxies;\n  } finally {$substore.write(modules,'modules');globalThis.Date=OriginalDate;}\n}\n"
+                "content": "async function operator(proxies) {\n  const passed=[], observations={};\n  const assert=(value,message)=>{if(!value)throw new Error(message);};\n  const equal=(a,b,message)=>assert(JSON.stringify(a)===JSON.stringify(b),message);\n  const check=async(id,callback)=>{observations[id]=await callback();passed.push(id);};\n  const rejects=async(callback,message)=>{try{await callback();}catch(error){assert(error.message.includes(message),'loader/response error: '+error.message);return;}throw new Error('expected error');};\n  const OriginalDate=Date;\n  globalThis.Date=class extends OriginalDate {\n    constructor(...args){super(...(args.length?args:[3200000000000]));}\n    static now(){return 3200000000000;}\n  };\n  const modules=$substore.read('modules');\n  const base='$UPSTREAM/host/script/';\n  const source={marker:'source-marker'},options={zero:0,flag:false};\n  const link=(content,type='Script Operator')=>({type,args:{mode:'link',content}});\n  const process=(items,execution={})=>ProxyUtils.process([{name:'linked',server:'example.invalid',port:443}],items,'JSON',source,options,false,execution);\n  const transformed=(input,items,execution={})=>ProxyUtils.processResponse(input,items,'JSON',source,options,execution);\n  const transform=content=>({type:'Response Transformer',args:{content}});\n  try {\n    await check('SC-native-linked-remote-arguments-cache-and-two-fragments',async()=>{\n      const args={zero:0,flag:false,text:'链接🙂'};\n      let result=await process([link(base+'operator#'+encodeURIComponent(JSON.stringify(args)))]);\n      equal(result[0].linked,{arguments:args,target:'JSON',options,raw:[false],source:'source-marker'},'full linked injection');\n      equal((await process([link(base+'operator#zero=0&flag=false&empty=&enabled')]))[0].linked.arguments,\n        {zero:'0',flag:'false',empty:true,enabled:true},'paired arguments share the cached source');\n      const headers=JSON.stringify({'User-Agent':'linked-script-native','X-Script-Token':'two-fragments'});\n      result=await process([link(base+'headers#'+encodeURIComponent(JSON.stringify(args))+'#headers='+encodeURIComponent(headers))]);\n      equal(result[0].linked.arguments,args,'third fragment only controls download');\n      return {jsonArguments:true,pairArguments:true,sourceCached:true,thirdFragment:true};\n    });\n    await check('SC-native-linked-no-cache-and-execution-context',async()=>{\n      await process([link(base+'nocache#noCache')]);\n      await process([link(base+'nocache#noCache')]);\n      await process([link(base+'flow#zero=0#validCheck&noCache')],{noFlow:true});\n      await rejects(()=>process([link(base+'flow#zero=0#validCheck&noCache')]),'无法下载脚本:');\n      return {refreshRequests:2,noFlowPropagates:true,flowError:true};\n    });\n    await check('SC-native-linked-modules-filter-and-errors',async()=>{\n      $substore.write([{name:'模块🙂',content:'function operator(proxies) { proxies[0].module=$arguments.text; return proxies; }'},\n        {name:'过滤',content:'return $server.port===443;'}],'modules');\n      equal((await process([link('/api/module/'+encodeURIComponent('模块🙂')+'#text='+encodeURIComponent('内容🙂'))]))[0].module,'内容🙂','module source and args');\n      equal((await process([link('/api/module/'+encodeURIComponent('过滤'),'Script Filter')])).length,1,'linked shortcut filter');\n      await rejects(()=>process([link('/api/module/missing#x=1')]),'无法加载 module: /api/module/missing');\n      await rejects(()=>process([link(base+'missing')]),'无法下载脚本:');\n      await process([link(base+'unknown','Unknown Script Operator')]);\n      return {modules:true,filter:true,missing:true,unknownStillLoads:true};\n    });\n    await check('RS-native-normalization-aliases-and-full-transform',async()=>{\n      const input={statusCode:201,headers:{before:'yes'},body:'响应🙂\\r\\n',unknown:false};\n      const output=await transformed(input,[transform(`async function transformFunction(res,context) {\n        if(context.source.marker!=='source-marker'||$options.zero!==0)throw new Error('response injection');\n        if(res.header!==res.headers)throw new Error('headers are aliases');\n        await $substore.wait(1);res.header={changed:false};res.headers.zero=0;res.body+='after';return res;\n      }`)]);\n      equal(output,{status:201,body:'响应🙂\\r\\nafter',headers:{changed:false,zero:0},header:{changed:false,zero:0}},'normalized full response');\n      assert(output.header===output.headers&&!Object.hasOwn(output,'unknown'),'aliases and selected fields');\n      equal(input.headers,{before:'yes'},'replaced aliases retain original header object');\n      output.header=null;assert(output.header===output.headers&&Object.keys(output.headers).length===0,'invalid alias setter');\n      return {status:201,body:'响应🙂\\r\\nafter',aliases:true,unknownDropped:true};\n    });\n    await check('RS-native-shortcut-http-and-falsy-results',async()=>{\n      const output=await transformed({status:202,body:'响应🙂\\r\\n',header:{}},[transform(`const response=await $substore.http.post({url:'$UPSTREAM/host/echo',body:$res.body,headers:{'X-Probe':'native-response'}});\n        $res.headers.echo=Buffer.from(JSON.parse(response.body).body).toString('utf8');$res.body+='shortcut';`)]);\n      equal(output,{status:202,body:'响应🙂\\r\\nshortcut',headers:{echo:'响应🙂\\r\\n'},header:{echo:'响应🙂\\r\\n'}},'shortcut native HTTP');\n      for(const value of ['undefined','null','false','0','\"\"']) {\n        const result=await transformed({body:'start'},[transform('function transformFunction(res){res.body=\"mutated\";return '+value+';}')]);\n        equal(result.body,'mutated','falsy result retains mutation');\n      }\n      equal(await transformed({status:0,statusCode:203,header:false,headers:{zero:0}},[]),\n        {status:203,body:'',headers:{zero:0},header:{zero:0}},'truthy precedence and missing body');\n      return {nativeHttp:true,falsyResults:5,precedence:true};\n    });\n    await check('RS-native-control-linked-transform-errors-and-recovery',async()=>{\n      const output=await transformed({body:'a'},[\n        {type:'Script Operator',args:{content:'throw new Error(\"wrong stage\");'}},\n        {...transform('throw new Error(\"disabled\");'),disabled:true},\n        transform('function transformFunction(res,context){context.process={type:\"disable\",customNames:[\"skip\"]};res.body+=\"b\";return res;}'),\n        {...transform('throw new Error(\"skipped\");'),customName:'skip'},\n        link(base+'response#text='+encodeURIComponent('链接🙂'),'Response Transformer'),\n      ]);\n      equal(output.body,'ab链接🙂','stage skipping and linked transform');\n      await rejects(()=>transformed({body:''},[transform('throw new Error(\"response-sentinel\");')]),'响应修改 执行失败 response-sentinel');\n      equal((await transformed({body:'recovered'},[])).body,'recovered','response error recovery');\n      return {controls:true,linked:true,error:true,recovery:true};\n    });\n    proxies[0].loadingResponseVerified=passed;proxies[0].loadingResponseResults=observations;\n    return proxies;\n  } finally {$substore.write(modules,'modules');globalThis.Date=OriginalDate;}\n}\n"
               },
               "type": "Script Operator"
             }
@@ -875,6 +875,286 @@
           },
           "status": 200
         }
+      }
+    ]
+  },
+  {
+    "id": "PC-native-subscription-collection-pipeline",
+    "source": "sync.js produceArtifact subscription/collection source precedence, merging, processors, tags and fallback; ordinary actual script job",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/preview/sub",
+        "body": {
+          "process": [
+            {
+              "type": "Script Operator",
+              "args": {
+                "content": "async function operator(proxies) {\n  const assert=(value,message)=>{if(!value)throw new Error(message);};\n  const equal=(actual,expected,message)=>assert(JSON.stringify(actual)===JSON.stringify(expected),message+': '+JSON.stringify({actual,expected}));\n  const rejects=async(callback,message)=>{try{await callback();}catch(error){assert(error.message.includes(message),'pipeline error '+error.message);return;}throw new Error('expected '+message);};\n  const DateBefore=Date,subsBefore=$substore.read('subs'),colsBefore=$substore.read('collections');\n  globalThis.Date=class extends DateBefore {constructor(...args){super(...(args.length?args:[3300000000000]));}static now(){return 3300000000000;}};\n  const passed=[],results={};\n  const check=async(id,callback)=>{results[id]=await callback();passed.push(id);};\n  const local='ss://YWVzLTEyOC1nY206cGFzcw==@local.invalid:8388#local';\n  const remote='$UPSTREAM/host/pipeline/';\n  const names=value=>value.map(item=>item.name);\n  const produce=options=>produceArtifact({type:'subscription',platform:'JSON',produceType:'internal',noFlow:true,...options});\n  const source={name:'源🙂',displayName:'显示',source:'local',content:local};\n  try {\n    await check('PL-native-subscription-source-precedence-and-typed-output',async()=>{\n      const result=await produce({subscription:source});\n      equal(names(result),['local'],'local source');\n      equal([result[0]._subName,result[0]._subDisplayName],['源🙂','显示'],'provenance');\n      const overridden=await produce({subscription:{...source,source:'remote',url:remote+'a'},content:local});\n      equal(names(overridden),['local'],'content override bypasses URL');\n      const raw=await produce({subscription:source,produceType:'raw',includeRaw:true});\n      equal(raw,{result:JSON.stringify([local]),raw:[local]},'raw output and original source');\n      await rejects(()=>produce({name:'missing'}),'找不到订阅 missing');\n      await rejects(()=>produce({subscription:undefined}),'未提供订阅名称或订阅数据');\n      return {names:names(result),raw,missing:true};\n    });\n    await check('PL-native-parallel-source-order-merge-and-raw',async()=>{\n      const sub={...source,source:'remote',url:remote+'slow\\n'+remote+'b',mergeSources:'localFirst'};\n      const result=await produce({subscription:sub,includeRaw:true});\n      equal(names(result.result),['local','remote-slow','remote-b'],'source order survives completion order');\n      equal(result.raw,[local,'ss://YWVzLTEyOC1nY206cGFzcw==@slow.invalid:8388#remote-slow','ss://YWVzLTEyOC1nY206cGFzcw==@b.invalid:8388#remote-b'],'original raw sources');\n      equal(names(await produce({subscription:{...sub,mergeSources:'remoteFirst'}})),['remote-slow','remote-b','local'],'remoteFirst and shared cache');\n      const override=await produce({subscription:source,url:remote+'a',content:local,mergeSources:'remoteFirst'});\n      equal(names(override),['remote-a','local'],'overrides own source and merge');\n      return {result,override};\n    });\n    await check('PL-native-processing-options-source-and-original-content',async()=>{\n      const sub={...source,process:[{type:'Script Operator',args:{content:`async function operator(items,target,context){\n        if(target!=='JSON'||$options.zero!==0||context.source['源🙂'].displayName!=='显示')throw new Error('pipeline injection');\n        items[0].raw=context.raw;items[0].name+='-processed';return items;}`}}]};\n      const result=await produce({subscription:sub,$options:{zero:0}});\n      equal(result[0].raw,[local],'raw injected unchanged');\n      equal(names(result),['local-processed'],'processor used before producer');\n      return result;\n    });\n    await check('PL-native-collection-explicit-tags-child-and-own-order',async()=>{\n      const first={...source,name:'first',tag:['自动'],process:[{type:'Regex Rename Operator',args:[{expr:'local',now:'child-first'}]}]};\n      const second={name:'second',source:'remote',url:remote+'a',tag:['自动']};\n      const excluded={...source,name:'excluded',tag:['其他']};\n      const collection={name:'组合🙂',displayName:'集合显示',subscriptions:['first'],subscriptionTags:['自动'],process:[{type:'Script Operator',args:{content:`function operator(items,target,context){\n        if($options.zero!==0||context.source._collection.name!=='组合🙂')throw new Error('collection injection');\n        items.forEach(item=>{item.collectionRaw=context.raw;item.name+='-collection';});return items;}`}}]};\n      $substore.write([first,second,excluded],'subs');$substore.write([collection],'collections');\n      const result=await produce({type:'collection',name:'组合🙂',$options:{zero:0},includeRaw:true});\n      equal(names(result.result),['child-first-collection','remote-a-collection'],'explicit then tagged source and own processing');\n      equal(result.result.map(item=>[item._subName,item._collectionName,item._collectionDisplayName]),[['first','组合🙂','集合显示'],['second','组合🙂','集合显示']],'collection provenance');\n      equal(Object.keys(result.raw),['first','second'],'raw map keys');\n      await rejects(()=>produce({type:'collection',name:'missing'}),'找不到组合订阅 missing');\n      return result;\n    });\n    await check('PL-native-source-ignore-and-subscription-fallback',async()=>{\n      const sub={...source,source:'remote',url:remote+'failed\\n'+remote+'a'};\n      await rejects(()=>produce({subscription:sub}),'发生错误, 请查看日志');\n      equal(names(await produce({subscription:{...sub,ignoreFailedRemoteSub:true}})),['remote-a'],'true means quiet partial output');\n      equal(await produce({subscription:{...sub,ignoreFailedRemoteSub:'fallbackQuiet'}}),[],'fallback discards partially loaded source');\n      equal(await produce({subscription:{...source,content:'',ignoreFailedRemoteSub:'fallbackNotify'}}),[],'empty source fallback');\n      equal(await produce({subscription:{...sub,ignoreFailedRemoteSub:'fallbackQuiet'},produceType:'raw',includeRaw:true}),{result:'[]',raw:[]},'raw fallback retains source array at failure boundary');\n      return {partial:true,wholeFallback:true,rawFallback:true};\n    });\n    await check('PL-native-collection-partial-and-whole-fallback',async()=>{\n      const valid={...source,name:'valid'},invalid={name:'invalid',source:'remote',url:remote+'failed'};\n      $substore.write([valid,invalid],'subs');\n      const collection={name:'fallback',subscriptions:['invalid','valid'],ignoreFailedRemoteSub:'fallbackQuiet'};\n      $substore.write([collection],'collections');\n      const result=await produce({type:'collection',name:'fallback',includeRaw:true});\n      equal(names(result.result),['local'],'collection retains successful children');\n      equal(result.raw.invalid,[],'failed child raw replaced by empty array');\n      $substore.write([{...collection,subscriptions:['invalid']}],'collections');\n      equal(await produce({type:'collection',name:'fallback'}),[],'no success falls back whole collection');\n      $substore.write([{...invalid,ignoreFailedRemoteSub:'fallbackQuiet'}],'subs');\n      $substore.write([{name:'child-fallback',subscriptions:['invalid']}],'collections');\n      await rejects(()=>produce({type:'collection',name:'child-fallback'}),'不含有效节点');\n      return {result,empty:true,childFallback:true};\n    });\n    proxies[0].pipelineVerified=passed;proxies[0].pipelineResults=results;return proxies;\n  } finally {$substore.write(subsBefore,'subs');$substore.write(colsBefore,'collections');globalThis.Date=DateBefore;}\n}\n"
+              }
+            }
+          ],
+          "name": "pipeline-native",
+          "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#pipeline",
+          "source": "local"
+        },
+        "expect": {
+          "json_contains": {
+            "data": {
+              "processed": [
+                {
+                  "pipelineVerified": [
+                    "PL-native-subscription-source-precedence-and-typed-output",
+                    "PL-native-parallel-source-order-merge-and-raw",
+                    "PL-native-processing-options-source-and-original-content",
+                    "PL-native-collection-explicit-tags-child-and-own-order",
+                    "PL-native-source-ignore-and-subscription-fallback",
+                    "PL-native-collection-partial-and-whole-fallback"
+                  ]
+                }
+              ]
+            }
+          },
+          "status": 200
+        },
+        "upstream": [
+          {
+            "body": "",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "method": "GET"
+          },
+          {
+            "body": "",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "method": "GET"
+          },
+          {
+            "body": "",
+            "path": "/host/pipeline/a",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "method": "GET"
+          },
+          {
+            "body": "",
+            "path": "/host/pipeline/failed",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "method": "GET"
+          },
+          {
+            "body": "",
+            "path": "/host/pipeline/failed",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "method": "GET"
+          },
+          {
+            "body": "",
+            "path": "/host/pipeline/failed",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "method": "GET"
+          },
+          {
+            "body": "",
+            "path": "/host/pipeline/failed",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "method": "GET"
+          },
+          {
+            "body": "",
+            "path": "/host/pipeline/failed",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "method": "GET"
+          },
+          {
+            "body": "",
+            "path": "/host/pipeline/failed",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "method": "GET"
+          },
+          {
+            "body": "",
+            "path": "/host/pipeline/failed",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "method": "GET"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "PC-native-collection-preview-and-download",
+    "source": "preview compareCollection, downloadCollection and source subscription/tag order; normal HTTP routes",
+    "steps": [
+      {
+        "expect": {
+          "status": 201
+        },
+        "path": "/api/subs",
+        "body": {
+          "tag": [
+            "m3-pipeline-tag"
+          ],
+          "source": "local",
+          "name": "m3-pipeline-http-a",
+          "content": "ss://YWVzLTEyOC1nY206cGFzcw==@a.invalid:8388#a"
+        },
+        "method": "POST"
+      },
+      {
+        "expect": {
+          "status": 201
+        },
+        "path": "/api/subs",
+        "body": {
+          "tag": [
+            "m3-pipeline-tag"
+          ],
+          "source": "local",
+          "name": "m3-pipeline-http-b",
+          "content": "ss://YWVzLTEyOC1nY206cGFzcw==@b.invalid:8388#b"
+        },
+        "method": "POST"
+      },
+      {
+        "expect": {
+          "status": 201
+        },
+        "path": "/api/collections",
+        "body": {
+          "process": [
+            {
+              "args": [
+                {
+                  "expr": "$",
+                  "now": "-col"
+                }
+              ],
+              "type": "Regex Rename Operator"
+            }
+          ],
+          "subscriptionTags": [
+            "m3-pipeline-tag"
+          ],
+          "subscriptions": [
+            "m3-pipeline-http-a"
+          ],
+          "name": "m3-pipeline-http-col"
+        },
+        "method": "POST"
+      },
+      {
+        "expect": {
+          "json_contains": {
+            "data": {
+              "original": [
+                {
+                  "_subName": "m3-pipeline-http-a",
+                  "_collectionName": "m3-pipeline-http-col",
+                  "name": "a",
+                  "id": 0
+                },
+                {
+                  "_subName": "m3-pipeline-http-b",
+                  "_collectionName": "m3-pipeline-http-col",
+                  "name": "b",
+                  "id": 1
+                }
+              ],
+              "processed": [
+                {
+                  "id": 0,
+                  "name": "a-col"
+                },
+                {
+                  "id": 1,
+                  "name": "b-col"
+                }
+              ]
+            }
+          },
+          "status": 200
+        },
+        "path": "/api/preview/collection",
+        "body": {
+          "process": [
+            {
+              "args": [
+                {
+                  "expr": "$",
+                  "now": "-col"
+                }
+              ],
+              "type": "Regex Rename Operator"
+            }
+          ],
+          "subscriptionTags": [
+            "m3-pipeline-tag"
+          ],
+          "subscriptions": [
+            "m3-pipeline-http-a"
+          ],
+          "name": "m3-pipeline-http-col"
+        },
+        "method": "POST"
+      },
+      {
+        "expect": {
+          "body": "ss://YWVzLTEyOC1nY206cGFzcw==@a.invalid:8388#a-col\nss://YWVzLTEyOC1nY206cGFzcw==@b.invalid:8388#b-col",
+          "status": 200
+        },
+        "path": "/download/collection/m3-pipeline-http-col/URI",
+        "method": "GET"
+      },
+      {
+        "expect": {
+          "headers": {
+            "allow": "POST,GET,HEAD"
+          },
+          "status": 200,
+          "body": "POST,GET,HEAD"
+        },
+        "path": "/api/preview/collection",
+        "method": "OPTIONS"
+      },
+      {
+        "expect": {
+          "status": 200
+        },
+        "path": "/api/collection/m3-pipeline-http-col?mode=permanent",
+        "method": "DELETE"
+      },
+      {
+        "expect": {
+          "status": 200
+        },
+        "path": "/api/sub/m3-pipeline-http-a?mode=permanent",
+        "method": "DELETE"
+      },
+      {
+        "expect": {
+          "status": 200
+        },
+        "path": "/api/sub/m3-pipeline-http-b?mode=permanent",
+        "method": "DELETE"
       }
     ]
   },

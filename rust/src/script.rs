@@ -9,7 +9,7 @@ use rquickjs::{
 };
 use serde_json::{Value, json};
 use std::{
-    cell::{Cell, RefCell},
+    cell::RefCell,
     rc::Rc,
     sync::{Arc, Mutex},
     time::Duration,
@@ -547,7 +547,12 @@ async fn native_process<'js>(
     Rest(arguments): Rest<JsValue<'js>>,
 ) -> rquickjs::Result<JsValue<'js>> {
     let js = Js::new(ctx);
-    let argument = |index| arguments.get(index).cloned().unwrap_or_else(|| js.undefined());
+    let argument = |index| {
+        arguments
+            .get(index)
+            .cloned()
+            .unwrap_or_else(|| js.undefined())
+    };
     let input = argument(0);
     let operators = Opt(Some(argument(1)));
     let target = Opt(Some(argument(2)));
@@ -843,16 +848,15 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     crate::script_download::initialize(ctx, &utils)?;
     crate::script_age::initialize(ctx, &utils)?;
     globals.set("ProxyUtils", utils)?;
-    Ok(())
+    crate::script_pipeline::initialize(ctx)
 }
 
-pub async fn local(
+pub async fn run(
     store: Arc<Mutex<Store>>,
-    sub: Value,
-    target: String,
-    content: Option<Value>,
-    preview: bool,
+    operation: &str,
+    input: Value,
 ) -> Result<Value, conversion::Error> {
+    let operation = operation.to_owned();
     let (sender, receiver) = tokio::sync::oneshot::channel();
     let worker = tokio::task::spawn_blocking(move || {
         let mut sender = Some(sender);
@@ -862,20 +866,13 @@ pub async fn local(
                 .build()
                 .map_err(|error| conversion::Error::Legacy(error.to_string()))?
                 .block_on(async {
-                    let mut plain = sub.clone();
-                    if let Some(fields) = plain.as_object_mut() {
-                        fields.shift_remove("process");
-                    }
-                    let proxies = conversion::local(&plain, content.as_ref())?;
                     let (cache, root) = {
                         let store = store.lock().map_err(|_| {
                             conversion::Error::Legacy("State lock poisoned".to_owned())
                         })?;
                         (
                             store.data.clone(),
-                            store
-                                .script_root()
-                                .map_err(|error| conversion::Error::Legacy(error.to_string()))?,
+                            store.script_root().map_err(|error| conversion::Error::Legacy(error.to_string()))?,
                         )
                     };
                     let job = Job {
@@ -884,81 +881,42 @@ pub async fn local(
                     };
                     let runtime = AsyncRuntime::new()
                         .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
-                    let context = AsyncContext::full(&runtime)
-                        .await
+                    let context = AsyncContext::full(&runtime).await
                         .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
-                    let result = context
-                        .async_with(async |ctx| {
-                            let result = async {
-                                initialize(&ctx, job)?;
-                                let js = Js::new(ctx.clone());
-                                let original = ctx.json_parse(codec::stringify(&json!(proxies)))?;
-                                let sub_value = ctx.json_parse(codec::stringify(&sub))?;
-                                let sub_name = js.get(&sub_value, "name")?;
-                                let display_name = js.get(&sub_value, "displayName")?;
-                                let next_index = Rc::new(Cell::new(0usize));
-                                let tag_scope = js.clone();
-                                let name_tag = sub_name.clone();
-                                js.each(original.clone(), move |proxy| {
-                                    if preview {
-                                        tag_scope.set(
-                                            &proxy,
-                                            "id",
-                                            tag_scope.value(next_index.get())?,
-                                        )?;
-                                        next_index.set(next_index.get() + 1);
-                                    }
-                                    tag_scope.set(&proxy, "_subName", name_tag.clone())?;
-                                    tag_scope.set(
-                                        &proxy,
-                                        "_subDisplayName",
-                                        display_name.clone(),
-                                    )?;
-                                    Ok(())
-                                })?;
-                                let items = sub
-                                    .get("process")
-                                    .filter(|value| crate::state::truthy(value))
-                                    .cloned()
-                                    .unwrap_or_else(|| json!([]));
-                                let items = ctx.json_parse(codec::stringify(&items))?;
-                                let source = Object::new(ctx.clone())?;
-                                js.call::<(), _>("set", (source.clone(), sub_name, sub_value))?;
-                                let context = Object::new(ctx.clone())?.into_value();
-                                if let Some(raw) = content.as_ref().or_else(|| sub.get("content")) {
-                                    let raw = ctx.json_parse(codec::stringify(raw))?;
-                                    let raw =
-                                        if raw.is_array() || (!raw.is_null() && raw.is_object()) {
-                                            raw
-                                        } else {
-                                            js.array([raw])?
-                                        };
-                                    js.set(&context, "raw", raw)?;
+                    let result = context.async_with(async |ctx| {
+                        let result = async {
+                            initialize(&ctx, job)?;
+                            let js = Js::new(ctx.clone());
+                            let input = ctx.json_parse(codec::stringify(&input))?;
+                            let result = match operation.as_str() {
+                                "preview-sub" | "preview-collection" => {
+                                    crate::script_pipeline::preview(
+                                        &js,
+                                        if operation == "preview-collection" { "collection" } else { "sub" },
+                                        js.get(&input, "item")?,
+                                        js.get(&input, "target")?,
+                                    ).await?
                                 }
-                                let scope = Scope {
-                                    target: js.value(codec::text(&target))?,
-                                    source: source.into_value(),
-                                    options: js.undefined(),
-                                    context,
-                                    execution: Object::new(ctx.clone())?.into_value(),
-                                };
-                                let processed =
-                                    process(&js, original.clone(), items, scope).await?;
-                                let result = Object::new(ctx.clone())?;
-                                if preview {
-                                    result.set("original", original)?;
+                                "artifact" => {
+                                    let function: Function = ctx.globals().get("produceArtifact")?;
+                                    settled(&js, function.call((input,))?).await?
                                 }
-                                result.set("processed", processed)?;
-                                let text = serialized(&ctx, result.into_value())?;
-                                codec::parse(&text).map_err(|error| js.error(&error.to_string()))
-                            }
-                            .await;
-                            result.map_err(|error| conversion::Error::Legacy(message(&ctx, error)))
-                        })
-                        .await;
-                    if let Some(sender) = sender.take() {
-                        let _ = sender.send(result);
-                    }
+                                "download-sub" | "download-collection" => {
+                                    crate::script_pipeline::generate(
+                                        &js,
+                                        if operation == "download-collection" { "collection" } else { "sub" },
+                                        js.get(&input, "item")?,
+                                        js.get(&input, "options")?,
+                                    ).await?
+                                }
+                                _ => return Err(js.error("Unknown script job operation")),
+                            };
+                            let text = serialized(&ctx, result)?;
+                            codec::parse(&text).map_err(|error| js.error(&error.to_string()))
+                        }.await;
+                        result.map_err(|error| conversion::Error::Legacy(message(&ctx, error)))
+                    }).await;
+                    if let Some(sender) = sender.take() { let _ = sender.send(result); }
                     // Optimistic refreshes keep their context after the HTTP reply.
                     runtime.idle().await;
                     Ok::<_, conversion::Error>(())
@@ -974,12 +932,8 @@ pub async fn local(
     match receiver.await {
         Ok(result) => result,
         Err(_) => {
-            worker
-                .await
-                .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
-            Err(conversion::Error::Legacy(
-                "Script job ended without a result".to_owned(),
-            ))
+            worker.await.map_err(|error| conversion::Error::Legacy(error.to_string()))?;
+            Err(conversion::Error::Legacy("Script job ended without a result".to_owned()))
         }
     }
 }

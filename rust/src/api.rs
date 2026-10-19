@@ -64,7 +64,7 @@ pub fn options(path: &str) -> Reply {
         "/api/settings" => "GET,PATCH,HEAD",
         "/api/storage" => "GET,POST,HEAD",
         "/api/subs" | "/api/collections" => "GET,POST,PUT,HEAD",
-        "/api/proxy/parse" | "/api/rule/parse" | "/api/preview/sub" => "POST,GET,HEAD",
+        "/api/proxy/parse" | "/api/rule/parse" | "/api/preview/sub" | "/api/preview/collection" => "POST,GET,HEAD",
         _ if path.starts_with("/api/sub/") || path.starts_with("/api/collection/") => {
             "GET,PATCH,DELETE,HEAD"
         }
@@ -232,12 +232,6 @@ fn header_platform(headers: &HeaderMap) -> &'static str {
     }
 }
 
-fn has_processors(sub: &Value) -> bool {
-    sub.get("process").is_some_and(|process| {
-        truthy(process) && process.as_array().is_none_or(|items| !items.is_empty())
-    })
-}
-
 pub async fn conversion_dispatch(
     method: &Method,
     path: &str,
@@ -293,33 +287,23 @@ pub async fn conversion_dispatch(
             Err(error) => conversion_error(error, None),
         });
     }
-    if method == Method::POST && path == "/api/preview/sub" {
-        let sub = Value::Object(body.fields());
-        if has_processors(&sub) {
-            let target = if truthy(&query["target"]) {
-                js_string(&query["target"])
-            } else {
-                "JSON".to_owned()
-            };
-            return Some(
-                match crate::script::local(store.clone(), sub, target, None, true).await {
-                    Ok(output) => success(Some(output), 200),
-                    Err(error) => conversion_error(error, Some("Failed to preview subscription")),
-                },
-            );
-        }
-        return Some(match conversion::local(&sub, None) {
-            Ok(mut proxies) => {
-                conversion::tag(&mut proxies, &sub, true);
-                success(Some(json!({"original":proxies, "processed":proxies})), 200)
-            }
-            Err(error) => conversion_error(error, Some("Failed to preview subscription")),
+    if method == Method::POST && matches!(path, "/api/preview/sub" | "/api/preview/collection") {
+        let collection = path.ends_with("/collection");
+        let target = if truthy(&query["target"]) { js_string(&query["target"]) } else { "JSON".to_owned() };
+        let input = json!({"item":Value::Object(body.fields()),"target":codec::text(&target)});
+        return Some(match crate::script::run(
+            store.clone(), if collection { "preview-collection" } else { "preview-sub" }, input,
+        ).await {
+            Ok(output) => success(Some(output), 200),
+            Err(error) => conversion_error(error, Some(if collection { "Failed to preview collection" } else { "Failed to preview subscription" })),
         });
     }
     if method != Method::GET {
         return None;
     }
     let rest = path.strip_prefix("/download/")?;
+    let collection = rest.starts_with("collection/");
+    let rest = rest.strip_prefix("collection/").unwrap_or(rest);
     let (name, path_target) = rest
         .split_once('/')
         .map_or((rest, None), |(name, target)| (name, Some(target)));
@@ -329,7 +313,7 @@ pub async fn conversion_dispatch(
     } else {
         let store = store.lock().unwrap();
         let mut found = None;
-        for item in store.list("subs").unwrap_or_default() {
+        for item in store.list(if collection { "collections" } else { "subs" }).unwrap_or_default() {
             if item.is_null() {
                 return Some(uncaught_error(
                     500,
@@ -348,11 +332,11 @@ pub async fn conversion_dispatch(
             404,
             "RESOURCE_NOT_FOUND",
             "ResourceNotFoundError",
-            &format!("Subscription {} does not exist!", codec::text(&name)),
+            &format!("{} {} does not exist!", if collection { "Collection" } else { "Subscription" }, codec::text(&name)),
         ));
     };
     // shortcut: output hooks, remote flow headers and encryption join this pipeline in their owning batches.
-    if ["$options", "mergeSources", "_fakeNode"]
+    if ["$options", "_fakeNode"]
         .iter()
         .any(|key| truthy(&query[*key]))
         || truthy(&sub["age-public-key"])
@@ -379,38 +363,24 @@ pub async fn conversion_dispatch(
     } else {
         query.get("content").filter(|value| truthy(value)).cloned()
     };
-    if content.is_none() && url.is_some() {
-        return Some(pending(
-            "Remote subscription sources are not implemented yet",
-        ));
-    }
-    let kind = query["produceType"].as_str().unwrap_or("");
-    if kind == "raw" {
-        return Some(pending("Raw source output is not implemented yet"));
-    }
-    let result = if has_processors(&sub) {
-        crate::script::local(store.clone(), sub.clone(), target.clone(), content, false)
-            .await
-            .and_then(|output| {
-                output["processed"].as_array().cloned().ok_or_else(|| {
-                    ConversionError::Legacy("proxies.filter is not a function".to_owned())
-                })
-            })
-    } else {
-        conversion::local(&sub, content.as_ref()).map(|mut proxies| {
-            conversion::tag(&mut proxies, &sub, false);
-            proxies
-        })
-    };
-    let result = result.and_then(|proxies| {
-        if proxies.is_empty() {
-            return Err(ConversionError::Legacy(format!(
-                "订阅 {} 中不含有效节点",
-                selected_text(sub.get("name"))
-            )));
+    let mut options = query.clone();
+    if let Some(fields) = options.as_object_mut() {
+        fields.insert("name".to_owned(), json!(name));
+        fields.insert("platform".to_owned(), json!(target));
+        if let Some(content) = content {
+            fields.insert("content".to_owned(), content);
+            fields.shift_remove("url");
         }
-        conversion::produce(proxies, &target, kind, &json!({}))
-    });
+        let mut produce = serde_json::Map::new();
+        for (source, destination) in [("includeUnsupportedProxy", "include-unsupported-proxy"), ("prettyYaml", "prettyYaml")] {
+            if let Some(value) = query.get(source) { produce.insert(destination.to_owned(), value.clone()); }
+        }
+        fields.insert("produceOpts".to_owned(), Value::Object(produce));
+    }
+    let result = crate::script::run(
+        store.clone(), if collection { "download-collection" } else { "download-sub" },
+        json!({"item":sub,"options":options}),
+    ).await;
     Some(match result {
         Ok(output) => {
             let content_type = if target == "JSON" {
@@ -426,7 +396,8 @@ pub async fn conversion_dispatch(
         Err(error) => conversion_error(
             error,
             Some(&format!(
-                "Failed to download subscription: {}",
+                "Failed to download {}: {}",
+                if collection { "collection" } else { "subscription" },
                 codec::text(&name)
             )),
         ),

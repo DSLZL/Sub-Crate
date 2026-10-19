@@ -65,7 +65,7 @@ fn format<'js>(
     Ok(output.into_value())
 }
 
-fn mask_url<'js>(js: &Js<'js>, value: Value<'js>) -> rquickjs::Result<String> {
+pub(crate) fn mask_url<'js>(js: &Js<'js>, value: Value<'js>) -> rquickjs::Result<String> {
     let pattern: Value = js.call("regex", (r"([?#&]age-secret-key=)[^&#\s]+", "gi"))?;
     let value = js.method(value, "replace", vec![pattern, js.value("$1***")?])?;
     let pattern: Value = js.call(
