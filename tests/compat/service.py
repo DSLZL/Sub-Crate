@@ -24,6 +24,7 @@ from reference import BACKEND, HERE, ROOT, execute, oracle, source_provenance
 from runner import BufferedHTTPConnection, check_json, load_cases, request, run_cases
 from upstream import ControlledUpstream
 from scheduling import run_contracts as scheduling_contracts
+from backup_age import run_contracts as backup_age_contracts
 
 
 def wall_time(latest=False):
@@ -2485,6 +2486,7 @@ def main():
         notification_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
         scheduling_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image, listener)
         business_logs_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
+        backup_age_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image, listener)
         configurations = [
             ("default", {}, 1048576, [("https://sub-store.vercel.app", "https://sub-store.vercel.app")], "https://denied.invalid", False),
             ("custom-name", {"SUB_STORE_BACKEND_CUSTOM_NAME": "configuration-fixture", "SUB_STORE_BODY_JSON_LIMIT": "+1GB"}, 1073741824,

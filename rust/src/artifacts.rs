@@ -164,9 +164,15 @@ pub async fn dispatch(
         if let Err(error) = &result {
             let token = truthy(&store.lock().unwrap().data["settings"]["gistToken"]);
             if token {
-                crate::logs::error(&mut store.lock().unwrap(), &format!("查找 Sub-Store Gist 时发生错误: {}", error.message));
+                crate::logs::error(
+                    &mut store.lock().unwrap(),
+                    &format!("查找 Sub-Store Gist 时发生错误: {}", error.message),
+                );
             }
-            crate::logs::error(&mut store.lock().unwrap(), &format!("恢复远程配置失败，原因：{}", error.message));
+            crate::logs::error(
+                &mut store.lock().unwrap(),
+                &format!("恢复远程配置失败，原因：{}", error.message),
+            );
         }
         return Some(match result {
             Ok(()) => api::success(None, 200),
@@ -186,7 +192,17 @@ pub async fn dispatch(
         let name = path.strip_prefix("/api/artifact/").unwrap();
         let result = delete(store, name, query).await;
         if let Err(error) = &result {
-            crate::logs::error(&mut store.lock().unwrap(), &format!("无法删除远程配置：{name}，原因：{}", if error.kind == "Error" { &error.message } else { "[object Object]" }));
+            crate::logs::error(
+                &mut store.lock().unwrap(),
+                &format!(
+                    "无法删除远程配置：{name}，原因：{}",
+                    if error.kind == "Error" {
+                        &error.message
+                    } else {
+                        "[object Object]"
+                    }
+                ),
+            );
         }
         return Some(result.map_or_else(
             |error| error.reply(500),
@@ -305,7 +321,10 @@ fn manage(method: &Method, path: &str, body: &Body, store: &mut Store) -> api::R
 }
 
 async fn delete(store: &Arc<Mutex<Store>>, name: &str, query: &Value) -> Result<Value, Error> {
-    crate::logs::info(&mut store.lock().unwrap(), &format!("正在删除远程配置：{name}"));
+    crate::logs::info(
+        &mut store.lock().unwrap(),
+        &format!("正在删除远程配置：{name}"),
+    );
     let archive = resources::archive_mode(&query["mode"])?;
     let artifact = {
         let mut store = store.lock().unwrap();
@@ -354,7 +373,10 @@ async fn delete(store: &Arc<Mutex<Store>>, name: &str, query: &Value) -> Result<
                 }
             }
             Err(error) => {
-                crate::logs::error(&mut store.lock().unwrap(), &format!("Function syncToGist: {name} : {}", error.message));
+                crate::logs::error(
+                    &mut store.lock().unwrap(),
+                    &format!("Function syncToGist: {name} : {}", error.message),
+                );
                 remote["status"] = json!("failed");
                 remote["message"] = json!(error.message);
             }

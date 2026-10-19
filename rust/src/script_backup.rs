@@ -188,12 +188,20 @@ pub(crate) fn restored_artifacts<'js>(
             continue;
         }
         if js.equal(&name, &js.value(".sub-store-placeholder")?)? {
-            script::log(js, "info", &format!("忽略 Gist 占位文件: {}", js.text(name)?));
+            script::log(
+                js,
+                "info",
+                &format!("忽略 Gist 占位文件: {}", js.text(name)?),
+            );
             continue;
         }
         let encoded: Value = encoder.call((name.clone(),))?;
         if !js.equal(&encoded, &name)? {
-            script::log(js, "error", &format!("文件名 {} 未编码 不保存", js.text(name)?));
+            script::log(
+                js,
+                "error",
+                &format!("文件名 {} 未编码 不保存", js.text(name)?),
+            );
             continue;
         }
         let old = crate::script_pipeline::find(js, items.clone(), name.clone())?;

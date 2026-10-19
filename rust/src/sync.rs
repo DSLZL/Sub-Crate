@@ -53,17 +53,33 @@ pub(crate) async fn one(store: &Arc<Mutex<Store>>, requested: &str) -> Result<Va
         error.code = "RESOURCE_HAS_NO_SOURCE".to_owned();
         return Err(error);
     }
-    logs::info(&mut store.lock().unwrap(), &format!("开始同步远程配置 {}...", log_name(&snapshot)));
+    logs::info(
+        &mut store.lock().unwrap(),
+        &format!("开始同步远程配置 {}...", log_name(&snapshot)),
+    );
     if snapshot["platform"] == "SurgeMac" {
-        logs::info(&mut store.lock().unwrap(), "手动指定了 target 为 SurgeMac, 将使用 mihomo External");
+        logs::info(
+            &mut store.lock().unwrap(),
+            "手动指定了 target 为 SurgeMac, 将使用 mihomo External",
+        );
     }
     let content = job(store, "artifact-output", snapshot.clone()).await?;
     let mut updated = resources::now();
     let result = if snapshot["upload"] == false {
-        logs::info(&mut store.lock().unwrap(), &format!("配置 {} 已关闭上传, 仅更新执行时间", log_name(&snapshot)));
+        logs::info(
+            &mut store.lock().unwrap(),
+            &format!("配置 {} 已关闭上传, 仅更新执行时间", log_name(&snapshot)),
+        );
         json!({})
     } else {
-        logs::info(&mut store.lock().unwrap(), &format!("正在上传配置：{}\n>>>{}", log_name(&snapshot), String::from_utf8_lossy(&codec::pretty(&snapshot))));
+        logs::info(
+            &mut store.lock().unwrap(),
+            &format!(
+                "正在上传配置：{}\n>>>{}",
+                log_name(&snapshot),
+                String::from_utf8_lossy(&codec::pretty(&snapshot))
+            ),
+        );
         let encoded =
             codec::uri_component(requested).map_err(|_| Error::plain("URIError: URI malformed"))?;
         let mut files = json!({});
@@ -87,7 +103,10 @@ pub(crate) async fn one(store: &Arc<Mutex<Store>>, requested: &str) -> Result<Va
         mark(item, updated, &result);
         item.clone()
     } else {
-        logs::info(&mut store, &format!("远程配置 {requested} 已不存在, 跳过同步结果写入"));
+        logs::info(
+            &mut store,
+            &format!("远程配置 {requested} 已不存在, 跳过同步结果写入"),
+        );
         mark(&mut fallback, updated, &result);
         fallback
     };
@@ -133,7 +152,10 @@ pub(crate) async fn all(store: &Arc<Mutex<Store>>, skip_cron: bool) -> Result<()
     logs::info(&mut store.lock().unwrap(), "开始同步所有远程配置...");
     let result = all_inner(store, skip_cron).await;
     if let Err(error) = &result {
-        logs::error(&mut store.lock().unwrap(), &format!("同步配置失败，原因：{}", error.message));
+        logs::error(
+            &mut store.lock().unwrap(),
+            &format!("同步配置失败，原因：{}", error.message),
+        );
     }
     result
 }
@@ -148,9 +170,15 @@ async fn all_inner(store: &Arc<Mutex<Store>>, skip_cron: bool) -> Result<(), Err
             store.list("collections").unwrap_or_default().to_vec(),
         )
     };
-    let enabled = items.iter().filter(|item| selected(item, skip_cron)).count();
+    let enabled = items
+        .iter()
+        .filter(|item| selected(item, skip_cron))
+        .count();
     if enabled == 0 {
-        logs::info(&mut store.lock().unwrap(), &format!("需同步的配置: 0, 总数: {}", items.len()));
+        logs::info(
+            &mut store.lock().unwrap(),
+            &format!("需同步的配置: 0, 总数: {}", items.len()),
+        );
         return Ok(());
     }
     let mut warm = Vec::new();
@@ -199,9 +227,15 @@ async fn all_inner(store: &Arc<Mutex<Store>>, skip_cron: bool) -> Result<(), Err
         let store = store.clone();
         let item = item.clone();
         jobs.spawn(async move {
-            logs::info(&mut store.lock().unwrap(), &format!("正在同步云配置：{}...", log_name(&item)));
+            logs::info(
+                &mut store.lock().unwrap(),
+                &format!("正在同步云配置：{}...", log_name(&item)),
+            );
             if item["platform"] == "SurgeMac" {
-                logs::info(&mut store.lock().unwrap(), "手动指定了 target 为 SurgeMac, 将使用 mihomo External");
+                logs::info(
+                    &mut store.lock().unwrap(),
+                    "手动指定了 target 为 SurgeMac, 将使用 mihomo External",
+                );
             }
             (index, job(&store, "artifact-output", item).await)
         });
@@ -226,21 +260,60 @@ async fn all_inner(store: &Arc<Mutex<Store>>, skip_cron: bool) -> Result<(), Err
                         valid.push(name);
                     }
                     Err(_) => {
-                        logs::error(&mut store.lock().unwrap(), &format!("生成同步配置 {} 发生错误: URI malformed", log_name(&items[index])));
+                        logs::error(
+                            &mut store.lock().unwrap(),
+                            &format!(
+                                "生成同步配置 {} 发生错误: URI malformed",
+                                log_name(&items[index])
+                            ),
+                        );
                         invalid.push(name);
                     }
                 }
             }
             Err(error) => {
-                logs::error(&mut store.lock().unwrap(), &format!("生成同步配置 {} 发生错误: {}", log_name(&items[index]), error.message));
+                logs::error(
+                    &mut store.lock().unwrap(),
+                    &format!(
+                        "生成同步配置 {} 发生错误: {}",
+                        log_name(&items[index]),
+                        error.message
+                    ),
+                );
                 invalid.push(name(&items[index]));
             }
         }
     }
-    logs::info(&mut store.lock().unwrap(), &format!("{} 个同步配置生成成功: {}", valid.len()+local.len(), valid.iter().chain(&local).cloned().collect::<Vec<_>>().join(", ")));
-    logs::info(&mut store.lock().unwrap(), &format!("{} 个同步配置生成失败: {}", invalid.len(), invalid.join(", ")));
+    logs::info(
+        &mut store.lock().unwrap(),
+        &format!(
+            "{} 个同步配置生成成功: {}",
+            valid.len() + local.len(),
+            valid
+                .iter()
+                .chain(&local)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    );
+    logs::info(
+        &mut store.lock().unwrap(),
+        &format!(
+            "{} 个同步配置生成失败: {}",
+            invalid.len(),
+            invalid.join(", ")
+        ),
+    );
     if !local.is_empty() {
-        logs::info(&mut store.lock().unwrap(), &format!("{} 个同步配置仅生成未上传: {}", local.len(), local.join(", ")));
+        logs::info(
+            &mut store.lock().unwrap(),
+            &format!(
+                "{} 个同步配置仅生成未上传: {}",
+                local.len(),
+                local.join(", ")
+            ),
+        );
     }
     if valid.is_empty() && local.is_empty() {
         return Err(Error::plain(format!(
@@ -261,7 +334,13 @@ async fn all_inner(store: &Arc<Mutex<Store>>, skip_cron: bool) -> Result<(), Err
     if valid.is_empty() {
         logs::info(&mut store.lock().unwrap(), "没有需要上传的同步配置");
     } else {
-        logs::info(&mut store.lock().unwrap(), &format!("准备分批上传同步配置: 共 {} 个, 每批 {size} 个, 批次数 {batches}", valid.len()));
+        logs::info(
+            &mut store.lock().unwrap(),
+            &format!(
+                "准备分批上传同步配置: 共 {} 个, 每批 {size} 个, 批次数 {batches}",
+                valid.len()
+            ),
+        );
     }
     for (index, batch) in valid.chunks(size).enumerate() {
         let mut batch_files = json!({});
@@ -270,11 +349,26 @@ async fn all_inner(store: &Arc<Mutex<Store>>, skip_cron: bool) -> Result<(), Err
                 codec::uri_component(name).map_err(|_| Error::plain("URIError: URI malformed"))?;
             batch_files[&encoded] = files[&encoded].clone();
         }
-        logs::info(&mut store.lock().unwrap(), &format!("正在上传第 {}/{batches} 批同步配置: {}", index+1, batch.join(", ")));
+        logs::info(
+            &mut store.lock().unwrap(),
+            &format!(
+                "正在上传第 {}/{batches} 批同步配置: {}",
+                index + 1,
+                batch.join(", ")
+            ),
+        );
         let response = artifacts::upload(store, batch_files).await;
         match response {
             Err(error) => {
-                logs::error(&mut store.lock().unwrap(), &format!("第 {}/{batches} 批同步配置上传失败: {}, 原因: {}", index+1, batch.join(", "), error.message));
+                logs::error(
+                    &mut store.lock().unwrap(),
+                    &format!(
+                        "第 {}/{batches} 批同步配置上传失败: {}, 原因: {}",
+                        index + 1,
+                        batch.join(", "),
+                        error.message
+                    ),
+                );
                 invalid.extend(batch.iter().cloned());
             }
             Ok(response) => {
@@ -320,7 +414,10 @@ async fn all_inner(store: &Arc<Mutex<Store>>, skip_cron: bool) -> Result<(), Err
     }
     logs::info(&mut store.lock().unwrap(), "同步配置执行完成");
     if invalid.is_empty() {
-        logs::info(&mut store.lock().unwrap(), &format!("同步配置成功 {} 个", uploaded+local.len()));
+        logs::info(
+            &mut store.lock().unwrap(),
+            &format!("同步配置成功 {} 个", uploaded + local.len()),
+        );
         Ok(())
     } else {
         Err(Error::plain(format!(
@@ -343,7 +440,10 @@ pub async fn dispatch(
         logs::info(&mut store.lock().unwrap(), "开始同步所有远程配置...");
         let result = all(store, false).await;
         if let Err(error) = &result {
-            logs::error(&mut store.lock().unwrap(), &format!("同步配置失败，原因：{}", error.message));
+            logs::error(
+                &mut store.lock().unwrap(),
+                &format!("同步配置失败，原因：{}", error.message),
+            );
         }
         return Some(match result {
             Ok(()) => api::success(None, 200),
@@ -359,7 +459,10 @@ pub async fn dispatch(
     let name = path.strip_prefix("/api/sync/artifact/")?;
     let result = one(store, name).await;
     if let Err(error) = &result {
-        logs::error(&mut store.lock().unwrap(), &format!("远程配置 {name} 发生错误: {}", error.message));
+        logs::error(
+            &mut store.lock().unwrap(),
+            &format!("远程配置 {name} 发生错误: {}", error.message),
+        );
     }
     Some(match result {
         Ok(data) => api::success(Some(data), 200),

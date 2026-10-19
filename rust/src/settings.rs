@@ -41,7 +41,10 @@ pub(crate) async fn refresh(store: &Arc<Mutex<Store>>) -> Result<(), Error> {
             let status = if truthy(&url) {
                 "VALID"
             } else {
-                crate::logs::error(&mut store.lock().unwrap(), "找不到 Sub-Store Gist (Sub-Store Artifacts Repository)");
+                crate::logs::error(
+                    &mut store.lock().unwrap(),
+                    "找不到 Sub-Store Gist (Sub-Store Artifacts Repository)",
+                );
                 "NOT FOUND"
             };
             (url, status)
@@ -49,7 +52,10 @@ pub(crate) async fn refresh(store: &Arc<Mutex<Store>>) -> Result<(), Error> {
         Err(error) => {
             crate::logs::error(
                 &mut store.lock().unwrap(),
-                &format!("查找 Sub-Store Gist (Sub-Store Artifacts Repository) 时发生错误: {}", error.message),
+                &format!(
+                    "查找 Sub-Store Gist (Sub-Store Artifacts Repository) 时发生错误: {}",
+                    error.message
+                ),
             );
             (Value::Null, "ERROR")
         }
@@ -153,7 +159,10 @@ pub async fn dispatch(
     }
     let result = update(store, body).await;
     if let Err(error) = &result {
-        crate::logs::error(&mut store.lock().unwrap(), &format!("Failed to update settings: {}", error.message));
+        crate::logs::error(
+            &mut store.lock().unwrap(),
+            &format!("Failed to update settings: {}", error.message),
+        );
     }
     Some(match result {
         Ok(data) => api::success(Some(data), 200),

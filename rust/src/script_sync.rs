@@ -101,7 +101,11 @@ pub(crate) fn upload_result<'js>(js: &Js<'js>, input: Value<'js>) -> rquickjs::R
     }
     if js.truthy(&optional(js, &input, "logResponse")?)? {
         script::log(js, "info", "上传配置响应:");
-        script::log(js, "info", &js.text(crate::js_values::stringify(&js.ctx, body, 2)?)?);
+        script::log(
+            js,
+            "info",
+            &js.text(crate::js_values::stringify(&js.ctx, body, 2)?)?,
+        );
     }
     let gitlab = files.is_array();
     let files = if gitlab {
@@ -118,7 +122,8 @@ pub(crate) fn upload_result<'js>(js: &Js<'js>, input: Value<'js>) -> rquickjs::R
     };
     let encoder: rquickjs::Function = js.ctx.globals().get("encodeURIComponent")?;
     let encoded: Value = encoder.call((js.get(&input, "name")?,))?;
-    let keys: Value = js.call("keys", (files.clone(),))?;
+    let constructor: Value = js.ctx.globals().get("Object")?;
+    let keys = js.method(constructor, "keys", vec![files.clone()])?;
     let file: Value = js.call("get", (files, encoded.clone()))?;
     let mut url = optional(js, &file, "raw_url")?;
     let original = url.clone();
@@ -126,13 +131,17 @@ pub(crate) fn upload_result<'js>(js: &Js<'js>, input: Value<'js>) -> rquickjs::R
         let pattern: Value = js.ctx.eval(r"/\/raw\/[^/]*\/(.*)/")?;
         url = js.method(url, "replace", vec![pattern, js.value("/raw/$1")?])?;
     }
-    script::log(js, "info", &format!(
-        "上传配置完成\n文件列表: {}\n当前文件: {}\n响应返回的原始链接: {}\n处理完的新链接: {}",
-        js.text(js.method(keys, "join", vec![js.value(", ")?])?)?,
-        js.text(encoded)?,
-        js.text(original)?,
-        js.text(url.clone())?,
-    ));
+    script::log(
+        js,
+        "info",
+        &format!(
+            "上传配置完成\n文件列表: {}\n当前文件: {}\n响应返回的原始链接: {}\n处理完的新链接: {}",
+            js.text(js.method(keys, "join", vec![js.value(", ")?])?)?,
+            js.text(encoded)?,
+            js.text(original)?,
+            js.text(url.clone())?,
+        ),
+    );
     let result = object(js)?;
     js.set(&result, "url", url)?;
     Ok(result)

@@ -81,13 +81,7 @@ fn notify(js: &Js<'_>, title: &str, name: &str, message: &str) -> rquickjs::Resu
     Ok(())
 }
 
-fn failed(
-    js: &Js<'_>,
-    mode: &str,
-    message: &str,
-    title: &str,
-    name: &str,
-) -> rquickjs::Result<()> {
+fn failed(js: &Js<'_>, mode: &str, message: &str, title: &str, name: &str) -> rquickjs::Result<()> {
     if mode == "disabled" || fallback(mode) {
         return Err(js.error(message));
     }
@@ -246,11 +240,15 @@ async fn sources<'js>(
                 Ok(value) => Ok(value),
                 Err(error) => {
                     let (_, full) = failure_text(&worker, error)?;
-                    script::log(&worker, "error", &format!(
-                        "订阅 {} 的远程订阅 {} 发生错误: {full}",
-                        worker.text(worker.get(&sub, "name")?)?,
-                        script_download::mask_url(&worker, url.clone())?,
-                    ));
+                    script::log(
+                        &worker,
+                        "error",
+                        &format!(
+                            "订阅 {} 的远程订阅 {} 发生错误: {full}",
+                            worker.text(worker.get(&sub, "name")?)?,
+                            script_download::mask_url(&worker, url.clone())?,
+                        ),
+                    );
                     worker.set(&errors, &worker.text(url)?, worker.value(true)?)?;
                     worker.value("")
                 }
@@ -619,11 +617,15 @@ async fn file_raw<'js>(
                     Ok(value) => Ok(value),
                     Err(error) => {
                         let (_, full) = failure_text(&worker, error)?;
-                        script::log(&worker, "error", &format!(
-                            "文件 {} 的远程文件 {} 发生错误: {full}",
-                            worker.text(worker.get(&file, "name")?)?,
-                            script_download::mask_url(&worker, url.clone())?,
-                        ));
+                        script::log(
+                            &worker,
+                            "error",
+                            &format!(
+                                "文件 {} 的远程文件 {} 发生错误: {full}",
+                                worker.text(worker.get(&file, "name")?)?,
+                                script_download::mask_url(&worker, url.clone())?,
+                            ),
+                        );
                         worker.set(&errors, &worker.text(url)?, worker.value(true)?)?;
                         worker.value("")
                     }
@@ -700,7 +702,11 @@ pub(crate) async fn file<'js>(
     preview: bool,
 ) -> rquickjs::Result<Value<'js>> {
     if preview {
-        js.set(&options, "notifyTitle", js.value("🌍 Sub-Store 预览文件失败")?)?;
+        js.set(
+            &options,
+            "notifyTitle",
+            js.value("🌍 Sub-Store 预览文件失败")?,
+        )?;
     }
     let raw = if mihomo(js, &file)? {
         let source = js.text(js.get(&file, "sourceType")?)?;

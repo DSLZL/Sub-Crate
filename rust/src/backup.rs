@@ -102,10 +102,16 @@ pub(crate) async fn action(store: &Arc<Mutex<Store>>, query: &Value) -> Result<(
         files[FILE] = json!({"content":body});
         if let Err(error) = gist(store, "upload", files).await {
             // The source retry references undefined `gists` before making a request.
-            crate::logs::error(&mut store.lock().unwrap(), &format!("上传请求异常: {}", error.message));
+            crate::logs::error(
+                &mut store.lock().unwrap(),
+                &format!("上传请求异常: {}", error.message),
+            );
             crate::logs::info(&mut store.lock().unwrap(), "重新获取备份, 确认上传结果...");
             tokio::time::sleep(Duration::from_millis(500)).await;
-            crate::logs::error(&mut store.lock().unwrap(), "上传结果确认失败: gists is not defined");
+            crate::logs::error(
+                &mut store.lock().unwrap(),
+                "上传结果确认失败: gists is not defined",
+            );
             let mut store = store.lock().unwrap();
             let mut next = store.data.clone();
             if let Some(old) = settings.get("syncTime") {
@@ -174,7 +180,10 @@ pub(crate) async fn action(store: &Arc<Mutex<Store>>, query: &Value) -> Result<(
         )
         .await?;
         let original = restored.clone();
-        crate::logs::info(&mut store.lock().unwrap(), "perform migration after restoring from gist...");
+        crate::logs::info(
+            &mut store.lock().unwrap(),
+            "perform migration after restoring from gist...",
+        );
         state::migrate(&mut restored)
             .map_err(|_| Error::plain("Gist 备份文件校验失败, 无法还原"))?;
         if !state::valid_records(&restored) {
@@ -204,8 +213,14 @@ pub async fn dispatch(
     if let Err(error) = &result
         && error.code != "GIST_TOKEN_NOT_FOUND"
     {
-        let action = query.get("action").map(codec::js_string).unwrap_or_else(|| "undefined".to_owned());
-        crate::logs::error(&mut store.lock().unwrap(), &format!("Failed to {action} gist data.\nReason: {}", error.message));
+        let action = query
+            .get("action")
+            .map(codec::js_string)
+            .unwrap_or_else(|| "undefined".to_owned());
+        crate::logs::error(
+            &mut store.lock().unwrap(),
+            &format!("Failed to {action} gist data.\nReason: {}", error.message),
+        );
     }
     Some(match result {
         Ok(()) => api::success(None, 200),
