@@ -1,5 +1,18 @@
 [
   {
+    "id":"Z01-age-rest-key-generation-and-validation",
+    "source":"backend/src/restful/age.js:15,28; backend/src/utils/age.js:293,312,336",
+    "steps":[
+      {"method":"POST","path":"/api/utils/age/public-key","body":{"age-secret-key":"AGE-SECRET-KEY-1DC4Q4VEECN5SWG6N2DSMN47TE64R634RTCW7SA99PLF8ACAGC6TSNEXPCX"},"expect":{"status":200,"json":{"status":"success","data":{"age-public-key":"age1tknrrax70y43sg9048c9tm4za8xupndc0nqkfktymydwk64pgg2qglg4cw"}}}},
+      {"method":"POST","path":"/api/utils/age/public-key","body":{"age-secret-key":"invalid"},"expect":{"status":500,"json":{"status":"failed","error":{"code":"INVALID_AGE_SECRET_KEY","type":"RequestInvalidError","message":"age-secret-key 仅支持 X25519(AGE-SECRET-KEY-1...) 或 MLKEM768-X25519(AGE-SECRET-KEY-PQ-1...) 私钥"}}}},
+      {"method":"POST","path":"/api/utils/age/key-pair","body":{"type":"unsupported"},"expect":{"status":500,"json":{"status":"failed","error":{"message":"不支持的 age key 类型: unsupported. 支持: x25519, mlkem768-x25519"}}}},
+      {"method":"POST","path":"/api/utils/age/key-pair","body":{},"capture":{"AGE_REST_X_SECRET":{"pointer":"/data/age-secret-key","type":"string","pattern":"AGE-SECRET-KEY-1[0-9A-Z]+"},"AGE_REST_X_PUBLIC":{"pointer":"/data/age-public-key","type":"string","pattern":"age1[a-z0-9]+"}},"expect":{"status":200,"json":{"status":"success","data":{"type":"x25519","age-secret-key":"{{AGE_REST_X_SECRET}}","age-public-key":"{{AGE_REST_X_PUBLIC}}"}}}},
+      {"method":"POST","path":"/api/utils/age/public-key","body":{"age-secret-key":"{{AGE_REST_X_SECRET}}"},"expect":{"status":200,"json":{"status":"success","data":{"age-public-key":"{{AGE_REST_X_PUBLIC}}"}}}},
+      {"method":"POST","path":"/api/utils/age/key-pair","body":{"type":"mlkem768-x25519"},"capture":{"AGE_REST_PQ_SECRET":{"pointer":"/data/age-secret-key","type":"string","pattern":"AGE-SECRET-KEY-PQ-1[0-9A-Z]+"},"AGE_REST_PQ_PUBLIC":{"pointer":"/data/age-public-key","type":"string","pattern":"age1pq1[a-z0-9]+"}},"expect":{"status":200,"json":{"status":"success","data":{"type":"mlkem768-x25519","age-secret-key":"{{AGE_REST_PQ_SECRET}}","age-public-key":"{{AGE_REST_PQ_PUBLIC}}"}}}},
+      {"method":"POST","path":"/api/utils/age/public-key","body":{"age-secret-key":"{{AGE_REST_PQ_SECRET}}"},"expect":{"status":200,"json":{"status":"success","data":{"age-public-key":"{{AGE_REST_PQ_PUBLIC}}"}}}}
+    ]
+  },
+  {
     "id":"S02-gist-age-settings-validation-order",
     "source":"backend/src/restful/settings.js:35,43,101,173,177,187; fixed disposable key from retained native age fixture",
     "steps":[

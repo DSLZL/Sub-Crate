@@ -3380,7 +3380,7 @@ fn modern_output(proxy: &Value, server: &str, port: &str) -> Option<String> {
     ))
 }
 
-fn uri(proxy: &Value) -> Option<String> {
+pub(crate) fn uri(proxy: &Value) -> Option<String> {
     let server = codec::text(&field_text(proxy, "server"));
     let server = if ipv6(&server) {
         format!("[{server}]")

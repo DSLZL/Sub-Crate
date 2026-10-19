@@ -94,6 +94,7 @@ fn recipient<'js>(js: &Js<'js>, input: Value<'js>) -> rquickjs::Result<Value<'js
 }
 
 pub(crate) async fn identity<'js>(js: &Js<'js>, input: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    runtime(js)?;
     let key = key(js, input)?;
     let text = js.text(key.clone())?;
     if !text.starts_with("AGE-SECRET-KEY-1") && !text.starts_with("AGE-SECRET-KEY-PQ-1") {
@@ -113,7 +114,6 @@ pub(crate) async fn identity<'js>(js: &Js<'js>, input: Value<'js>) -> rquickjs::
 
 async fn derive<'js>(ctx: Ctx<'js>, input: Opt<Value<'js>>) -> rquickjs::Result<Value<'js>> {
     let js = Js::new(ctx);
-    runtime(&js)?;
     let key = identity(&js, input.0.unwrap_or_else(|| js.undefined())).await?;
     let pending = js.method(library(&js)?, "identityToRecipient", vec![key])?;
     let public = script::settled(&js, pending).await?;
@@ -162,7 +162,6 @@ pub(crate) async fn decrypt<'js>(
     {
         return Ok(body);
     }
-    runtime(js)?;
     let secret = identity(js, secret).await?;
     let decrypter = instance(js, "Decrypter")?;
     js.method(decrypter.clone(), "addIdentity", vec![secret])?;
@@ -192,6 +191,47 @@ async fn decrypt_public<'js>(
         secret.0.unwrap_or_else(|| js.undefined()),
     )
     .await
+}
+
+pub(crate) async fn rest<'js>(js: &Js<'js>, input: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    let body = js.get(&input, "body")?;
+    let result = async {
+        if js.equal(&js.get(&input, "action")?, &js.value("public-key")?)? {
+            let secret = crate::script_pipeline::optional(js, &body, "age-secret-key")?;
+            let public = derive(js.ctx.clone(), Opt(Some(secret))).await?;
+            let data = crate::script_pipeline::object(js)?;
+            js.set(&data, "age-public-key", public)?;
+            return Ok(data);
+        }
+        runtime(js)?;
+        let kind = crate::script_pipeline::optional(js, &body, "type")?;
+        let kind = if js.truthy(&kind)? { kind } else { js.value("x25519")? };
+        let method = if js.equal(&kind, &js.value("x25519")?)? { "generateX25519Identity" }
+            else if js.equal(&kind, &js.value("mlkem768-x25519")?)? { "generateHybridIdentity" }
+            else { return Err(js.error(&format!("不支持的 age key 类型: {}. 支持: x25519, mlkem768-x25519", js.text(kind)?))); };
+        let secret = script::settled(js, js.method(library(js)?, method, vec![])?).await?;
+        let public = derive(js.ctx.clone(), Opt(Some(secret.clone()))).await?;
+        let data = crate::script_pipeline::object(js)?;
+        js.set(&data, "type", kind)?;
+        js.set(&data, "age-secret-key", secret)?;
+        js.set(&data, "age-public-key", public)?;
+        Ok(data)
+    }.await;
+    let wrapped = crate::script_pipeline::object(js)?;
+    match result {
+        Ok(data) => js.set(&wrapped, "data", data)?,
+        Err(error) if error.is_exception() => {
+            let thrown = js.ctx.catch();
+            let error = if crate::script_pipeline::optional(js, &thrown, "type")?.is_undefined() {
+                let error = crate::script_pipeline::object(js)?;
+                js.set(&error, "message", crate::script_pipeline::optional(js, &thrown, "message")?)?;
+                error
+            } else { thrown };
+            js.set(&wrapped, "error", error)?;
+        }
+        Err(error) => return Err(error),
+    }
+    Ok(wrapped)
 }
 
 pub(crate) fn initialize<'js>(ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs::Result<()> {

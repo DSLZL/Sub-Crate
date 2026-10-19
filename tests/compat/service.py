@@ -71,7 +71,7 @@ def listener(binary, environment, output, report, log_prefix="rust", image=None,
         if environment.get("SUB_STORE_MMDB_COUNTRY_PATH"):
             argv.extend(["--mount", f"type=bind,source={HERE / 'fixtures/mmdb'},target=/mmdb,readonly"])
         for key, value in environment.items():
-            if key.startswith("SUB_STORE_") or key in ("TZ", "NODE_ENV"):
+            if key.startswith("SUB_STORE_") or key in ("TZ", "NODE_ENV", "HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy"):
                 value = {"SUB_STORE_DATA_BASE_PATH": "/data", "SUB_STORE_BACKEND_API_PORT": str(port) if host_network else "3000",
                          "SUB_STORE_BACKEND_API_HOST": value if host_network else "0.0.0.0", "SUB_STORE_FRONTEND_PATH": "/frontend",
                          "SUB_STORE_FRONTEND_HOST": value if host_network else "0.0.0.0", "SUB_STORE_FRONTEND_PORT": value if host_network else "3001"}.get(key, value)
@@ -178,6 +178,34 @@ def compare_step(actual_step, reference_step, label):
         if projected and key in ("content-length", "etag"):
             continue  # Each original body already proved its own length and SHA1 tag.
         assert actual["headers"].get(key) == expected["headers"].get(key), (label, key, actual, expected)
+
+
+def utilities_contracts(binary, node, environment, baseline, root, output, report, image):
+    _, cases = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "utilities-core")
+    paired, final, upstream_port = {}, {}, 0
+    for kind in ("node", "rust"):
+        label = kind + "-utilities"
+        state = output / label
+        state.mkdir()
+        document = {**baseline, "settings": {}, "subs": [], "collections": [], "files": [], "artifacts": [], "tokens": [], "archives": []}
+        (state / "sub-store.json").write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+        (state / "root.json").write_text(json.dumps(root, ensure_ascii=False), encoding="utf-8")
+        with ControlledUpstream(upstream_port) as upstream:
+            upstream_port = upstream.server.server_address[1]
+            env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state), "HTTP_PROXY": upstream.url, "http_proxy": upstream.url,
+                   "HTTPS_PROXY": upstream.url, "https_proxy": upstream.url, "ALL_PROXY": "", "all_proxy": "",
+                   "NO_PROXY": "127.0.0.1,localhost", "no_proxy": "127.0.0.1,localhost"}
+            manager = oracle(node, env, output, report, label) if kind == "node" else listener(binary, env, output, report, label, image, host_network=bool(image))
+            with manager as url:
+                paired[kind] = check_cases(url, state, cases, output, label, upstream)
+                report["phases"].append({"name": label, "cases": len(cases), "requests": sum(len(case["steps"]) for case in paired[kind])})
+                final[kind] = {filename: json.loads((state / filename).read_text(encoding="utf-8")) for filename in ("sub-store.json", "root.json")}
+    for actual_case, reference_case in zip(paired["rust"], paired["node"], strict=True):
+        assert actual_case["id"] == reference_case["id"]
+        for actual, reference in zip(actual_case["steps"], reference_case["steps"], strict=True):
+            compare_step(actual, reference, actual_case["id"])
+    check_json(final["rust"], final["node"])
+    report["native_age_rest_and_node_info_checked"] = True
 
 
 def sync_contracts(binary, node, environment, baseline, root, output, report, image):
@@ -2203,6 +2231,7 @@ def main():
         sharing_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
         archive_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
         sync_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
+        utilities_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
         configurations = [
             ("default", {}, 1048576, [("https://sub-store.vercel.app", "https://sub-store.vercel.app")], "https://denied.invalid", False),
             ("custom-name", {"SUB_STORE_BACKEND_CUSTOM_NAME": "configuration-fixture", "SUB_STORE_BODY_JSON_LIMIT": "+1GB"}, 1073741824,

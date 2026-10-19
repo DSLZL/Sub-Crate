@@ -148,6 +148,9 @@ pub fn options(path: &str) -> Reply {
         _ if path.starts_with("/api/archives/") && path.ends_with("/restore") => "POST,GET,HEAD",
         _ if path.starts_with("/api/archives/") => "GET,DELETE,HEAD",
         "/api/proxy/parse"
+        | "/api/utils/node-info"
+        | "/api/utils/age/key-pair"
+        | "/api/utils/age/public-key"
         | "/api/rule/parse"
         | "/api/preview/sub"
         | "/api/preview/collection"
@@ -803,7 +806,10 @@ pub(crate) fn cannot_coerce(value: &Value) -> bool {
     }
 }
 
-pub(crate) fn normalized_settings(store: &Store, body: &Body) -> Result<Value, crate::resources::Error> {
+pub(crate) fn normalized_settings(
+    store: &Store,
+    body: &Body,
+) -> Result<Value, crate::resources::Error> {
     let patch = body.fields();
     let mut settings = Body::Json(store.data["settings"].clone()).fields();
     let previous_appearance = settings
@@ -831,7 +837,11 @@ pub(crate) fn normalized_settings(store: &Store, body: &Body) -> Result<Value, c
     ] {
         if let Some(raw) = settings.get(key) {
             if cannot_coerce(raw) {
-                return Err(crate::resources::Error::internal("FAILED_TO_UPDATE_SETTINGS", "Failed to update settings", PRIMITIVE_ERROR));
+                return Err(crate::resources::Error::internal(
+                    "FAILED_TO_UPDATE_SETTINGS",
+                    "Failed to update settings",
+                    PRIMITIVE_ERROR,
+                ));
             }
             let value = number(raw);
             let valid = match key {
@@ -1025,16 +1035,6 @@ pub fn dispatch(
                 return invalid_backup();
             }
             return persisted(store.restore(next, original), success(None, 200));
-        }
-    }
-    if path == "/api/settings" {
-        if method == Method::GET {
-            if !truthy(&store.data["settings"]) {
-                let mut next = store.data.clone();
-                next["settings"] = json!({});
-                return publish(store, next, success(Some(json!({})), 200));
-            }
-            return success(Some(store.data["settings"].clone()), 200);
         }
     }
     if method == Method::GET {

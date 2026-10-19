@@ -527,10 +527,29 @@ pub(crate) async fn request<'js>(js: &Js<'js>, input: Value<'js>) -> rquickjs::R
     js.set(&options, "key", js.get(&input, "key")?)?;
     let manager = object(js)?;
     initialize_gist(js.ctx.clone(), manager.clone(), options)?;
-    js.set(&manager, "locate", Function::new(js.ctx.clone(), Async(locate))?.into_value())?;
+    js.set(
+        &manager,
+        "locate",
+        Function::new(js.ctx.clone(), Async(locate))?.into_value(),
+    )?;
     let result = match js.text(js.get(&input, "action")?)?.as_str() {
-        "download" => download(js.ctx.clone(), This(manager), Opt(Some(js.get(&input, "filename")?))).await?,
-        "upload" => upload(js.ctx.clone(), This(manager), Opt(Some(js.get(&input, "files")?)), Opt(None)).await?,
+        "download" => {
+            download(
+                js.ctx.clone(),
+                This(manager),
+                Opt(Some(js.get(&input, "filename")?)),
+            )
+            .await?
+        }
+        "upload" => {
+            upload(
+                js.ctx.clone(),
+                This(manager),
+                Opt(Some(js.get(&input, "files")?)),
+                Opt(None),
+            )
+            .await?
+        }
         _ => locate(js.ctx.clone(), This(manager)).await?,
     };
     let wrapped = object(js)?;
