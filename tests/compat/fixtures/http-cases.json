@@ -9428,6 +9428,49 @@
     ]
   },
   {
+    "id": "F02-file-normalization-and-order",
+    "source": "backend/src/restful/file.js:452,523,537; backend/src/utils/file-type.js; shared age/editor normalization and create-item-position",
+    "steps": [
+      {"method": "PUT", "path": "/api/files", "body": [], "expect": {"status": 200, "json": {"status": "success"}}},
+      {"method": "PATCH", "path": "/api/settings", "body": {"appearanceSetting": {"createItemPosition": "top"}}, "expect": {"status": 200}},
+      {"method": "POST", "path": "/api/files", "body": {"name": 0, "type": "mihomoProfile", "sourceType": "none", "age-public-key": "  ", "editorLanguage": "invalid", "previewLanguage": "yaml", "process": [{"type": "unknown", "args": {"editorLanguage": "javascript", "previewLanguage": "INVALID", "custom": false}}], "custom": {"nil": null, "empty": ""}}, "expect": {"status": 201, "json": {"status": "success", "data": {"name": "0", "type": "mihomoConfig", "sourceType": "none", "previewLanguage": "yaml", "process": [{"type": "unknown", "args": {"editorLanguage": "javascript", "custom": false}}], "custom": {"nil": null, "empty": ""}}}}},
+      {"method": "POST", "path": "/api/files", "body": {"name": "文件/a", "source": "local", "content": "slash", "unknown": [0, false]}, "expect": {"status": 201}},
+      {"path": "/api/files", "expect": {"status": 200, "json_contains": {"status": "success", "data": [{"name": "文件/a", "unknown": [0, false]}, {"name": "0", "type": "mihomoConfig"}]}}},
+      {"path": "/API/FILE/%E6%96%87%E4%BB%B6%2Fa", "expect": {"status": 200, "body": "slash"}},
+      {"method": "PATCH", "path": "/api/file/0", "body": {"name": false, "editorLanguage": "ini", "previewLanguage": null}, "expect": {"status": 200, "json": {"status": "success", "data": {"name": "0", "type": "mihomoConfig", "sourceType": "none", "process": [{"type": "unknown", "args": {"editorLanguage": "javascript", "custom": false}}], "custom": {"nil": null, "empty": ""}, "editorLanguage": "ini"}}}},
+      {"method": "POST", "path": "/api/files", "body": {"name": "bad", "age-public-key": "invalid"}, "expect": {"status": 500, "json_contains": {"status": "failed", "error": {"code": "INVALID_AGE_PUBLIC_KEY"}}}},
+      {"method": "PUT", "path": "/api/files", "body": [{"name": "bulk", "type": "mihomoProfile", "sourceType": "none", "editorLanguage": "plaintext", "previewLanguage": "bad", "age-public-key": "", "unknown": {"nil": null}}], "expect": {"status": 200, "json": {"status": "success"}}},
+      {"path": "/api/wholeFiles", "expect": {"status": 200, "json": {"status": "success", "data": [{"name": "bulk", "type": "mihomoConfig", "sourceType": "none", "editorLanguage": "plaintext", "unknown": {"nil": null}}]}}},
+      {"method": "PATCH", "path": "/api/settings", "body": {"appearanceSetting": {"createItemPosition": "bottom"}}, "expect": {"status": 200}},
+      {"method": "PUT", "path": "/api/files", "body": [], "expect": {"status": 200, "json": {"status": "success"}}}
+    ]
+  },
+  {
+    "id": "F03-file-preview-and-response",
+    "source": "backend/src/restful/preview.js:33; backend/src/restful/file.js:39,118; shared production file pipeline and response transformers",
+    "steps": [
+      {"method": "POST", "path": "/api/preview/file", "body": {"name": "preview", "source": "local", "content": [["one", null], 0, false, ""]}, "expect": {"status": 200, "json": {"status": "success", "data": {"original": "one\n0\nfalse", "processed": "one\n0\nfalse"}}}},
+      {"method": "POST", "path": "/api/preview/file", "body": {"name": "preview", "source": "local", "content": "before", "process": [{"type": "Script Operator", "args": {"content": "$content += ':' + $file.name;"}}]}, "expect": {"status": 200, "json": {"status": "success", "data": {"original": "before", "processed": "before:preview"}}}},
+      {"method": "POST", "path": "/api/preview/file", "body": {"name": "mihomo", "type": "mihomoProfile", "sourceType": "none"}, "expect": {"status": 200, "json": {"status": "success", "data": {"original": "{}\n", "processed": "{}\n"}}}},
+      {"method": "POST", "path": "/api/files", "body": {"name": "file-response", "source": "local", "content": "base", "process": [{"type": "Script Operator", "args": {"content": "function operator(input) { if (input.$options._req.params.name !== 'file-response') throw new Error('file request'); input.$content += ':generated'; input.$options._res = {status:201,headers:{'x-file-generated':'yes'}}; return input; }"}}, {"type": "Response Transformer", "args": {"content": "function transformFunction(res, context) { if (!context.source.$file || res.status !== 201 || res.headers['x-file-generated'] !== 'yes') throw new Error('file response'); res.body += ':response'; res.status = 202; res.headers['x-file-response'] = 'yes'; res.headers['x-file-generated'] = null; return res; }"}}]}, "expect": {"status": 201}},
+      {"path": "/api/file/file-response", "expect": {"status": 202, "body": "base:generated:response", "headers": {"x-file-response": "yes"}, "absent_headers": ["x-file-generated"]}, "state": {"files": [{"name": "file-response", "content": "base"}]}},
+      {"method": "HEAD", "path": "/api/file/file-response", "expect": {"status": 202, "body": "", "headers": {"content-length": "23", "x-file-response": "yes"}}},
+      {"method": "OPTIONS", "path": "/api/file/file-response", "expect": {"status": 200, "body": "GET,PATCH,DELETE,HEAD", "headers": {"allow": "GET,PATCH,DELETE,HEAD"}}},
+      {"method": "OPTIONS", "path": "/api/preview/file", "expect": {"status": 200, "body": "POST,GET,HEAD"}},
+      {"method": "DELETE", "path": "/api/file/file-response", "expect": {"status": 200, "json": {"status": "success"}}, "state": {"files": []}},
+      {"method": "DELETE", "path": "/api/file/file-response", "expect": {"status": 500, "json_contains": {"status": "failed", "error": {"code": "RESOURCE_NOT_FOUND"}}}},
+      {"method": "POST", "path": "/api/preview/file", "body": {"name": "missing", "source": "remote", "url": ""}, "expect": {"status": 500, "json": {"status": "failed", "error": {"code": "INTERNAL_SERVER_ERROR", "type": "InternalServerError", "message": "Failed to preview file", "details": "Reason: 文件 missing 未配置远程文件 URL"}}}}
+    ]
+  },
+  {
+    "id": "F04-file-restart",
+    "source": "backend/src/restful/file.js whole/file reads after durable process restart; original M4 business state",
+    "steps": [
+      {"path": "/api/wholeFile/file-renamed", "expect": {"status": 200, "json_contains": {"status": "success", "data": {"name": "file-renamed", "source": "local", "content": "first\r\n第二🙂\n", "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}}},
+      {"path": "/api/file/file-renamed", "expect": {"status": 200, "body": "first\r\n第二🙂\n"}}
+    ]
+  },
+  {
     "id": "F01-file-crud-and-runtime",
     "source": "backend/src/restful/file.js:39,118,419,452,510,537; backend/src/test/restful/file.spec.js:318,366,411",
     "steps": [
@@ -9457,14 +9500,102 @@
       {"method": "DELETE", "path": "/api/file/file-renamed?mode=invalid", "expect": {"status": 500, "json_contains": {"status": "failed", "error": {"code": "INVALID_DELETE_MODE"}}}, "state": {"files": [{"name": "file-renamed"}], "archives": []}},
       {"method": "DELETE", "path": "/api/file/file-renamed?mode=archive", "expect": {"status": 200, "json": {"status": "success"}}, "state": {"files": [], "archives": [{"itemType": "file", "name": "file-renamed", "snapshot": {"name": "file-renamed", "content": "first\r\n第二🙂\n", "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}]}},
       {"path": "/api/archives", "capture": {"FILE_ARCHIVE_ID": {"pointer": "/data/0/id", "type": "string", "pattern": "[0-9]+-[a-z0-9]+"}, "FILE_ARCHIVED_AT": {"pointer": "/data/0/archivedAt", "type": "integer"}}, "expect": {"status": 200, "json_contains": {"status": "success", "data": [{"id": "{{FILE_ARCHIVE_ID}}", "archivedAt": "{{FILE_ARCHIVED_AT}}", "itemType": "file", "name": "file-renamed", "displayName": "配置🙂.txt", "snapshot": {"name": "file-renamed", "content": "first\r\n第二🙂\n"}}]}}, "state": {"archives": [{"id": "{{FILE_ARCHIVE_ID}}", "archivedAt": "{{FILE_ARCHIVED_AT}}"}]}},
-      {"path": "/api/archives/{{FILE_ARCHIVE_ID}}", "expect": {"status": 200, "json_contains": {"status": "success", "data": {"id": "{{FILE_ARCHIVE_ID}}", "snapshot": {"name": "file-renamed", "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}}}},
+      {"path": "/api/archives/{{FILE_ARCHIVE_ID}}", "expect": {"status": 200, "json_contains": {"status": "success", "data": {"id": "{{FILE_ARCHIVE_ID}}", "archivedAt": "{{FILE_ARCHIVED_AT}}", "snapshot": {"name": "file-renamed", "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}}}},
       {"method": "POST", "path": "/api/files", "body": {"name": "file-renamed", "source": "local", "content": "conflicting"}, "expect": {"status": 201, "json_contains": {"status": "success", "data": {"name": "file-renamed"}}}},
       {"method": "POST", "path": "/api/archives/{{FILE_ARCHIVE_ID}}/restore", "expect": {"status": 400, "json_contains": {"status": "failed", "error": {"code": "DUPLICATE_KEY"}}}, "state": {"files": [{"name": "file-renamed", "content": "conflicting"}], "archives": [{"id": "{{FILE_ARCHIVE_ID}}", "snapshot": {"content": "first\r\n第二🙂\n"}}]}},
       {"method": "DELETE", "path": "/api/file/file-renamed?mode=permanent", "expect": {"status": 200, "json": {"status": "success"}}},
       {"method": "POST", "path": "/api/archives/{{FILE_ARCHIVE_ID}}/restore", "expect": {"status": 200, "json": {"status": "success", "data": {"name": "file-renamed", "source": "local", "content": "first\r\n第二🙂\n", "displayName": "配置🙂.txt", "download": true, "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}}, "state": {"archives": [], "files": [{"name": "file-renamed", "content": "first\r\n第二🙂\n"}]}},
-      {"path": "/api/archives/{{FILE_ARCHIVE_ID}}", "expect": {"status": 404, "json_contains": {"status": "failed", "error": {"code": "ARCHIVE_ENTRY_NOT_FOUND"}}}},
+      {"path": "/api/archives/{{FILE_ARCHIVE_ID}}", "expect": {"status": 404, "json": {"status": "failed", "error": {"code": "ARCHIVE_ENTRY_NOT_FOUND", "type":"ResourceNotFoundError", "message":"Archive entry {{FILE_ARCHIVE_ID}} does not exist"}}}},
       {"method": "POST", "path": "/api/archives/missing/restore", "expect": {"status": 404, "json_contains": {"status": "failed", "error": {"code": "ARCHIVE_ENTRY_NOT_FOUND"}}}},
       {"method": "DELETE", "path": "/api/file/file-renamed?mode=permanent", "expect": {"status": 200, "json": {"status": "success"}}, "state": {"files": [], "archives": []}}
+    ]
+  },
+  {
+    "id": "A05-subscription-collection-share-archive-lifecycle",
+    "source": "backend/src/restful/archives.js:50,80; backend/src/restful/subscriptions.js:395,421; backend/src/restful/collections.js:162,184; backend/src/restful/token.js:260; backend/src/utils/archive.js:110",
+    "steps": [
+      {"method":"POST","path":"/api/subs","body":{"name":"archived-sub","source":"local","content":"","subscriptions":["discard"],"editorLanguage":"invalid","previewLanguage":"json","unknown":{"nil":null,"flag":false,"zero":0}},"expect":{"status":201,"json":{"status":"success","data":{"name":"archived-sub","source":"local","content":"","previewLanguage":"json","unknown":{"nil":null,"flag":false,"zero":0}}}}},
+      {"method":"POST","path":"/api/collections","body":{"name":"archived-col","subscriptions":["archived-sub","keep","archived-sub"],"remark":"kept","tag":[null,false,0]},"expect":{"status":201}},
+      {"method":"POST","path":"/api/files","body":{"name":"dependent-file","sourceType":"collection","sourceName":"archived-col","unknown":false},"expect":{"status":201}},
+      {"method":"POST","path":"/api/artifacts","body":{"name":"dependent-artifact","type":"subscription","source":"archived-sub","upload":false},"expect":{"status":201}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"sub","name":"archived-sub","token":"archived-share","custom":[null,false,0]},"options":{"mode":"count","count":3,"usedCount":1}},"expect":{"status":200,"json":{"status":"success","data":{"token":"archived-share"}}}},
+      {"path":"/api/tokens","capture":{"LIFECYCLE_CREATED":{"pointer":"/data/0/createdAt","type":"integer"}},"expect":{"status":200,"json":{"status":"success","data":[{"type":"sub","name":"archived-sub","token":"archived-share","custom":[null,false,0],"createdAt":"{{LIFECYCLE_CREATED}}","mode":"count","count":3,"usedCount":1}]}}},
+      {"method":"DELETE","path":"/api/sub/archived-sub?mode=archive","expect":{"status":200,"json":{"status":"success"}},"state":{"subs":[],"collections":[{"name":"archived-col","subscriptions":["keep"]}],"tokens":[{"token":"archived-share"}],"files":[{"sourceType":"collection","sourceName":"archived-col"}],"artifacts":[{"source":"archived-sub"}]}},
+      {"path":"/api/archives","capture":{"SUB_ARCHIVE_ID":{"pointer":"/data/0/id","type":"string","pattern":"[0-9]+-[a-z0-9]+"},"SUB_ARCHIVED_AT":{"pointer":"/data/0/archivedAt","type":"integer"}},"expect":{"status":200,"json":{"status":"success","data":[{"id":"{{SUB_ARCHIVE_ID}}","archivedAt":"{{SUB_ARCHIVED_AT}}","itemType":"sub","name":"archived-sub","snapshot":{"name":"archived-sub","source":"local","content":"","previewLanguage":"json","unknown":{"nil":null,"flag":false,"zero":0}}}]}}},
+      {"method":"POST","path":"/api/archives/{{SUB_ARCHIVE_ID}}/restore","expect":{"status":200,"json":{"status":"success","data":{"name":"archived-sub","source":"local","content":"","previewLanguage":"json","unknown":{"nil":null,"flag":false,"zero":0}}}},"state":{"collections":[{"subscriptions":["keep"]}],"archives":[]}},
+      {"method":"DELETE","path":"/api/collection/archived-col?mode=archive","expect":{"status":200},"state":{"collections":[],"tokens":[{"token":"archived-share"}],"files":[{"sourceName":"archived-col"}],"artifacts":[{"source":"archived-sub"}]}},
+      {"path":"/api/archives","capture":{"COL_ARCHIVE_ID":{"pointer":"/data/0/id","type":"string","pattern":"[0-9]+-[a-z0-9]+"},"COL_ARCHIVED_AT":{"pointer":"/data/0/archivedAt","type":"integer"}},"expect":{"status":200,"json":{"status":"success","data":[{"id":"{{COL_ARCHIVE_ID}}","archivedAt":"{{COL_ARCHIVED_AT}}","itemType":"col","name":"archived-col","remark":"kept","tag":[null,false,0],"snapshot":{"name":"archived-col","subscriptions":["keep"],"remark":"kept","tag":[null,false,0]}}]}}},
+      {"method":"POST","path":"/api/archives/{{COL_ARCHIVE_ID}}/restore","expect":{"status":200,"json":{"status":"success","data":{"name":"archived-col","subscriptions":["keep"],"remark":"kept","tag":[null,false,0]}}},"state":{"archives":[]}},
+      {"method":"DELETE","path":"/api/token/archived-share?type=sub&name=archived-sub&mode=archive","expect":{"status":200},"state":{"tokens":[]}},
+      {"path":"/api/archives","capture":{"COUNT_ARCHIVE_ID":{"pointer":"/data/0/id","type":"string","pattern":"[0-9]+-[a-z0-9]+"},"COUNT_ARCHIVED_AT":{"pointer":"/data/0/archivedAt","type":"integer"}},"expect":{"status":200,"json":{"status":"success","data":[{"id":"{{COUNT_ARCHIVE_ID}}","archivedAt":"{{COUNT_ARCHIVED_AT}}","itemType":"share","name":"archived-sub","snapshot":{"type":"sub","name":"archived-sub","token":"archived-share","custom":[null,false,0],"createdAt":"{{LIFECYCLE_CREATED}}","mode":"count","count":3,"usedCount":1},"shareType":"sub"}]}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"sub","name":"archived-sub","token":"archived-share"},"options":{"mode":"count","count":5}},"expect":{"status":200}},
+      {"method":"POST","path":"/api/archives/{{COUNT_ARCHIVE_ID}}/restore","expect":{"status":400,"json":{"status":"failed","error":{"code":"DUPLICATE_TOKEN","type":"RequestInvalidError","message":"Token archived-share already exists"}}},"state":{"archives":[{"id":"{{COUNT_ARCHIVE_ID}}"}],"tokens":[{"token":"archived-share","count":5,"usedCount":0}]}},
+      {"method":"DELETE","path":"/api/token/archived-share?type=sub&name=archived-sub","expect":{"status":200}},
+      {"method":"POST","path":"/api/archives/{{COUNT_ARCHIVE_ID}}/restore","capture":{"LIFECYCLE_RESTORED_CREATED":{"pointer":"/data/createdAt","type":"integer"}},"expect":{"status":200,"json":{"status":"success","data":{"type":"sub","name":"archived-sub","token":"archived-share","custom":[null,false,0],"createdAt":"{{LIFECYCLE_RESTORED_CREATED}}","mode":"count","count":3,"usedCount":1}}},"state":{"archives":[],"tokens":[{"count":3,"usedCount":1}]}},
+      {"method":"DELETE","path":"/api/sub/archived-sub","expect":{"status":200}},
+      {"method":"DELETE","path":"/api/collection/archived-col?mode=permanent","expect":{"status":200},"state":{"tokens":[{"token":"archived-share"}],"files":[{"name":"dependent-file"}],"artifacts":[{"name":"dependent-artifact"}]}},
+      {"method":"DELETE","path":"/api/token/archived-share?type=sub&name=archived-sub&mode=permanent","expect":{"status":200}},
+      {"method":"DELETE","path":"/api/file/dependent-file?mode=permanent","expect":{"status":200}},
+      {"method":"DELETE","path":"/api/artifact/dependent-artifact?mode=permanent","expect":{"status":200,"json":{"status":"success","data":{"artifact":{"name":"dependent-artifact","type":"subscription","source":"archived-sub","upload":false},"remote":{"attempted":false,"status":"not_attempted"}}}},"state":{"subs":[],"collections":[],"files":[],"tokens":[],"artifacts":[],"archives":[]}}
+    ]
+  },
+  {
+    "id": "Y04-artifact-crud-and-archive-validation",
+    "source": "backend/src/restful/artifacts.js:141,154,182,226,252,259,283; backend/src/utils/artifact-cron.js:37,52; backend/src/restful/archives.js:109",
+    "steps": [
+      {"method":"POST","path":"/api/artifacts","body":{"name":"bad/name"},"expect":{"status":500,"json":{"status":"failed","error":{"code":"INVALID_ARTIFACT_NAME","type":"RequestInvalidError","message":"Artifact name bad/name is invalid."}}}},
+      {"method":"POST","path":"/api/artifacts","body":{"name":".sub-store-placeholder"},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_ARTIFACT_NAME"}}}},
+      {"method":"POST","path":"/api/artifacts","body":{"name":"invalid-cron","cron":"0/0 * * * * *"},"expect":{"status":500,"json":{"status":"failed","error":{"code":"INVALID_ARTIFACT_CRON","type":"RequestInvalidError","message":"Artifact cron 0/0 * * * * * is invalid.","details":"Reason: Field (second) has a step of zero"}}}},
+      {"method":"POST","path":"/api/artifacts","body":{"name":"artifact-native","type":"file","source":"missing","sync":false,"upload":false,"cron":"  ","editorLanguage":"unknown","unknown":[null,false,0]},"expect":{"status":201,"json":{"status":"success","data":{"name":"artifact-native","type":"file","source":"missing","sync":false,"upload":false,"editorLanguage":"unknown","unknown":[null,false,0]}}}},
+      {"method":"POST","path":"/api/artifacts","body":{"name":"artifact-native","cron":"not-a-cron"},"expect":{"status":500,"json":{"status":"failed","error":{"code":"INVALID_ARTIFACT_CRON","type":"RequestInvalidError","message":"Artifact cron not-a-cron is invalid.","details":"Reason: Unknown alias: not"}}}},
+      {"method":"POST","path":"/api/artifacts","body":{"name":"artifact-native"},"expect":{"status":500,"json":{"status":"failed","error":{"code":"DUPLICATE_KEY","type":"RequestInvalidError","message":"Artifact artifact-native already exists."}}}},
+      {"method":"GET","path":"/api/artifact/artifact-native","expect":{"status":200,"json":{"status":"success","data":{"name":"artifact-native","type":"file","source":"missing","sync":false,"upload":false,"editorLanguage":"unknown","unknown":[null,false,0]}}}},
+      {"method":"PATCH","path":"/api/artifact/missing","body":{"name":"other"},"expect":{"status":500,"json":{"status":"failed","error":{"code":"DUPLICATE_KEY","type":"RequestInvalidError","message":"Artifact missing already exists."}}}},
+      {"method":"PATCH","path":"/api/artifact/artifact-native","body":{"name":"artifact-native-2","cron":" @monthly "},"expect":{"status":200,"json":{"status":"success","data":{"name":"artifact-native-2","type":"file","source":"missing","sync":false,"upload":false,"editorLanguage":"unknown","unknown":[null,false,0],"cron":"@monthly"}}}},
+      {"method":"PUT","path":"/api/artifacts","body":[{"name":"replace-a","url":"https://raw.invalid/file","updated":17,"upload":false,"cron":"","unknown":[null,false,0]}],"expect":{"status":200,"json":{"status":"success"}}},
+      {"method":"DELETE","path":"/api/artifact/replace-a?mode=archive","expect":{"status":200,"json":{"status":"success","data":{"artifact":{"name":"replace-a","url":"https://raw.invalid/file","updated":17,"upload":false,"unknown":[null,false,0]},"remote":{"attempted":true,"status":"failed","message":"未设置 GitHub Token！"}}}},"state":{"artifacts":[]}},
+      {"path":"/api/archives","capture":{"ARTIFACT_ARCHIVE_ID":{"pointer":"/data/0/id","type":"string","pattern":"[0-9]+-[a-z0-9]+"},"ARTIFACT_ARCHIVED_AT":{"pointer":"/data/0/archivedAt","type":"integer"}},"expect":{"status":200,"json":{"status":"success","data":[{"id":"{{ARTIFACT_ARCHIVE_ID}}","archivedAt":"{{ARTIFACT_ARCHIVED_AT}}","itemType":"artifact","name":"replace-a","snapshot":{"name":"replace-a","url":"https://raw.invalid/file","updated":17,"upload":false,"unknown":[null,false,0]}}]}}},
+      {"method":"POST","path":"/api/archives/{{ARTIFACT_ARCHIVE_ID}}/restore","expect":{"status":200,"json":{"status":"success","data":{"name":"replace-a","upload":false,"unknown":[null,false,0]}}}},
+      {"method":"GET","path":"/api/artifact/replace-a","expect":{"status":200,"json":{"status":"success","data":{"name":"replace-a","upload":false,"unknown":[null,false,0]}}}},
+      {"method":"DELETE","path":"/api/artifact/replace-a?mode=permanent","expect":{"status":200,"json":{"status":"success","data":{"artifact":{"name":"replace-a","upload":false,"unknown":[null,false,0]},"remote":{"attempted":false,"status":"not_attempted"}}}},"state":{"artifacts":[],"archives":[]}},
+      {"method":"OPTIONS","path":"/api/artifacts","expect":{"status":200,"body":"GET,POST,PUT,HEAD","headers":{"allow":"GET,POST,PUT,HEAD"}}},
+      {"method":"OPTIONS","path":"/api/archives/unknown/restore","expect":{"status":200,"body":"POST,GET,HEAD","headers":{"allow":"POST,GET,HEAD"}}}
+    ]
+  },
+  {
+    "id": "M02-module-names-order-and-missing-delete",
+    "source": "backend/src/restful/module.js:23,64,91; backend/src/utils/database.js:9",
+    "steps": [
+      {"method": "PUT", "path": "/api/modules", "body": [], "expect": {"status": 200}},
+      {"method": "POST", "path": "/api/modules", "body": {}, "expect": {"status": 201, "json": {"status": "success", "data": {"name": "99914b932bd37a50b983c5e7c90ae93b"}}}},
+      {"method": "POST", "path": "/api/modules", "body": {}, "expect": {"status": 500, "json_contains": {"error": {"code": "DUPLICATE_KEY"}}}},
+      {"method": "POST", "path": "/api/modules", "body": {"name": false, "content": "false name"}, "expect": {"status": 201, "json": {"status": "success", "data": {"name": "false", "content": "false name"}}}},
+      {"method": "POST", "path": "/api/modules", "body": {"name": 0, "content": "zero name"}, "expect": {"status": 201, "json": {"status": "success", "data": {"name": "0", "content": "zero name"}}}},
+      {"path": "/api/modules", "expect": {"status": 200, "json": {"status": "success", "data": [{"name": "99914b932bd37a50b983c5e7c90ae93b"}, {"name": "false"}, {"name": "0"}]}}},
+      {"method": "PATCH", "path": "/api/module/false", "body": {"name": "", "extra": [null, false, 0]}, "expect": {"status": 200, "json": {"status": "success", "data": {"name": "", "content": "false name", "extra": [null, false, 0]}}}},
+      {"method": "DELETE", "path": "/api/module/missing", "expect": {"status": 200}, "state": {"modules": [{"name": "99914b932bd37a50b983c5e7c90ae93b"}, {"name": "", "content": "false name", "extra": [null, false, 0]}]}},
+      {"method": "DELETE", "path": "/api/module/missing-again", "expect": {"status": 200}, "state": {"modules": [{"name": "99914b932bd37a50b983c5e7c90ae93b"}]}},
+      {"path": "/api/module/99914b932bd37a50b983c5e7c90ae93b", "expect": {"status": 200, "body": ""}},
+      {"method": "DELETE", "path": "/api/module/99914b932bd37a50b983c5e7c90ae93b", "expect": {"status": 200}, "state": {"modules": []}}
+    ]
+  },
+  {
+    "id": "M03-module-content-methods-and-encoded-name",
+    "source": "backend/src/restful/module.js:11,44,109",
+    "steps": [
+      {"method": "PUT", "path": "/api/modules", "body": [{"name": "json", "content": {"2": false, "1": 0, "extra": null}}, {"name": "array", "content": [null, false, 0, ""]}, {"name": "nil", "content": null}, {"name": "unset"}, {"name": "status", "content": 202}, {"name": "bad-status", "content": 0}, {"name": "flag", "content": false}], "expect": {"status": 200}},
+      {"path": "/api/module/json", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "{\"1\":0,\"2\":false,\"extra\":null}"}},
+      {"path": "/api/module/array", "expect": {"status": 200, "body": "[null,false,0,\"\"]"}},
+      {"path": "/api/module/nil", "expect": {"status": 200, "body": ""}},
+      {"path": "/api/module/unset", "expect": {"status": 200, "body": ""}},
+      {"path": "/api/module/status", "expect": {"status": 202, "body": "Accepted"}},
+      {"path": "/api/module/flag", "expect": {"status": 200, "body": "false"}},
+      {"method": "HEAD", "path": "/api/module/json", "expect": {"status": 200, "body": ""}},
+      {"method": "OPTIONS", "path": "/api/module/json", "expect": {"status": 200, "headers": {"allow": "GET,PATCH,DELETE,HEAD"}}},
+      {"method": "OPTIONS", "path": "/api/modules", "expect": {"status": 200, "headers": {"allow": "GET,POST,PUT,HEAD"}}},
+      {"method": "POST", "path": "/api/modules", "body": {"name": "module/路径🙂", "content": "// 模块🙂\r\n"}, "expect": {"status": 201}},
+      {"path": "/API/MODULE/module%2F%E8%B7%AF%E5%BE%84%F0%9F%99%82", "expect": {"status": 200, "body": "// 模块🙂\r\n"}},
+      {"method": "PUT", "path": "/api/modules", "body": [], "expect": {"status": 200}, "state": {"modules": []}}
     ]
   },
   {
@@ -9493,6 +9624,40 @@
       {"method": "PATCH", "path": "/api/settings", "body": {"appearanceSetting": {"theme": "light"}, "defaultTimeout": 0, "backendRequestConcurrency": 1.2, "backendRequestConcurrencyWaitTime": -1, "logsMaxCount": null}, "expect": {"status": 200, "json": {"status": "success", "data": {"appearanceSetting": {"theme": "light", "language": "zh", "flag": false}, "resourceCacheTtl": 2, "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}}, "state": {"settings": {"appearanceSetting": {"theme": "light", "language": "zh", "flag": false}, "resourceCacheTtl": 2, "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}},
       {"method": "PATCH", "path": "/api/settings", "body": {"gistDownloadTokenStrategy": "invalid"}, "expect": {"status": 500, "json_contains": {"status": "failed", "error": {"code": "INVALID_GIST_DOWNLOAD_TOKEN_STRATEGY"}}}},
       {"path": "/api/settings", "expect": {"status": 200, "json": {"status": "success", "data": {"appearanceSetting": {"theme": "light", "language": "zh", "flag": false}, "resourceCacheTtl": 2, "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}}}
+    ]
+  },
+  {
+    "id": "T04-token-expiration-inputs-and-order",
+    "source": "backend/src/restful/token.js:91-258,260-401; locked ms 2.1.3 and age normalization; actual signing/list/delete owners",
+    "steps": [
+      {"method":"POST","path":"/api/files","body":{"name":"options-source","source":"local","content":"options"},"expect":{"status":201}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source","token":0}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_CUSTOM_TOKEN","message":"Invalid custom token: 0"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"unsupported","name":"options-source"}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_TYPE","message":"type options-source not supported"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"mode":false}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_EXPIRATION_MODE","message":"Unsupported expiration mode: false"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"mode":"duration","expiresIn":""}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_EXPIRES_IN"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"expiresIn":1000}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_EXPIRES_IN"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"expiresIn":[]}},"expect":{"status":500,"json_contains":{"error":{"code":"TOKEN_SIGN_FAILED","details":"Reason: val is not a non-empty string or a valid number. val=[]"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"mode":"count","count":2.5}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_SHARE_COUNT"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"mode":"count","count":2,"usedCount":-1}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_SHARE_USED_COUNT"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"mode":"count","count":2,"usedCount":3}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_SHARE_USED_COUNT"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"mode":"datetime","exp":true}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_EXPIRATION_DATETIME"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"mode":"datetime","exp":9007199254740992}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_EXPIRATION_DATETIME"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"expiresIn":"1d","expiresValue":0,"expiresUnit":"day"}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_EXPIRES_VALUE"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"expiresIn":"1d","expiresValue":1,"expiresUnit":"week"}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_EXPIRES_UNIT"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"expiresIn":"1h","expiresValue":1,"expiresUnit":"day"}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_DURATION_INPUT"}}},"state":{"tokens":[]}},
+      {"method":"PATCH","path":"/api/settings","body":{"appearanceSetting":{"createItemPosition":"top"}},"expect":{"status":200}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source","token":"options-count","contentEditorLanguage":"unknown","keep":{"zero":0,"nil":null}},"options":{"mode":"count","count":"3","usedCount":"1"}},"expect":{"status":200,"json":{"status":"success","data":{"token":"options-count"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source","token":"options-duration"},"options":{"expiresIn":"1d","expiresValue":"1.00","expiresUnit":" day "}},"expect":{"status":200,"json":{"status":"success","data":{"token":"options-duration"}}}},
+      {"path":"/api/tokens?type=file&name=options-source","capture":{"DURATION_CREATED":{"pointer":"/data/0/createdAt","type":"integer"},"DURATION_EXP":{"pointer":"/data/0/exp","type":"integer"},"COUNT_CREATED":{"pointer":"/data/1/createdAt","type":"integer"}},"expect":{"status":200,"json":{"status":"success","data":[{"type":"file","name":"options-source","token":"options-duration","createdAt":"{{DURATION_CREATED}}","mode":"duration","expiresIn":"1d","expiresValue":"1","expiresUnit":"day","exp":"{{DURATION_EXP}}"},{"type":"file","name":"options-source","token":"options-count","contentEditorLanguage":"unknown","keep":{"zero":0,"nil":null},"createdAt":"{{COUNT_CREATED}}","mode":"count","count":3,"usedCount":1}]}}},
+      {"method":"DELETE","path":"/api/token/options-duration?type=file&name=options-source","expect":{"status":200}},
+      {"method":"DELETE","path":"/api/token/options-count?type=file&name=options-source","expect":{"status":200},"state":{"tokens":[]}},
+      {"method":"DELETE","path":"/api/token/options-count?type=file&name=options-source","expect":{"status":500,"json":{"status":"failed","error":{"code":"RESOURCE_NOT_FOUND","type":"ResourceNotFoundError","message":"Share file/options-source/options-count does not exist!"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"}},"capture":{"AUTO_TOKEN":{"pointer":"/data/token","type":"string","pattern":"[A-Za-z0-9_-]{21}"}},"expect":{"status":200,"json":{"status":"success","data":{"token":"{{AUTO_TOKEN}}"}}}},
+      {"method":"DELETE","path":"/api/token/{{AUTO_TOKEN}}?type=file&name=options-source","expect":{"status":200},"state":{"tokens":[]}},
+      {"method":"OPTIONS","path":"/api/token","expect":{"status":200,"body":"POST,GET,HEAD"}},
+      {"method":"OPTIONS","path":"/api/token/options-count","expect":{"status":200,"body":"DELETE,GET,HEAD"}},
+      {"method":"DELETE","path":"/api/file/options-source","expect":{"status":200},"state":{"files":[]}},
+      {"method":"PATCH","path":"/api/settings","body":{"appearanceSetting":{"createItemPosition":"bottom"}},"expect":{"status":200}}
     ]
   },
   {
@@ -9547,6 +9712,28 @@
     ]
   },
   {
+    "id": "T06-share-subscription-and-collection",
+    "source": "backend/src/restful/download.js:45-83,85-189,492; token.js:423-483; actual public type/name/target binding and generation",
+    "steps": [
+      {"method":"POST","path":"/api/subs","body":{"name":"public-source","source":"local","content":"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture"},"expect":{"status":201}},
+      {"method":"POST","path":"/api/collections","body":{"name":"public-group","subscriptions":["public-source"]},"expect":{"status":201}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"sub","name":"public-source","token":"public-sub"},"options":{"mode":"count","count":3}},"expect":{"status":200}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"col","name":"public-group","token":"public-col"},"options":{"mode":"count","count":1}},"expect":{"status":200}},
+      {"path":"/share/col/public-group?token=public-sub","origin":true,"expect":{"status":404,"body":""},"state":{"tokens":[{"token":"public-sub","usedCount":0},{"token":"public-col","usedCount":0}]}},
+      {"path":"/share/sub/public-source/URI?token=public-sub","origin":true,"expect":{"status":200},"state":{"tokens":[{"token":"public-sub","usedCount":1},{"token":"public-col","usedCount":0}]}},
+      {"path":"/share/sub/public-source?token=public-sub&fakeSub=true","origin":true,"expect":{"status":400,"json_contains":{"error":{"code":"UNSUPPORTED_SHARE_FAKE_SUB","details":"详情请查看日志"}}}},
+      {"path":"/share/sub/public-source?token=public-sub&content=blocked","origin":true,"expect":{"status":400,"json_contains":{"error":{"code":"UNSUPPORTED_SHARE_SUB_SOURCE_OVERRIDE","details":"详情请查看日志"}}},"state":{"tokens":[{"token":"public-sub","usedCount":3},{"token":"public-col","usedCount":0}]}},
+      {"path":"/share/sub/public-source?token=public-sub","origin":true,"expect":{"status":404,"body":""}},
+      {"path":"/share/sub/public-source/URI?token=public-sub","expect":{"status":200},"state":{"tokens":[{"token":"public-sub","usedCount":3},{"token":"public-col","usedCount":0}]}},
+      {"path":"/share/col/public-group/URI?token=public-col","origin":true,"expect":{"status":200},"state":{"tokens":[{"token":"public-sub","usedCount":3},{"token":"public-col","usedCount":1}]}},
+      {"path":"/share/col/public-group/URI?token=public-col","origin":true,"expect":{"status":404,"body":""}},
+      {"method":"DELETE","path":"/api/token/public-sub?type=sub&name=public-source","expect":{"status":200}},
+      {"method":"DELETE","path":"/api/token/public-col?type=col&name=public-group","expect":{"status":200},"state":{"tokens":[]}},
+      {"method":"DELETE","path":"/api/collection/public-group?mode=permanent","expect":{"status":200}},
+      {"method":"DELETE","path":"/api/sub/public-source?mode=permanent","expect":{"status":200}}
+    ]
+  },
+  {
     "id": "T03-share-datetime-archive",
     "source": "backend/src/restful/token.js:114,260,435; backend/src/restful/archives.js:91; backend/src/test/restful/archive.spec.js:222,451",
     "steps": [
@@ -9555,8 +9742,8 @@
       {"path": "/api/tokens?type=file&name=merged-share", "capture": {"EXPIRED_CREATED_AT": {"pointer": "/data/0/createdAt", "type": "integer"}}, "expect": {"status": 200, "json": {"status": "success", "data": [{"type": "file", "name": "merged-share", "token": "expired", "custom": false, "createdAt": "{{EXPIRED_CREATED_AT}}", "mode": "datetime", "exp": 1700000000000}]}}},
       {"path": "/share/file/merged-share?token=expired", "origin": true, "expect": {"status": 404, "body": ""}},
       {"method": "DELETE", "path": "/api/token/expired?type=file&name=merged-share&mode=archive", "expect": {"status": 200, "json": {"status": "success"}}, "state": {"tokens": [], "archives": [{"itemType": "share", "shareType": "file", "snapshot": {"token": "expired", "createdAt": "{{EXPIRED_CREATED_AT}}", "exp": 1700000000000, "mode": "datetime", "custom": false}}]}},
-      {"path": "/api/archives", "capture": {"SHARE_ARCHIVE_ID": {"pointer": "/data/0/id", "type": "string", "pattern": "[0-9]+-[a-z0-9]+"}}, "expect": {"status": 200, "json_contains": {"status": "success", "data": [{"id": "{{SHARE_ARCHIVE_ID}}", "itemType": "share", "shareType": "file", "snapshot": {"token": "expired", "mode": "datetime", "exp": 1700000000000}}]}}},
-      {"method": "POST", "path": "/api/archives/{{SHARE_ARCHIVE_ID}}/restore", "expect": {"status": 200, "json_contains": {"status": "success", "data": {"type": "file", "name": "merged-share", "token": "expired", "mode": "datetime", "exp": 1700000000000, "custom": false}}}, "state": {"archives": [], "tokens": [{"token": "expired", "mode": "datetime", "exp": 1700000000000, "custom": false}]}},
+      {"path": "/api/archives", "capture": {"SHARE_ARCHIVE_ID": {"pointer": "/data/0/id", "type": "string", "pattern": "[0-9]+-[a-z0-9]+"}, "SHARE_ARCHIVED_AT": {"pointer":"/data/0/archivedAt","type":"integer"}}, "expect": {"status": 200, "json_contains": {"status": "success", "data": [{"id": "{{SHARE_ARCHIVE_ID}}", "archivedAt":"{{SHARE_ARCHIVED_AT}}", "itemType": "share", "shareType": "file", "snapshot": {"token": "expired", "createdAt":"{{EXPIRED_CREATED_AT}}", "mode": "datetime", "exp": 1700000000000}}]}}},
+      {"method": "POST", "path": "/api/archives/{{SHARE_ARCHIVE_ID}}/restore", "capture":{"RESTORED_EXPIRED_CREATED_AT":{"pointer":"/data/createdAt","type":"integer"}}, "expect": {"status": 200, "json_contains": {"status": "success", "data": {"type": "file", "name": "merged-share", "token": "expired", "createdAt":"{{RESTORED_EXPIRED_CREATED_AT}}", "mode": "datetime", "exp": 1700000000000, "custom": false}}}, "state": {"archives": [], "tokens": [{"token": "expired", "mode": "datetime", "exp": 1700000000000, "custom": false}]}},
       {"path": "/share/file/merged-share?token=expired", "origin": true, "expect": {"status": 404, "body": ""}},
       {"method": "DELETE", "path": "/api/token/expired?type=file&name=merged-share&mode=permanent", "expect": {"status": 200, "json": {"status": "success"}}},
       {"method": "POST", "path": "/api/token", "body": {"payload": {"type": "file", "name": "merged-share", "token": "future"}, "options": {"mode": "datetime", "exp": 4102444800000}}, "expect": {"status": 200, "json": {"status": "success", "data": {"token": "future"}}}},

@@ -7,6 +7,7 @@ use percent_encoding::percent_decode_str;
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
 
+#[derive(Clone)]
 pub enum Body {
     Json(Value),
     Raw(Bytes),

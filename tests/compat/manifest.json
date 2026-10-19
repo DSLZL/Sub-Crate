@@ -2,6 +2,20 @@
   "backend_commit": "9cc6b5fac966993364ae33da8797f446bbf7f571",
   "frontend_commit": "4bd7b0acbe65466b933ccea14fc61dbebe036ead",
   "suites": {
+    "business-local": [
+      "M02-module-names-order-and-missing-delete",
+      "M03-module-content-methods-and-encoded-name",
+      "M01-module-crud",
+      "F02-file-normalization-and-order",
+      "F03-file-preview-and-response",
+      "T01-token-metadata-and-validation",
+      "T04-token-expiration-inputs-and-order",
+      "F01-file-crud-and-runtime"
+    ],
+    "sharing-core": ["T02-merged-share-count-and-origin", "T06-share-subscription-and-collection", "T03-share-datetime-archive"],
+    "archive-core": ["F01-file-crud-and-runtime", "A01-file-archive-restore-conflict",
+      "A05-subscription-collection-share-archive-lifecycle", "Y04-artifact-crud-and-archive-validation",
+      "O01-sort-resources", "A03-sort-delete-and-artifact-restore", "A04-archive-errors"],
     "conversion-local": [
       "PC-native-conversion-helper-contracts",
       "PC-native-typed-input-boundaries",
@@ -114,7 +128,8 @@
     "conversion-local-restart": [
       "PC-native-script-cache-restart",
       "P05-local-subscription-restart",
-      "PC-native-script-restart"
+      "PC-native-script-restart",
+      "F04-file-restart"
     ],
     "service-state": [
       "D01-backup-seed", "C01-subscription-crud", "C02-rename-references",
@@ -144,6 +159,10 @@
       "T03-share-datetime-archive"
     ],
     "full": [
+      "M02-module-names-order-and-missing-delete",
+      "M03-module-content-methods-and-encoded-name",
+      "F02-file-normalization-and-order",
+      "F03-file-preview-and-response",
       "R04-type-mappings",
       "R04-options-duplicates-missing-content",
       "R04-preprocess-boundaries",
@@ -194,6 +213,8 @@
       "D03-excluded-script-import-export",
       "D04-excluded-script-restart",
       "T02-merged-share-count-and-origin",
+      "T04-token-expiration-inputs-and-order",
+      "T06-share-subscription-and-collection",
       "T03-share-datetime-archive",
       "P01-output-qx",
       "P01-output-QX",
@@ -274,6 +295,8 @@
       "Y03-restore-without-token-stays-alive",
       "A03-sort-delete-and-artifact-restore",
       "A04-archive-errors",
+      "A05-subscription-collection-share-archive-lifecycle",
+      "Y04-artifact-crud-and-archive-validation",
       "G01-logs-filter-and-clear",
       "G02-logs-disabled",
       "E02-cors-default-and-preflight",
@@ -453,7 +476,7 @@
       "N05-node-info-missing-server-and-recovery"
     ]
   },
-  "coverage_state": "210 executable fixtures; full suite intentionally fails until the complete inventory is accepted",
+  "coverage_state": "230 executable fixtures; full suite intentionally fails until the complete inventory is accepted",
   "pending_domains": [
     "artifacts",
     "files",

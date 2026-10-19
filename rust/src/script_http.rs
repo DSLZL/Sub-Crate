@@ -219,14 +219,8 @@ fn set_headers<'js>(
     Ok(())
 }
 
-pub(crate) async fn download<'js>(
-    js: &Js<'js>,
-    collection: bool,
-    item: Value<'js>,
-    options: Value<'js>,
-    request: Value<'js>,
-) -> rquickjs::Result<Value<'js>> {
-    let query = js.get(&request, "query")?;
+fn request_options<'js>(js: &Js<'js>, request: &Value<'js>) -> rquickjs::Result<Value<'js>> {
+    let query = js.get(request, "query")?;
     let supplied = object(js)?;
     let metadata = js.call(
         "except",
@@ -238,6 +232,18 @@ pub(crate) async fn download<'js>(
         let (_, parsed) = network::fragment(js, js.value(format!("#{}", js.text(raw)?))?)?;
         js.call::<Value, _>("assign", (supplied.clone(), parsed))?;
     }
+    Ok(supplied)
+}
+
+pub(crate) async fn download<'js>(
+    js: &Js<'js>,
+    collection: bool,
+    item: Value<'js>,
+    options: Value<'js>,
+    request: Value<'js>,
+) -> rquickjs::Result<Value<'js>> {
+    let query = js.get(&request, "query")?;
+    let supplied = request_options(js, &request)?;
     js.set(&options, "$options", supplied.clone())?;
     let no_flow = network::prefer(js, [js.get(&query, "noFlow")?, js.get(&item, "noFlow")?])?;
     js.set(&options, "noFlow", no_flow.clone())?;
@@ -267,17 +273,14 @@ pub(crate) async fn download<'js>(
             "text/plain; charset=utf-8"
         })?,
     )?;
-    let res = optional(js, &supplied, "_res")?;
-    let override_headers = optional(js, &res, "headers")?;
-    if js.truthy(&override_headers)? {
-        set_headers(js, &headers, override_headers)?;
-    }
-    let status = network::prefer(js, [optional(js, &res, "status")?, js.value(200)?])?;
     let input = object(js)?;
-    js.set(&input, "status", status)?;
-    let current: Value = js.call("spread", (object(js)?, headers.clone()))?;
-    js.set(&input, "headers", current.clone())?;
+    js.set(&input, "headers", headers)?;
     js.set(&input, "body", output)?;
+    js.set(
+        &input,
+        "agePublicKey",
+        optional(js, &request, "outputAgePublicKey")?,
+    )?;
     let source = object(js)?;
     js.set(
         &source,
@@ -291,6 +294,32 @@ pub(crate) async fn download<'js>(
     )?;
     let execution = object(js)?;
     js.set(&execution, "noFlow", no_flow)?;
+    response(js, input, item, target, source, supplied, execution).await
+}
+
+async fn response<'js>(
+    js: &Js<'js>,
+    input: Value<'js>,
+    item: Value<'js>,
+    target: Value<'js>,
+    source: Value<'js>,
+    supplied: Value<'js>,
+    execution: Value<'js>,
+) -> rquickjs::Result<Value<'js>> {
+    let share_key = optional(js, &input, "agePublicKey")?;
+    let headers = js.get(&input, "headers")?;
+    let res = optional(js, &supplied, "_res")?;
+    let override_headers = optional(js, &res, "headers")?;
+    if js.truthy(&override_headers)? {
+        set_headers(js, &headers, override_headers)?;
+    }
+    js.set(
+        &input,
+        "status",
+        network::prefer(js, [optional(js, &res, "status")?, js.value(200)?])?,
+    )?;
+    let current: Value = js.call("spread", (object(js)?, headers.clone()))?;
+    js.set(&input, "headers", current.clone())?;
     let transformed = utility(
         js,
         "processResponse",
@@ -315,7 +344,11 @@ pub(crate) async fn download<'js>(
     }
     set_headers(js, &headers, next)?;
     js.set(&transformed, "headers", headers.clone())?;
-    let key = optional(js, &item, "age-public-key")?;
+    let key = if share_key.is_null() || share_key.is_undefined() {
+        optional(js, &item, "age-public-key")?
+    } else {
+        share_key
+    };
     let key = js.method(
         js.value(if key.is_null() || key.is_undefined() {
             String::new()
@@ -362,6 +395,100 @@ pub(crate) async fn download<'js>(
         js.set(&transformed, "binary", js.value(true)?)?;
     }
     Ok(transformed)
+}
+
+pub(crate) async fn file<'js>(
+    js: &Js<'js>,
+    item: Value<'js>,
+    request: Value<'js>,
+) -> rquickjs::Result<Value<'js>> {
+    let query = js.get(&request, "query")?;
+    let supplied = request_options(js, &request)?;
+    let options = object(js)?;
+    for key in [
+        "url",
+        "ua",
+        "content",
+        "mergeSources",
+        "ignoreFailedRemoteFile",
+        "proxy",
+        "noCache",
+        "produceType",
+    ] {
+        js.set(&options, key, js.get(&query, key)?)?;
+    }
+    js.set(&options, "$options", supplied.clone())?;
+    js.set(&options, "all", js.value(true)?)?;
+    let output = pipeline::file(js, item.clone(), options, false).await?;
+    let headers = js.get(&request, "responseHeaders")?;
+    if js.truthy(&js.get(&item, "subInfoUrl")?)? {
+        let flow = flow_call(
+            js,
+            vec![
+                js.get(&item, "subInfoUrl")?,
+                js.get(&item, "subInfoUserAgent")?,
+                js.undefined(),
+                js.get(&item, "proxy")?,
+            ],
+        )
+        .await;
+        let value = logged(js, flow);
+        if js.truthy(&value)?
+            && let Err(error) = flow_headers(js, &headers, value)
+        {
+            logged(js, Err(error));
+        }
+    }
+    if js.truthy(&js.get(&item, "download")?)? {
+        let name = network::prefer(js, [js.get(&item, "displayName")?, js.get(&item, "name")?])?;
+        let encode: rquickjs::Function = js.ctx.globals().get("encodeURIComponent")?;
+        let name: String = encode.call((name,))?;
+        js.set(
+            &headers,
+            "content-disposition",
+            js.value(format!("attachment; filename*=UTF-8''{name}"))?,
+        )?;
+    }
+    js.set(
+        &headers,
+        "content-type",
+        js.value("text/plain; charset=utf-8")?,
+    )?;
+    let input = object(js)?;
+    js.set(&input, "headers", headers)?;
+    let body = optional(js, &output, "$content")?;
+    js.set(
+        &input,
+        "agePublicKey",
+        optional(js, &request, "outputAgePublicKey")?,
+    )?;
+    js.set(
+        &input,
+        "body",
+        if body.is_null() || body.is_undefined() {
+            js.value("")?
+        } else {
+            body
+        },
+    )?;
+    let source = object(js)?;
+    js.set(&source, "$file", item.clone())?;
+    let supplied = optional(js, &output, "$options")?;
+    let supplied = if supplied.is_null() || supplied.is_undefined() {
+        request_options(js, &request)?
+    } else {
+        supplied
+    };
+    response(
+        js,
+        input,
+        item,
+        js.undefined(),
+        source,
+        supplied,
+        object(js)?,
+    )
+    .await
 }
 
 pub(crate) async fn parse<'js>(js: &Js<'js>, fields: Value<'js>) -> rquickjs::Result<Value<'js>> {

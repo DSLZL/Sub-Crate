@@ -114,8 +114,10 @@ def main():
         report["kind"] = "rust-frontend-service-state"
         report["binary_sha256"] = hashlib.sha256(args.rust_binary.read_bytes()).hexdigest()
         report["required_cases"] = ["FE01-url-backend-setup", "FE02-create-subscription", "FE03-reopen-rename-subscription",
-                                    "FE04-preview-subscription", "FE11-create-collection", "FE12-reopen-rename-collection",
-                                    "FE13-preview-collection", "FE16-save-log-settings",
+                                    "FE04-preview-subscription", "FE05-create-local-file", "FE06-reopen-rename-file",
+                                    "FE07-preview-file", "FE08-create-count-share", "FE09-open-public-share",
+                                    "FE10-reopen-update-count-share", "FE11-create-collection", "FE12-reopen-rename-collection",
+                                    "FE13-preview-collection", "FE14-archive-file", "FE15-restore-file-archive", "FE16-save-log-settings",
                                     "FE19-download-manual-backup", "FE20-restore-manual-backup"]
     command_index = 0
 
@@ -188,6 +190,48 @@ def main():
             command("click", "@" + matches[0])
         else:
             command("find", "text", name, "click", "--exact")
+
+    def file_crud_preview():
+        command("open", report["server_origin"] + "/edit/files/UNTITLED")
+        command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
+        command("fill", 'input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-file")
+        command("wait", ".cm-content[contenteditable='true']")
+        command("click", ".cm-content[contenteditable='true']")
+        command("press", "Control+a")
+        command("press", "Backspace")
+        command("keyboard", "inserttext", "browser file🙂\n")
+        command("snapshot", "-i")
+        command("click", ".submit-btn")
+        command("wait", "--fn", "location.pathname === '/files'")
+        command("wait", "--text", "browser-file")
+        stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+        assert len(stored["files"]) == 1 and stored["files"][0]["name"] == "browser-file" and stored["files"][0]["content"] == "browser file🙂\n", "UI file create did not persist editor content"
+        report["cases"].append({"id": "FE05-create-local-file", "source": "src/views/FileEditor.vue:63,330,1159", "status": "browser_passed"})
+        command("open", report["server_origin"] + "/edit/files/browser-file")
+        command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
+        expect_value('input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-file", "File editor reload lost the name")
+        command("fill", 'input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-file-renamed")
+        click_name("内容", "tab")
+        command("wait", ".cm-content[contenteditable='true']")
+        command("wait", "--fn", "document.querySelector('.cm-content').innerText.includes('browser file🙂')")
+        assert evaluate("Array.from(document.querySelectorAll('.cm-content .cm-line'), e => e.textContent).join('\\n')") == "browser file🙂\n", "File editor reload lost content"
+        command("click", ".submit-btn")
+        command("wait", "--fn", "location.pathname === '/files'")
+        command("wait", "--text", "browser-file-renamed")
+        stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+        assert len(stored["files"]) == 1 and stored["files"][0]["name"] == "browser-file-renamed" and stored["files"][0]["content"] == "browser file🙂\n", "File rename did not persist"
+        report["cases"].append({"id": "FE06-reopen-rename-file", "source": "src/views/FileEditor.vue:916,1164", "status": "browser_passed"})
+        command("open", report["server_origin"] + "/edit/files/browser-file-renamed")
+        command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
+        expect_value('input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-file-renamed", "Preview editor did not load the file")
+        click_name("内容", "tab")
+        command("wait", ".compare-btn")
+        command("click", ".compare-btn")
+        command("wait", ".compare-page-wrapper-overlay .cm-content")
+        command("wait", "--fn", "document.querySelector('.compare-page-wrapper-overlay .cm-content').innerText.includes('browser file🙂')")
+        assert evaluate("Array.from(document.querySelectorAll('.compare-page-wrapper-overlay .cm-content .cm-line'), e => e.textContent).join('\\n')") == "browser file🙂\n", "File preview returned incorrect content"
+        command("snapshot", "-i")
+        report["cases"].append({"id": "FE07-preview-file", "source": "src/views/FileEditor.vue:490,1066", "status": "browser_passed"})
 
     def collection_crud():
         command("open", report["server_origin"] + "/edit/collections/UNTITLED")
@@ -455,59 +499,8 @@ def main():
             stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
             assert len(stored["subs"]) == 1 and stored["subs"][0]["name"] == "browser-renamed", "UI rename did not persist"
             report["cases"].append({"id": "FE03-reopen-rename-subscription", "source": "src/views/SubEditor.vue:66", "status": "browser_passed"})
-            if args.rust_binary:
-                preview_subscription()
-                collection_crud()
-                preview_collection()
-                save_settings()
-                download_backup()
-                restore_backup()
-                command("screenshot", output / "frontend-page.png")
-                report["page_errors"] = command("errors")
-                assert not report["page_errors"]["errors"], "Frontend JavaScript errors"
-                assert [case["id"] for case in report["cases"]] == report["required_cases"], "Incomplete Rust browser slice"
-                raise StateSliceComplete
             preview_subscription()
-            command("open", report["server_origin"] + "/edit/files/UNTITLED")
-            command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
-            command("fill", 'input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-file")
-            command("wait", ".cm-content[contenteditable='true']")
-            command("click", ".cm-content[contenteditable='true']")
-            command("press", "Control+a")
-            command("press", "Backspace")
-            command("keyboard", "inserttext", "browser file🙂\n")
-            command("snapshot", "-i")
-            command("click", ".submit-btn")
-            command("wait", "--fn", "location.pathname === '/files'")
-            command("wait", "--text", "browser-file")
-            stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
-            assert len(stored["files"]) == 1 and stored["files"][0]["name"] == "browser-file" and stored["files"][0]["content"] == "browser file🙂\n", "UI file create did not persist editor content"
-            report["cases"].append({"id": "FE05-create-local-file", "source": "src/views/FileEditor.vue:63,330,1159", "status": "browser_passed"})
-            command("open", report["server_origin"] + "/edit/files/browser-file")
-            command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
-            expect_value('input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-file", "File editor reload lost the name")
-            command("fill", 'input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-file-renamed")
-            click_name("内容", "tab")
-            command("wait", ".cm-content[contenteditable='true']")
-            command("wait", "--fn", "document.querySelector('.cm-content').innerText.includes('browser file🙂')")
-            assert evaluate("Array.from(document.querySelectorAll('.cm-content .cm-line'), e => e.textContent).join('\\n')") == "browser file🙂\n", "File editor reload lost content"
-            command("click", ".submit-btn")
-            command("wait", "--fn", "location.pathname === '/files'")
-            command("wait", "--text", "browser-file-renamed")
-            stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
-            assert len(stored["files"]) == 1 and stored["files"][0]["name"] == "browser-file-renamed" and stored["files"][0]["content"] == "browser file🙂\n", "File rename did not persist"
-            report["cases"].append({"id": "FE06-reopen-rename-file", "source": "src/views/FileEditor.vue:916,1164", "status": "browser_passed"})
-            command("open", report["server_origin"] + "/edit/files/browser-file-renamed")
-            command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
-            expect_value('input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-file-renamed", "Preview editor did not load the file")
-            click_name("内容", "tab")
-            command("wait", ".compare-btn")
-            command("click", ".compare-btn")
-            command("wait", ".compare-page-wrapper-overlay .cm-content")
-            command("wait", "--fn", "document.querySelector('.compare-page-wrapper-overlay .cm-content').innerText.includes('browser file🙂')")
-            assert evaluate("Array.from(document.querySelectorAll('.compare-page-wrapper-overlay .cm-content .cm-line'), e => e.textContent).join('\\n')") == "browser file🙂\n", "File preview returned incorrect content"
-            command("snapshot", "-i")
-            report["cases"].append({"id": "FE07-preview-file", "source": "src/views/FileEditor.vue:490,1066", "status": "browser_passed"})
+            file_crud_preview()
             command("open", report["server_origin"] + "/edit/shares/browser-file-renamed?type=file")
             command("wait", 'input[placeholder="默认后端随机 Token"]')
             click_name("按次数")
@@ -571,6 +564,15 @@ def main():
             command("wait", "--fn", "document.querySelector('.cm-content').innerText.includes('browser file🙂')")
             assert evaluate("document.querySelector('.cm-content').innerText").rstrip("\n") == "browser file🙂", "Restored file editor lost its content"
             report["cases"].append({"id": "FE15-restore-file-archive", "source": "src/views/archive/Archive.vue:837; src/store/archive.ts:73", "archive_id": entry["id"], "status": "browser_passed"})
+            if args.rust_binary:
+                save_settings()
+                download_backup()
+                restore_backup()
+                command("screenshot", output / "frontend-page.png")
+                report["page_errors"] = command("errors")
+                assert not report["page_errors"]["errors"], "Frontend JavaScript errors"
+                assert [case["id"] for case in report["cases"]] == report["required_cases"], "Incomplete Rust browser slice"
+                raise StateSliceComplete
             save_settings()
             command("open", report["server_origin"] + "/edit/files/browser-file-renamed")
             command("wait", ".editor-section-tab-list")

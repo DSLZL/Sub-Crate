@@ -1,4 +1,6 @@
+import base64
 import copy
+import hashlib
 from contextlib import redirect_stdout
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
@@ -680,7 +682,10 @@ class RunnerTests(unittest.TestCase):
                 actual["archivedAt"] = True
             elif mutation == "zero-time":
                 actual["archivedAt"] = 0
-            response = {"status": 200, "headers": {}, "body": json.dumps({"data": [actual]})}
+            content = json.dumps({"data": [actual]})
+            raw = content.encode()
+            tag = base64.b64encode(hashlib.sha1(raw).digest()).decode().rstrip("=")
+            response = {"status": 200, "headers": {"content-length": str(len(raw)), "etag": f'W/"{len(raw):x}-{tag}"'}, "body": content}
             case = {"id": "capture", "source": "self-check", "steps": [
                 {"path": "/api/archives", "capture": captures, "expect": {"status": 200, "json": {"data": [{"id": "{{ARCHIVE_ID}}", "archivedAt": "{{ARCHIVED_AT}}"}]}},
                  "state": {"archives": [{"id": "{{ARCHIVE_ID}}", "archivedAt": "{{ARCHIVED_AT}}"}]}},
@@ -700,6 +705,31 @@ class RunnerTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             runner.interpolate("/api/archives/{{MISSING}}", {})
 
+    def test_capture_projection_preserves_every_undeclared_byte(self):
+        def response(body):
+            raw = body.encode()
+            tag = base64.b64encode(hashlib.sha1(raw).digest()).decode().rstrip("=")
+            return {"body": body, "headers": {"content-length": str(len(raw)), "etag": f'W/"{len(raw):x}-{tag}"'}}
+
+        expected = {"json_contains": {"rows": [{"at": "{{AT}}", "a/b": "{{ID}}"}]}}
+        first = response('{"rows":[{"at":17,"a/b":"id\\\"x","other":17}],"keep":"id\\\"x"}')
+        second = response('{"rows":[{"at":29,"a/b":"id-y","other":17}],"keep":"id\\\"x"}')
+        projected = runner.project_captured_scalars(first, expected, {"AT": 17, "ID": 'id"x'})
+        other = runner.project_captured_scalars(second, expected, {"AT": 29, "ID": "id-y"})
+        self.assertEqual(projected, other)
+        self.assertIn('"other":17', projected["body"])
+        self.assertIn('"keep":"id\\\"x"', projected["body"])
+        for bad, template, captures in (
+            ({**first, "headers": {**first["headers"], "etag": 'W/"wrong"'}}, expected, {"AT": 17, "ID": 'id"x'}),
+            (first, expected, {"AT": 29, "ID": 'id"x'}),
+            (first, {"json_contains": {"missing": "{{AT}}"}}, {"AT": 17}),
+        ):
+            with self.assertRaises(AssertionError):
+                runner.project_captured_scalars(bad, template, captures)
+        with self.assertRaises(KeyError):
+            runner.project_captured_scalars(first, expected, {"AT": 17})
+        self.assertIsNone(runner.project_captured_scalars(first, {"json": {"rows": []}}, {}))
+
     def test_upstream_request_and_cache_assertions(self):
         from upstream import ControlledUpstream, substitute
         with ControlledUpstream() as upstream:
@@ -708,6 +738,8 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(response["status"], 200)
             self.assertEqual(response["headers"]["subscription-userinfo"], "upload=10; download=20; total=1000")
             self.assertEqual(runner.request(upstream.url + "/backend", {**step, "origin": True})["status"], 200)
+            upstream.requests.pop()
+            self.assertEqual(runner.request("http://unused.invalid/backend", {**step, "origin": upstream.url})["status"], 200)
             upstream.requests.pop()
             runner.check_json(upstream.requests, [{"method": "HEAD", "path": "/subscription", "headers": {"user-agent": "fixture-client"}, "body": ""}], subset=True)
             with self.assertRaises(AssertionError):

@@ -1,6 +1,7 @@
 use crate::body::Body;
 use crate::conversion::Error as ConversionError;
 use crate::json::{self as codec, js_string, to_number as number};
+use crate::resources::Error as ResourceError;
 use crate::state::{Store, decode, legacy_object_order, migrate, truthy, valid_records};
 use base64::Engine;
 use http_body_util::Full;
@@ -15,7 +16,7 @@ pub type Reply = Response<Full<Bytes>>;
 #[derive(Clone)]
 pub struct TransformedResponse;
 
-fn script_response(output: Value) -> Result<Reply, ConversionError> {
+pub(crate) fn script_response(output: Value) -> Result<Reply, ConversionError> {
     let status = output["status"].as_f64().unwrap_or(200.0) as u16;
     let body = &output["body"];
     let binary = output["binary"] == true;
@@ -138,12 +139,26 @@ pub fn greeting() -> Reply {
 pub fn options(path: &str) -> Reply {
     let methods = match path {
         "/api/settings" => "GET,PATCH,HEAD",
+        "/api/token" => "POST,GET,HEAD",
+        _ if path.starts_with("/api/token/") => "DELETE,GET,HEAD",
         "/api/storage" => "GET,POST,HEAD",
-        "/api/subs" | "/api/collections" => "GET,POST,PUT,HEAD",
-        "/api/proxy/parse" | "/api/rule/parse" | "/api/preview/sub" | "/api/preview/collection" => {
-            "POST,GET,HEAD"
+        "/api/subs" | "/api/collections" | "/api/modules" | "/api/files" | "/api/artifacts" => {
+            "GET,POST,PUT,HEAD"
         }
-        _ if path.starts_with("/api/sub/") || path.starts_with("/api/collection/") => {
+        _ if path.starts_with("/api/archives/") && path.ends_with("/restore") => "POST,GET,HEAD",
+        _ if path.starts_with("/api/archives/") => "GET,DELETE,HEAD",
+        "/api/proxy/parse"
+        | "/api/rule/parse"
+        | "/api/preview/sub"
+        | "/api/preview/collection"
+        | "/api/preview/file" => "POST,GET,HEAD",
+        _ if path.starts_with("/api/sort/") => "POST,GET,HEAD",
+        _ if path.starts_with("/api/sub/")
+            || path.starts_with("/api/collection/")
+            || path.starts_with("/api/module/")
+            || path.starts_with("/api/artifact/")
+            || path.starts_with("/api/file/") =>
+        {
             "GET,PATCH,DELETE,HEAD"
         }
         // shortcut: remaining route families gain their method inventories with M4.
@@ -192,7 +207,7 @@ pub fn uncaught_error(status: u16, detail: &str) -> Reply {
     html_error(status, &diagnostic(status, detail))
 }
 
-fn caught_error(message: &str) -> Reply {
+pub(crate) fn caught_error(message: &str) -> Reply {
     send(
         500,
         "text/plain; charset=utf-8",
@@ -211,7 +226,7 @@ fn null_name_error(caught: bool) -> Reply {
     }
 }
 
-fn success(data: Option<Value>, status: u16) -> Reply {
+pub(crate) fn success(data: Option<Value>, status: u16) -> Reply {
     let mut value = json!({"status":"success"});
     if let Some(data) = data {
         value["data"] = legacy_object_order(data);
@@ -225,12 +240,24 @@ fn success(data: Option<Value>, status: u16) -> Reply {
 }
 
 pub fn failure(status: u16, code: &str, kind: &str, message: &str) -> Reply {
+    failure_details(status, code, kind, message, None)
+}
+
+pub(crate) fn failure_details(
+    status: u16,
+    code: &str,
+    kind: &str,
+    message: &str,
+    details: Option<Value>,
+) -> Reply {
+    let mut error = json!({"code":code, "type":kind, "message":message});
+    if let Some(details) = details {
+        error["details"] = details;
+    }
     send(
         status,
         "text/plain; charset=utf-8",
-        codec::stringify(&json!({
-            "status":"failed", "error":{"code":code, "type":kind, "message":message}
-        })),
+        codec::stringify(&json!({"status":"failed", "error":error})),
     )
 }
 
@@ -380,9 +407,50 @@ pub async fn conversion_dispatch(
     if method != Method::GET {
         return None;
     }
-    let rest = path.strip_prefix("/download/")?;
-    let collection = rest.starts_with("collection/");
-    let rest = rest.strip_prefix("collection/").unwrap_or(rest);
+    let share = path.starts_with("/share/");
+    let (rest, collection) = if let Some(rest) = path.strip_prefix("/share/col/") {
+        (rest, true)
+    } else if let Some(rest) = path.strip_prefix("/share/sub/") {
+        (rest, false)
+    } else {
+        let rest = path.strip_prefix("/download/")?;
+        (
+            rest.strip_prefix("collection/").unwrap_or(rest),
+            rest.starts_with("collection/"),
+        )
+    };
+    if share && !collection {
+        let invalid = if truthy(&query["fakeSub"]) {
+            Some((
+                "UNSUPPORTED_SHARE_FAKE_SUB",
+                "share/sub 不支持 fakeSub 参数",
+            ))
+        } else if ["url", "content"]
+            .iter()
+            .any(|key| !query[*key].is_null() && query[*key] != "")
+        {
+            Some((
+                "UNSUPPORTED_SHARE_SUB_SOURCE_OVERRIDE",
+                "share/sub 不支持 url 或 content 参数",
+            ))
+        } else if truthy(&query["mergeSources"]) {
+            Some((
+                "UNSUPPORTED_SHARE_SUB_MERGE_SOURCES",
+                "share/sub 不支持 mergeSources 参数",
+            ))
+        } else {
+            None
+        };
+        if let Some((code, message)) = invalid {
+            return Some(failure_details(
+                400,
+                code,
+                "RequestInvalidError",
+                message,
+                Some(json!("详情请查看日志")),
+            ));
+        }
+    }
     let (name, path_target) = rest
         .split_once('/')
         .map_or((rest, None), |(name, target)| (name, Some(target)));
@@ -414,7 +482,7 @@ pub async fn conversion_dispatch(
         found
     };
     let Some(sub) = sub else {
-        return Some(failure(
+        return Some(failure_details(
             404,
             "RESOURCE_NOT_FOUND",
             "ResourceNotFoundError",
@@ -427,6 +495,7 @@ pub async fn conversion_dispatch(
                 },
                 codec::text(&name)
             ),
+            share.then(|| json!("详情请查看日志")),
         ));
     };
     let target = if truthy(&query["platform"]) {
@@ -499,6 +568,14 @@ pub async fn conversion_dispatch(
         fields.insert("produceOpts".to_owned(), Value::Object(produce));
     }
     let mut request = request.clone();
+    if let Some(key) = crate::tokens::output_key(
+        &store.lock().unwrap(),
+        &request,
+        if collection { "col" } else { "sub" },
+        &json!(name),
+    ) {
+        request["outputAgePublicKey"] = key;
+    }
     let mut params = json!({"name":name});
     if let Some(target) = path_target {
         params["target"] = json!(codec::encode(
@@ -519,6 +596,21 @@ pub async fn conversion_dispatch(
     .await;
     Some(match result.and_then(script_response) {
         Ok(response) => response,
+        Err(_) if share => failure_details(
+            500,
+            "INTERNAL_SERVER_ERROR",
+            "InternalServerError",
+            &format!(
+                "Failed to download {}: {}",
+                if collection {
+                    "collection"
+                } else {
+                    "subscription"
+                },
+                codec::text(&name)
+            ),
+            Some(json!("详情请查看日志")),
+        ),
         Err(error) => conversion_error(
             error,
             Some(&format!(
@@ -559,7 +651,7 @@ fn invalid_backup() -> Reply {
     )
 }
 
-fn download(value: &Value, name: &str) -> Reply {
+pub(crate) fn download(value: &Value, name: &str) -> Reply {
     let Ok(name) = String::from_utf16(&codec::units(name)) else {
         return uncaught_error(500, "URIError: URI malformed");
     };
@@ -588,7 +680,7 @@ fn publish(store: &mut Store, next: Value, response: Reply) -> Reply {
     persisted(store.commit(next), response)
 }
 
-fn persisted(result: io::Result<()>, response: Reply) -> Reply {
+pub(crate) fn persisted(result: io::Result<()>, response: Reply) -> Reply {
     match result {
         Ok(()) => response,
         Err(error) => {
@@ -613,32 +705,20 @@ fn editor_languages(value: &mut Value) {
                     ["javascript", "json", "json5", "yaml", "ini", "plaintext"].contains(&language)
                 })
             {
-                object.remove(field);
+                object.shift_remove(field);
             }
         }
     }
 }
 
-fn normalize_item(item: &mut Value, subscription: bool) -> Result<(), &'static str> {
+pub(crate) fn normalize_item(item: &mut Value, subscription: bool) -> Result<(), &'static str> {
     let Some(object) = item.as_object_mut() else {
         return Ok(());
     };
     if subscription {
-        object.remove("subscriptions");
+        object.shift_remove("subscriptions");
     }
-    let key = object
-        .get("age-public-key")
-        .filter(|key| !key.is_null())
-        .map(js_string)
-        .unwrap_or_default();
-    let key = codec::trim(&key);
-    if key.is_empty() {
-        object.remove("age-public-key");
-    } else if valid_recipient(key) {
-        object.insert("age-public-key".to_owned(), json!(key));
-    } else {
-        return Err("age-public-key 仅支持 X25519(age1...) 或 MLKEM768-X25519(age1pq1...) 公钥");
-    }
+    normalize_age(item)?;
     editor_languages(item);
     if let Some(processes) = item.get_mut("process").and_then(Value::as_array_mut) {
         for process in processes {
@@ -646,6 +726,26 @@ fn normalize_item(item: &mut Value, subscription: bool) -> Result<(), &'static s
                 editor_languages(args);
             }
         }
+    }
+    Ok(())
+}
+
+pub(crate) fn normalize_age(item: &mut Value) -> Result<(), &'static str> {
+    let Some(object) = item.as_object_mut() else {
+        return Ok(());
+    };
+    let key = object
+        .get("age-public-key")
+        .filter(|key| !key.is_null())
+        .map(js_string)
+        .unwrap_or_default();
+    let key = codec::trim(&key);
+    if key.is_empty() {
+        object.shift_remove("age-public-key");
+    } else if valid_recipient(key) {
+        object.insert("age-public-key".to_owned(), json!(key));
+    } else {
+        return Err("age-public-key 仅支持 X25519(age1...) 或 MLKEM768-X25519(age1pq1...) 公钥");
     }
     Ok(())
 }
@@ -704,7 +804,7 @@ fn valid_recipient(key: &str) -> bool {
 
 const PRIMITIVE_ERROR: &str = "Cannot convert object to primitive value";
 
-fn cannot_coerce(value: &Value) -> bool {
+pub(crate) fn cannot_coerce(value: &Value) -> bool {
     match value {
         Value::Object(fields) => fields.contains_key("toString"),
         Value::Array(items) => items.iter().any(cannot_coerce),
@@ -856,6 +956,86 @@ fn collection_references(
     Ok(())
 }
 
+pub(crate) fn prepare_create(
+    store: &Store,
+    next: &mut Value,
+    key: &str,
+    body: &Body,
+) -> Result<Value, ResourceError> {
+    let subscription = key == "subs";
+    let label = if subscription {
+        "Subscription"
+    } else {
+        "Collection"
+    };
+    let mut item = if subscription {
+        Value::Object(body.fields())
+    } else {
+        body.clone().into_json()
+    };
+    if !subscription && item.is_null() {
+        return Err(ResourceError::plain(
+            "Cannot read properties of null (reading 'name')",
+        ));
+    }
+    if cannot_coerce(&item["age-public-key"]) {
+        return Err(ResourceError::plain(PRIMITIVE_ERROR));
+    }
+    normalize_item(&mut item, subscription)
+        .map_err(|message| ResourceError::invalid("INVALID_AGE_PUBLIC_KEY", message))?;
+    if cannot_coerce(&item["name"]) {
+        return Err(ResourceError::plain(PRIMITIVE_ERROR));
+    }
+    let item_name = item
+        .get("name")
+        .map(js_string)
+        .unwrap_or_else(|| "undefined".to_owned());
+    if item_name.contains('/') {
+        return Err(ResourceError::invalid(
+            "INVALID_NAME",
+            format!("{label} {item_name} is invalid"),
+        ));
+    }
+    let items = store
+        .list(key)
+        .ok_or_else(|| ResourceError::plain("e.find is not a function"))?;
+    for old in items {
+        if old.is_null() {
+            return Err(ResourceError::plain(
+                "Cannot read properties of null (reading 'name')",
+            ));
+        }
+        let duplicate = match (old.get("name"), item.get("name")) {
+            (Some(Value::Number(old)), Some(Value::Number(new))) => old.as_f64() == new.as_f64(),
+            (_, Some(Value::Array(_) | Value::Object(_))) => false,
+            (old, new) => old == new,
+        };
+        if duplicate {
+            if truthy(old) {
+                return Err(ResourceError::invalid(
+                    "DUPLICATE_KEY",
+                    format!("{label} {item_name} already exists."),
+                ));
+            }
+            break;
+        }
+    }
+    let top = next["settings"]["appearanceSetting"]["createItemPosition"] == "top";
+    let items = next[key].as_array_mut().ok_or_else(|| {
+        ResourceError::plain(if top {
+            "e.unshift is not a function"
+        } else {
+            "e.push is not a function"
+        })
+    })?;
+    if top {
+        items.insert(0, item.clone());
+    } else {
+        items.push(item.clone());
+    }
+    Ok(item)
+}
+
 pub fn dispatch(
     method: &Method,
     path: &str,
@@ -904,23 +1084,12 @@ pub fn dispatch(
     if method == Method::GET {
         let key = match path {
             "/api/artifacts" => Some("artifacts"),
-            "/api/wholefiles" | "/api/files" => Some("files"),
-            "/api/modules" => Some("modules"),
             "/api/tokens" => Some("tokens"),
             "/api/archives" => Some("archives"),
             _ => None,
         };
         if let Some(key) = key {
-            let mut value = store.data[key].clone();
-            if path == "/api/files"
-                && let Some(items) = value.as_array_mut()
-            {
-                for item in items {
-                    if let Some(item) = item.as_object_mut() {
-                        item.remove("content");
-                    }
-                }
-            }
+            let value = store.data[key].clone();
             return success((!value.is_null()).then_some(value), 200);
         }
     }
@@ -969,7 +1138,7 @@ pub fn dispatch(
                 store.data[key][position]
                     .as_object_mut()
                     .unwrap()
-                    .remove("subscriptions");
+                    .shift_remove("subscriptions");
             }
             let item = store.data[key][position].clone();
             if truthy(&query["raw"]) {
@@ -1024,82 +1193,25 @@ pub fn dispatch(
         return persisted(store.commit_list(next, key, raw), success(None, 200));
     }
     if path == plural && method == Method::POST {
-        let mut item = if subscription {
-            Value::Object(body.fields())
-        } else {
-            body.into_json()
+        return match prepare_create(store, &mut next, key, &body) {
+            Ok(item) => publish(store, next, success(Some(item), 201)),
+            Err(error) => error.reply(500),
         };
-        if cannot_coerce(&item["age-public-key"]) {
-            return caught_error(PRIMITIVE_ERROR);
-        }
-        if let Err(message) = normalize_item(&mut item, subscription) {
-            return invalid("INVALID_AGE_PUBLIC_KEY", message);
-        }
-        if cannot_coerce(&item["name"]) {
-            return caught_error(PRIMITIVE_ERROR);
-        }
-        let item_name = item
-            .get("name")
-            .map(js_string)
-            .unwrap_or_else(|| "undefined".to_owned());
-        if item_name.contains('/') {
-            return invalid("INVALID_NAME", &format!("{label} {item_name} is invalid"));
-        }
-        let Some(items) = store.list(key) else {
-            return caught_error("e.find is not a function");
-        };
-        for old in items {
-            if old.is_null() {
-                return null_name_error(true);
-            }
-            let duplicate = match (old.get("name"), item.get("name")) {
-                (Some(Value::Number(old)), Some(Value::Number(new))) => {
-                    old.as_f64() == new.as_f64()
-                }
-                (_, Some(Value::Array(_) | Value::Object(_))) => false,
-                (old, new) => old == new,
-            };
-            if duplicate {
-                if truthy(old) {
-                    return invalid(
-                        "DUPLICATE_KEY",
-                        &format!("{label} {item_name} already exists."),
-                    );
-                }
-                break;
-            }
-        }
-        let top = next["settings"]["appearanceSetting"]["createItemPosition"] == "top";
-        let Some(items) = next[key].as_array_mut() else {
-            return caught_error(if top {
-                "e.unshift is not a function"
-            } else {
-                "e.push is not a function"
-            });
-        };
-        if top {
-            items.insert(0, item.clone());
-        } else {
-            items.push(item.clone());
-        }
-        return publish(store, next, success(Some(item), 201));
     }
     if path != plural && (method == Method::PATCH || method == Method::DELETE) {
         if method == Method::DELETE
             && let Some(mode) = query.get("mode")
+            && mode != "archive"
+            && mode != ""
+            && mode != "permanent"
         {
-            if mode == "archive" {
-                return pending("Archive deletion is pending");
+            if cannot_coerce(mode) {
+                return caught_error(PRIMITIVE_ERROR);
             }
-            if mode != "" && mode != "permanent" {
-                if cannot_coerce(mode) {
-                    return caught_error(PRIMITIVE_ERROR);
-                }
-                return invalid(
-                    "INVALID_DELETE_MODE",
-                    &format!("Unsupported delete mode: {}", js_string(mode)),
-                );
-            }
+            return invalid(
+                "INVALID_DELETE_MODE",
+                &format!("Unsupported delete mode: {}", js_string(mode)),
+            );
         }
         if lookup_failed {
             return if method == Method::DELETE {
@@ -1120,6 +1232,15 @@ pub fn dispatch(
             );
         };
         if method == Method::DELETE {
+            if query["mode"] == "archive"
+                && let Err(error) = crate::archives::insert(
+                    &mut next,
+                    if subscription { "sub" } else { "col" },
+                    &store.data[key][position],
+                )
+            {
+                return error.reply(500);
+            }
             next[key].as_array_mut().unwrap().remove(position);
             if subscription
                 && let Err(message) = collection_references(store, &mut next, name, None)
@@ -1130,7 +1251,7 @@ pub fn dispatch(
         }
         let mut patch = body.fields();
         if subscription {
-            patch.remove("subscriptions");
+            patch.shift_remove("subscriptions");
         }
         if !patch.get("name").is_some_and(truthy) {
             patch.insert("name".to_owned(), json!(name));
