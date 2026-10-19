@@ -3552,9 +3552,10 @@ pub fn produce(
         _ => None,
     };
     match target {
-        "json" | "JSON" | "uri" | "URI" | "v2" | "v2ray" | "V2Ray" => {}
+        "json" | "JSON" | "uri" | "URI" | "v2" | "v2ray" | "V2Ray" | "qx" | "QX"
+        | "QuantumultX" | "Loon" => {}
         _ if family.is_some() => {}
-        "qx" | "QX" | "QuantumultX" | "surge" | "Surge" | "SurgeMac" | "Loon" | "surfboard"
+        "surge" | "Surge" | "SurgeMac" | "surfboard"
         | "Surfboard" | "singbox" | "sing-box" | "egern" | "Egern" => {
             return Err(Error::Pending("This output format is not implemented yet"));
         }
@@ -3671,6 +3672,9 @@ pub fn produce(
     }
     if let Some(family) = family {
         return crate::clash_output::produce(proxies, kind, opts, family);
+    }
+    if matches!(target, "qx" | "QX" | "QuantumultX" | "Loon") {
+        return crate::text_output::produce(&proxies, kind, opts, target == "Loon");
     }
     if matches!(target, "json" | "JSON") {
         let value = Value::Array(proxies);

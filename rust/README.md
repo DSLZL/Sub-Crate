@@ -3,7 +3,7 @@
 This branch now includes an independent Rust HTTP server in `src/`. It serves
 subscription/collection/settings CRUD and legacy JSON storage without Node.
 Local subscriptions share native Rust parsing and JSON/URI/V2Ray and
-Clash/Mihomo/Stash/Shadowrocket output through
+Clash/Mihomo/Stash/Shadowrocket and QX/Loon output through
 `/api/proxy/parse`, subscription preview and subscription download. Native input
 includes SS/SSR, HTTP/SOCKS, Trojan, Hysteria1/2, TUIC, WireGuard, VMess, VLESS and
 AnyTLS, plus the registered Surge/Loon/QX and Clash JSON5/YAML formats and

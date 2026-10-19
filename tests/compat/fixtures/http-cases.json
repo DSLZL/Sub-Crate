@@ -1,5 +1,621 @@
 [
   {
+    "id": "P02-output-qx-native",
+    "source": "backend/src/core/proxy-utils/index.js:424-640; backend/src/core/proxy-utils/producers/{qx,loon,utils}.js; backend/src/core/proxy-utils/vmess-security.js",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"ss\",\"name\":\"SS\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\"}\n{\"type\":\"ssr\",\"name\":\"SSR\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-cfb\",\"password\":\"p\",\"protocol\":\"auth_sha1_v4\",\"obfs\":\"tls1.2_ticket_auth\"}\n{\"type\":\"trojan\",\"name\":\"Trojan\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\"}\n{\"type\":\"vmess\",\"name\":\"VMess\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"cipher\":\"aes-128-gcm\"}\n{\"type\":\"vless\",\"name\":\"VLess\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\"}\n{\"type\":\"anytls\",\"name\":\"Any\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\"}\n{\"type\":\"http\",\"name\":\"HTTP\",\"server\":\"node.example\",\"port\":443,\"username\":\"u\",\"password\":\"p\",\"tls\":false}\n{\"type\":\"socks5\",\"name\":\"Socks\",\"server\":\"node.example\",\"port\":443,\"username\":\"u\",\"password\":\"p\",\"tls\":true}\n{\"type\":\"hysteria2\",\"name\":\"H2\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\"}\n{\"type\":\"wireguard\",\"name\":\"WG\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"private-key\":\"priv\",\"public-key\":\"pub\"}",
+          "client": "QX",
+          "type": "internal",
+          "produce": {}
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "shadowsocks=node.example:443,method=aes-128-gcm,password=p,udp-relay=true,tag=SS",
+                "shadowsocks=node.example:443,method=aes-128-cfb,password=p,ssr-protocol=auth_sha1_v4,obfs=tls1.2_ticket_auth,udp-relay=true,tag=SSR",
+                "trojan=node.example:443,password=p,over-tls=true,tls-host=node.example,udp-relay=true,tag=Trojan",
+                "vmess=node.example:443,method=chacha20-poly1305,password=u,aead=true,udp-relay=true,tag=VMess",
+                "vless=node.example:443,method=none,password=u,udp-relay=true,tag=VLess",
+                "anytls=node.example:443,password=p,over-tls=true,tls-host=node.example,udp-relay=true,tag=Any",
+                "http=node.example:443,username=u,password=p,over-tls=false,udp-relay=true,tag=HTTP",
+                "socks5=node.example:443,username=u,password=p,over-tls=true,tls-host=node.example,udp-relay=true,tag=Socks"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"ss\",\"name\":\"SS\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\"}\n{\"type\":\"ssr\",\"name\":\"SSR\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-cfb\",\"password\":\"p\",\"protocol\":\"auth_sha1_v4\",\"obfs\":\"tls1.2_ticket_auth\"}\n{\"type\":\"trojan\",\"name\":\"Trojan\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\"}\n{\"type\":\"vmess\",\"name\":\"VMess\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"cipher\":\"aes-128-gcm\"}\n{\"type\":\"vless\",\"name\":\"VLess\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\"}\n{\"type\":\"anytls\",\"name\":\"Any\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\"}\n{\"type\":\"http\",\"name\":\"HTTP\",\"server\":\"node.example\",\"port\":443,\"username\":\"u\",\"password\":\"p\",\"tls\":false}\n{\"type\":\"socks5\",\"name\":\"Socks\",\"server\":\"node.example\",\"port\":443,\"username\":\"u\",\"password\":\"p\",\"tls\":true}\n{\"type\":\"hysteria2\",\"name\":\"H2\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\"}\n{\"type\":\"wireguard\",\"name\":\"WG\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"private-key\":\"priv\",\"public-key\":\"pub\"}",
+          "client": "QX",
+          "type": "external",
+          "produce": {}
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": "shadowsocks=node.example:443,method=aes-128-gcm,password=p,udp-relay=true,tag=SS\nshadowsocks=node.example:443,method=aes-128-cfb,password=p,ssr-protocol=auth_sha1_v4,obfs=tls1.2_ticket_auth,udp-relay=true,tag=SSR\ntrojan=node.example:443,password=p,over-tls=true,tls-host=node.example,udp-relay=true,tag=Trojan\nvmess=node.example:443,method=chacha20-poly1305,password=u,aead=true,udp-relay=true,tag=VMess\nvless=node.example:443,method=none,password=u,udp-relay=true,tag=VLess\nanytls=node.example:443,password=p,over-tls=true,tls-host=node.example,udp-relay=true,tag=Any\nhttp=node.example:443,username=u,password=p,over-tls=false,udp-relay=true,tag=HTTP\nsocks5=node.example:443,username=u,password=p,over-tls=true,tls-host=node.example,udp-relay=true,tag=Socks"
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-output-loon-native",
+    "source": "backend/src/core/proxy-utils/index.js:424-640; backend/src/core/proxy-utils/producers/{qx,loon,utils}.js; backend/src/core/proxy-utils/vmess-security.js",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"ss\",\"name\":\"SS\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\"}\n{\"type\":\"ssr\",\"name\":\"SSR\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-cfb\",\"password\":\"p\",\"protocol\":\"auth_sha1_v4\",\"obfs\":\"tls1.2_ticket_auth\"}\n{\"type\":\"trojan\",\"name\":\"Trojan\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\"}\n{\"type\":\"vmess\",\"name\":\"VMess\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"cipher\":\"aes-128-gcm\"}\n{\"type\":\"vless\",\"name\":\"VLess\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\"}\n{\"type\":\"anytls\",\"name\":\"Any\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\"}\n{\"type\":\"http\",\"name\":\"HTTP\",\"server\":\"node.example\",\"port\":443,\"username\":\"u\",\"password\":\"p\",\"tls\":false}\n{\"type\":\"socks5\",\"name\":\"Socks\",\"server\":\"node.example\",\"port\":443,\"username\":\"u\",\"password\":\"p\",\"tls\":true}\n{\"type\":\"hysteria2\",\"name\":\"H2\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\"}\n{\"type\":\"wireguard\",\"name\":\"WG\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"private-key\":\"priv\",\"public-key\":\"pub\"}",
+          "client": "Loon",
+          "type": "internal",
+          "produce": {}
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "SS=shadowsocks,node.example,443,aes-128-gcm,\"p\",udp=true",
+                "SSR=shadowsocksr,node.example,443,aes-128-cfb,\"p\",protocol=auth_sha1_v4,obfs=tls1.2_ticket_auth,udp=true",
+                "Trojan=trojan,node.example,443,\"p\",tls-name=node.example,udp=true",
+                "VMess=vmess,node.example,443,aes-128-gcm,\"u\",transport=tcp,alterId=0,udp=true",
+                "VLess=vless,node.example,443,\"u\",transport=tcp,udp=true",
+                "Any=anytls,node.example,443,\"p\",tls-name=node.example,udp=true",
+                "HTTP=http,node.example,443,u,\"p\"",
+                "Socks=socks5,node.example,443,u,\"p\",over-tls=true,sni=node.example,udp=true",
+                "H2=Hysteria2,node.example,443,\"p\",tls-name=node.example,udp=true",
+                "WG=wireguard,interface-ip=10.0.0.2,private-key=\"priv\",peers=[{public-key=\"pub\",allowed-ips=\"0.0.0.0/0,::/0\",endpoint=node.example:443}]"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"ss\",\"name\":\"SS\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\"}\n{\"type\":\"ssr\",\"name\":\"SSR\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-cfb\",\"password\":\"p\",\"protocol\":\"auth_sha1_v4\",\"obfs\":\"tls1.2_ticket_auth\"}\n{\"type\":\"trojan\",\"name\":\"Trojan\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\"}\n{\"type\":\"vmess\",\"name\":\"VMess\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"cipher\":\"aes-128-gcm\"}\n{\"type\":\"vless\",\"name\":\"VLess\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\"}\n{\"type\":\"anytls\",\"name\":\"Any\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\"}\n{\"type\":\"http\",\"name\":\"HTTP\",\"server\":\"node.example\",\"port\":443,\"username\":\"u\",\"password\":\"p\",\"tls\":false}\n{\"type\":\"socks5\",\"name\":\"Socks\",\"server\":\"node.example\",\"port\":443,\"username\":\"u\",\"password\":\"p\",\"tls\":true}\n{\"type\":\"hysteria2\",\"name\":\"H2\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\"}\n{\"type\":\"wireguard\",\"name\":\"WG\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"private-key\":\"priv\",\"public-key\":\"pub\"}",
+          "client": "Loon",
+          "type": "external",
+          "produce": {}
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": "SS=shadowsocks,node.example,443,aes-128-gcm,\"p\",udp=true\nSSR=shadowsocksr,node.example,443,aes-128-cfb,\"p\",protocol=auth_sha1_v4,obfs=tls1.2_ticket_auth,udp=true\nTrojan=trojan,node.example,443,\"p\",tls-name=node.example,udp=true\nVMess=vmess,node.example,443,aes-128-gcm,\"u\",transport=tcp,alterId=0,udp=true\nVLess=vless,node.example,443,\"u\",transport=tcp,udp=true\nAny=anytls,node.example,443,\"p\",tls-name=node.example,udp=true\nHTTP=http,node.example,443,u,\"p\"\nSocks=socks5,node.example,443,u,\"p\",over-tls=true,sni=node.example,udp=true\nH2=Hysteria2,node.example,443,\"p\",tls-name=node.example,udp=true\nWG=wireguard,interface-ip=10.0.0.2,private-key=\"priv\",peers=[{public-key=\"pub\",allowed-ips=\"0.0.0.0/0,::/0\",endpoint=node.example:443}]"
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-output-text-tls-options",
+    "source": "backend/src/core/proxy-utils/index.js:424-640; backend/src/core/proxy-utils/producers/{qx,loon,utils}.js; backend/src/core/proxy-utils/vmess-security.js",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"ss\",\"name\":\"SS,=Obfs\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p,=q\\\"name\",\"plugin\":\"obfs\",\"plugin-opts\":{\"mode\":\"http\",\"host\":\"cdn.example\",\"path\":\"/ss\"},\"_qx_obfs_http\":\"vemss-http\",\"udp-over-tcp\":true,\"udp-over-tcp-version\":2,\"block-quic\":\"on\",\"ip-version\":\"ipv6-prefer\"}\n{\"type\":\"ss\",\"name\":\"SS-TLS\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"none\",\"password\":\"\",\"tls\":true,\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\",\"udp-over-tcp\":true,\"udp-over-tcp-version\":1}\n{\"type\":\"ss\",\"name\":\"SS-V2\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"plugin\":\"v2ray-plugin\",\"plugin-opts\":{\"mode\":\"websocket\",\"tls\":true,\"host\":\"cdn.example\",\"path\":\"/ss\"}}\n{\"type\":\"ss\",\"name\":\"SS-Shadow\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"plugin\":\"shadow-tls\",\"plugin-opts\":{\"password\":\"sp\",\"host\":\"shadow.example\",\"version\":3,\"alpn\":[\" h2 \",\"http/1.1\"]},\"client-fingerprint\":\"safari\",\"udp-port\":444,\"udp-over-tcp\":true,\"udp-over-tcp-version\":2}\n{\"type\":\"ssr\",\"name\":\"SSR-Shadow\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-cfb\",\"password\":\"p\",\"protocol\":\"origin\",\"protocol-param\":\"x\",\"obfs\":\"plain\",\"obfs-param\":\"cdn\",\"plugin\":\"shadow-tls\",\"plugin-opts\":{\"password\":\"sp\",\"version\":2},\"_loon_tls_profile\":\" default \",\"block-quic\":\"off\",\"ip-version\":\"ipv4\"}\n{\"type\":\"vmess\",\"name\":\"VM-WS\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"cipher\":\"zero\",\"tls\":true,\"network\":\"ws\",\"ws-opts\":{\"path\":\"ws\",\"headers\":{\"Host\":\"cdn.example\"}},\"aead\":false,\"client-fingerprint\":\"chrome\",\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"vmess\",\"name\":\"VM-HTTP\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"cipher\":\"none\",\"network\":\"http\",\"http-opts\":{\"path\":[\"/a\",\"/b\"],\"headers\":{\"Host\":[\"a.example\",\"b.example\"]}},\"_qx_obfs_http\":\"shadowsocks-http\",\"alterId\":2}\n{\"type\":\"vless\",\"name\":\"V-Reality\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"tls\":true,\"network\":\"tcp\",\"flow\":\"xtls-rprx-vision\",\"reality-opts\":{\"public-key\":\"key\",\"short-id\":\"08\",\"support-x25519mlkem768\":true},\"client-fingerprint\":\"ios\",\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"vless\",\"name\":\"V-HTTP\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"network\":\"http\",\"http-opts\":{\"path\":[\"/a\",\"/b\"],\"headers\":{\"Host\":[\"a.example\",\"b.example\"]}},\"_qx_obfs_http\":\"vmess-http\"}\n{\"type\":\"trojan\",\"name\":\"T-WS\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"network\":\"ws\",\"ws-opts\":{\"path\":\"/t\",\"headers\":{\"Host\":\"cdn.example\"}},\"tls-alpn\":\"raw-alpn\",\"_loon_tls_profile\":\"chrome147\",\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"anytls\",\"name\":\"Any-Idle\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"idle-session-timeout\":0,\"max-stream-count\":2,\"min-idle-session\":5,\"idle-session-check-interval\":10,\"server-dns\":[\"1.1.1.1\",\"2001:db8::1\"],\"_loon_tls_profile\":\"global\",\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"http\",\"name\":\"H-TLS\",\"server\":\"node.example\",\"port\":443,\"username\":\"\",\"password\":0,\"tls\":true,\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\",\"server-dns\":[\"dns.example\"]}\n{\"type\":\"socks5\",\"name\":\"S-TLS\",\"server\":\"node.example\",\"port\":443,\"username\":0,\"password\":false,\"tls\":true,\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"hysteria2\",\"name\":\"H2-Opts\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"ports\":\"443,445\",\"hop-interval\":\"10:20\",\"down\":\"15.5Mbps\",\"ecn\":false,\"obfs\":\"salamander\",\"obfs-password\":\"salamander\",\"block-quic\":\"off\",\"ip-version\":\"ipv4-prefer\",\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"wireguard\",\"name\":\"WG-DNS\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"2001:db8::2/64\",\"private-key\":\"priv\",\"public-key\":\"pub\",\"pre-shared-key\":\"psk\",\"dns\":[\"2001:db8::53\",\"dns.example\",\"1.1.1.1\"],\"mtu\":1400,\"keepalive\":20,\"persistent-keepalive\":25,\"reserved\":[0,1,255],\"allowed-ips\":[\"0.0.0.0/0\",\"::/0\"],\"ip-version\":\"dual\",\"block-quic\":\"on\",\"server-dns\":[\"4.4.4.4\"]}",
+          "client": "QX",
+          "type": "internal",
+          "produce": {}
+        },
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"ss\",\"name\":\"SS,=Obfs\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p,=q\\\"name\",\"plugin\":\"obfs\",\"plugin-opts\":{\"mode\":\"http\",\"host\":\"cdn.example\",\"path\":\"/ss\"},\"_qx_obfs_http\":\"vemss-http\",\"udp-over-tcp\":true,\"udp-over-tcp-version\":2,\"block-quic\":\"on\",\"ip-version\":\"ipv6-prefer\"}\n{\"type\":\"ss\",\"name\":\"SS-TLS\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"none\",\"password\":\"\",\"tls\":true,\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\",\"udp-over-tcp\":true,\"udp-over-tcp-version\":1}\n{\"type\":\"ss\",\"name\":\"SS-V2\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"plugin\":\"v2ray-plugin\",\"plugin-opts\":{\"mode\":\"websocket\",\"tls\":true,\"host\":\"cdn.example\",\"path\":\"/ss\"}}\n{\"type\":\"ss\",\"name\":\"SS-Shadow\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"plugin\":\"shadow-tls\",\"plugin-opts\":{\"password\":\"sp\",\"host\":\"shadow.example\",\"version\":3,\"alpn\":[\" h2 \",\"http/1.1\"]},\"client-fingerprint\":\"safari\",\"udp-port\":444,\"udp-over-tcp\":true,\"udp-over-tcp-version\":2}\n{\"type\":\"ssr\",\"name\":\"SSR-Shadow\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-cfb\",\"password\":\"p\",\"protocol\":\"origin\",\"protocol-param\":\"x\",\"obfs\":\"plain\",\"obfs-param\":\"cdn\",\"plugin\":\"shadow-tls\",\"plugin-opts\":{\"password\":\"sp\",\"version\":2},\"_loon_tls_profile\":\" default \",\"block-quic\":\"off\",\"ip-version\":\"ipv4\"}\n{\"type\":\"vmess\",\"name\":\"VM-WS\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"cipher\":\"zero\",\"tls\":true,\"network\":\"ws\",\"ws-opts\":{\"path\":\"ws\",\"headers\":{\"Host\":\"cdn.example\"}},\"aead\":false,\"client-fingerprint\":\"chrome\",\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"vmess\",\"name\":\"VM-HTTP\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"cipher\":\"none\",\"network\":\"http\",\"http-opts\":{\"path\":[\"/a\",\"/b\"],\"headers\":{\"Host\":[\"a.example\",\"b.example\"]}},\"_qx_obfs_http\":\"shadowsocks-http\",\"alterId\":2}\n{\"type\":\"vless\",\"name\":\"V-Reality\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"tls\":true,\"network\":\"tcp\",\"flow\":\"xtls-rprx-vision\",\"reality-opts\":{\"public-key\":\"key\",\"short-id\":\"08\",\"support-x25519mlkem768\":true},\"client-fingerprint\":\"ios\",\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"vless\",\"name\":\"V-HTTP\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"network\":\"http\",\"http-opts\":{\"path\":[\"/a\",\"/b\"],\"headers\":{\"Host\":[\"a.example\",\"b.example\"]}},\"_qx_obfs_http\":\"vmess-http\"}\n{\"type\":\"trojan\",\"name\":\"T-WS\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"network\":\"ws\",\"ws-opts\":{\"path\":\"/t\",\"headers\":{\"Host\":\"cdn.example\"}},\"tls-alpn\":\"raw-alpn\",\"_loon_tls_profile\":\"chrome147\",\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"anytls\",\"name\":\"Any-Idle\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"idle-session-timeout\":0,\"max-stream-count\":2,\"min-idle-session\":5,\"idle-session-check-interval\":10,\"server-dns\":[\"1.1.1.1\",\"2001:db8::1\"],\"_loon_tls_profile\":\"global\",\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"http\",\"name\":\"H-TLS\",\"server\":\"node.example\",\"port\":443,\"username\":\"\",\"password\":0,\"tls\":true,\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\",\"server-dns\":[\"dns.example\"]}\n{\"type\":\"socks5\",\"name\":\"S-TLS\",\"server\":\"node.example\",\"port\":443,\"username\":0,\"password\":false,\"tls\":true,\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"hysteria2\",\"name\":\"H2-Opts\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"ports\":\"443,445\",\"hop-interval\":\"10:20\",\"down\":\"15.5Mbps\",\"ecn\":false,\"obfs\":\"salamander\",\"obfs-password\":\"salamander\",\"block-quic\":\"off\",\"ip-version\":\"ipv4-prefer\",\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"wireguard\",\"name\":\"WG-DNS\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"2001:db8::2/64\",\"private-key\":\"priv\",\"public-key\":\"pub\",\"pre-shared-key\":\"psk\",\"dns\":[\"2001:db8::53\",\"dns.example\",\"1.1.1.1\"],\"mtu\":1400,\"keepalive\":20,\"persistent-keepalive\":25,\"reserved\":[0,1,255],\"allowed-ips\":[\"0.0.0.0/0\",\"::/0\"],\"ip-version\":\"dual\",\"block-quic\":\"on\",\"server-dns\":[\"4.4.4.4\"]}",
+          "client": "QX",
+          "type": "external",
+          "produce": {}
+        },
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"ss\",\"name\":\"SS,=Obfs\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p,=q\\\"name\",\"plugin\":\"obfs\",\"plugin-opts\":{\"mode\":\"http\",\"host\":\"cdn.example\",\"path\":\"/ss\"},\"_qx_obfs_http\":\"vemss-http\",\"udp-over-tcp\":true,\"udp-over-tcp-version\":2,\"block-quic\":\"on\",\"ip-version\":\"ipv6-prefer\"}\n{\"type\":\"ss\",\"name\":\"SS-TLS\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"none\",\"password\":\"\",\"tls\":true,\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\",\"udp-over-tcp\":true,\"udp-over-tcp-version\":1}\n{\"type\":\"ss\",\"name\":\"SS-V2\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"plugin\":\"v2ray-plugin\",\"plugin-opts\":{\"mode\":\"websocket\",\"tls\":true,\"host\":\"cdn.example\",\"path\":\"/ss\"}}\n{\"type\":\"ss\",\"name\":\"SS-Shadow\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"plugin\":\"shadow-tls\",\"plugin-opts\":{\"password\":\"sp\",\"host\":\"shadow.example\",\"version\":3,\"alpn\":[\" h2 \",\"http/1.1\"]},\"client-fingerprint\":\"safari\",\"udp-port\":444,\"udp-over-tcp\":true,\"udp-over-tcp-version\":2}\n{\"type\":\"ssr\",\"name\":\"SSR-Shadow\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-cfb\",\"password\":\"p\",\"protocol\":\"origin\",\"protocol-param\":\"x\",\"obfs\":\"plain\",\"obfs-param\":\"cdn\",\"plugin\":\"shadow-tls\",\"plugin-opts\":{\"password\":\"sp\",\"version\":2},\"_loon_tls_profile\":\" default \",\"block-quic\":\"off\",\"ip-version\":\"ipv4\"}\n{\"type\":\"vmess\",\"name\":\"VM-WS\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"cipher\":\"zero\",\"tls\":true,\"network\":\"ws\",\"ws-opts\":{\"path\":\"ws\",\"headers\":{\"Host\":\"cdn.example\"}},\"aead\":false,\"client-fingerprint\":\"chrome\",\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"vmess\",\"name\":\"VM-HTTP\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"cipher\":\"none\",\"network\":\"http\",\"http-opts\":{\"path\":[\"/a\",\"/b\"],\"headers\":{\"Host\":[\"a.example\",\"b.example\"]}},\"_qx_obfs_http\":\"shadowsocks-http\",\"alterId\":2}\n{\"type\":\"vless\",\"name\":\"V-Reality\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"tls\":true,\"network\":\"tcp\",\"flow\":\"xtls-rprx-vision\",\"reality-opts\":{\"public-key\":\"key\",\"short-id\":\"08\",\"support-x25519mlkem768\":true},\"client-fingerprint\":\"ios\",\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"vless\",\"name\":\"V-HTTP\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"network\":\"http\",\"http-opts\":{\"path\":[\"/a\",\"/b\"],\"headers\":{\"Host\":[\"a.example\",\"b.example\"]}},\"_qx_obfs_http\":\"vmess-http\"}\n{\"type\":\"trojan\",\"name\":\"T-WS\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"network\":\"ws\",\"ws-opts\":{\"path\":\"/t\",\"headers\":{\"Host\":\"cdn.example\"}},\"tls-alpn\":\"raw-alpn\",\"_loon_tls_profile\":\"chrome147\",\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"anytls\",\"name\":\"Any-Idle\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"idle-session-timeout\":0,\"max-stream-count\":2,\"min-idle-session\":5,\"idle-session-check-interval\":10,\"server-dns\":[\"1.1.1.1\",\"2001:db8::1\"],\"_loon_tls_profile\":\"global\",\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"http\",\"name\":\"H-TLS\",\"server\":\"node.example\",\"port\":443,\"username\":\"\",\"password\":0,\"tls\":true,\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\",\"server-dns\":[\"dns.example\"]}\n{\"type\":\"socks5\",\"name\":\"S-TLS\",\"server\":\"node.example\",\"port\":443,\"username\":0,\"password\":false,\"tls\":true,\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"hysteria2\",\"name\":\"H2-Opts\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"ports\":\"443,445\",\"hop-interval\":\"10:20\",\"down\":\"15.5Mbps\",\"ecn\":false,\"obfs\":\"salamander\",\"obfs-password\":\"salamander\",\"block-quic\":\"off\",\"ip-version\":\"ipv4-prefer\",\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"wireguard\",\"name\":\"WG-DNS\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"2001:db8::2/64\",\"private-key\":\"priv\",\"public-key\":\"pub\",\"pre-shared-key\":\"psk\",\"dns\":[\"2001:db8::53\",\"dns.example\",\"1.1.1.1\"],\"mtu\":1400,\"keepalive\":20,\"persistent-keepalive\":25,\"reserved\":[0,1,255],\"allowed-ips\":[\"0.0.0.0/0\",\"::/0\"],\"ip-version\":\"dual\",\"block-quic\":\"on\",\"server-dns\":[\"4.4.4.4\"]}",
+          "client": "Loon",
+          "type": "internal",
+          "produce": {}
+        },
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"ss\",\"name\":\"SS,=Obfs\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p,=q\\\"name\",\"plugin\":\"obfs\",\"plugin-opts\":{\"mode\":\"http\",\"host\":\"cdn.example\",\"path\":\"/ss\"},\"_qx_obfs_http\":\"vemss-http\",\"udp-over-tcp\":true,\"udp-over-tcp-version\":2,\"block-quic\":\"on\",\"ip-version\":\"ipv6-prefer\"}\n{\"type\":\"ss\",\"name\":\"SS-TLS\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"none\",\"password\":\"\",\"tls\":true,\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\",\"udp-over-tcp\":true,\"udp-over-tcp-version\":1}\n{\"type\":\"ss\",\"name\":\"SS-V2\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"plugin\":\"v2ray-plugin\",\"plugin-opts\":{\"mode\":\"websocket\",\"tls\":true,\"host\":\"cdn.example\",\"path\":\"/ss\"}}\n{\"type\":\"ss\",\"name\":\"SS-Shadow\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"plugin\":\"shadow-tls\",\"plugin-opts\":{\"password\":\"sp\",\"host\":\"shadow.example\",\"version\":3,\"alpn\":[\" h2 \",\"http/1.1\"]},\"client-fingerprint\":\"safari\",\"udp-port\":444,\"udp-over-tcp\":true,\"udp-over-tcp-version\":2}\n{\"type\":\"ssr\",\"name\":\"SSR-Shadow\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-cfb\",\"password\":\"p\",\"protocol\":\"origin\",\"protocol-param\":\"x\",\"obfs\":\"plain\",\"obfs-param\":\"cdn\",\"plugin\":\"shadow-tls\",\"plugin-opts\":{\"password\":\"sp\",\"version\":2},\"_loon_tls_profile\":\" default \",\"block-quic\":\"off\",\"ip-version\":\"ipv4\"}\n{\"type\":\"vmess\",\"name\":\"VM-WS\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"cipher\":\"zero\",\"tls\":true,\"network\":\"ws\",\"ws-opts\":{\"path\":\"ws\",\"headers\":{\"Host\":\"cdn.example\"}},\"aead\":false,\"client-fingerprint\":\"chrome\",\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"vmess\",\"name\":\"VM-HTTP\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"cipher\":\"none\",\"network\":\"http\",\"http-opts\":{\"path\":[\"/a\",\"/b\"],\"headers\":{\"Host\":[\"a.example\",\"b.example\"]}},\"_qx_obfs_http\":\"shadowsocks-http\",\"alterId\":2}\n{\"type\":\"vless\",\"name\":\"V-Reality\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"tls\":true,\"network\":\"tcp\",\"flow\":\"xtls-rprx-vision\",\"reality-opts\":{\"public-key\":\"key\",\"short-id\":\"08\",\"support-x25519mlkem768\":true},\"client-fingerprint\":\"ios\",\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"vless\",\"name\":\"V-HTTP\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"network\":\"http\",\"http-opts\":{\"path\":[\"/a\",\"/b\"],\"headers\":{\"Host\":[\"a.example\",\"b.example\"]}},\"_qx_obfs_http\":\"vmess-http\"}\n{\"type\":\"trojan\",\"name\":\"T-WS\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"network\":\"ws\",\"ws-opts\":{\"path\":\"/t\",\"headers\":{\"Host\":\"cdn.example\"}},\"tls-alpn\":\"raw-alpn\",\"_loon_tls_profile\":\"chrome147\",\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"anytls\",\"name\":\"Any-Idle\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"idle-session-timeout\":0,\"max-stream-count\":2,\"min-idle-session\":5,\"idle-session-check-interval\":10,\"server-dns\":[\"1.1.1.1\",\"2001:db8::1\"],\"_loon_tls_profile\":\"global\",\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"http\",\"name\":\"H-TLS\",\"server\":\"node.example\",\"port\":443,\"username\":\"\",\"password\":0,\"tls\":true,\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\",\"server-dns\":[\"dns.example\"]}\n{\"type\":\"socks5\",\"name\":\"S-TLS\",\"server\":\"node.example\",\"port\":443,\"username\":0,\"password\":false,\"tls\":true,\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"hysteria2\",\"name\":\"H2-Opts\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"ports\":\"443,445\",\"hop-interval\":\"10:20\",\"down\":\"15.5Mbps\",\"ecn\":false,\"obfs\":\"salamander\",\"obfs-password\":\"salamander\",\"block-quic\":\"off\",\"ip-version\":\"ipv4-prefer\",\"skip-cert-verify\":false,\"name-cert-verify\":false,\"tls-pubkey-sha256\":\"pub\",\"tls-fingerprint\":\"cert\",\"tls-no-session-ticket\":false,\"tls-no-session-reuse\":true,\"alpn\":[\" h2 \",\"http/1.1\",\"\",123],\"sni\":\"sni.example\",\"tfo\":false,\"udp\":false,\"test-url\":\"https://test.example\"}\n{\"type\":\"wireguard\",\"name\":\"WG-DNS\",\"server\":\"node.example\",\"port\":443,\"ip\":\"10.0.0.2/24\",\"ipv6\":\"2001:db8::2/64\",\"private-key\":\"priv\",\"public-key\":\"pub\",\"pre-shared-key\":\"psk\",\"dns\":[\"2001:db8::53\",\"dns.example\",\"1.1.1.1\"],\"mtu\":1400,\"keepalive\":20,\"persistent-keepalive\":25,\"reserved\":[0,1,255],\"allowed-ips\":[\"0.0.0.0/0\",\"::/0\"],\"ip-version\":\"dual\",\"block-quic\":\"on\",\"server-dns\":[\"4.4.4.4\"]}",
+          "client": "Loon",
+          "type": "external",
+          "produce": {}
+        },
+        "expect": {
+          "status": 200
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-output-text-filters",
+    "source": "backend/src/core/proxy-utils/index.js:424-640; backend/src/core/proxy-utils/producers/{qx,loon,utils}.js; backend/src/core/proxy-utils/vmess-security.js",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"ss\",\"name\":\"bad-cipher\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"unsupported\",\"password\":\"p\"}\n{\"type\":\"ss\",\"name\":\"bad-plugin\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"plugin\":\"unsupported\"}\n{\"type\":\"vmess\",\"name\":\"bad-transport\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"network\":\"grpc\",\"grpc-opts\":{\"grpc-service-name\":\"svc\"}}\n{\"type\":\"vless\",\"name\":\"bad-encryption\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"encryption\":\"other\"}\n{\"type\":\"vless\",\"name\":\"bad-flow\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"flow\":\"other\"}\n{\"type\":\"trojan\",\"name\":\"upgrade\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"network\":\"ws\",\"ws-opts\":{\"v2ray-http-upgrade\":true}}\n{\"type\":\"anytls\",\"name\":\"bad-any\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"network\":\"ws\"}\n{\"type\":\"anytls\",\"name\":\"case-any\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"network\":\" TCP \"}\n{\"type\":\"trojan\",\"name\":\"long-alpn\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"alpn\":[\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"]}\n{\"type\":\"ss\",\"name\":\"bad-shadow\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"plugin\":\"shadow-tls\",\"plugin-opts\":{\"version\":1,\"password\":\"sp\"}}\n{\"type\":\"ss\",\"name\":\"missing-plugin-options\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"plugin\":\"obfs\"}\n{\"type\":\"ss\",\"name\":\"SS-ROOT\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"tls\":true}\n{\"type\":\"http\",\"name\":\"root-headers\",\"server\":\"node.example\",\"port\":443,\"headers\":{\"X-Key\":\"value\"}}\n{\"type\":\"ss\",\"name\":\"disabled\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"supported\":{\"QX\":false,\"Loon\":false}}\n{\"type\":\"hysteria2\",\"name\":\"bad-h2\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"obfs\":\"not-salamander\",\"obfs-password\":\"obfs\"}",
+          "client": "QX",
+          "type": "internal",
+          "produce": {}
+        },
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"ss\",\"name\":\"bad-cipher\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"unsupported\",\"password\":\"p\"}\n{\"type\":\"ss\",\"name\":\"bad-plugin\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"plugin\":\"unsupported\"}\n{\"type\":\"vmess\",\"name\":\"bad-transport\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"network\":\"grpc\",\"grpc-opts\":{\"grpc-service-name\":\"svc\"}}\n{\"type\":\"vless\",\"name\":\"bad-encryption\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"encryption\":\"other\"}\n{\"type\":\"vless\",\"name\":\"bad-flow\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"flow\":\"other\"}\n{\"type\":\"trojan\",\"name\":\"upgrade\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"network\":\"ws\",\"ws-opts\":{\"v2ray-http-upgrade\":true}}\n{\"type\":\"anytls\",\"name\":\"bad-any\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"network\":\"ws\"}\n{\"type\":\"anytls\",\"name\":\"case-any\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"network\":\" TCP \"}\n{\"type\":\"trojan\",\"name\":\"long-alpn\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"alpn\":[\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"]}\n{\"type\":\"ss\",\"name\":\"bad-shadow\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"plugin\":\"shadow-tls\",\"plugin-opts\":{\"version\":1,\"password\":\"sp\"}}\n{\"type\":\"ss\",\"name\":\"missing-plugin-options\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"plugin\":\"obfs\"}\n{\"type\":\"ss\",\"name\":\"SS-ROOT\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"tls\":true}\n{\"type\":\"http\",\"name\":\"root-headers\",\"server\":\"node.example\",\"port\":443,\"headers\":{\"X-Key\":\"value\"}}\n{\"type\":\"ss\",\"name\":\"disabled\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"supported\":{\"QX\":false,\"Loon\":false}}\n{\"type\":\"hysteria2\",\"name\":\"bad-h2\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"obfs\":\"not-salamander\",\"obfs-password\":\"obfs\"}",
+          "client": "QX",
+          "type": "internal",
+          "produce": {
+            "include-unsupported-proxy": true
+          }
+        },
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"ss\",\"name\":\"bad-cipher\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"unsupported\",\"password\":\"p\"}\n{\"type\":\"ss\",\"name\":\"bad-plugin\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"plugin\":\"unsupported\"}\n{\"type\":\"vmess\",\"name\":\"bad-transport\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"network\":\"grpc\",\"grpc-opts\":{\"grpc-service-name\":\"svc\"}}\n{\"type\":\"vless\",\"name\":\"bad-encryption\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"encryption\":\"other\"}\n{\"type\":\"vless\",\"name\":\"bad-flow\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"flow\":\"other\"}\n{\"type\":\"trojan\",\"name\":\"upgrade\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"network\":\"ws\",\"ws-opts\":{\"v2ray-http-upgrade\":true}}\n{\"type\":\"anytls\",\"name\":\"bad-any\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"network\":\"ws\"}\n{\"type\":\"anytls\",\"name\":\"case-any\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"network\":\" TCP \"}\n{\"type\":\"trojan\",\"name\":\"long-alpn\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"alpn\":[\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"]}\n{\"type\":\"ss\",\"name\":\"bad-shadow\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"plugin\":\"shadow-tls\",\"plugin-opts\":{\"version\":1,\"password\":\"sp\"}}\n{\"type\":\"ss\",\"name\":\"missing-plugin-options\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"plugin\":\"obfs\"}\n{\"type\":\"ss\",\"name\":\"SS-ROOT\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"tls\":true}\n{\"type\":\"http\",\"name\":\"root-headers\",\"server\":\"node.example\",\"port\":443,\"headers\":{\"X-Key\":\"value\"}}\n{\"type\":\"ss\",\"name\":\"disabled\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"supported\":{\"QX\":false,\"Loon\":false}}\n{\"type\":\"hysteria2\",\"name\":\"bad-h2\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"obfs\":\"not-salamander\",\"obfs-password\":\"obfs\"}",
+          "client": "Loon",
+          "type": "internal",
+          "produce": {}
+        },
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"ss\",\"name\":\"bad-cipher\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"unsupported\",\"password\":\"p\"}\n{\"type\":\"ss\",\"name\":\"bad-plugin\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"plugin\":\"unsupported\"}\n{\"type\":\"vmess\",\"name\":\"bad-transport\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"network\":\"grpc\",\"grpc-opts\":{\"grpc-service-name\":\"svc\"}}\n{\"type\":\"vless\",\"name\":\"bad-encryption\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"encryption\":\"other\"}\n{\"type\":\"vless\",\"name\":\"bad-flow\",\"server\":\"node.example\",\"port\":443,\"uuid\":\"u\",\"flow\":\"other\"}\n{\"type\":\"trojan\",\"name\":\"upgrade\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"network\":\"ws\",\"ws-opts\":{\"v2ray-http-upgrade\":true}}\n{\"type\":\"anytls\",\"name\":\"bad-any\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"network\":\"ws\"}\n{\"type\":\"anytls\",\"name\":\"case-any\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"network\":\" TCP \"}\n{\"type\":\"trojan\",\"name\":\"long-alpn\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"alpn\":[\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"]}\n{\"type\":\"ss\",\"name\":\"bad-shadow\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"plugin\":\"shadow-tls\",\"plugin-opts\":{\"version\":1,\"password\":\"sp\"}}\n{\"type\":\"ss\",\"name\":\"missing-plugin-options\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"plugin\":\"obfs\"}\n{\"type\":\"ss\",\"name\":\"SS-ROOT\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"tls\":true}\n{\"type\":\"http\",\"name\":\"root-headers\",\"server\":\"node.example\",\"port\":443,\"headers\":{\"X-Key\":\"value\"}}\n{\"type\":\"ss\",\"name\":\"disabled\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\",\"supported\":{\"QX\":false,\"Loon\":false}}\n{\"type\":\"hysteria2\",\"name\":\"bad-h2\",\"server\":\"node.example\",\"port\":443,\"password\":\"p\",\"obfs\":\"not-salamander\",\"obfs-password\":\"obfs\"}",
+          "client": "Loon",
+          "type": "internal",
+          "produce": {
+            "include-unsupported-proxy": true
+          }
+        },
+        "expect": {
+          "status": 200
+        }
+      }
+    ]
+  },
+  {
+    "id": "P02-output-text-options",
+    "source": "backend/src/core/proxy-utils/index.js:424-640; backend/src/core/proxy-utils/producers/{qx,loon,utils}.js; backend/src/core/proxy-utils/vmess-security.js",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "unknown://line",
+          "client": "QX",
+          "type": "internal",
+          "produce": {}
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": []
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "unknown://line",
+          "client": "QX",
+          "type": "external",
+          "produce": {}
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": ""
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"ss\",\"name\":\"SS\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\"}",
+          "client": "QX",
+          "type": "internal",
+          "produce": null
+        },
+        "expect": {
+          "status": 500,
+          "json": {
+            "status": "failed",
+            "error": {
+              "message": "Cannot read properties of null (reading 'include-unsupported-proxy')"
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "unknown://line",
+          "client": "QX",
+          "type": "internal",
+          "produce": null
+        },
+        "expect": {
+          "status": 500,
+          "json": {
+            "status": "failed",
+            "error": {
+              "message": "Cannot read properties of null (reading '_merged')"
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"ss\",\"name\":\"SS\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\"}",
+          "client": "QX",
+          "type": "internal",
+          "produce": {
+            "_merged": {
+              "name": "unused"
+            },
+            "localPort": 0
+          }
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "shadowsocks=node.example:443,method=aes-128-gcm,password=p,udp-relay=true,tag=SS"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "unknown://line",
+          "client": "Loon",
+          "type": "internal",
+          "produce": {}
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": []
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "unknown://line",
+          "client": "Loon",
+          "type": "external",
+          "produce": {}
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": ""
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"ss\",\"name\":\"SS\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\"}",
+          "client": "Loon",
+          "type": "internal",
+          "produce": null
+        },
+        "expect": {
+          "status": 500,
+          "json": {
+            "status": "failed",
+            "error": {
+              "message": "Cannot read properties of null (reading 'include-unsupported-proxy')"
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "unknown://line",
+          "client": "Loon",
+          "type": "internal",
+          "produce": null
+        },
+        "expect": {
+          "status": 500,
+          "json": {
+            "status": "failed",
+            "error": {
+              "message": "Cannot read properties of null (reading '_merged')"
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"ss\",\"name\":\"SS\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\"}",
+          "client": "Loon",
+          "type": "internal",
+          "produce": {
+            "_merged": {
+              "name": "unused"
+            },
+            "localPort": 0
+          }
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "SS=shadowsocks,node.example,443,aes-128-gcm,\"p\",udp=true"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"ss\",\"name\":\"SS\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\"}",
+          "client": "QX",
+          "type": "internal",
+          "produce": {
+            "_merged": {
+              "name": "merged",
+              "exec": "/usr/bin/example",
+              "config": {
+                "x": 1
+              },
+              "configOverride": {
+                "x": 2
+              }
+            },
+            "localPort": 6000
+          }
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "shadowsocks=node.example:443,method=aes-128-gcm,password=p,udp-relay=true,tag=SS",
+                "merged=external,exec=\"/usr/bin/example\",local-port=6000,args=\"-config\",args=\"eyJ4IjoyLCJtaXhlZC1wb3J0Ijo2MDAwfQ==\",udp-relay=true"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "unknown://line",
+          "client": "QX",
+          "type": "external",
+          "produce": {
+            "_merged": {
+              "name": "merged",
+              "exec": "/usr/bin/example",
+              "config": {
+                "x": 1
+              },
+              "configOverride": {
+                "x": 2
+              }
+            },
+            "localPort": 6000
+          }
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": "merged=external,exec=\"/usr/bin/example\",local-port=6000,args=\"-config\",args=\"eyJ4IjoyLCJtaXhlZC1wb3J0Ijo2MDAwfQ==\",udp-relay=true"
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"ss\",\"name\":\"SS\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\"}",
+          "client": "QX",
+          "type": "internal",
+          "produce": {
+            "_merged": {
+              "name": "merged"
+            },
+            "localPort": 6000
+          }
+        },
+        "expect": {
+          "status": 500,
+          "json": {
+            "status": "failed",
+            "error": {
+              "message": "external: exec and local-port are required"
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"ss\",\"name\":\"SS\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\"}",
+          "client": "Loon",
+          "type": "internal",
+          "produce": {
+            "_merged": {
+              "name": "merged",
+              "exec": "/usr/bin/example",
+              "config": {
+                "x": 1
+              },
+              "configOverride": {
+                "x": 2
+              }
+            },
+            "localPort": 6000
+          }
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": [
+                "SS=shadowsocks,node.example,443,aes-128-gcm,\"p\",udp=true",
+                "merged=external,exec=\"/usr/bin/example\",local-port=6000,args=\"-config\",args=\"eyJ4IjoyLCJtaXhlZC1wb3J0Ijo2MDAwfQ==\",udp-relay=true"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "unknown://line",
+          "client": "Loon",
+          "type": "external",
+          "produce": {
+            "_merged": {
+              "name": "merged",
+              "exec": "/usr/bin/example",
+              "config": {
+                "x": 1
+              },
+              "configOverride": {
+                "x": 2
+              }
+            },
+            "localPort": 6000
+          }
+        },
+        "expect": {
+          "status": 200,
+          "json": {
+            "status": "success",
+            "data": {
+              "par_res": "merged=external,exec=\"/usr/bin/example\",local-port=6000,args=\"-config\",args=\"eyJ4IjoyLCJtaXhlZC1wb3J0Ijo2MDAwfQ==\",udp-relay=true"
+            }
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/proxy/parse",
+        "body": {
+          "data": "{\"type\":\"ss\",\"name\":\"SS\",\"server\":\"node.example\",\"port\":443,\"cipher\":\"aes-128-gcm\",\"password\":\"p\"}",
+          "client": "Loon",
+          "type": "internal",
+          "produce": {
+            "_merged": {
+              "name": "merged"
+            },
+            "localPort": 6000
+          }
+        },
+        "expect": {
+          "status": 500,
+          "json": {
+            "status": "failed",
+            "error": {
+              "message": "external: exec and local-port are required"
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
     "id": "P02-output-clash-native",
     "source": "backend/src/core/proxy-utils/index.js:424-682; backend/src/core/proxy-utils/producers/{clash,clashmeta,stash,shadowrocket,utils}.js; backend/src/core/proxy-utils/transport-path.js:125-164; backend/src/utils/yaml.js",
     "steps": [

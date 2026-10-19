@@ -3,6 +3,15 @@
   "frontend_commit": "4bd7b0acbe65466b933ccea14fc61dbebe036ead",
   "suites": {
     "conversion-local": [
+      "P02-output-qx-native",
+      "P02-output-loon-native",
+      "P02-output-text-tls-options",
+      "P02-output-text-filters",
+      "P02-output-text-options",
+      "P01-output-qx",
+      "P01-output-QX",
+      "P01-output-QuantumultX",
+      "P01-output-Loon",
       "P02-output-clash-native",
       "P02-output-clashmeta-native",
       "P02-output-stash-native",
@@ -61,6 +70,11 @@
       "T03-share-datetime-archive"
     ],
     "full": [
+      "P02-output-qx-native",
+      "P02-output-loon-native",
+      "P02-output-text-tls-options",
+      "P02-output-text-filters",
+      "P02-output-text-options",
       "P02-output-clash-native",
       "P02-output-clashmeta-native",
       "P02-output-stash-native",
@@ -192,6 +206,11 @@
       "M1-complete-inventory-and-fixtures"
     ],
     "conversion": [
+      "P02-output-qx-native",
+      "P02-output-loon-native",
+      "P02-output-text-tls-options",
+      "P02-output-text-filters",
+      "P02-output-text-options",
       "P02-output-clash-native",
       "P02-output-clashmeta-native",
       "P02-output-stash-native",

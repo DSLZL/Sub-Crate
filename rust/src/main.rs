@@ -7,6 +7,7 @@ mod conversion;
 mod json;
 mod state;
 mod surge;
+mod text_output;
 mod xhttp;
 
 use hyper::body::{Body, Incoming};
