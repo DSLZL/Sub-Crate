@@ -126,6 +126,8 @@ class ControlledUpstream:
         return (503 if mode == 'status' else 200), response_bytes(packet, mode), [('Content-Type', 'application/dns-message')]
 
     def host_response(self, method, path, body, headers):
+        if path.startswith('/host/notification'):
+            return (503 if path.startswith('/host/notification-error') else 200), b'{"ok":true}', [('Content-Type', 'application/json')]
         if path.startswith('/host/pipeline/'):
             name = path.removeprefix('/host/pipeline/')
             if name == 'failed':

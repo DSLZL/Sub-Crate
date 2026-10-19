@@ -6,7 +6,7 @@ const {createRequire} = require('node:module');
 if (process.env.GITHUB_ACTIONS !== 'true') throw new Error('Build native utilities in GitHub Actions only');
 const root = path.resolve(__dirname, '../..');
 const fromBackend = createRequire(path.join(root, 'backend/package.json'));
-function snapshot(pins, contents, globalName, filenames) {
+function snapshot(pins, contents, globalName, filenames, provenance = {}) {
 const build = fromBackend('esbuild').buildSync({
   absWorkingDir: root,
   stdin: {
@@ -48,13 +48,19 @@ for (const input of Object.keys(build.metafile.inputs).sort()) {
   if (notices.has(key)) continue;
   const license = fs.readdirSync(directory).find(name => /^licen[cs]e(?:\.(?:md|txt))?$/i.test(name));
   if (!license) throw new Error('Missing license text for ' + key);
-  notices.set(key, fs.readFileSync(path.join(directory, license), 'utf8').replace(/\r\n/g, '\n').trim());
+  let notice = fs.readFileSync(path.join(directory, license), 'utf8').replace(/\r\n/g, '\n').trim();
+  if (metadata.name === 'shoutrrr-ts') {
+    notice += '\n\n' + fs.readFileSync(path.join(directory, 'THIRD_PARTY_NOTICES.md'), 'utf8').replace(/\r\n/g, '\n').trim();
+    notice += '\n\n' + fs.readFileSync(path.join(directory, 'LICENSES/woodpecker-MIT.txt'), 'utf8').replace(/\r\n/g, '\n').trim();
+  }
+  notices.set(key, notice);
 }
 if (notices.size !== [...pins.values()].flat().length) throw new Error('Expected every locked utility package');
 const bundle = build.outputFiles[0].text;
 const licenses = [...notices].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
   .map(([name, license]) => name + '\n' + license + '\n').join('\n');
 const manifest = JSON.stringify({
+  ...provenance,
   packages: Object.fromEntries(pins),
   esbuild: fromBackend('esbuild/package.json').version,
   bundle_sha256: sha256(bundle),
@@ -106,3 +112,12 @@ snapshot(new Map([
   ['buffer', '6.0.3'], ['base64-js', '1.5.1'], ['ieee754', '1.2.1'],
 ]), "import * as dnsPacket from 'dns-packet'; export {dnsPacket};",
   'SubStoreDnsUtilities', ['dns-utilities.js', 'DNS-LICENSES.txt', 'dns-utilities.json']);
+const notificationEntry = fromBackend.resolve('shoutrrr-ts');
+const adapterPath = path.join(__dirname, 'notification-adapter.cjs');
+const notification = require(adapterPath)(fs.readFileSync(notificationEntry));
+const nativeEntry = path.join(path.dirname(notificationEntry), 'native.js');
+fs.writeFileSync(nativeEntry, notification.source);
+snapshot(new Map([['shoutrrr-ts', '0.2.0']]),
+  'export {send} from ' + JSON.stringify(nativeEntry) + ';',
+  'SubStoreNotificationUtilities', ['notification-utilities.js', 'NOTIFICATION-LICENSES.txt', 'notification-utilities.json'],
+  {...notification.provenance, adapter_sha256: crypto.createHash('sha256').update(fs.readFileSync(adapterPath).toString('utf8').replace(/\r\n/g, '\n')).digest('hex')});

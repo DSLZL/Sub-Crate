@@ -183,7 +183,7 @@ async fn sources<'js>(
             match utility(&worker, "download", args).await {
                 Ok(value) => Ok(value),
                 Err(error) => {
-                    eprintln!("[sub-store:error] {}", script::message(&worker.ctx, error));
+                    script::log(&worker, "error", &script::message(&worker.ctx, error));
                     worker.set(&errors, &worker.text(url)?, worker.value(true)?)?;
                     worker.value("")
                 }
@@ -440,7 +440,7 @@ pub(crate) fn patch<'js>(
     if js.truthy(&content)? {
         match yaml(js, "safeLoad", content) {
             Ok(value) => config = network::prefer(js, [value, object(js)?])?,
-            Err(error) => eprintln!("[sub-store:error] {}", script::message(&js.ctx, error)),
+            Err(error) => script::log(js, "error", &script::message(&js.ctx, error)),
         }
     }
     let merged = merge(js, config, patch)?;
@@ -544,7 +544,7 @@ async fn file_raw<'js>(
                 match utility(&worker, "download", args).await {
                     Ok(value) => Ok(value),
                     Err(error) => {
-                        eprintln!("[sub-store:error] {}", script::message(&worker.ctx, error));
+                        script::log(&worker, "error", &script::message(&worker.ctx, error));
                         worker.set(&errors, &worker.text(url)?, worker.value(true)?)?;
                         worker.value("")
                     }
@@ -772,7 +772,7 @@ async fn file_main<'js>(
         match yaml(&js, "safeLoad", content) {
             Ok(value) => network::prefer(&js, [value, object(&js)?])?,
             Err(error) => {
-                eprintln!("[sub-store:error] {}", script::message(&js.ctx, error));
+                script::log(js, "error", &script::message(&js.ctx, error));
                 object(&js)?
             }
         }
@@ -865,7 +865,7 @@ async fn subscription<'js>(
     match result {
         Ok(value) => Ok(value),
         Err(error) if fallback(&resolved) => {
-            eprintln!("[sub-store:error] {}", script::message(&js.ctx, error));
+            script::log(js, "error", &script::message(&js.ctx, error));
             if preview {
                 preview_result(js, js.array([])?, js.array([])?)
             } else {
@@ -1050,7 +1050,7 @@ async fn collection<'js>(
                 }
                 .await;
                 if let Err(error) = child {
-                    eprintln!("[sub-store:error] {}", script::message(&worker.ctx, error));
+                    script::log(&worker, "error", &script::message(&worker.ctx, error));
                     if fallback(&child_mode) {
                         worker.set(&results, &key, worker.array([])?)?;
                         worker.set(&raw_results, &key, worker.array([])?)?;
@@ -1162,7 +1162,7 @@ async fn collection<'js>(
     match result {
         Ok(value) => Ok(value),
         Err(error) if fallback(&resolved) => {
-            eprintln!("[sub-store:error] {}", script::message(&js.ctx, error));
+            script::log(js, "error", &script::message(&js.ctx, error));
             if preview {
                 preview_result(js, js.array([])?, js.array([])?)
             } else {

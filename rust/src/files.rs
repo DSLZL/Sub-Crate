@@ -10,7 +10,11 @@ use hyper::Method;
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
-pub(crate) fn prepare_create(store: &mut Store, next: &mut Value, body: &Body) -> Result<Value, Error> {
+pub(crate) fn prepare_create(
+    store: &mut Store,
+    next: &mut Value,
+    body: &Body,
+) -> Result<Value, Error> {
     let mut file = Value::Object(body.fields());
     if api::cannot_coerce(&file["age-public-key"]) {
         return Err(Error::plain("Cannot convert object to primitive value"));
@@ -306,7 +310,9 @@ fn manage(
     body: &Body,
     store: &mut Store,
 ) -> api::Reply {
-    if method == Method::DELETE && let Some(name) = path.strip_prefix("/api/file/") {
+    if method == Method::DELETE
+        && let Some(name) = path.strip_prefix("/api/file/")
+    {
         crate::logs::info(store, &format!("正在删除文件：{name}"));
     }
     if path == "/api/wholefiles" {

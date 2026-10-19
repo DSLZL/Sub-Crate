@@ -70,10 +70,7 @@ pub(crate) async fn load<'js>(
         match script_download::source(js, clean, options.into_value()).await {
             Ok(value) => value,
             Err(error) => {
-                eprintln!(
-                    "[sub-store:error] Error when loading {kind}: {}",
-                    script::message(&js.ctx, error)
-                );
+                script::log(js, "error", &format!("Error when loading {kind}: {}", script::message(&js.ctx, error)));
                 return Err(js.error(&format!("无法加载 {kind}: {}", js.text(url)?)));
             }
         }
@@ -81,7 +78,7 @@ pub(crate) async fn load<'js>(
         match std::fs::read(&path) {
             Ok(bytes) => js.value(String::from_utf8_lossy(&bytes).into_owned())?,
             Err(error) => {
-                eprintln!("[sub-store:error] Error when reading local script: {error}");
+                script::log(js, "error", &format!("Error when reading local script: {error}"));
                 return Err(js.error(&format!("无法从该路径读取脚本文件: {}", js.text(url)?)));
             }
         }
@@ -89,10 +86,7 @@ pub(crate) async fn load<'js>(
         match script_download::source(js, url.clone(), options.into_value()).await {
             Ok(value) => value,
             Err(error) => {
-                eprintln!(
-                    "[sub-store:error] Error when downloading remote script: {}",
-                    script::message(&js.ctx, error)
-                );
+                script::log(js, "error", &format!("Error when downloading remote script: {}", script::message(&js.ctx, error)));
                 return Err(js.error(&format!("无法下载脚本: {}", js.text(url)?)));
             }
         }

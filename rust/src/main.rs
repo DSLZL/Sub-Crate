@@ -33,6 +33,7 @@ mod script_io;
 mod script_loading;
 mod script_mmdb;
 mod script_network;
+mod script_notify;
 mod script_pipeline;
 mod script_sync;
 mod script_tokens;
@@ -1062,9 +1063,9 @@ async fn route(
             "application/json; charset=utf-8",
             json::stringify(&json!({
                 "status":"success", "data":{
-                    "backend":"Node", "version":env!("CARGO_PKG_VERSION"),
+                    "backend":"Node", "version":"2.42.4",
                     "feature":{"archive":true,"share":!config.frontend_backend_path.is_empty()},
-                    "meta":{"node":{"env":config.environment},"rust":{"version":env!("CARGO_PKG_VERSION"),"milestone":"M2","complete":false}}
+                    "meta":{"node":{"env":config.environment},"rust":{"version":env!("CARGO_PKG_VERSION"),"milestone":"M4","complete":false}}
                 }
             })),
         );

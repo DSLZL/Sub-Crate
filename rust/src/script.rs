@@ -19,6 +19,7 @@ use std::{
 struct Job {
     store: Arc<Mutex<Store>>,
     baseline: Rc<RefCell<(Value, Value)>>,
+    background: tokio::runtime::Handle,
 }
 
 // Job contains only owned Rust state. It never contains a JS handle or borrow;
@@ -259,12 +260,21 @@ fn record(js: &Js<'_>, level: &str, text: &str) {
     if result.is_err() { js.ctx.catch(); }
 }
 
+pub(crate) fn console_text(js: &Js<'_>, level: &str, text: &str) {
+    eprintln!("[sub-store:{level}] {}", codec::text(text));
+    record(js, level, text);
+}
+
+pub(crate) fn log(js: &Js<'_>, level: &str, text: &str) {
+    console_text(js, level, &format!("[sub-store] {}: {text}", level.to_ascii_uppercase()));
+}
+
 fn console_log<'js>(ctx: Ctx<'js>, level: String, values: Array<'js>) {
     let js = Js::new(ctx);
     let enabled = job(&js.ctx).is_ok_and(|job| crate::logs::enabled(&mut job.store.lock().unwrap()));
     let result = values.iter::<JsValue>().map(|value| if enabled { log_value(&js, value?) } else { log_text(&js, value?) }).collect::<rquickjs::Result<Vec<_>>>();
     match result {
-        Ok(values) => { let text = values.join(" "); eprintln!("[sub-store:{level}] {}", codec::text(&text)); record(&js, &level, &text); }
+        Ok(values) => console_text(&js, &level, &values.join(" ")),
         Err(_) => { js.ctx.catch(); }
     }
 }
@@ -281,10 +291,8 @@ fn notify<'js>(
         .0
         .filter(|value| !value.is_undefined())
         .unwrap_or(Object::new(js.ctx.clone())?.into_value());
-    for key in ["open-url", "media-url"] {
-        js.get(&options, key)?;
-    }
     let mut text = Vec::new();
+    let mut fallback_title = "Sub-Store".to_owned();
     for (index, value) in [title, subtitle, content].into_iter().enumerate() {
         let value = value.0.filter(|value| !value.is_undefined());
         let value = match value {
@@ -292,10 +300,30 @@ fn notify<'js>(
             None if index == 0 => js.undefined(),
             None => js.value("")?,
         };
-        text.push(log_text(&js, value)?);
+        let fallback = index == 0 && js.truthy(&value)?;
+        let value: JsValue = js.call("text", (value,))?;
+        let value = codec::js_string(&crate::js_values::project(&js.ctx, value)?);
+        if fallback { fallback_title = value.clone(); }
+        text.push(value);
     }
-    // shortcut: configured notification delivery belongs to the M4 provider workflow.
-    eprintln!("[sub-store:notify] {}", text.join("\n"));
+    for (key, label) in [("open-url", "点击跳转"), ("media-url", "多媒体")] {
+        let value = js.get(&options, key)?;
+        if js.truthy(&value)? {
+            let value: JsValue = js.call("text", (value,))?;
+            text[2].push_str(&format!("\n{label}: {}", codec::js_string(&crate::js_values::project(&js.ctx, value)?)));
+        }
+    }
+    console_text(&js, "log", &format!("[Notify] {}\n{}\n{}\n\n", text[0], text[1], text[2]));
+    if let Ok(service) = std::env::var("SUB_STORE_PUSH_SERVICE") && !service.is_empty() {
+        let job = job(&js.ctx)?;
+        let input = json!({"service":codec::encode(&service),"title":text[0],"subtitle":text[1],"content":text[2],"fallbackTitle":fallback_title});
+        let store = job.store;
+        job.background.spawn(async move {
+            if let Err(conversion::Error::Legacy(error)) = run(store.clone(), "notification-send", input).await {
+                let _ = crate::logs::append(&mut store.lock().unwrap(), "log", &format!("[Push Service] ERROR: {error}"));
+            }
+        });
+    }
     Ok(())
 }
 
@@ -591,7 +619,7 @@ async fn process<'js>(
         if is_script {
             if !["Script Operator", "Script Filter"].contains(&name.as_str()) {
                 crate::script_loading::load(js, &item, &scope.execution).await?;
-                eprintln!("[sub-store:error] Unknown operator: {name}");
+                log(js, "error", &format!("Unknown operator: {name}"));
                 continue;
             }
             input = apply_script(js, &name, item, input, &scope).await?;
@@ -1007,6 +1035,7 @@ pub async fn run(
     operation: &str,
     input: Value,
 ) -> Result<Value, conversion::Error> {
+    let background = tokio::runtime::Handle::current();
     let operation = operation.to_owned();
     let (sender, receiver) = tokio::sync::oneshot::channel();
     let worker = tokio::task::spawn_blocking(move || {
@@ -1031,6 +1060,7 @@ pub async fn run(
                     let job = Job {
                         store,
                         baseline: Rc::new(RefCell::new((cache, root))),
+                        background,
                     };
                     let runtime = AsyncRuntime::new()
                         .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
@@ -1078,6 +1108,7 @@ pub async fn run(
                                     "age-rest" => crate::script_age::rest(&js, input).await?,
                                     "node-info" => crate::script_http::node_info(&js, input).await?,
                                     "logs-query" => crate::logs::query(&js, input, &self::job(&ctx)?.store)?,
+                                    "notification-send" => crate::script_notify::send(&js, input).await?,
                                     "backup-serialize" => {
                                         crate::script_backup::serialize(&js, input)?
                                     }

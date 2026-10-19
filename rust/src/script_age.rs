@@ -205,10 +205,21 @@ pub(crate) async fn rest<'js>(js: &Js<'js>, input: Value<'js>) -> rquickjs::Resu
         }
         runtime(js)?;
         let kind = crate::script_pipeline::optional(js, &body, "type")?;
-        let kind = if js.truthy(&kind)? { kind } else { js.value("x25519")? };
-        let method = if js.equal(&kind, &js.value("x25519")?)? { "generateX25519Identity" }
-            else if js.equal(&kind, &js.value("mlkem768-x25519")?)? { "generateHybridIdentity" }
-            else { return Err(js.error(&format!("不支持的 age key 类型: {}. 支持: x25519, mlkem768-x25519", js.text(kind)?))); };
+        let kind = if js.truthy(&kind)? {
+            kind
+        } else {
+            js.value("x25519")?
+        };
+        let method = if js.equal(&kind, &js.value("x25519")?)? {
+            "generateX25519Identity"
+        } else if js.equal(&kind, &js.value("mlkem768-x25519")?)? {
+            "generateHybridIdentity"
+        } else {
+            return Err(js.error(&format!(
+                "不支持的 age key 类型: {}. 支持: x25519, mlkem768-x25519",
+                js.text(kind)?
+            )));
+        };
         let secret = script::settled(js, js.method(library(js)?, method, vec![])?).await?;
         let public = derive(js.ctx.clone(), Opt(Some(secret.clone()))).await?;
         let data = crate::script_pipeline::object(js)?;
@@ -216,7 +227,8 @@ pub(crate) async fn rest<'js>(js: &Js<'js>, input: Value<'js>) -> rquickjs::Resu
         js.set(&data, "age-secret-key", secret)?;
         js.set(&data, "age-public-key", public)?;
         Ok(data)
-    }.await;
+    }
+    .await;
     let wrapped = crate::script_pipeline::object(js)?;
     match result {
         Ok(data) => js.set(&wrapped, "data", data)?,
@@ -224,9 +236,15 @@ pub(crate) async fn rest<'js>(js: &Js<'js>, input: Value<'js>) -> rquickjs::Resu
             let thrown = js.ctx.catch();
             let error = if crate::script_pipeline::optional(js, &thrown, "type")?.is_undefined() {
                 let error = crate::script_pipeline::object(js)?;
-                js.set(&error, "message", crate::script_pipeline::optional(js, &thrown, "message")?)?;
+                js.set(
+                    &error,
+                    "message",
+                    crate::script_pipeline::optional(js, &thrown, "message")?,
+                )?;
                 error
-            } else { thrown };
+            } else {
+                thrown
+            };
             js.set(&wrapped, "error", error)?;
         }
         Err(error) => return Err(error),

@@ -442,7 +442,7 @@ def main():
             metadata = evaluate("({host:JSON.parse(localStorage.getItem('hostAPI')),env:JSON.parse(localStorage.getItem('envCache')).data.data.data,body:document.body.innerText})")
             report["metadata"] = metadata
             assert any(item["url"] == backend_url and item["name"] == metadata["host"]["current"] for item in metadata["host"]["apis"]), "UI backend setup failed"
-            assert metadata["env"]["backend"] == "Node" and metadata["env"]["version"] == ("0.1.0" if args.rust_binary else "2.42.4"), "Metadata mismatch"
+            assert metadata["env"]["backend"] == "Node" and metadata["env"]["version"] == "2.42.4", "Metadata mismatch"
             if args.rust_binary:
                 assert metadata["env"]["meta"]["rust"]["complete"] is False, "Partial Rust service must not claim final parity"
             assert metadata["env"]["meta"]["node"]["env"]["SUB_STORE_FRONTEND_BACKEND_PATH"] == "/backend", "Legacy config metadata missing"

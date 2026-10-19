@@ -56,10 +56,7 @@ async fn flow_call<'js>(js: &Js<'js>, args: Vec<Value<'js>>) -> rquickjs::Result
 
 fn logged<'js>(js: &Js<'js>, result: rquickjs::Result<Value<'js>>) -> Value<'js> {
     result.unwrap_or_else(|error| {
-        eprintln!(
-            "[sub-store:error] flow headers: {}",
-            script::message(&js.ctx, error)
-        );
+        script::log(js, "error", &format!("flow headers: {}", script::message(&js.ctx, error)));
         js.undefined()
     })
 }
