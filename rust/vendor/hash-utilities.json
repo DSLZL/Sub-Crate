@@ -1,0 +1,13 @@
+{
+  "packages": {
+    "@noble/hashes": "2.2.0"
+  },
+  "esbuild": "0.19.8",
+  "bundle_sha256": "a562b525adb9e8f6b2c435b853cce41c4dc91ea050bbfcabfe37d0bb3d71f7f1",
+  "licenses_sha256": "d981bcb6743cef1f17a9219c36a14d9d9c0240d9a36d9f388f76389f1742f466",
+  "inputs": {
+    "@noble/hashes@2.2.0/_md.js": "8227b9b5cabf078a9d7f7317f7a1ace6e46627539aa9364667aec724e1636f14",
+    "@noble/hashes@2.2.0/legacy.js": "4722d1db35565d162f60f56065a6c283397188f582255b2a3cef809837b254cd",
+    "@noble/hashes@2.2.0/utils.js": "e2adfc13c846487feff0410bd5508a1d66f5ebadc3188f3a40a6b55449981e2f"
+  }
+}

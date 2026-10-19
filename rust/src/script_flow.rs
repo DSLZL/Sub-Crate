@@ -1,8 +1,9 @@
 //! Existing flow-header and calendar algorithms exposed to application scripts.
 use crate::js_language::Js;
+use crate::script_network as network;
 use rquickjs::{
     Array, Ctx, Function, Object, Value,
-    prelude::{Func, Opt},
+    prelude::{Async, Func, Opt},
 };
 
 fn global<'js>(js: &Js<'js>, name: &str, value: Value<'js>) -> rquickjs::Result<Value<'js>> {
@@ -66,6 +67,199 @@ fn number_match<'js>(js: &Js<'js>, found: Value<'js>) -> rquickjs::Result<Value<
     let digits: Value = js.call("get", (found, 2))?;
     let text: Value = js.call("add", (sign, digits))?;
     js.call("number", (text,))
+}
+
+fn valid_body<'js>(js: &Js<'js>, body: Value<'js>) -> rquickjs::Result<bool> {
+    let parsed = parse(js.ctx.clone(), Opt(Some(body)))?;
+    let usage = optional(js, parsed.clone(), "usage")?;
+    for value in [
+        optional(js, parsed, "total")?,
+        optional(js, usage.clone(), "download")?,
+        optional(js, usage, "upload")?,
+    ] {
+        if !value.is_number() || !js.call::<f64, _>("number", (value,))?.is_finite() {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn report(js: &Js<'_>, operation: &str, error: rquickjs::Error) {
+    eprintln!(
+        "[sub-store:error] {operation}: {}",
+        crate::script::message(&js.ctx, error)
+    );
+}
+
+async fn fetch<'js>(
+    ctx: Ctx<'js>,
+    raw: Opt<Value<'js>>,
+    agent: Opt<Value<'js>>,
+    timeout: Opt<Value<'js>>,
+    proxy: Opt<Value<'js>>,
+    flow_url: Opt<Value<'js>>,
+    flow_headers: Opt<Value<'js>>,
+) -> rquickjs::Result<Value<'js>> {
+    let js = Js::new(ctx);
+    let flow_url = flow_url.0.unwrap_or_else(|| js.undefined());
+    let raw = network::prefer(
+        &js,
+        [
+            flow_url.clone(),
+            raw.0.unwrap_or_else(|| js.undefined()),
+            js.value("")?,
+        ],
+    )?;
+    let (url, arguments) = network::fragment(&js, raw)?;
+    if js.truthy(&optional(&js, arguments.clone(), "noFlow")?)?
+        || !js.regex_test(js.call("regex", ("^https?", ""))?, url.clone())?
+    {
+        return Ok(js.undefined());
+    }
+    let settings = network::settings(&js)?;
+    let proxy = network::prefer(
+        &js,
+        [
+            proxy.0.unwrap_or_else(|| js.undefined()),
+            js.get(&settings, "defaultProxy")?,
+        ],
+    )?;
+    let agent = network::prefer(
+        &js,
+        [
+            agent.0.unwrap_or_else(|| js.undefined()),
+            js.get(&settings, "defaultFlowUserAgent")?,
+            js.value("clash.meta/v1.19.23")?,
+        ],
+    )?;
+    let timeout = network::prefer(
+        &js,
+        [
+            timeout.0.unwrap_or_else(|| js.undefined()),
+            js.get(&settings, "defaultTimeout")?,
+            js.value(8000)?,
+        ],
+    )?;
+    let header_argument = network::prefer(
+        &js,
+        [
+            flow_headers.0.unwrap_or_else(|| js.undefined()),
+            optional(&js, arguments.clone(), "flowHeaders")?,
+            optional(&js, arguments.clone(), "headers")?,
+        ],
+    )?;
+    let mut headers = js.undefined();
+    if js.truthy(&header_argument)? {
+        match network::headers(&js, header_argument, agent.clone()) {
+            Ok(value) => headers = value,
+            Err(error) => report(&js, "解析自定义流量头失败", error),
+        }
+    }
+    let identity = if js.truthy(&headers)? {
+        js.ctx
+            .json_stringify(headers.clone())?
+            .map_or_else(|| js.undefined(), |text| text.into_value())
+    } else {
+        agent.clone()
+    };
+    let identity: Value = js.call("add", (identity, url.clone()))?;
+    let id = crate::script_helpers::md5(js.ctx.clone(), Opt(Some(identity)))?;
+    let cache: Value = js.ctx.globals().get("__headersResourceCache")?;
+    let cached = js.method(cache.clone(), "get", vec![js.value(id.clone())?])?;
+    if !js.truthy(&optional(&js, arguments.clone(), "noCache")?)? && js.truthy(&cached)? {
+        return Ok(cached);
+    }
+    if !js.truthy(&headers)? {
+        headers = Object::new(js.ctx.clone())?.into_value();
+        js.set(&headers, "User-Agent", agent)?;
+    }
+    let options = Object::new(js.ctx.clone())?.into_value();
+    js.set(&options, "url", url.clone())?;
+    js.set(&options, "headers", headers)?;
+    js.set(&options, "timeout", timeout)?;
+    if js.truthy(&proxy)? {
+        js.set(&options, "proxy", proxy)?;
+    }
+    if js.truthy(&optional(&js, arguments.clone(), "insecure")?)? {
+        js.set(&options, "insecure", js.value(true)?)?;
+    }
+    let mut flow = js.undefined();
+    if js.truthy(&flow_url)? {
+        let mut response_headers = js.undefined();
+        let response = async {
+            let response = network::request(&js, "get", options).await?;
+            let status = js.get(&response, "statusCode")?;
+            if js.call::<bool, _>("lt", (status.clone(), 200))?
+                || js.call::<bool, _>("le", (400, status.clone()))?
+            {
+                return Err(js.error(&format!("statusCode: {}", js.text(status)?)));
+            }
+            response_headers = js.get(&response, "headers")?;
+            let body = js.get(&response, "body")?;
+            if !valid_body(&js, body.clone())? {
+                return Err(js.error("响应体中未包含合法的流量信息"));
+            }
+            Ok(body)
+        }
+        .await;
+        match response {
+            Ok(value) => flow = value,
+            Err(error) => {
+                report(&js, "使用 GET 方法从响应体获取流量信息失败", error);
+                if js.truthy(&response_headers)? {
+                    let response = (|| {
+                        let value = field(js.ctx.clone(), Opt(Some(response_headers)))?;
+                        if !valid_body(&js, value.clone())? {
+                            return Err(js.error("响应体中未包含合法的流量信息"));
+                        }
+                        Ok(value)
+                    })();
+                    match response {
+                        Ok(value) => flow = value,
+                        Err(error) => report(&js, "使用 GET 方法从响应头获取流量信息失败", error),
+                    }
+                }
+            }
+        }
+    } else {
+        let lines = js.method(url, "split", vec![js.call("regex", (r"[\r\n]+", ""))?])?;
+        let lines: Vec<Value> = js.call("iterable", (lines,))?;
+        let mut first = js.undefined();
+        for line in lines {
+            let line = js.method(line, "trim", vec![])?;
+            if js.truthy(&line)? {
+                first = line;
+                break;
+            }
+        }
+        js.set(&options, "url", first)?;
+        let response = async {
+            let response = network::request(&js, "head", options.clone()).await?;
+            field(js.ctx.clone(), Opt(Some(js.get(&response, "headers")?)))
+        }
+        .await;
+        match response {
+            Ok(value) => flow = value,
+            Err(error) => report(&js, "使用 HEAD 方法从响应头获取流量信息失败", error),
+        }
+        if !js.truthy(&flow)? {
+            let response = network::request(&js, "get", options).await?;
+            flow = field(js.ctx.clone(), Opt(Some(js.get(&response, "headers")?)))?;
+        }
+    }
+    if js.truthy(&flow)? {
+        flow = js.method(flow, "trim", vec![])?;
+    }
+    if js.truthy(&flow)? {
+        let ttl = optional(&js, arguments, "headersCacheTtl")?;
+        let ttl = if js.truthy(&ttl)? {
+            js.call("multiply", (ttl, 1000))?
+        } else {
+            js.undefined()
+        };
+        js.method(cache, "set", vec![js.value(id)?, flow.clone(), ttl])?;
+    }
+    Ok(flow)
 }
 
 fn parse<'js>(ctx: Ctx<'js>, raw: Opt<Value<'js>>) -> rquickjs::Result<Value<'js>> {
@@ -367,9 +561,9 @@ fn normalized_inner<'js>(
         };
         entries.push((key, value));
     }
-    let headers = js.ctx.json_parse(
-        r#"{"subscription-userinfo":"","profile-web-page-url":"","plan-name":""}"#,
-    )?;
+    let headers = js
+        .ctx
+        .json_parse(r#"{"subscription-userinfo":"","profile-web-page-url":"","plan-name":""}"#)?;
     let user = Object::new(js.ctx.clone())?.into_value();
     for (key, value) in entries {
         if js.truthy(&split)? && js.equal(&key, &js.value("app_url")?)? {
@@ -432,6 +626,7 @@ fn normalize<'js>(
 
 pub fn initialize(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
     let flow = Object::new(ctx.clone())?;
+    flow.set("getFlowHeaders", Func::from(Async(fetch)))?;
     flow.set("getFlowField", Func::from(field))?;
     flow.set("parseFlowHeaders", Func::from(parse))?;
     flow.set("flowTransfer", Func::from(transfer))?;

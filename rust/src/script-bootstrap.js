@@ -32,6 +32,7 @@ globalThis.__language = {
   subtract: (a, b) => a - b,
   construct: (constructor, args) => Reflect.construct(constructor, args),
   entries: value => Object.entries(value),
+  keysIn: value => { const keys = []; for (const key in value) keys.push(key); return keys; },
   units: value => {
     const units = [];
     for (let index = 0; index < value.length; index++) units.push(value.charCodeAt(index));

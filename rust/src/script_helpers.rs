@@ -8,7 +8,6 @@ use rquickjs::{
 const IPV4: &str = r"^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)(\.(?!$)|$)){4}$";
 const IPV6: &str = r"^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$";
 const UUID: &str = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
-const CACHE_KEY: &str = "#sub-store-cached-script-resource";
 
 fn matches<'js>(js: &Js<'js>, pattern: &str, value: Value<'js>) -> rquickjs::Result<bool> {
     let expression = js.call("regex", (pattern, ""))?;
@@ -55,7 +54,7 @@ fn get_iso<'js>(ctx: Ctx<'js>, name: Opt<Value<'js>>) -> rquickjs::Result<Value<
     Ok(js.undefined())
 }
 
-fn md5<'js>(ctx: Ctx<'js>, input: Opt<Value<'js>>) -> rquickjs::Result<String> {
+pub(crate) fn md5<'js>(ctx: Ctx<'js>, input: Opt<Value<'js>>) -> rquickjs::Result<String> {
     let js = Js::new(ctx);
     let input = input.0.unwrap_or_else(|| js.undefined());
     let units: Vec<u16> = js.call("units", (input,))?;
@@ -197,14 +196,18 @@ fn host<'js>(js: &Js<'js>) -> rquickjs::Result<Value<'js>> {
     js.ctx.globals().get("$substore")
 }
 
-fn cache_persist<'js>(ctx: Ctx<'js>, This(this): This<Value<'js>>) -> rquickjs::Result<()> {
+fn cache_persist<'js>(
+    ctx: Ctx<'js>,
+    This(this): This<Value<'js>>,
+    key: &str,
+) -> rquickjs::Result<()> {
     let js = Js::new(ctx);
     let value = js.get(&this, "resourceCache")?;
     let text = js
         .ctx
         .json_stringify(value)?
         .map_or_else(|| js.undefined(), |text| text.into_value());
-    js.method(host(&js)?, "write", vec![text, js.value(CACHE_KEY)?])?;
+    js.method(host(&js)?, "write", vec![text, js.value(key)?])?;
     Ok(())
 }
 
@@ -237,7 +240,7 @@ fn cache_cleanup<'js>(
         }
     }
     if clear {
-        cache_persist(js.ctx.clone(), This(this))?;
+        js.method(this, "_persist", vec![])?;
     }
     Ok(())
 }
@@ -284,7 +287,7 @@ fn cache_get<'js>(
             }
             if js.truthy(&remove.0.unwrap_or_else(|| js.undefined()))? {
                 js.call::<(), _>("remove", (cache, id))?;
-                cache_persist(js.ctx.clone(), This(this))?;
+                js.method(this, "_persist", vec![])?;
             }
         }
     }
@@ -297,16 +300,18 @@ fn cache_set<'js>(
     id: Opt<Value<'js>>,
     value: Opt<Value<'js>>,
     ttl: Opt<Value<'js>>,
+    setting: &str,
+    default_ttl: f64,
 ) -> rquickjs::Result<()> {
     let js = Js::new(ctx);
     let ttl = if let Some(ttl) = normalized_ttl(&js, ttl.0.unwrap_or_else(|| js.undefined()))? {
         ttl
     } else {
         let settings = js.method(host(&js)?, "read", vec![js.value("settings")?])?;
-        let setting: Value = js.call("optional", (settings, "scriptCacheTtl"))?;
+        let setting: Value = js.call("optional", (settings, setting))?;
         normalized_ttl(&js, setting)?
             .map(|seconds| seconds * 1000.0)
-            .unwrap_or(172800000.0)
+            .unwrap_or(default_ttl)
     };
     let now: Value = js.call("now", ())?;
     let time: Value = js.call("add", (now, ttl))?;
@@ -318,7 +323,73 @@ fn cache_set<'js>(
         "set",
         (cache, id.0.unwrap_or_else(|| js.undefined()), cached),
     )?;
-    cache_persist(js.ctx.clone(), This(this))
+    js.method(this, "_persist", vec![])?;
+    Ok(())
+}
+
+fn resource_cache<'js>(
+    ctx: &Ctx<'js>,
+    key: &'static str,
+    setting: &'static str,
+    default_ttl: f64,
+) -> rquickjs::Result<Object<'js>> {
+    let js = Js::new(ctx.clone());
+    let cache = Object::new(ctx.clone())?;
+    cache.set(
+        "_persist",
+        Func::from(move |ctx: Ctx<'js>, this: This<Value<'js>>| {
+            cache_persist(ctx, this, key)
+        }),
+    )?;
+    cache.set("_cleanup", Func::from(cache_cleanup))?;
+    cache.set("gettime", Func::from(cache_gettime))?;
+    cache.set("get", Func::from(cache_get))?;
+    cache.set(
+        "set",
+        Func::from(
+            move |ctx: Ctx<'js>,
+                  this: This<Value<'js>>,
+                  id: Opt<Value<'js>>,
+                  value: Opt<Value<'js>>,
+                  ttl: Opt<Value<'js>>| {
+                cache_set(ctx, this, id, value, ttl, setting, default_ttl)
+            },
+        ),
+    )?;
+    cache.set(
+        "revokeAll",
+        Func::from(|ctx: Ctx<'js>, This(this): This<Value<'js>>| {
+            let js = Js::new(ctx);
+            js.set(
+                &this,
+                "resourceCache",
+                Object::new(js.ctx.clone())?.into_value(),
+            )?;
+            js.method(this, "_persist", vec![])?;
+            Ok::<_, rquickjs::Error>(())
+        }),
+    )?;
+    let mut stored = js.method(host(&js)?, "read", vec![js.value(key)?])?;
+    if !js.truthy(&stored)? {
+        stored = js.value("{}")?;
+        js.method(host(&js)?, "write", vec![stored.clone(), js.value(key)?])?;
+    }
+    let value: Value = match js.call("jsonParse", (stored,)) {
+        Ok(value) => value,
+        Err(_) => {
+            ctx.catch();
+            js.method(host(&js)?, "write", vec![js.value("{}")?, js.value(key)?])?;
+            Object::new(ctx.clone())?.into_value()
+        }
+    };
+    cache.set("resourceCache", value)?;
+    cache_cleanup(
+        ctx.clone(),
+        This(cache.clone().into_value()),
+        Opt(None),
+        Opt(None),
+    )?;
+    Ok(cache)
 }
 
 pub fn initialize<'js>(ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs::Result<()> {
@@ -377,52 +448,28 @@ pub fn initialize<'js>(ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs::Result<
     yaml.set("dump", Func::from(yaml_dump))?;
     utils.set("yaml", yaml)?;
 
-    let js = Js::new(ctx.clone());
-    let cache = Object::new(ctx.clone())?;
-    cache.set("_persist", Func::from(cache_persist))?;
-    cache.set("_cleanup", Func::from(cache_cleanup))?;
-    cache.set("gettime", Func::from(cache_gettime))?;
-    cache.set("get", Func::from(cache_get))?;
-    cache.set("set", Func::from(cache_set))?;
-    cache.set(
-        "revokeAll",
-        Func::from(|ctx: Ctx<'js>, This(this): This<Value<'js>>| {
-            let js = Js::new(ctx);
-            js.set(
-                &this,
-                "resourceCache",
-                Object::new(js.ctx.clone())?.into_value(),
-            )?;
-            cache_persist(js.ctx.clone(), This(this))
-        }),
-    )?;
-    let mut stored = js.method(host(&js)?, "read", vec![js.value(CACHE_KEY)?])?;
-    if !js.truthy(&stored)? {
-        stored = js.value("{}")?;
-        js.method(
-            host(&js)?,
-            "write",
-            vec![stored.clone(), js.value(CACHE_KEY)?],
-        )?;
+    for (name, key, setting, ttl) in [
+        (
+            "scriptResourceCache",
+            "#sub-store-cached-script-resource",
+            "scriptCacheTtl",
+            172800000.0,
+        ),
+        (
+            "__resourceCache",
+            "#sub-store-cached-resource",
+            "resourceCacheTtl",
+            3600000.0,
+        ),
+        (
+            "__headersResourceCache",
+            "#sub-store-cached-headers-resource",
+            "headersCacheTtl",
+            60000.0,
+        ),
+    ] {
+        ctx.globals()
+            .set(name, resource_cache(ctx, key, setting, ttl)?)?;
     }
-    let value: Value = match js.call("jsonParse", (stored,)) {
-        Ok(value) => value,
-        Err(_) => {
-            ctx.catch();
-            js.method(
-                host(&js)?,
-                "write",
-                vec![js.value("{}")?, js.value(CACHE_KEY)?],
-            )?;
-            Object::new(ctx.clone())?.into_value()
-        }
-    };
-    cache.set("resourceCache", value)?;
-    cache_cleanup(
-        ctx.clone(),
-        This(cache.clone().into_value()),
-        Opt(None),
-        Opt(None),
-    )?;
-    ctx.globals().set("scriptResourceCache", cache)
+    Ok(())
 }
