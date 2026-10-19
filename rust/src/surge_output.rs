@@ -460,8 +460,7 @@ fn single(proxy: &mut Value, include: bool, surfboard: bool) -> Result<String, F
             } else {
                 append(&mut out, proxy, "password", ",password=\"", "\"");
             }
-            if !surfboard
-                && kind == "anytls"
+            if kind == "anytls"
                 && truthy(&proxy["network"])
                 && (proxy["network"] != "tcp" || truthy(&proxy["reality-opts"]))
             {
@@ -733,9 +732,6 @@ fn fallback(opts: &Value, proxy: &Value, key: &str, private: &str, default: Valu
 }
 
 fn mihomo(proxy: &mut Value, opts: &mut Value) -> Result<String, Failure> {
-    if !opts.is_object() {
-        return Err(Failure::Invalid);
-    }
     let list = crate::clash_output::produce(
         vec![proxy.clone()],
         "internal",
@@ -757,6 +753,9 @@ fn mihomo(proxy: &mut Value, opts: &mut Value) -> Result<String, Failure> {
     let config_override = fallback(opts, proxy, "config", "_config", Value::Null);
     let result;
     if truthy(&fallback(opts, proxy, "merge", "_merge", json!(false))) {
+        if !opts.is_object() {
+            return Err(Failure::Invalid);
+        }
         let mut socks = json!({"name":proxy["name"],"type":"socks5","server":"127.0.0.1","port":port,"udp":true});
         result = single(
             &mut socks,
@@ -814,7 +813,9 @@ fn mihomo(proxy: &mut Value, opts: &mut Value) -> Result<String, Failure> {
         };
         result = external(&json!({"name":proxy["name"],"type":"external","udp":true,"exec":exec,"local-port":port,"args":["-config",STANDARD.encode(codec::stringify(&legacy_object_order(Value::Object(config))))],"addresses":addresses})).map_err(|_| Failure::Invalid)?;
     }
-    opts["localPort"] = json!(codec::to_number(&port) - 1.0);
+    if opts.is_object() {
+        opts["localPort"] = json!(codec::to_number(&port) - 1.0);
+    }
     Ok(result)
 }
 
