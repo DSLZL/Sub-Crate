@@ -772,7 +772,7 @@ async fn file_main<'js>(
         match yaml(&js, "safeLoad", content) {
             Ok(value) => network::prefer(&js, [value, object(&js)?])?,
             Err(error) => {
-                script::log(js, "error", &script::message(&js.ctx, error));
+                script::log(&js, "error", &script::message(&js.ctx, error));
                 object(&js)?
             }
         }

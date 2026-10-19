@@ -3,7 +3,10 @@ use crate::{js_language::Js, script, script_network as network, script_pipeline 
 use pipeline::{find, object, optional, read, utility};
 use rquickjs::Value;
 
-pub(crate) async fn node_info<'js>(js: &Js<'js>, input: Value<'js>) -> rquickjs::Result<Value<'js>> {
+pub(crate) async fn node_info<'js>(
+    js: &Js<'js>,
+    input: Value<'js>,
+) -> rquickjs::Result<Value<'js>> {
     let proxy = js.get(&input, "body")?;
     let projected = crate::js_values::project(&js.ctx, proxy.clone())?;
     let share = crate::conversion::uri(&projected);
@@ -56,7 +59,11 @@ async fn flow_call<'js>(js: &Js<'js>, args: Vec<Value<'js>>) -> rquickjs::Result
 
 fn logged<'js>(js: &Js<'js>, result: rquickjs::Result<Value<'js>>) -> Value<'js> {
     result.unwrap_or_else(|error| {
-        script::log(js, "error", &format!("flow headers: {}", script::message(&js.ctx, error)));
+        script::log(
+            js,
+            "error",
+            &format!("flow headers: {}", script::message(&js.ctx, error)),
+        );
         js.undefined()
     })
 }
