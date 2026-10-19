@@ -482,10 +482,7 @@ async fn run<'js>(js: &Js<'js>, input: Download<'js>) -> rquickjs::Result<Value<
     format(js, finalized.result, finalized.raw, return_raw)
 }
 
-async fn download<'js>(
-    ctx: Ctx<'js>,
-    arguments: Rest<Value<'js>>,
-) -> rquickjs::Result<Value<'js>> {
+async fn download<'js>(ctx: Ctx<'js>, arguments: Rest<Value<'js>>) -> rquickjs::Result<Value<'js>> {
     let js = Js::new(ctx);
     // Rest retains all nine public arguments beyond the binding's tuple limit.
     let mut arguments = arguments.0.into_iter();
@@ -509,7 +506,7 @@ async fn download<'js>(
     run(&js, input).await
 }
 
-pub(crate) fn initialize<'js>(ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs::Result<()> {
+pub(crate) fn initialize<'js>(_ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs::Result<()> {
     utils.set("download", Func::from(Async(download)))?;
     utils.set(
         "downloadFile",
