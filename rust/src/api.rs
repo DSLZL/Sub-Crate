@@ -256,7 +256,12 @@ pub fn conversion_dispatch(
                 .or_else(|| fields.get("platform")),
         );
         let result = conversion::parse(raw).and_then(|proxies| {
-            conversion::produce(proxies, &target, fields["type"].as_str().unwrap_or(""), fields.get("produce").unwrap_or(&json!({})))
+            conversion::produce(
+                proxies,
+                &target,
+                fields["type"].as_str().unwrap_or(""),
+                fields.get("produce").unwrap_or(&json!({})),
+            )
         });
         return Some(match result {
             Ok(output) => success(Some(json!({"par_res":output})), 200),

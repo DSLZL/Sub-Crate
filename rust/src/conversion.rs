@@ -185,7 +185,9 @@ pub(crate) fn ss_over_tls(proxy: &Value) -> bool {
         && proxy.get("plugin").is_none_or(Value::is_null)
         && proxy.get("network").is_none_or(|network| {
             network.is_null()
-                || network.as_str().is_some_and(|network| codec::trim(network).eq_ignore_ascii_case("tcp"))
+                || network
+                    .as_str()
+                    .is_some_and(|network| codec::trim(network).eq_ignore_ascii_case("tcp"))
         })
 }
 
@@ -2356,16 +2358,6 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
                 proxy["sni"] = host.clone();
             }
         }
-        if ["ws", "h2"].contains(&network.as_str()) && !truthy(&proxy[&key]["path"]) {
-            proxy[&key]["path"] = json!("/");
-        }
-        if network == "http"
-            && proxy[&key]["path"]
-                .as_array()
-                .is_none_or(|paths| paths.iter().all(|path| !truthy(path)))
-        {
-            proxy[&key]["path"] = json!(["/"]);
-        }
     }
     if truthy(&proxy["tls"])
         && !truthy(&proxy["sni"])
@@ -2375,9 +2367,6 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
             .is_some_and(|server| !is_ip(server))
     {
         proxy["sni"] = proxy["server"].clone();
-    }
-    if matches!(proxy["sni"].as_str(), Some("" | "off")) {
-        proxy["disable-sni"] = json!(true);
     }
     if truthy(&proxy["ports"]) {
         proxy["ports"] = json!(field_text(proxy, "ports").replace('/', ","));
@@ -2393,26 +2382,6 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
             proxy["obfs-password"] = proxy["obfs_password"].clone();
         }
     }
-    if proxy["type"] == "tuic" {
-        if !proxy["alpn"].is_array() {
-            proxy["alpn"] = json!([if truthy(&proxy["alpn"]) {
-                proxy["alpn"].clone()
-            } else {
-                json!("h3")
-            }]);
-        }
-        for (key, value) in [
-            ("congestion-controller", "cubic"),
-            ("udp-relay-mode", "native"),
-        ] {
-            if !truthy(&proxy[key]) {
-                proxy[key] = json!(value);
-            }
-        }
-    }
-    if proxy["type"] == "wireguard" {
-        normalize_wireguard(proxy);
-    }
     if proxy["type"] == "vless" {
         for key in ["reality-opts", "grpc-opts"] {
             if proxy[key].as_object().is_some_and(Map::is_empty) {
@@ -2425,9 +2394,9 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
         {
             proxy.as_object_mut().unwrap().shift_remove("flow");
         }
-    }
-    if proxy["type"] == "anytls" && truthy(&proxy["disable-reuse"]) {
-        proxy["reuse"] = json!(false);
+        if proxy["network"] == "http" && !truthy(&proxy["http-opts"]["path"]) {
+            proxy["http-opts"]["path"] = json!(["/"]);
+        }
     }
     if !proxy["name"].is_string() {
         let raw = field_text(proxy, "name");
@@ -2463,6 +2432,45 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
                 field_text(proxy, "port")
             )));
         }
+    }
+    if proxy["type"] != "masque" {
+        let network = proxy["network"].as_str().unwrap_or("").to_owned();
+        let key = format!("{network}-opts");
+        if ["ws", "h2"].contains(&network.as_str()) && !truthy(&proxy[&key]["path"]) {
+            proxy[&key]["path"] = json!("/");
+        } else if network == "http"
+            && proxy[&key]["path"]
+                .as_array()
+                .is_none_or(|paths| paths.iter().all(|path| !truthy(path)))
+        {
+            proxy[&key]["path"] = json!(["/"]);
+        }
+    }
+    if proxy["type"] == "anytls" && truthy(&proxy["disable-reuse"]) {
+        proxy["reuse"] = json!(false);
+    }
+    if matches!(proxy["sni"].as_str(), Some("" | "off")) {
+        proxy["disable-sni"] = json!(true);
+    }
+    if proxy["type"] == "tuic" {
+        if !proxy["alpn"].is_array() {
+            proxy["alpn"] = json!([if truthy(&proxy["alpn"]) {
+                proxy["alpn"].clone()
+            } else {
+                json!("h3")
+            }]);
+        }
+        for (key, value) in [
+            ("congestion-controller", "cubic"),
+            ("udp-relay-mode", "native"),
+        ] {
+            if !truthy(&proxy[key]) {
+                proxy[key] = json!(value);
+            }
+        }
+    }
+    if proxy["type"] == "wireguard" {
+        normalize_wireguard(proxy);
     }
     Ok(())
 }
@@ -3527,11 +3535,18 @@ fn uri(proxy: &Value) -> Option<String> {
     Some(output)
 }
 
-pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str, opts: &Value) -> Result<Value, Error> {
+pub fn produce(
+    mut proxies: Vec<Value>,
+    target: &str,
+    kind: &str,
+    opts: &Value,
+) -> Result<Value, Error> {
     use crate::clash_output::Family;
     let family = match target {
         "Clash" => Some(Family::Clash),
-        "meta" | "clashmeta" | "clash.meta" | "Clash.Meta" | "ClashMeta" | "mihomo" | "Mihomo" => Some(Family::Meta),
+        "meta" | "clashmeta" | "clash.meta" | "Clash.Meta" | "ClashMeta" | "mihomo" | "Mihomo" => {
+            Some(Family::Meta)
+        }
         "stash" | "Stash" => Some(Family::Stash),
         "shadowrocket" | "Shadowrocket" | "ShadowRocket" => Some(Family::Shadowrocket),
         _ => None,
@@ -3539,8 +3554,8 @@ pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str, opts: &Value) 
     match target {
         "json" | "JSON" | "uri" | "URI" | "v2" | "v2ray" | "V2Ray" => {}
         _ if family.is_some() => {}
-        "qx" | "QX" | "QuantumultX" | "surge" | "Surge" | "SurgeMac" | "Loon"
-        | "surfboard" | "Surfboard" | "singbox" | "sing-box" | "egern" | "Egern" => {
+        "qx" | "QX" | "QuantumultX" | "surge" | "Surge" | "SurgeMac" | "Loon" | "surfboard"
+        | "Surfboard" | "singbox" | "sing-box" | "egern" | "Egern" => {
             return Err(Error::Pending("This output format is not implemented yet"));
         }
         _ => {
@@ -3550,7 +3565,9 @@ pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str, opts: &Value) 
         }
     }
     if opts.is_null() && !proxies.is_empty() {
-        return Err(Error::Legacy("Cannot read properties of null (reading 'include-unsupported-proxy')".to_owned()));
+        return Err(Error::Legacy(
+            "Cannot read properties of null (reading 'include-unsupported-proxy')".to_owned(),
+        ));
     }
     let normalized_target = target.to_lowercase();
     let include_unsupported = truthy(&opts["include-unsupported-proxy"]);
@@ -3559,15 +3576,35 @@ pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str, opts: &Value) 
             if proxy["supported"][target] == false {
                 return false;
             }
-            let root_headers = proxy["headers"].as_object().is_some_and(|headers| !headers.is_empty())
-                || proxy["headers"].as_array().is_some_and(|headers| !headers.is_empty());
-            let header_sensitive = matches!(proxy["type"].as_str(), Some("http" | "h2-connect" | "trusttunnel"));
-            let supports_headers = normalized_target.starts_with("surge") || normalized_target == "json"
-                || (proxy["type"] == "http" && ["egern", "meta", "clashmeta", "clash.meta", "mihomo", "singbox", "sing-box"].contains(&normalized_target.as_str()));
+            let root_headers = proxy["headers"]
+                .as_object()
+                .is_some_and(|headers| !headers.is_empty())
+                || proxy["headers"]
+                    .as_array()
+                    .is_some_and(|headers| !headers.is_empty());
+            let header_sensitive = matches!(
+                proxy["type"].as_str(),
+                Some("http" | "h2-connect" | "trusttunnel")
+            );
+            let supports_headers = normalized_target.starts_with("surge")
+                || normalized_target == "json"
+                || (proxy["type"] == "http"
+                    && [
+                        "egern",
+                        "meta",
+                        "clashmeta",
+                        "clash.meta",
+                        "mihomo",
+                        "singbox",
+                        "sing-box",
+                    ]
+                    .contains(&normalized_target.as_str()));
             if root_headers && header_sensitive && !supports_headers {
                 return false;
             }
-            if ss_over_tls(proxy) && !["qx", "quantumultx", "shadowrocket"].contains(&normalized_target.as_str()) {
+            if ss_over_tls(proxy)
+                && !["qx", "quantumultx", "shadowrocket"].contains(&normalized_target.as_str())
+            {
                 return false;
             }
         }
@@ -3615,7 +3652,9 @@ pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str, opts: &Value) 
         if truthy(&proxy["disable-sni"]) {
             if ["surge", "surgemac", "shadowrocket"].contains(&normalized_target.as_str()) {
                 proxy["sni"] = json!("off");
-            } else if proxy["type"] != "tuic" && !["singbox", "sing-box"].contains(&normalized_target.as_str()) {
+            } else if proxy["type"] != "tuic"
+                && !["singbox", "sing-box"].contains(&normalized_target.as_str())
+            {
                 proxy["sni"] = json!(if proxy["server"].as_str().is_some_and(is_ip) {
                     field_text(proxy, "server")
                 } else {
