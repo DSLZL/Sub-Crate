@@ -37,24 +37,40 @@ fn script_response(output: Value) -> Result<Reply, ConversionError> {
     } else {
         "application/json; charset=utf-8"
     };
-    let content_type = output["headers"]["content-type"]
-        .as_str()
-        .unwrap_or(default_type);
-    let mut response = send(status, content_type, bytes);
+    let mut response = send(status, default_type, bytes);
     if let Some(headers) = output["headers"].as_object() {
         for (key, value) in headers {
             if value.is_null() || key == "content-length" {
                 continue;
             }
-            let key = hyper::header::HeaderName::from_bytes(key.as_bytes())
-                .map_err(|error| ConversionError::Legacy(error.to_string()))?;
+            let Ok(key) = hyper::header::HeaderName::from_bytes(key.as_bytes()) else {
+                continue;
+            };
             let values = value
                 .as_array()
                 .map_or_else(|| vec![value], |values| values.iter().collect());
+            let values: Option<Vec<_>> = values
+                .into_iter()
+                .map(|value| {
+                    let mut text = js_string(value);
+                    if key == "profile-web-page-url"
+                        && let Ok(url) = reqwest::Url::parse(&codec::text(&text))
+                    {
+                        text = codec::encode(url.as_str());
+                    }
+                    let units = codec::units(&text);
+                    if units.iter().any(|unit| *unit > 255) {
+                        return None;
+                    }
+                    let bytes: Vec<_> = units.into_iter().map(|unit| unit as u8).collect();
+                    hyper::header::HeaderValue::from_bytes(&bytes).ok()
+                })
+                .collect();
+            let Some(values) = values else {
+                continue;
+            };
             response.headers_mut().remove(&key);
             for value in values {
-                let value = hyper::header::HeaderValue::from_str(&js_string(value))
-                    .map_err(|error| ConversionError::Legacy(error.to_string()))?;
                 response.headers_mut().append(key.clone(), value);
             }
         }

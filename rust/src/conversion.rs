@@ -1486,13 +1486,12 @@ fn trojan(line: &str, language: &crate::clash::Parser) -> Result<Option<Value>, 
             proxy[&key] = json!({"grpc-service-name":params["serviceName"], "_grpc-type":params["mode"],
                 "_grpc-authority":params["authority"]});
         } else {
-            if truthy(&params["path"]) || truthy(&params["host"]) {
-                if format!("{network}-opts")
+            if (truthy(&params["path"]) || truthy(&params["host"]))
+                && format!("{network}-opts")
                     .split(['.', '[', ']'])
                     .any(|part| ["__proto__", "constructor", "prototype"].contains(&part))
-                {
-                    return Ok(None);
-                }
+            {
+                return Ok(None);
             }
             let mut early = None;
             if truthy(&params["path"]) {
@@ -1515,7 +1514,11 @@ fn trojan(line: &str, language: &crate::clash::Parser) -> Result<Option<Value>, 
             }
             if truthy(&params["host"]) {
                 if network.contains(['.', '[', ']']) {
-                    language.set_path(&mut proxy, &format!("{key}.headers.Host"), &params["host"])?;
+                    language.set_path(
+                        &mut proxy,
+                        &format!("{key}.headers.Host"),
+                        &params["host"],
+                    )?;
                 } else {
                     proxy[&key]["headers"]["Host"] = params["host"].clone();
                 }

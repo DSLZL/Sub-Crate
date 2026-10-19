@@ -894,8 +894,8 @@ async fn route(
     let mut base = api::text(200, "text/plain; charset=utf-8", "");
     config.headers(&mut base, header(&headers, "origin"));
     let request = json!({
-        "method":request_method,"url":if raw_query.is_empty(){raw_path.clone()}else{format!("{raw_path}?{raw_query}")},
-        "path":raw_path,"query":query,"body":body.fields(),"socket":{"remoteAddress":peer},
+        "method":request_method,"url":if raw_query.is_empty(){path.to_owned()}else{format!("{path}?{raw_query}")},
+        "path":path,"query":query,"body":body.fields(),"socket":{"remoteAddress":peer},
         "headers":headers.iter().map(|(key,value)|(key.as_str().to_owned(),json!(value.to_str().unwrap_or("")))).collect::<serde_json::Map<String,Value>>(),
         "responseHeaders":base.headers().iter().map(|(key,value)|(key.as_str().to_owned(),json!(value.to_str().unwrap_or("")))).collect::<serde_json::Map<String,Value>>()
     });

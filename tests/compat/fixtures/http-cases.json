@@ -1393,13 +1393,13 @@
           "process": [
             {
               "args": {
-                "content": "function operator(items,target,context) {\n  if ($options.zero !== 0 || $options.flag !== false || $options._req.method !== 'GET' || $options._req.params.name !== 'm3-http-output' || $options._req.params.target !== 'JSON' || $options._req.query.target !== 'JSON' || target !== 'URI' || $options._req.headers['user-agent'] !== 'M3-http-client' || typeof $options._req.socket.remoteAddress !== 'string') throw new Error('request options contract');\n  items[0].name = $options.text; return items;\n}"
+                "content": "function operator(items,target,context) {\n  if ($options.zero !== 0 || $options.flag !== false || $options._req.method !== 'GET' || $options._req.params.name !== 'm3-http-output' || $options._req.params.target !== 'JSON' || $options._req.query.target !== 'JSON' || target !== 'URI' || $options._req.headers['user-agent'] !== 'M3-http-client' || typeof $options._req.socket.remoteAddress !== 'string') throw new Error('request options contract');\n  if (!$options._req.url.startsWith('/download/m3-http-output/JSON?') || $options._req.path !== '/download/m3-http-output/JSON') throw new Error('request prefix stripping');\n  items[0].name = $options.text; return items;\n}"
               },
               "type": "Script Operator"
             },
             {
               "args": {
-                "content": "async function transformFunction(res,context) {\n  if(res.status !== 201 || res.headers['x-stage'] !== 'options' || !context.source['m3-http-output']) throw new Error('response input contract');\n  await $substore.wait(1); res.status = 202; res.header['X-M3-Hook']='full'; res.headers['x-powered-by']=null; delete res.headers['x-stage']; res.body += ':full'; return res;\n}"
+                "content": "async function transformFunction(res,context) {\n  if(res.status !== 201 || res.headers['x-stage'] !== 'options' || !context.source['m3-http-output']) throw new Error('response input contract');\n  await $substore.wait(1); res.status = 202; res.header['X-M3-Hook']='full'; res.headers['x-powered-by']=null; delete res.headers['x-stage']; res.headers[\"x-invalid-unicode\"]=\"订阅🙂\"; res.headers[\"bad name\"]=\"ignored\"; res.headers[\"x-invalid-lines\"]=\"bad\\r\\ninjected\"; res.headers[\"profile-web-page-url\"]=\"https://例子.测试/路径?q=订阅#片段\"; res.headers[\"x-legacy-byte\"]=String.fromCharCode(233); res.body += ':full'; return res;\n}"
               },
               "type": "Response Transformer"
             },
@@ -1422,7 +1422,10 @@
         },
         "expect": {
           "absent_headers": [
-            "x-powered-by"
+            "x-powered-by",
+            "x-invalid-unicode",
+            "bad name",
+            "x-invalid-lines"
           ],
           "status": 202,
           "body": "ss://YWVzLTEyOC1nY206cGFzcw==@http.invalid:8388?udp=1#%E8%BE%93%E5%87%BA%F0%9F%99%82:full:short",
@@ -1430,7 +1433,9 @@
             "x-stage": "options",
             "x-m3-hook": "full",
             "x-m3-second": "false",
-            "subscription-userinfo": "upload=1; download=2; total=99"
+            "subscription-userinfo": "upload=1; download=2; total=99",
+            "profile-web-page-url": "https://xn--fsqu00a.xn--0zwm56d/%E8%B7%AF%E5%BE%84?q=%E8%AE%A2%E9%98%85#%E7%89%87%E6%AE%B5",
+            "x-legacy-byte": "é"
           }
         },
         "path": "/download/m3-http-output/JSON?platform=URI&$options=%257B%2522text%2522%253A%2522%25E8%25BE%2593%25E5%2587%25BA%25F0%259F%2599%2582%2522%252C%2522flag%2522%253Afalse%252C%2522zero%2522%253A0%252C%2522_res%2522%253A%257B%2522status%2522%253A201%252C%2522headers%2522%253A%257B%2522x-stage%2522%253A%2522options%2522%257D%257D%257D",
