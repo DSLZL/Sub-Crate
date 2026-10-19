@@ -30,7 +30,13 @@ pub async fn dispatch(
             fields.insert("name".to_owned(), name);
         }
     }
-    Some(modules(method, path, body, item, &mut store.lock().unwrap()))
+    Some(modules(
+        method,
+        path,
+        body,
+        item,
+        &mut store.lock().unwrap(),
+    ))
 }
 
 fn modules(method: &Method, path: &str, body: &Body, item: Value, store: &mut Store) -> api::Reply {
@@ -159,7 +165,10 @@ fn content(value: Option<&Value>) -> api::Reply {
                 "text/plain; charset=utf-8",
                 status.canonical_reason().unwrap_or(""),
             ),
-            None => api::uncaught_error(500, &format!("RangeError: Invalid status code: {number}")),
+            None => api::uncaught_error(
+                500,
+                &format!("RangeError [ERR_HTTP_INVALID_STATUS_CODE]: Invalid status code: {number}"),
+            ),
         };
     }
     let text = match value {

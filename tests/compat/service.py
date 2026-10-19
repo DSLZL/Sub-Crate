@@ -1690,6 +1690,8 @@ def error_diagnostics(url, state, output, name, mode, kind):
          "TypeError: Cannot convert undefined or null to object", True),
         ("recipient-coercion", "PATCH", "/api/sub/diagnostic", b'{"age-public-key":{"toString":null}}', {}, 500,
          "TypeError: Cannot convert object to primitive value", True),
+        ("module-invalid-status", "GET", "/api/module/bad-status", b"", {}, 500,
+         "RangeError [ERR_HTTP_INVALID_STATUS_CODE]: Invalid status code: 0", True),
         ("parameter-decoding", "GET", "/api/sub/%FF", b"", {}, 400,
          "URIError: Failed to decode param '%FF'", True),
         ("static-precondition", "GET", "/chunks/main-84da2e86.js", b"", {"If-Match": '"wrong"'}, 412,
@@ -1922,7 +1924,8 @@ def main():
                 label = kind + "-diagnostics-" + mode
                 state = output / label
                 state.mkdir()
-                document = {**final["node"], "subs": [{"name": "diagnostic", "source": "local", "content": ""}], "collections": []}
+                document = {**final["node"], "subs": [{"name": "diagnostic", "source": "local", "content": ""}], "collections": [],
+                            "modules": [{"name": "bad-status", "content": 0}]}
                 (state / "sub-store.json").write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
                 (state / "root.json").write_text(json.dumps(baseline_root, ensure_ascii=False), encoding="utf-8")
                 static_fixture(state / "frontend")

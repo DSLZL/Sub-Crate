@@ -439,7 +439,11 @@ pub(crate) async fn file<'js>(
             js.value(format!("attachment; filename*=UTF-8''{name}"))?,
         )?;
     }
-    js.set(&headers, "content-type", js.value("text/plain; charset=utf-8")?)?;
+    js.set(
+        &headers,
+        "content-type",
+        js.value("text/plain; charset=utf-8")?,
+    )?;
     let input = object(js)?;
     js.set(&input, "headers", headers)?;
     let body = optional(js, &output, "$content")?;
@@ -460,7 +464,16 @@ pub(crate) async fn file<'js>(
     } else {
         supplied
     };
-    response(js, input, item, js.undefined(), source, supplied, object(js)?).await
+    response(
+        js,
+        input,
+        item,
+        js.undefined(),
+        source,
+        supplied,
+        object(js)?,
+    )
+    .await
 }
 
 pub(crate) async fn parse<'js>(js: &Js<'js>, fields: Value<'js>) -> rquickjs::Result<Value<'js>> {

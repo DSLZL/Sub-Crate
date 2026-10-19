@@ -1007,7 +1007,10 @@ pub async fn run(
                                         let name = js.get(&input, "name")?;
                                         let name = if name.is_null() || name.is_undefined() {
                                             let text = js.value(serialized(&ctx, input)?)?;
-                                            crate::script_helpers::md5(ctx.clone(), Opt(Some(text)))?
+                                            crate::script_helpers::md5(
+                                                ctx.clone(),
+                                                Opt(Some(text)),
+                                            )?
                                         } else {
                                             js.text(name)?
                                         };

@@ -1,8 +1,7 @@
 use crate::{
     api,
     body::Body,
-    json as codec,
-    script,
+    json as codec, script,
     state::{Store, truthy},
 };
 use hyper::Method;
@@ -74,20 +73,21 @@ pub async fn dispatch(
         if file["type"] == "mihomoProfile" {
             file["type"] = json!("mihomoConfig");
         }
-        return Some(match script::run(store.clone(), "preview-file", file).await {
-            Ok(value) => api::success(Some(value), 200),
-            Err(crate::conversion::Error::Legacy(reason)) => error(
-                false,
-                500,
-                "INTERNAL_SERVER_ERROR",
-                "InternalServerError",
-                "Failed to preview file",
-                Some(json!(format!("Reason: {reason}"))),
-            ),
-        });
+        return Some(
+            match script::run(store.clone(), "preview-file", file).await {
+                Ok(value) => api::success(Some(value), 200),
+                Err(crate::conversion::Error::Legacy(reason)) => error(
+                    false,
+                    500,
+                    "INTERNAL_SERVER_ERROR",
+                    "InternalServerError",
+                    "Failed to preview file",
+                    Some(json!(format!("Reason: {reason}"))),
+                ),
+            },
+        );
     }
-    if (path.starts_with("/api/file/") || path.starts_with("/share/file/"))
-        && method == Method::GET
+    if (path.starts_with("/api/file/") || path.starts_with("/share/file/")) && method == Method::GET
     {
         let share = path.starts_with("/share/");
         let name = path.split_once("/file/").unwrap().1;
@@ -250,7 +250,13 @@ pub async fn dispatch(
     None
 }
 
-fn manage(method: &Method, path: &str, query: &Value, body: &Body, store: &mut Store) -> api::Reply {
+fn manage(
+    method: &Method,
+    path: &str,
+    query: &Value,
+    body: &Body,
+    store: &mut Store,
+) -> api::Reply {
     if path == "/api/wholefiles" {
         return api::success(Some(store.data["files"].clone()), 200);
     }
