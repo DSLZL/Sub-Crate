@@ -64,7 +64,7 @@ pub fn options(path: &str) -> Reply {
         "/api/settings" => "GET,PATCH,HEAD",
         "/api/storage" => "GET,POST,HEAD",
         "/api/subs" | "/api/collections" => "GET,POST,PUT,HEAD",
-        "/api/proxy/parse" | "/api/preview/sub" => "POST,GET,HEAD",
+        "/api/proxy/parse" | "/api/rule/parse" | "/api/preview/sub" => "POST,GET,HEAD",
         _ if path.starts_with("/api/sub/") || path.starts_with("/api/collection/") => {
             "GET,PATCH,DELETE,HEAD"
         }
@@ -240,6 +240,25 @@ pub fn conversion_dispatch(
     headers: &HeaderMap,
     store: &Mutex<Store>,
 ) -> Option<Reply> {
+    if method == Method::POST && path == "/api/rule/parse" {
+        let fields = Value::Object(body.fields());
+        let raw = fields
+            .get("data")
+            .filter(|value| !value.is_null())
+            .or_else(|| fields.get("content"));
+        let target = selected_text(
+            fields
+                .get("client")
+                .filter(|value| !value.is_null())
+                .or_else(|| fields.get("platform")),
+        );
+        let result = crate::rules::parse(raw)
+            .and_then(|mut rules| crate::rules::produce(&mut rules, &target));
+        return Some(match result {
+            Ok(output) => success(Some(json!({"par_res":output})), 200),
+            Err(error) => conversion_error(error, None),
+        });
+    }
     if method == Method::POST && path == "/api/proxy/parse" {
         let fields = Value::Object(body.fields());
         if truthy(&fields["download"]) {
@@ -256,7 +275,12 @@ pub fn conversion_dispatch(
                 .or_else(|| fields.get("platform")),
         );
         let result = conversion::parse(raw).and_then(|proxies| {
-            conversion::produce(proxies, &target, fields["type"].as_str().unwrap_or(""))
+            conversion::produce(
+                proxies,
+                &target,
+                fields["type"].as_str().unwrap_or(""),
+                fields.get("produce").unwrap_or(&json!({})),
+            )
         });
         return Some(match result {
             Ok(output) => success(Some(json!({"par_res":output})), 200),
@@ -353,7 +377,7 @@ pub fn conversion_dispatch(
             )));
         }
         conversion::tag(&mut proxies, &sub, false);
-        conversion::produce(proxies, &target, kind)
+        conversion::produce(proxies, &target, kind, &json!({}))
     });
     Some(match result {
         Ok(output) => {

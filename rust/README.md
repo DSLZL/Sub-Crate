@@ -2,13 +2,22 @@
 
 This branch now includes an independent Rust HTTP server in `src/`. It serves
 subscription/collection/settings CRUD and legacy JSON storage without Node.
-Local subscriptions share native Rust parsing and JSON/URI/V2Ray output through
+Local subscriptions share native Rust parsing and JSON/URI/V2Ray and
+Clash/Mihomo/Stash/Shadowrocket, QX/Loon, Surge/SurgeMac/Surfboard, Egern and sing-box output through
 `/api/proxy/parse`, subscription preview and subscription download. Native input
 includes SS/SSR, HTTP/SOCKS, Trojan, Hysteria1/2, TUIC, WireGuard, VMess, VLESS and
 AnyTLS, plus the registered Surge/Loon/QX and Clash JSON5/YAML formats and
 Base64/SSD/FullConfig/Clash preprocessing
 with transport/TLS normalization. Surge External fields are parsed as data.
 V2Ray also serves the default download target and its three legacy aliases.
+SurgeMac's external/forced/fallback/merged modes generate native configuration
+data and retain port/override policies; configured programs are never executed.
+Egern retains its protocol filters, stream/TLS/ShadowTLS fields, WireGuard peers,
+internal objects and compact or pretty YAML through both legacy aliases.
+Both sing-box aliases retain the existing protocol filters, transport/TLS and
+plugin options, paired ShadowTLS outputs and separate WireGuard/Tailscale endpoints.
+`/api/rule/parse` uses native HTML/provider preprocessing and all thirteen rule
+types to produce QX, Surge, Loon and Clash rules with the existing error policies.
 These protocol slices remain partial while the complete source-branch inventory is verified.
 Raw input starting `<!DOCTYPE html>` is discarded before parsing. Other formats,
 processors, remote sources and unported value branches return a pending error.
@@ -16,7 +25,7 @@ The JavaScript feasibility example remains separate. Remaining conversion,
 script execution inside the application, archive actions, Gist/age and integrations are
 still under development; this is not a complete replacement release.
 
-Clash language parsing embeds only the existing locked JSON5/yaml utility
+Clash language parsing and pretty-YAML output embed only the existing locked JSON5/yaml utility
 packages through rquickjs. Application conversion policies remain native Rust.
 The utility-only build in Actions records package input hashes and license
 notices in `vendor/`; the development application-helper bundle is separate.

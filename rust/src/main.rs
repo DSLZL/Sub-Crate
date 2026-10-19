@@ -1,11 +1,17 @@
 mod api;
 mod body;
 mod clash;
+mod clash_output;
 mod classic;
 mod conversion;
+mod egern_output;
 mod json;
+mod rules;
+mod singbox_output;
 mod state;
 mod surge;
+mod surge_output;
+mod text_output;
 mod xhttp;
 
 use hyper::body::{Body, Incoming};
@@ -723,7 +729,7 @@ fn api_path(raw: &str) -> Result<Option<String>, ()> {
                     json::encode(&percent_decode_str(name).decode_utf8().map_err(|_| ())?)
                 )),
                 "utils" => Some(format!("/api/utils/{}", name.to_ascii_lowercase())),
-                "proxy" | "preview" => {
+                "proxy" | "rule" | "preview" => {
                     Some(format!("/api/{resource}/{}", name.to_ascii_lowercase()))
                 }
                 _ => None,

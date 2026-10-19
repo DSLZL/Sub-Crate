@@ -32,7 +32,7 @@ fn decoded(raw: &str) -> Option<String> {
         .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
 }
 
-fn field_text(object: &Value, key: &str) -> String {
+pub(crate) fn field_text(object: &Value, key: &str) -> String {
     object
         .get(key)
         .map_or_else(|| "undefined".to_owned(), codec::js_string)
@@ -72,7 +72,7 @@ fn safe_integer(raw: &str) -> Option<u64> {
         .filter(|number| *number <= 9_007_199_254_740_991)
 }
 
-fn path_ed(path: &str) -> (String, Option<String>) {
+pub(crate) fn path_ed(path: &str) -> (String, Option<String>) {
     let Some((base, query)) = path.split_once('?') else {
         return (path.to_owned(), None);
     };
@@ -179,6 +179,18 @@ pub(crate) fn is_ip(address: &str) -> bool {
     address.parse::<std::net::Ipv4Addr>().is_ok() || ipv6(address)
 }
 
+pub(crate) fn ss_over_tls(proxy: &Value) -> bool {
+    proxy["type"] == "ss"
+        && proxy["tls"] == true
+        && proxy.get("plugin").is_none_or(Value::is_null)
+        && proxy.get("network").is_none_or(|network| {
+            network.is_null()
+                || network
+                    .as_str()
+                    .is_some_and(|network| codec::trim(network).eq_ignore_ascii_case("tcp"))
+        })
+}
+
 fn url_parts(raw: &str) -> (&str, &str, Option<&str>) {
     let (raw, name) = raw
         .split_once('#')
@@ -244,6 +256,25 @@ fn interface_address(raw: &str) -> Option<(&str, Option<u32>, bool)> {
         .and_then(|cidr| cidr.parse::<u32>().ok())
         .filter(|cidr| *cidr <= if v6 { 128 } else { 32 });
     Some((host, cidr, v6))
+}
+
+pub(crate) fn wireguard_address(proxy: &Value, family: &str) -> Option<Value> {
+    let (address, cidr_key, max) = if family == "ipv6" {
+        ("ipv6", "ipv6-cidr", 128)
+    } else {
+        ("ip", "ip-cidr", 32)
+    };
+    let raw = field_text(proxy, address);
+    let (host, parsed_cidr, v6) = interface_address(&raw)?;
+    if v6 != (max == 128) {
+        return None;
+    }
+    let cidr = safe_integer(codec::trim(&field_text(proxy, cidr_key)))
+        .filter(|cidr| *cidr <= max)
+        .map(|cidr| cidr as u32)
+        .or(parsed_cidr)
+        .unwrap_or(max as u32);
+    Some(json!(format!("{host}/{cidr}")))
 }
 
 fn normalize_wireguard(proxy: &mut Value) {
@@ -2250,6 +2281,19 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
         }
         proxy.as_object_mut().unwrap().shift_remove("alpn");
     }
+    if proxy["network"] == "ws" {
+        if !truthy(&proxy["ws-opts"]) && (truthy(&proxy["ws-path"]) || truthy(&proxy["ws-headers"]))
+        {
+            proxy["ws-opts"] = json!({});
+            for (from, to) in [("ws-path", "path"), ("ws-headers", "headers")] {
+                if truthy(&proxy[from]) {
+                    proxy["ws-opts"][to] = proxy[from].clone();
+                }
+            }
+        }
+        proxy.as_object_mut().unwrap().shift_remove("ws-path");
+        proxy.as_object_mut().unwrap().shift_remove("ws-headers");
+    }
     if truthy(&proxy["network"]) {
         let network = field_text(proxy, "network");
         let key = format!("{network}-opts");
@@ -2346,16 +2390,6 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
                 proxy["sni"] = host.clone();
             }
         }
-        if ["ws", "h2"].contains(&network.as_str()) && !truthy(&proxy[&key]["path"]) {
-            proxy[&key]["path"] = json!("/");
-        }
-        if network == "http"
-            && proxy[&key]["path"]
-                .as_array()
-                .is_none_or(|paths| paths.iter().all(|path| !truthy(path)))
-        {
-            proxy[&key]["path"] = json!(["/"]);
-        }
     }
     if truthy(&proxy["tls"])
         && !truthy(&proxy["sni"])
@@ -2365,9 +2399,6 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
             .is_some_and(|server| !is_ip(server))
     {
         proxy["sni"] = proxy["server"].clone();
-    }
-    if matches!(proxy["sni"].as_str(), Some("" | "off")) {
-        proxy["disable-sni"] = json!(true);
     }
     if truthy(&proxy["ports"]) {
         proxy["ports"] = json!(field_text(proxy, "ports").replace('/', ","));
@@ -2383,26 +2414,6 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
             proxy["obfs-password"] = proxy["obfs_password"].clone();
         }
     }
-    if proxy["type"] == "tuic" {
-        if !proxy["alpn"].is_array() {
-            proxy["alpn"] = json!([if truthy(&proxy["alpn"]) {
-                proxy["alpn"].clone()
-            } else {
-                json!("h3")
-            }]);
-        }
-        for (key, value) in [
-            ("congestion-controller", "cubic"),
-            ("udp-relay-mode", "native"),
-        ] {
-            if !truthy(&proxy[key]) {
-                proxy[key] = json!(value);
-            }
-        }
-    }
-    if proxy["type"] == "wireguard" {
-        normalize_wireguard(proxy);
-    }
     if proxy["type"] == "vless" {
         for key in ["reality-opts", "grpc-opts"] {
             if proxy[key].as_object().is_some_and(Map::is_empty) {
@@ -2415,9 +2426,9 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
         {
             proxy.as_object_mut().unwrap().shift_remove("flow");
         }
-    }
-    if proxy["type"] == "anytls" && truthy(&proxy["disable-reuse"]) {
-        proxy["reuse"] = json!(false);
+        if proxy["network"] == "http" && !truthy(&proxy["http-opts"]["path"]) {
+            proxy["http-opts"]["path"] = json!(["/"]);
+        }
     }
     if !proxy["name"].is_string() {
         let raw = field_text(proxy, "name");
@@ -2453,6 +2464,78 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
                 field_text(proxy, "port")
             )));
         }
+    }
+    if proxy["type"] != "masque" {
+        let network = proxy["network"].as_str().unwrap_or("").to_owned();
+        let key = format!("{network}-opts");
+        if ["ws", "h2"].contains(&network.as_str()) && !truthy(&proxy[&key]["path"]) {
+            proxy[&key]["path"] = json!("/");
+        } else if network == "http"
+            && proxy[&key]["path"]
+                .as_array()
+                .is_none_or(|paths| paths.iter().all(|path| !truthy(path)))
+        {
+            proxy[&key]["path"] = json!(["/"]);
+        }
+    }
+    if proxy["type"] == "anytls" && truthy(&proxy["disable-reuse"]) {
+        proxy["reuse"] = json!(false);
+    }
+    if matches!(proxy["sni"].as_str(), Some("" | "off")) {
+        proxy["disable-sni"] = json!(true);
+    }
+    if proxy["type"] == "tuic" {
+        if !proxy["alpn"].is_array() {
+            proxy["alpn"] = json!([if truthy(&proxy["alpn"]) {
+                proxy["alpn"].clone()
+            } else {
+                json!("h3")
+            }]);
+        }
+        for (key, value) in [
+            ("congestion-controller", "cubic"),
+            ("udp-relay-mode", "native"),
+        ] {
+            if !truthy(&proxy[key]) {
+                proxy[key] = json!(value);
+            }
+        }
+    }
+    if proxy["type"] == "wireguard" {
+        if let Some(peers) = proxy["peers"].as_array().filter(|peers| !peers.is_empty()) {
+            let mut valid = false;
+            for both in [true, false] {
+                for peer in peers {
+                    if peer.is_null() {
+                        return Err(Error::Legacy(
+                            "Cannot read properties of null (reading 'ip')".to_owned(),
+                        ));
+                    }
+                    let ip = truthy(&peer["ip"]);
+                    let ipv6 = truthy(&peer["ipv6"]);
+                    if if both { ip && ipv6 } else { ip || ipv6 } {
+                        valid = true;
+                        break;
+                    }
+                }
+                if valid {
+                    break;
+                }
+            }
+            let first = peers[0].clone();
+            if valid {
+                for key in ["ip", "ipv6"] {
+                    if !truthy(&proxy[key]) {
+                        if let Some(value) = first.get(key) {
+                            proxy[key] = value.clone();
+                        } else {
+                            proxy.as_object_mut().unwrap().shift_remove(key);
+                        }
+                    }
+                }
+            }
+        }
+        normalize_wireguard(proxy);
     }
     Ok(())
 }
@@ -3517,30 +3600,76 @@ fn uri(proxy: &Value) -> Option<String> {
     Some(output)
 }
 
-pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str) -> Result<Value, Error> {
-    match target {
-        "json" | "JSON" | "uri" | "URI" | "v2" | "v2ray" | "V2Ray" => {}
-        "qx" | "QX" | "QuantumultX" | "surge" | "Surge" | "SurgeMac" | "Loon" | "Clash"
-        | "meta" | "clashmeta" | "clash.meta" | "Clash.Meta" | "ClashMeta" | "mihomo"
-        | "Mihomo" | "stash" | "Stash" | "shadowrocket" | "Shadowrocket" | "ShadowRocket"
-        | "surfboard" | "Surfboard" | "singbox" | "sing-box" | "egern" | "Egern" => {
-            return Err(Error::Pending("This output format is not implemented yet"));
+pub fn produce(
+    mut proxies: Vec<Value>,
+    target: &str,
+    kind: &str,
+    opts: &Value,
+) -> Result<Value, Error> {
+    use crate::clash_output::Family;
+    let family = match target {
+        "Clash" => Some(Family::Clash),
+        "meta" | "clashmeta" | "clash.meta" | "Clash.Meta" | "ClashMeta" | "mihomo" | "Mihomo" => {
+            Some(Family::Meta)
         }
+        "stash" | "Stash" => Some(Family::Stash),
+        "shadowrocket" | "Shadowrocket" | "ShadowRocket" => Some(Family::Shadowrocket),
+        _ => None,
+    };
+    match target {
+        "json" | "JSON" | "uri" | "URI" | "v2" | "v2ray" | "V2Ray" | "qx" | "QX"
+        | "QuantumultX" | "Loon" | "surge" | "Surge" | "SurgeMac" | "surfboard" | "Surfboard"
+        | "egern" | "Egern" | "singbox" | "sing-box" => {}
+        _ if family.is_some() => {}
         _ => {
             return Err(Error::Legacy(format!(
                 "Target platform: {target} is not supported!"
             )));
         }
     }
+    if opts.is_null() && !proxies.is_empty() {
+        return Err(Error::Legacy(
+            "Cannot read properties of null (reading 'include-unsupported-proxy')".to_owned(),
+        ));
+    }
+    let normalized_target = target.to_lowercase();
+    let include_unsupported = truthy(&opts["include-unsupported-proxy"]);
     proxies.retain(|proxy| {
-        if proxy["type"] == "ss"
-            && proxy["tls"] == true
-            && proxy.get("plugin").is_none_or(Value::is_null)
-            && proxy["network"]
-                .as_str()
-                .is_none_or(|network| codec::trim(network).eq_ignore_ascii_case("tcp"))
-        {
-            return false;
+        if !include_unsupported {
+            if proxy["supported"][target] == false {
+                return false;
+            }
+            let root_headers = proxy["headers"]
+                .as_object()
+                .is_some_and(|headers| !headers.is_empty())
+                || proxy["headers"]
+                    .as_array()
+                    .is_some_and(|headers| !headers.is_empty());
+            let header_sensitive = matches!(
+                proxy["type"].as_str(),
+                Some("http" | "h2-connect" | "trusttunnel")
+            );
+            let supports_headers = normalized_target.starts_with("surge")
+                || normalized_target == "json"
+                || (proxy["type"] == "http"
+                    && [
+                        "egern",
+                        "meta",
+                        "clashmeta",
+                        "clash.meta",
+                        "mihomo",
+                        "singbox",
+                        "sing-box",
+                    ]
+                    .contains(&normalized_target.as_str()));
+            if root_headers && header_sensitive && !supports_headers {
+                return false;
+            }
+            if ss_over_tls(proxy)
+                && !["qx", "quantumultx", "shadowrocket"].contains(&normalized_target.as_str())
+            {
+                return false;
+            }
         }
         if proxy["type"] == "vless" {
             let options = &proxy["xhttp-opts"];
@@ -3567,6 +3696,11 @@ pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str) -> Result<Valu
         true
     });
     for proxy in &mut proxies {
+        if let Some(resolved) = proxy.get("resolved").cloned() {
+            proxy["_resolved"] = resolved;
+        } else {
+            proxy.as_object_mut().unwrap().shift_remove("_resolved");
+        }
         if proxy["name"]
             .as_str()
             .is_none_or(|name| codec::trim(name).is_empty())
@@ -3578,12 +3712,18 @@ pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str) -> Result<Valu
                 field_text(proxy, "port")
             ));
         }
-        if truthy(&proxy["disable-sni"]) && proxy["type"] != "tuic" {
-            proxy["sni"] = json!(if proxy["server"].as_str().is_some_and(is_ip) {
-                field_text(proxy, "server")
-            } else {
-                "127.0.0.1".to_owned()
-            });
+        if truthy(&proxy["disable-sni"]) {
+            if ["surge", "surgemac", "shadowrocket"].contains(&normalized_target.as_str()) {
+                proxy["sni"] = json!("off");
+            } else if proxy["type"] != "tuic"
+                && !["singbox", "sing-box"].contains(&normalized_target.as_str())
+            {
+                proxy["sni"] = json!(if proxy["server"].as_str().is_some_and(is_ip) {
+                    field_text(proxy, "server")
+                } else {
+                    "127.0.0.1".to_owned()
+                });
+            }
         }
         if truthy(&proxy["ports"]) && !truthy(&proxy["port"]) {
             proxy["port"] = random_port(&field_text(proxy, "ports"))?;
@@ -3591,6 +3731,24 @@ pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str) -> Result<Valu
         if proxy["type"] == "wireguard" {
             normalize_wireguard(proxy);
         }
+    }
+    if let Some(family) = family {
+        return crate::clash_output::produce(proxies, kind, opts, family);
+    }
+    if matches!(target, "qx" | "QX" | "QuantumultX" | "Loon") {
+        return crate::text_output::produce(&proxies, kind, opts, target == "Loon");
+    }
+    if matches!(
+        target,
+        "surge" | "Surge" | "SurgeMac" | "surfboard" | "Surfboard"
+    ) {
+        return crate::surge_output::produce(proxies, target, kind, opts);
+    }
+    if matches!(target, "egern" | "Egern") {
+        return crate::egern_output::produce(proxies, kind, opts);
+    }
+    if matches!(target, "singbox" | "sing-box") {
+        return crate::singbox_output::produce(proxies, kind, opts);
     }
     if matches!(target, "json" | "JSON") {
         let value = Value::Array(proxies);
