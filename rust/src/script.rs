@@ -375,6 +375,12 @@ async fn apply_script<'js>(
     } else {
         js.json_clone(input.clone())?
     };
+    if !filter && crate::script_pipeline::mihomo(js, &js.call::<JsValue, _>("optional", (output.clone(), "$file"))?)? {
+        match crate::script_pipeline::patch(js, &output, js.value(script.clone())?) {
+            Ok(value) => return Ok(value),
+            Err(_) => { js.ctx.catch(); }
+        }
+    }
     let first = invoke(js, entry, &script, arguments.clone(), scope, output.clone()).await;
     match first {
         Ok(result) => {
@@ -397,8 +403,11 @@ async fn apply_script<'js>(
                     "async function filter(input = [], targetPlatform, context) {{ let list = []; const fn = async ($server) => {{ {script}\n }}; for await (let $server of input) list.push(await fn($server)); return list; }}"
                 )
             } else {
+                let main = if crate::script_pipeline::mihomo(js, &js.call::<JsValue, _>("optional", (output.clone(), "$file"))?)? {
+                    "if (typeof main === 'function') $content = await __fileMain(main, $content);"
+                } else { "" };
                 format!(
-                    "async function operator(input = [], targetPlatform, context) {{ if (input && (input.$files || input.$content)) {{ let {{$content,$files,$options,$file}} = input; {script}\n return {{$content,$files,$options,$file}}; }} let list = []; for await (let $server of input) {{ {script}\n list.push($server); }} return list; }}"
+                    "async function operator(input = [], targetPlatform, context) {{ if (input && (input.$files || input.$content)) {{ let {{$content,$files,$options,$file}} = input; {script}\n {main} return {{$content,$files,$options,$file}}; }} let list = []; for await (let $server of input) {{ {script}\n list.push($server); }} return list; }}"
                 )
             };
             match invoke(js, entry, &shortcut, arguments, scope, output.clone()).await {
@@ -530,12 +539,25 @@ async fn process<'js>(
                     return Err(js.error(&format!("{label} 执行 function {entry} 失败 {reason}; 执行快捷{}脚本 失败 {fallback}", if name.contains("Filter") { "过滤" } else { "" })));
                 }
             };
-        } else if [
-            "Resolve Domain Operator",
-            "Add Proxies From Subscription Operator",
-        ]
-        .contains(&name.as_str())
-        {
+        } else if name == "Add Proxies From Subscription Operator" {
+            let output = js.json_clone(input)?;
+            let args = crate::script_network::prefer(js, [js.get(&item, "args")?, Object::new(js.ctx.clone())?.into_value()])?;
+            match crate::script_pipeline::add(js, output.clone(), args.clone(), scope.execution.clone()).await {
+                Ok(value) => input = value,
+                Err(error) => {
+                    let first = message(&js.ctx, error);
+                    match crate::script_pipeline::add(js, output, args, scope.execution.clone()).await {
+                        Ok(value) => input = value,
+                        Err(error) => {
+                            let second = message(&js.ctx, error);
+                            let detail = if first == second { format!("执行失败 {first}") }
+                                else { format!("执行 function operator 失败 {first}; 执行快捷脚本 失败 {second}") };
+                            return Err(js.error(&format!("脚本操作 {detail}")));
+                        }
+                    }
+                }
+            }
+        } else if name == "Resolve Domain Operator" {
             return Err(js.error(&format!("{name} is not implemented yet")));
         }
     }

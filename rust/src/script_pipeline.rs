@@ -182,6 +182,219 @@ async fn empty<'js>(js: &Js<'js>, options: &Value<'js>) -> rquickjs::Result<Valu
     utility(js, "produce", vec![js.array([])?, network::prefer(js, [optional(js, options, "platform")?, js.value("JSON")?])?, optional(js, options, "produceType")?, optional(js, options, "produceOpts")?]).await
 }
 
+pub(crate) fn mihomo<'js>(js: &Js<'js>, file: &Value<'js>) -> rquickjs::Result<bool> {
+    let kind = optional(js, file, "type")?;
+    Ok(js.equal(&kind, &js.value("mihomoConfig")?)? || js.equal(&kind, &js.value("mihomoProfile")?)?)
+}
+
+fn yaml<'js>(js: &Js<'js>, method: &str, value: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    let utils: Value = js.ctx.globals().get("ProxyUtils")?;
+    js.method(js.get(&utils, "yaml")?, method, vec![value])
+}
+
+pub(crate) fn normalize_yaml<'js>(js: &Js<'js>, raw: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    if !raw.is_string() { return Ok(raw); }
+    let text = js.text(raw.clone())?;
+    if !text.contains("proxies:") || !text.contains("short-id:") { return Ok(raw); }
+    let valid = (|| {
+        let parsed = yaml(js, "safeLoad", raw.clone())?;
+        let proxies = js.get(&parsed, "proxies")?;
+        Ok::<_, rquickjs::Error>(proxies.is_array() && js.truthy(&js.get(&proxies, "length")?)?)
+    })();
+    match valid {
+        Ok(true) => js.value(crate::clash::short_ids(&text)),
+        Ok(false) => Ok(raw),
+        Err(_) => { js.ctx.catch(); Ok(raw) }
+    }
+}
+
+fn plain<'js>(js: &Js<'js>, value: Value<'js>) -> rquickjs::Result<bool> {
+    let lodash: Value = js.ctx.globals().get("lodash")?;
+    js.truthy(&js.method(lodash, "isPlainObject", vec![value])?)
+}
+
+pub(crate) fn merge<'js>(js: &Js<'js>, target: Value<'js>, other: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    let other = if other.is_string() { js.call("jsonParse", (other,))? } else { other };
+    let keys: Vec<String> = js.call("keysIn", (other.clone(),))?;
+    let trim = |key: &str| key.strip_prefix('<').and_then(|key| key.strip_suffix('>')).unwrap_or(key).to_owned();
+    for key in keys {
+        let value = js.get(&other, &key)?;
+        if plain(js, value.clone())? {
+            if let Some(key) = key.strip_suffix('!') { js.set(&target, &trim(key), value)?; }
+            else {
+                let key = trim(&key);
+                let old = network::prefer(js, [js.get(&target, &key)?, object(js)?])?;
+                js.set(&target, &key, old.clone())?;
+                merge(js, old, value)?;
+            }
+        } else if value.is_array() {
+            let front = key.starts_with('+');
+            let back = key.ends_with('+');
+            let actual = trim(if front { &key[1..] } else if back { &key[..key.len()-1] } else { &key });
+            let value = if front || back {
+                let old = network::prefer(js, [js.get(&target, &actual)?, js.array([])?])?;
+                let a: Vec<Value> = js.call("iterable", (if front { value.clone() } else { old.clone() },))?;
+                let b: Vec<Value> = js.call("iterable", (if front { old } else { value },))?;
+                js.array(a.into_iter().chain(b))?
+            } else { value };
+            js.set(&target, &actual, value)?;
+        } else { js.set(&target, &key, value)?; }
+    }
+    Ok(target)
+}
+
+pub(crate) fn patch<'js>(js: &Js<'js>, input: &Value<'js>, script: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    let patch = yaml(js, "safeLoad", script)?;
+    if js.call::<String, _>("typeOf", (patch.clone(),))? != "object" { return Err(js.error("patch is not an object")); }
+    let content = optional(js, input, "$content")?;
+    let mut config = object(js)?;
+    if js.truthy(&content)? {
+        match yaml(js, "safeLoad", content) {
+            Ok(value) => config = network::prefer(js, [value, object(js)?])?,
+            Err(error) => eprintln!("[sub-store:error] {}", script::message(&js.ctx, error)),
+        }
+    }
+    let merged = merge(js, config, patch)?;
+    js.set(input, "$content", yaml(js, "safeDump", merged)?)?;
+    Ok(input.clone())
+}
+
+async fn file_raw<'js>(js: &Js<'js>, file: Value<'js>, options: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    let content = optional(js, &options, "content")?;
+    let override_merge = optional(js, &options, "mergeSources")?;
+    if js.truthy(&content)? && !merge_mode(js, override_merge.clone())? { return Ok(content); }
+    let url = optional(js, &options, "url")?;
+    let override_url = js.truthy(&url)?;
+    let merge = if override_url { override_merge } else { js.get(&file, "mergeSources")? };
+    let source = if mihomo(js, &file)? {
+        let source = js.get(&file, "sourceType")?;
+        if matches!(js.text(source.clone())?.as_str(), "collection" | "local" | "none" | "remote" | "subscription") { source } else { js.value("collection")? }
+    } else { js.get(&file, "source")? };
+    if !override_url && js.equal(&source, &js.value("local")?)? && !merge_mode(js, merge.clone())? { return js.get(&file, "content"); }
+    let raw_url = network::prefer(js, [if override_url { url } else { js.get(&file, "url")? }, js.value("")?])?;
+    let lines = js.method(js.value(js.text(raw_url)?)?, "split", vec![js.call("regex", (r"[\r\n]+", ""))?])?;
+    let scope = js.clone();
+    let lines = js.map(lines, move |value| scope.method(value, "trim", vec![]))?;
+    let scope = js.clone();
+    let lines = js.filter(lines, move |value, _| scope.truthy(&value))?;
+    if !js.truthy(&js.get(&lines, "length")?)? { return Err(js.error(&format!("文件 {} 未配置远程文件 URL", js.text(js.get(&file, "name")?)?))); }
+    let errors = object(js)?;
+    let mut pending = Vec::new();
+    let lines: Vec<Value> = js.call("iterable", (lines,))?;
+    for url in lines {
+        let worker = js.clone();
+        let errors = errors.clone();
+        let download_options = object(js)?;
+        js.set(&download_options, "noFlow", optional(js, &options, "noFlow")?)?;
+        let args = vec![url.clone(), network::prefer(js, [optional(js, &options, "ua")?, js.get(&file, "ua")?])?, js.undefined(), network::prefer(js, [js.get(&file, "proxy")?, optional(js, &options, "proxy")?])?, js.undefined(), js.undefined(), network::prefer(js, [optional(js, &options, "noCache")?, js.get(&file, "noCache")?])?, js.undefined(), download_options];
+        pending.push(Promise::wrap_future(&js.ctx, async move {
+            match utility(&worker, "download", args).await {
+                Ok(value) => Ok(value),
+                Err(error) => {
+                    eprintln!("[sub-store:error] {}", script::message(&worker.ctx, error));
+                    worker.set(&errors, &worker.text(url)?, worker.value(true)?)?;
+                    worker.value("")
+                }
+            }
+        })?.into_value());
+    }
+    let raw = all(js, pending).await?;
+    let entries: Vec<Value> = js.call("iterable", (js.call::<Value, _>("entries", (errors,))?,))?;
+    if !entries.is_empty() {
+        let override_ignore = optional(js, &options, "ignoreFailedRemoteFile")?;
+        let ignore = if nullish(&override_ignore) || js.equal(&override_ignore, &js.value("")?)? { js.get(&file, "ignoreFailedRemoteFile")? } else { override_ignore };
+        let mut urls = Vec::new();
+        for entry in entries { urls.push(script_download::mask_url(js, js.get(&entry, "0")?)?); }
+        let message = format!("文件 {} 的远程文件 {} 发生错误, 请查看日志", js.text(js.get(&file, "name")?)?, urls.join(", "));
+        if !js.truthy(&ignore)? { return Err(js.error(&message)); }
+        if js.equal(&ignore, &js.value("enabled")?)? { eprintln!("[sub-store:notify] {message}"); }
+    }
+    let content = if override_url { content } else { js.get(&file, "content")? };
+    if js.equal(&merge, &js.value("localFirst")?)? { js.method(raw.clone(), "unshift", vec![content])?; }
+    else if js.equal(&merge, &js.value("remoteFirst")?)? { js.method(raw.clone(), "push", vec![content])?; }
+    Ok(raw)
+}
+
+fn raw_files<'js>(js: &Js<'js>, raw: Value<'js>) -> rquickjs::Result<Value<'js>> { js.method(array(js, raw)?, "flat", vec![]) }
+
+fn join_files<'js>(js: &Js<'js>, raw: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    let scope = js.clone();
+    let files = js.filter(raw_files(js, raw)?, move |value, _| Ok(!nullish(&value) && !scope.equal(&value, &scope.value("")?)?))?;
+    js.method(files, "join", vec![js.value("\n")?])
+}
+
+async fn file<'js>(js: &Js<'js>, file: Value<'js>, options: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    let raw = if mihomo(js, &file)? {
+        let source = js.text(js.get(&file, "sourceType")?)?;
+        let source = if matches!(source.as_str(), "collection" | "local" | "none" | "remote" | "subscription") { source.as_str() } else { "collection" };
+        let config = object(js)?;
+        if source == "none" { yaml(js, "safeDump", config)? }
+        else if matches!(source, "local" | "remote") {
+            let raw = file_raw(js, file.clone(), options.clone()).await?;
+            if !js.equal(&js.get(&file, "mode")?, &js.value("proxy")?)? { join_files(js, raw)? }
+            else {
+                let proxies = parse(js, raw_files(js, raw)?)?;
+                if !js.truthy(&js.get(&proxies, "length")?)? { return Err(js.error(&format!("文件 {} 中不含有效节点", js.text(js.get(&file, "name")?)?))); }
+                let produce_options = object(js)?;
+                js.set(&produce_options, "delete-underscore-fields", js.value(true)?)?;
+                js.set(&produce_options, "include-unsupported-proxy", js.get(&file, "includeUnsupportedProxy")?)?;
+                js.set(&config, "proxies", utility(js, "produce", vec![proxies, js.value("mihomo")?, js.value("internal")?, produce_options]).await?)?;
+                yaml(js, "safeDump", config)?
+            }
+        } else {
+            let args = object(js)?;
+            for (name, value) in [("type", js.value(source)?), ("name", js.get(&file, "sourceName")?), ("platform", js.value("mihomo")?), ("produceType", js.value("internal")?), ("noFlow", optional(js, &options, "noFlow")?)] { js.set(&args, name, value)?; }
+            let produce_options = object(js)?;
+            js.set(&produce_options, "delete-underscore-fields", js.value(true)?)?;
+            js.set(&produce_options, "include-unsupported-proxy", js.get(&file, "includeUnsupportedProxy")?)?;
+            js.set(&args, "produceOpts", produce_options)?;
+            let generate: Function = js.ctx.globals().get("produceArtifact")?;
+            let proxies = script::settled(js, generate.call((args,))?).await?;
+            js.set(&config, "proxies", proxies)?;
+            yaml(js, "safeDump", config)?
+        }
+    } else { file_raw(js, file.clone(), options.clone()).await? };
+    let files = raw_files(js, raw)?;
+    if js.equal(&optional(js, &options, "produceType")?, &js.value("raw")?)? {
+        return Ok(js.ctx.json_stringify(files)?.ok_or_else(|| js.error("Cannot stringify raw files"))?.into_value());
+    }
+    let input = object(js)?;
+    js.set(&input, "$files", files.clone())?;
+    js.set(&input, "$content", join_files(js, files)?)?;
+    js.set(&input, "$options", optional(js, &options, "$options")?)?;
+    let items = js.get(&file, "process")?;
+    let processed = if items.is_array() && js.truthy(&js.get(&items, "length")?)? {
+        js.set(&input, "$file", file)?;
+        let execution = object(js)?;
+        js.set(&execution, "noFlow", optional(js, &options, "noFlow")?)?;
+        utility(js, "process", vec![input, items, js.undefined(), js.undefined(), js.undefined(), js.undefined(), execution]).await?
+    } else {
+        let plain = object(js)?;
+        js.set(&plain, "$content", js.get(&input, "$content")?)?;
+        js.set(&plain, "$files", js.get(&input, "$files")?)?;
+        js.set(&plain, "$options", optional(js, &options, "$options")?)?;
+        plain
+    };
+    let content = optional(js, &processed, "$content")?;
+    js.set(&processed, "$content", normalize_yaml(js, if nullish(&content) { js.value("")? } else { content })?)?;
+    if js.truthy(&optional(js, &options, "all")?)? { Ok(processed) } else { optional(js, &processed, "$content") }
+}
+
+async fn file_main<'js>(ctx: Ctx<'js>, main: Function<'js>, content: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    let js = Js::new(ctx);
+    let config = if js.truthy(&content)? {
+        match yaml(&js, "safeLoad", content) {
+            Ok(value) => network::prefer(&js, [value, object(&js)?])?,
+            Err(error) => {
+                eprintln!("[sub-store:error] {}", script::message(&js.ctx, error));
+                object(&js)?
+            }
+        }
+    } else { object(&js)? };
+    let value = script::settled(&js, main.call((config,))?).await?;
+    yaml(&js, "safeDump", value)
+}
+
 async fn subscription<'js>(js: &Js<'js>, sub: Value<'js>, options: Value<'js>, preview: bool) -> rquickjs::Result<Value<'js>> {
     let resolved = mode(js, [optional(js, &options, "ignoreFailedRemoteSub")?, js.get(&sub, "ignoreFailedRemoteSub")?])?;
     let mut source_raw = js.array([])?;
@@ -346,6 +559,39 @@ pub(crate) async fn generate<'js>(js: &Js<'js>, kind: &str, item: Value<'js>, op
     else { subscription(js, item, options, false).await }
 }
 
+pub(crate) async fn add<'js>(js: &Js<'js>, input: Value<'js>, args: Value<'js>, execution: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    if !mihomo(js, &optional(js, &input, "$file")?)? { return Ok(input); }
+    let content = js.get(&input, "$content")?;
+    let config = if js.truthy(&content)? {
+        let value = yaml(js, "safeLoad", content)?;
+        if plain(js, value.clone())? { value } else { object(js)? }
+    } else { object(js)? };
+    let existing = optional(js, &config, "proxies")?;
+    let existing = if existing.is_array() { existing } else { js.array([])? };
+    let options = object(js)?;
+    let kind = js.get(&args, "sourceType")?;
+    js.set(&options, "type", if kind.is_undefined() { js.value("subscription")? } else { kind })?;
+    js.set(&options, "name", js.get(&args, "sourceName")?)?;
+    js.set(&options, "platform", js.value("mihomo")?)?;
+    js.set(&options, "produceType", js.value("internal")?)?;
+    js.set(&options, "noFlow", optional(js, &execution, "noFlow")?)?;
+    let produce = object(js)?;
+    js.set(&produce, "delete-underscore-fields", js.value(true)?)?;
+    js.set(&produce, "include-unsupported-proxy", js.get(&args, "includeUnsupportedProxy")?)?;
+    js.set(&options, "produceOpts", produce)?;
+    let generate: Function = js.ctx.globals().get("produceArtifact")?;
+    let proxies = script::settled(js, generate.call((options,))?).await?;
+    let position = js.text(js.get(&args, "position")?)?;
+    let result = if matches!(position.as_str(), "front" | "back") {
+        let a: Vec<Value> = js.call("iterable", (if position == "front" { proxies.clone() } else { existing.clone() },))?;
+        let b: Vec<Value> = js.call("iterable", (if position == "front" { existing } else { proxies },))?;
+        js.array(a.into_iter().chain(b))?
+    } else { proxies };
+    js.set(&config, "proxies", result)?;
+    js.set(&input, "$content", yaml(js, "safeDump", config)?)?;
+    Ok(input)
+}
+
 async fn artifact<'js>(ctx: Ctx<'js>, options: Value<'js>) -> rquickjs::Result<Value<'js>> {
     let js = Js::new(ctx);
     let kind = js.text(js.get(&options, "type")?)?;
@@ -368,11 +614,22 @@ async fn artifact<'js>(ctx: Ctx<'js>, options: Value<'js>) -> rquickjs::Result<V
             if !js.truthy(&col)? { return Err(js.error(&format!("找不到组合订阅 {}", js.text(name)?))); }
             collection(&js, col, options, false).await
         }
-        // File and rule generators join their existing native owners in this module.
+        "file" => {
+            let file = js.get(&options, "file")?;
+            let file = if js.truthy(&file)? { file } else { find(&js, read(&js, "files")?, name.clone())? };
+            if !js.truthy(&file)? { return Err(js.error(&format!("找不到文件 {}", js.text(name)?))); }
+            let file = if js.equal(&js.get(&file, "type")?, &js.value("mihomoProfile")?)? {
+                let copy = js.call("spread", (object(&js)?, file))?;
+                js.set(&copy, "type", js.value("mihomoConfig")?)?;
+                copy
+            } else { file };
+            self::file(&js, file, options).await
+        }
         _ => Ok(js.undefined()),
     }
 }
 
 pub(crate) fn initialize<'js>(ctx: &Ctx<'js>) -> rquickjs::Result<()> {
+    ctx.globals().set("__fileMain", Func::from(Async(file_main)))?;
     ctx.globals().set("produceArtifact", Func::from(Async(artifact)))
 }

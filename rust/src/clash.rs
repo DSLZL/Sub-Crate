@@ -38,7 +38,7 @@ fn yaml<'js>(ctx: &Ctx<'js>, raw: &str) -> rquickjs::Result<JsValue<'js>> {
     }
 }
 
-fn short_ids(raw: &str) -> String {
+pub(crate) fn short_ids(raw: &str) -> String {
     let mut output = String::new();
     let mut remaining = raw;
     while let Some((before, tail)) = remaining.split_once("short-id:") {

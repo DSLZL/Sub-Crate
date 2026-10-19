@@ -751,12 +751,17 @@ fn api_path(raw: &str) -> Result<Option<String>, ()> {
         }
         ["", download, collection, name]
             if download.eq_ignore_ascii_case("download")
-                && collection.eq_ignore_ascii_case("collection") && !name.is_empty() => {
+                && collection.eq_ignore_ascii_case("collection")
+                && !name.is_empty() =>
+        {
             Some(format!("/download/collection/{name}"))
         }
         ["", download, collection, name, target]
             if download.eq_ignore_ascii_case("download")
-                && collection.eq_ignore_ascii_case("collection") && !name.is_empty() && !target.is_empty() => {
+                && collection.eq_ignore_ascii_case("collection")
+                && !name.is_empty()
+                && !target.is_empty() =>
+        {
             Some(format!("/download/collection/{name}/{target}"))
         }
         ["", download, name, target]

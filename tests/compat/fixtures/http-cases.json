@@ -1118,7 +1118,7 @@
       },
       {
         "expect": {
-          "body": "ss://YWVzLTEyOC1nY206cGFzcw==@a.invalid:8388#a-col\nss://YWVzLTEyOC1nY206cGFzcw==@b.invalid:8388#b-col",
+          "body": "ss://YWVzLTEyOC1nY206cGFzcw==@a.invalid:8388?udp=1#a-col\nss://YWVzLTEyOC1nY206cGFzcw==@b.invalid:8388?udp=1#b-col",
           "status": 200
         },
         "path": "/download/collection/m3-pipeline-http-col/URI",
@@ -1155,6 +1155,48 @@
         },
         "path": "/api/sub/m3-pipeline-http-b?mode=permanent",
         "method": "DELETE"
+      }
+    ]
+  },
+  {
+    "id": "PC-native-generated-file-pipeline",
+    "source": "sync produceArtifact file, Script Operator YAML patch/main and Add Proxies From Subscription Operator; invoked from ordinary script processor",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/preview/sub",
+        "body": {
+          "process": [
+            {
+              "type": "Script Operator",
+              "args": {
+                "content": "async function operator(proxies) {\n  const assert=(value,message)=>{if(!value)throw new Error(message);};\n  const equal=(actual,expected,message)=>assert(JSON.stringify(actual)===JSON.stringify(expected),message+': '+JSON.stringify({actual,expected}));\n  const rejects=async(callback,message)=>{try{await callback();}catch(error){assert(error.message.includes(message),'file error '+error.message);return;}throw new Error('expected '+message);};\n  const savedFiles=$substore.read('files'),savedSubs=$substore.read('subs'),DateBefore=Date;\n  globalThis.Date=class extends DateBefore {constructor(...args){super(...(args.length?args:[3400000000000]));}static now(){return 3400000000000;}};\n  const passed=[],results={};\n  const check=async(id,callback)=>{results[id]=await callback();passed.push(id);};\n  const produce=options=>produceArtifact({type:'file',noFlow:true,...options});\n  const local='ss://YWVzLTEyOC1nY206cGFzcw==@file.invalid:8388#file-node';\n  const yaml=ProxyUtils.yaml;\n  try {\n    await check('FL-native-local-raw-array-join-and-output-fields',async()=>{\n      const file={name:'text',source:'local',content:[['a',null],0,false,'']};\n      equal(await produce({file}),'a\\n0\\nfalse','one-level flatten and join');\n      equal(await produce({file,produceType:'raw'}),JSON.stringify(['a',null,0,false,'']),'raw before processing');\n      const output=await produce({file,all:true});\n      equal(output,{$content:'a\\n0\\nfalse',$files:['a',null,0,false,'']},'unprocessed file fields');\n      assert(!Object.hasOwn(output,'$file'),'unprocessed output omits file');\n      equal(await produce({file,content:'override'}),'override','content override');\n      await rejects(()=>produce({name:'missing'}),'找不到文件 missing');\n      await rejects(()=>produce({file:{name:'missing-url',source:'remote',url:''}}),'未配置远程文件 URL');\n      return output;\n    });\n    await check('FL-native-full-shortcut-options-and-unknown-fields',async()=>{\n      const file={name:'script',source:'local',content:'base',unknown:{zero:0,flag:false},process:[{type:'Script Operator',args:{content:`$content += '-shortcut'; if($options.zero!==0||$file.unknown.flag!==false)throw new Error('file bindings');`}},\n        {type:'Script Operator',args:{content:'async function operator(input){await $substore.wait(1);input.$content+=\"-full\";return input;}'}}]};\n      const output=await produce({file,all:true,$options:{zero:0}});\n      equal(output.$content,'base-shortcut-full','both script entries');\n      equal([output.$options,output.$file.unknown],[{zero:0},{zero:0,flag:false}],'local file options');\n      return output;\n    });\n    await check('FL-native-generated-file-script-loading-and-arguments',async()=>{\n      const file={name:'script-native',source:'local',content:'function operator(items){items[0].name += $arguments.suffix;return items;}'};\n      $substore.write([file],'files');\n      const result=await ProxyUtils.process([{name:'base'}],[{type:'Script Operator',args:{mode:'link',content:'/api/file/script-native#suffix='+encodeURIComponent('-文件🙂')}}]);\n      equal(result,[{name:'base-文件🙂'}],'generated file as source');\n      return result;\n    });\n    await check('FL-native-mihomo-source-and-legacy-type',async()=>{\n      const file={name:'mihomo',type:'mihomoProfile',sourceType:'local',mode:'proxy',content:local};\n      const output=await produce({file});\n      const parsed=yaml.safeLoad(output);\n      equal(parsed.proxies.map(item=>item.name),['file-node'],'proxy-only mode');\n      assert(!Object.keys(parsed.proxies[0]).some(key=>key.startsWith('_')),'generated metadata removed');\n      equal(await produce({file:{...file,sourceType:'none'}}),'{}\\n','none source');\n      const processed=await produce({file:{...file,mode:'text',content:'keep: true\\n',process:[{type:'Script Operator',args:{content:'function operator(input){input.$content+=\"type: \"+input.$file.type+\"\\\\n\";return input;}'}}]},all:true});\n      equal(yaml.safeLoad(processed.$content),{keep:true,type:'mihomoConfig'},'legacy type normalized before processing');\n      return {parsed,processed};\n    });\n    await check('FL-native-mihomo-yaml-patch-main-and-short-id',async()=>{\n      const file={name:'patch',type:'mihomoConfig',sourceType:'local',content:'items: [old]\\nnested: {keep: {old: true}, zero: 1}\\n'};\n      const patch='nested:\\n  keep!: {fresh: true}\\n  zero: 0\\n+items: [front]\\nitems+: [back]\\n<literal>: false\\n';\n      const output=await produce({file:{...file,process:[{type:'Script Operator',args:{content:patch}}]}});\n      equal(yaml.safeLoad(output),{items:['front','old','back'],nested:{keep:{fresh:true},zero:0},'<literal>':false},'patch recursion and prepend/append');\n      const main=await produce({file:{...file,process:[{type:'Script Operator',args:{content:'async function main(config){await $substore.wait(1);config.main=false;return config;}'}}]}});\n      equal(yaml.safeLoad(main),{items:['old'],nested:{keep:{old:true},zero:1},main:false},'async main');\n      const reality='proxies:\\n  - {name: node, type: vless, reality-opts: {short-id: 0088}}\\n';\n      const normalized=await produce({file:{...file,content:reality}});\n      assert(normalized.includes('short-id: \"0088\"'),'short ID keeps leading zeroes');\n      return {output,main,normalized};\n    });\n    await check('FL-native-add-subscription-proxies-positions-and-skip',async()=>{\n      $substore.write([{name:'add-native',source:'local',content:local}],'subs');\n      const file={name:'add',type:'mihomoConfig',sourceType:'local',content:'proxies: [{name: existing, type: direct}]\\n'};\n      const outputs={};\n      for(const position of ['front','back','replace']) {\n        const output=await produce({file:{...file,process:[{type:'Add Proxies From Subscription Operator',args:{sourceName:'add-native',position}}]}});\n        outputs[position]=yaml.safeLoad(output).proxies.map(item=>item.name);\n      }\n      equal(outputs,{front:['file-node','existing'],back:['existing','file-node'],replace:['file-node']},'Add positions');\n      equal(await ProxyUtils.process([{name:'unchanged'}],[{type:'Add Proxies From Subscription Operator',args:{sourceName:'missing'}}]),[{name:'unchanged'}],'non-file input skips generator');\n      return outputs;\n    });\n    proxies[0].filePipelineVerified=passed;proxies[0].filePipelineResults=results;return proxies;\n  } finally {$substore.write(savedFiles,'files');$substore.write(savedSubs,'subs');globalThis.Date=DateBefore;}\n}\n"
+              }
+            }
+          ],
+          "name": "file-pipeline-native",
+          "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#pipeline",
+          "source": "local"
+        },
+        "expect": {
+          "json_contains": {
+            "data": {
+              "processed": [
+                {
+                  "filePipelineVerified": [
+                    "FL-native-local-raw-array-join-and-output-fields",
+                    "FL-native-full-shortcut-options-and-unknown-fields",
+                    "FL-native-generated-file-script-loading-and-arguments",
+                    "FL-native-mihomo-source-and-legacy-type",
+                    "FL-native-mihomo-yaml-patch-main-and-short-id",
+                    "FL-native-add-subscription-proxies-positions-and-skip"
+                  ]
+                }
+              ]
+            }
+          },
+          "status": 200
+        }
       }
     ]
   },
