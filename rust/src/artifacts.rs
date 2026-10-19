@@ -161,6 +161,13 @@ pub async fn dispatch(
 ) -> Option<api::Reply> {
     if path == "/api/artifacts/restore" && method == Method::GET {
         let result = restore(store).await;
+        if let Err(error) = &result {
+            let token = truthy(&store.lock().unwrap().data["settings"]["gistToken"]);
+            if token {
+                crate::logs::error(&mut store.lock().unwrap(), &format!("查找 Sub-Store Gist 时发生错误: {}", error.message));
+            }
+            crate::logs::error(&mut store.lock().unwrap(), &format!("恢复远程配置失败，原因：{}", error.message));
+        }
         return Some(match result {
             Ok(()) => api::success(None, 200),
             Err(error) if error.code == "STATE_WRITE_FAILED" => error.reply(500),
@@ -176,7 +183,11 @@ pub async fn dispatch(
         return None;
     }
     if method == Method::DELETE && path.starts_with("/api/artifact/") {
-        let result = delete(store, path.strip_prefix("/api/artifact/").unwrap(), query).await;
+        let name = path.strip_prefix("/api/artifact/").unwrap();
+        let result = delete(store, name, query).await;
+        if let Err(error) = &result {
+            crate::logs::error(&mut store.lock().unwrap(), &format!("无法删除远程配置：{name}，原因：{}", if error.kind == "Error" { &error.message } else { "[object Object]" }));
+        }
         return Some(result.map_or_else(
             |error| error.reply(500),
             |data| api::success(Some(data), 200),
@@ -343,6 +354,7 @@ async fn delete(store: &Arc<Mutex<Store>>, name: &str, query: &Value) -> Result<
                 }
             }
             Err(error) => {
+                crate::logs::error(&mut store.lock().unwrap(), &format!("Function syncToGist: {name} : {}", error.message));
                 remote["status"] = json!("failed");
                 remote["message"] = json!(error.message);
             }

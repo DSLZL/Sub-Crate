@@ -64,8 +64,10 @@ pub(crate) async fn crypt<'js>(
         return Err(js.error("age 加密模式需要配置 age 解密私钥"));
     }
     if !encrypt {
+        script::log(js, "info", "尝试使用 age 解密 Gist 备份内容");
         return script_age::decrypt(js, body, js.value(secret)?).await;
     }
+    script::log(js, "info", "使用 age 加密 Gist 备份内容");
     let utils: Value = js.ctx.globals().get("ProxyUtils")?;
     let age = js.get(&utils, "age")?;
     let recipient = script::settled(
@@ -182,11 +184,16 @@ pub(crate) fn restored_artifacts<'js>(
     for key in keys {
         let file: Value = js.call("get", (files.clone(), key))?;
         let name = optional(js, &file, "filename")?;
-        if !js.truthy(&name)? || js.equal(&name, &js.value(".sub-store-placeholder")?)? {
+        if !js.truthy(&name)? {
+            continue;
+        }
+        if js.equal(&name, &js.value(".sub-store-placeholder")?)? {
+            script::log(js, "info", &format!("忽略 Gist 占位文件: {}", js.text(name)?));
             continue;
         }
         let encoded: Value = encoder.call((name.clone(),))?;
         if !js.equal(&encoded, &name)? {
+            script::log(js, "error", &format!("文件名 {} 未编码 不保存", js.text(name)?));
             continue;
         }
         let old = crate::script_pipeline::find(js, items.clone(), name.clone())?;

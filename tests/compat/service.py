@@ -202,7 +202,7 @@ def notification_contracts(binary, node, environment, baseline, root, output, re
                     "none": "", "http": upstream.url + "/host/notification?title=[推送标题]&content=[推送内容]&repeat=[推送标题]",
                     "http-fallback": upstream.url + "/host/notification?title=[推送标题]&content=[推送内容]",
                     "generic-post": "generic+" + upstream.url + "/host/notification?template=json&title=fixture-title",
-                    "generic-get": "generic+" + upstream.url + "/host/notification?method=GET&template=json&title=fixture-title",
+                    "generic-get": f"generic://{authority}/host/notification?disabletls=yes&method=GET&template=json&title=fixture-title",
                     "ntfy": f"ntfy://{authority}/host/notification?scheme=http&title=fixture-title",
                     "gotify": f"gotify://{authority}/host/notification/A12345678901234?disabletls=yes",
                     "generic-rejected": "generic+" + upstream.url + "/host/notification-error?template=json",
@@ -226,7 +226,7 @@ def notification_contracts(binary, node, environment, baseline, root, output, re
                         {"method": "POST", "path": "/api/preview/collection?target=JSON", "body": {"name": "collection-warning", "subscriptions": ["good", "bad"], "ignoreFailedRemoteSub": "enabled"}},
                         {"method": "POST", "path": "/api/preview/collection?target=JSON", "body": {"name": "collection-fallback", "subscriptions": ["bad"], "ignoreFailedRemoteSub": "fallbackNotify"}},
                         {"method": "POST", "path": "/api/preview/file", "body": remote_file},
-                        {"path": "/download/file/file-warning"},
+                        {"path": "/api/file/file-warning"},
                         {"path": "/download/duplicates-sub/JSON"},
                         {"path": "/download/collection/duplicates-col?target=JSON"},
                     ]
@@ -284,6 +284,58 @@ def notification_contracts(binary, node, environment, baseline, root, output, re
                     assert request(url, {"path": "/api/settings"})["status"] == 200, "Notification failure stopped the backend"
         check_json(paired["rust"], paired["node"])
     report["native_notification_templates_providers_get_bodies_parallel_delivery_and_recovery_checked"] = True
+
+
+def business_logs_contracts(binary, node, environment, baseline, root, output, report, image):
+    paired, upstream_port = {}, 0
+    for kind in ("node", "rust"):
+        label = kind + "-business-logs"
+        state = output / label
+        state.mkdir()
+        document = {**baseline, "settings": {"logsMaxCount": 1000}, "subs": [], "collections": [], "files": [],
+                    "artifacts": [], "tokens": [], "archives": [], "modules": []}
+        (state / "sub-store.json").write_text(json.dumps(document), encoding="utf-8")
+        (state / "root.json").write_text(json.dumps({**root, "sub-store-logs": "[]"}), encoding="utf-8")
+        env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}
+        with ControlledUpstream(upstream_port) as upstream:
+            upstream_port = upstream.server.server_address[1]
+            manager = oracle(node, env, output, report, label) if kind == "node" else listener(binary, env, output, report, label, image, host_network=bool(image))
+            with manager as url:
+                steps = [
+                    {"method": "POST", "path": "/api/subs", "body": {"name": "log-sub", "source": "local", "content": ""}},
+                    {"method": "PATCH", "path": "/api/sub/log-sub", "body": {"displayName": "日志🙂"}},
+                    {"method": "POST", "path": "/api/collections", "body": {"name": "log-col", "subscriptions": ["log-sub"]}},
+                    {"method": "PATCH", "path": "/api/collection/log-col", "body": {"displayName": "组合🙂"}},
+                    {"method": "POST", "path": "/api/files", "body": {"name": "log-file", "source": "local", "content": "fixture"}},
+                    {"method": "PATCH", "path": "/api/file/log-file", "body": {"displayName": "文件🙂"}},
+                    {"method": "POST", "path": "/api/artifacts", "body": {"name": "log-artifact", "type": "file", "source": "log-file", "sync": True, "upload": False}},
+                    {"method": "PATCH", "path": "/api/artifact/log-artifact", "body": {"displayName": "产物🙂"}},
+                    {"path": "/api/sync/artifact/log-artifact"},
+                    {"path": "/api/sync/artifacts"},
+                    {"method": "DELETE", "path": "/api/sub/log-sub?mode=permanent"},
+                    {"method": "DELETE", "path": "/api/collection/log-col?mode=permanent"},
+                    {"method": "DELETE", "path": "/api/file/log-file?mode=permanent"},
+                    {"method": "DELETE", "path": "/api/artifact/log-artifact?mode=permanent"},
+                    {"path": "/api/sync/artifact/log-missing", "status": 404},
+                    {"method": "PATCH", "path": "/api/settings", "body": {"gistDownloadTokenStrategy": "invalid"}, "status": 500},
+                    {"method": "PATCH", "path": "/api/settings", "body": {"gistToken": "helper-token", "githubApiUrl": upstream.url + "/host/gist/github"}},
+                    {"path": "/api/utils/backup?action=upload"},
+                    {"path": "/api/utils/backup?action=download"},
+                ]
+                proof = []
+                for step in steps:
+                    response = request(url, step)
+                    proof.append({"request": step, "response": response})
+                    (output / f"{label}-triggers.json").write_text(json.dumps(proof, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                    assert response["status"] == step.get("status", 201 if step.get("method") == "POST" else 200), (label, step, response)
+                response = request(url, {"path": "/api/logs?limit=1000"})
+                assert response["status"] == 200, (label, response)
+                entries = json.loads(response["body"])["data"]["logs"]
+                paired[kind] = [{"level": entry["level"], "message": entry["message"]} for entry in entries]
+                assert len(entries) >= 25, (label, entries)
+                (output / f"{label}.json").write_text(json.dumps({"logs": entries, "triggers": proof, "upstream": upstream.requests}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    check_json(paired["rust"], paired["node"])
+    report["native_business_resource_sync_settings_and_backup_log_callers_checked"] = True
 
 
 def logs_contracts(binary, node, environment, baseline, root, output, report, image):
@@ -2432,6 +2484,7 @@ def main():
         logs_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
         notification_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
         scheduling_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image, listener)
+        business_logs_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
         configurations = [
             ("default", {}, 1048576, [("https://sub-store.vercel.app", "https://sub-store.vercel.app")], "https://denied.invalid", False),
             ("custom-name", {"SUB_STORE_BACKEND_CUSTOM_NAME": "configuration-fixture", "SUB_STORE_BODY_JSON_LIMIT": "+1GB"}, 1073741824,

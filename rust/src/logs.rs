@@ -228,6 +228,11 @@ pub(crate) fn info(store: &mut Store, text: &str) {
     let _ = append(store, "info", &format!("[sub-store] INFO: {text}"));
 }
 
+pub(crate) fn error(store: &mut Store, text: &str) {
+    eprintln!("[sub-store] ERROR: {text}");
+    let _ = append(store, "error", &format!("[sub-store] ERROR: {text}"));
+}
+
 fn boolean(value: &Value) -> bool {
     value == true || value == 1 || value == "1" || value == "true" || value == "on"
 }

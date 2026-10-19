@@ -57,6 +57,17 @@ fn fallback(mode: &str) -> bool {
     matches!(mode, "fallbackNotify" | "fallbackQuiet")
 }
 
+fn failure_text(js: &Js<'_>, error: rquickjs::Error) -> rquickjs::Result<(String, String)> {
+    if !error.is_exception() {
+        let text = error.to_string();
+        return Ok((text.clone(), text));
+    }
+    let thrown = js.ctx.catch();
+    let full = js.text(thrown.clone())?;
+    let reason = script::message(&js.ctx, js.ctx.throw(thrown));
+    Ok((reason, full))
+}
+
 fn notify(js: &Js<'_>, title: &str, name: &str, message: &str) -> rquickjs::Result<()> {
     js.method(
         network::host(js)?,
@@ -218,6 +229,7 @@ async fn sources<'js>(
     for url in lines {
         let worker = js.clone();
         let errors = errors.clone();
+        let sub = sub.clone();
         let args = vec![
             url.clone(),
             ua.clone(),
@@ -233,7 +245,12 @@ async fn sources<'js>(
             match utility(&worker, "download", args).await {
                 Ok(value) => Ok(value),
                 Err(error) => {
-                    script::log(&worker, "error", &script::message(&worker.ctx, error));
+                    let (_, full) = failure_text(&worker, error)?;
+                    script::log(&worker, "error", &format!(
+                        "订阅 {} 的远程订阅 {} 发生错误: {full}",
+                        worker.text(worker.get(&sub, "name")?)?,
+                        script_download::mask_url(&worker, url.clone())?,
+                    ));
                     worker.set(&errors, &worker.text(url)?, worker.value(true)?)?;
                     worker.value("")
                 }
@@ -569,6 +586,7 @@ async fn file_raw<'js>(
     for url in lines {
         let worker = js.clone();
         let errors = errors.clone();
+        let file = file.clone();
         let download_options = object(js)?;
         js.set(
             &download_options,
@@ -600,7 +618,12 @@ async fn file_raw<'js>(
                 match utility(&worker, "download", args).await {
                     Ok(value) => Ok(value),
                     Err(error) => {
-                        script::log(&worker, "error", &script::message(&worker.ctx, error));
+                        let (_, full) = failure_text(&worker, error)?;
+                        script::log(&worker, "error", &format!(
+                            "文件 {} 的远程文件 {} 发生错误: {full}",
+                            worker.text(worker.get(&file, "name")?)?,
+                            script_download::mask_url(&worker, url.clone())?,
+                        ));
                         worker.set(&errors, &worker.text(url)?, worker.value(true)?)?;
                         worker.value("")
                     }
@@ -1024,6 +1047,8 @@ async fn collection<'js>(
             network::prefer(js, [optional(js, &options, "platform")?, js.value("JSON")?])?
         };
         let mut pending = Vec::new();
+        let processed = std::rc::Rc::new(std::cell::Cell::new(0usize));
+        let total = names.len() as f64;
         for name in &names {
             let worker = js.clone();
             let name = name.clone();
@@ -1034,15 +1059,22 @@ async fn collection<'js>(
             let raw_results = raw_results.clone();
             let errors = errors.clone();
             let target = target.clone();
+            let processed = processed.clone();
             let promise = Promise::wrap_future(&js.ctx, async move {
                 let sub = find(&worker, all_subs, name.clone())?;
                 // The source reads sub.ignoreFailedRemoteSub before its per-child try.
                 let child_mode = mode(&worker, [worker.get(&sub, "ignoreFailedRemoteSub")?])?;
                 let key = worker.text(name)?;
+                let percent = || -> rquickjs::Result<String> {
+                    let fixed = worker.method(worker.value(processed.get() as f64 / total)?, "toFixed", vec![worker.value(1)?])?;
+                    let number: f64 = worker.call("number", (fixed,))?;
+                    worker.text(worker.value(100.0 * number)?)
+                };
                 let child = async {
                     let child_options = object(&worker)?;
                     if !preview {
                         let ua = if worker.truthy(&worker.get(&sub, "passThroughUA")?)? {
+                            script::log(&worker, "info", &format!("订阅开启了透传 User-Agent, 使用请求的 User-Agent: {}", worker.text(optional(&worker, &options, "ua")?)?));
                             optional(&worker, &options, "ua")?
                         } else {
                             worker.get(&sub, "ua")?
@@ -1076,6 +1108,9 @@ async fn collection<'js>(
                                 ],
                             )?,
                         )?;
+                    }
+                    if !preview {
+                        script::log(&worker, "info", &format!("正在处理子订阅：{}...", worker.text(worker.get(&sub, "name")?)?));
                     }
                     let mut saved_raw = worker.undefined();
                     let (raw, source_raw) = sources(
@@ -1138,13 +1173,16 @@ async fn collection<'js>(
                     .await?;
                     worker.set(&results, &key, output)?;
                     worker.set(&raw_results, &key, raw)?;
+                    if !preview {
+                        processed.set(processed.get()+1);
+                        script::log(&worker, "info", &format!("✅ 子订阅：{}加载成功，进度--{}% ", worker.text(worker.get(&sub, "name")?)?, percent()?));
+                    }
                     Ok::<_, rquickjs::Error>(())
                 }
                 .await;
                 if let Err(error) = child {
-                    let reason = script::message(&worker.ctx, error);
+                    let (reason, full) = failure_text(&worker, error)?;
                     let sub_name = worker.text(worker.get(&sub, "name")?)?;
-                    script::log(&worker, "error", &reason);
                     if fallback(&child_mode) {
                         if child_mode == "fallbackNotify" {
                             notify(
@@ -1158,9 +1196,16 @@ async fn collection<'js>(
                                 &format!("🤔 原因：{reason}"),
                             )?;
                         }
+                        script::log(&worker, "error", &format!("订阅 {sub_name} 在组合订阅{}中启用兜底后返回空结果: {reason}", if preview { "预览" } else { "处理" }));
                         worker.set(&results, &key, worker.array([])?)?;
                         worker.set(&raw_results, &key, worker.array([])?)?;
                     } else {
+                        let message = if preview {
+                            format!("❌ 处理组合订阅 {} 中的子订阅: {sub_name} 时出现错误：{full}！", worker.text(worker.get(&collection, "name")?)?)
+                        } else {
+                            format!("❌ 处理组合订阅中的子订阅: {sub_name}时出现错误：{full}！进度--{}%", percent()?)
+                        };
+                        script::log(&worker, "error", &message);
                         worker.set(&errors, &key, worker.value(true)?)?;
                         worker.set(&raw_results, &key, worker.undefined())?;
                     }
