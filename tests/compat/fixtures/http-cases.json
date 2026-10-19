@@ -9505,7 +9505,7 @@
       {"method": "POST", "path": "/api/archives/{{FILE_ARCHIVE_ID}}/restore", "expect": {"status": 400, "json_contains": {"status": "failed", "error": {"code": "DUPLICATE_KEY"}}}, "state": {"files": [{"name": "file-renamed", "content": "conflicting"}], "archives": [{"id": "{{FILE_ARCHIVE_ID}}", "snapshot": {"content": "first\r\n第二🙂\n"}}]}},
       {"method": "DELETE", "path": "/api/file/file-renamed?mode=permanent", "expect": {"status": 200, "json": {"status": "success"}}},
       {"method": "POST", "path": "/api/archives/{{FILE_ARCHIVE_ID}}/restore", "expect": {"status": 200, "json": {"status": "success", "data": {"name": "file-renamed", "source": "local", "content": "first\r\n第二🙂\n", "displayName": "配置🙂.txt", "download": true, "custom": {"nil": null, "zero": 0, "flag": false, "empty": ""}}}}, "state": {"archives": [], "files": [{"name": "file-renamed", "content": "first\r\n第二🙂\n"}]}},
-      {"path": "/api/archives/{{FILE_ARCHIVE_ID}}", "expect": {"status": 404, "json_contains": {"status": "failed", "error": {"code": "ARCHIVE_ENTRY_NOT_FOUND"}}}},
+      {"path": "/api/archives/{{FILE_ARCHIVE_ID}}", "expect": {"status": 404, "json": {"status": "failed", "error": {"code": "ARCHIVE_ENTRY_NOT_FOUND", "type":"ResourceNotFoundError", "message":"Archive entry {{FILE_ARCHIVE_ID}} does not exist"}}}},
       {"method": "POST", "path": "/api/archives/missing/restore", "expect": {"status": 404, "json_contains": {"status": "failed", "error": {"code": "ARCHIVE_ENTRY_NOT_FOUND"}}}},
       {"method": "DELETE", "path": "/api/file/file-renamed?mode=permanent", "expect": {"status": 200, "json": {"status": "success"}}, "state": {"files": [], "archives": []}}
     ]

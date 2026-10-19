@@ -1004,7 +1004,9 @@ pub async fn run(
                                 let result = match operation.as_str() {
                                     "parse" => crate::script_http::parse(&js, input).await?,
                                     "token-options" => crate::script_tokens::options(&js, input)?,
-                                    "artifact-upload" => crate::script_gist::artifact_upload(&js, input).await?,
+                                    "artifact-upload" => {
+                                        crate::script_gist::artifact_upload(&js, input).await?
+                                    }
                                     "module-name" => {
                                         let name = js.get(&input, "name")?;
                                         let name = if name.is_null() || name.is_undefined() {

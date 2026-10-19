@@ -196,7 +196,11 @@ pub(crate) fn delete(
         .collect::<Vec<_>>();
     let mut next = store.data.clone();
     if archive {
-        crate::archives::insert(&mut next, "share", items.iter().find(|item| matching(item)).unwrap())?;
+        crate::archives::insert(
+            &mut next,
+            "share",
+            items.iter().find(|item| matching(item)).unwrap(),
+        )?;
     }
     next["tokens"] = json!(kept);
     store.commit(next).map_err(Error::state)
@@ -303,7 +307,10 @@ pub(crate) async fn dispatch(
         return Some(
             match create(store, body["payload"].clone(), body["options"].clone()).await {
                 Ok(item) => api::success(Some(json!({"token":item["token"]})), 200),
-                Err(error) if error.kind == "Error" => Error::internal("TOKEN_SIGN_FAILED", "Failed to sign token", error.message).reply(500),
+                Err(error) if error.kind == "Error" => {
+                    Error::internal("TOKEN_SIGN_FAILED", "Failed to sign token", error.message)
+                        .reply(500)
+                }
                 Err(error) => error.reply(500),
             },
         );

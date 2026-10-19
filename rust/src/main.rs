@@ -818,7 +818,8 @@ fn api_path(raw: &str) -> Result<Option<String>, ()> {
         ["", api, resource, name] if api.eq_ignore_ascii_case("api") && !name.is_empty() => {
             let resource = resource.to_ascii_lowercase();
             match resource.as_str() {
-                "sub" | "collection" | "module" | "file" | "wholefile" | "token" | "artifact" | "archives" => Some(format!(
+                "sub" | "collection" | "module" | "file" | "wholefile" | "token" | "artifact"
+                | "archives" => Some(format!(
                     "/api/{resource}/{}",
                     json::encode(&percent_decode_str(name).decode_utf8().map_err(|_| ())?)
                 )),
@@ -830,10 +831,15 @@ fn api_path(raw: &str) -> Result<Option<String>, ()> {
             }
         }
         ["", api, archives, id, restore]
-            if api.eq_ignore_ascii_case("api") && archives.eq_ignore_ascii_case("archives")
-                && !id.is_empty() && restore.eq_ignore_ascii_case("restore") =>
+            if api.eq_ignore_ascii_case("api")
+                && archives.eq_ignore_ascii_case("archives")
+                && !id.is_empty()
+                && restore.eq_ignore_ascii_case("restore") =>
         {
-            Some(format!("/api/archives/{}/restore", json::encode(&percent_decode_str(id).decode_utf8().map_err(|_| ())?)))
+            Some(format!(
+                "/api/archives/{}/restore",
+                json::encode(&percent_decode_str(id).decode_utf8().map_err(|_| ())?)
+            ))
         }
         ["", share, kind, name]
             if share.eq_ignore_ascii_case("share")

@@ -485,7 +485,10 @@ async fn download<'js>(
     js.get(&response, "body")
 }
 
-pub(crate) async fn artifact_upload<'js>(js: &Js<'js>, files: Value<'js>) -> rquickjs::Result<Value<'js>> {
+pub(crate) async fn artifact_upload<'js>(
+    js: &Js<'js>,
+    files: Value<'js>,
+) -> rquickjs::Result<Value<'js>> {
     let settings = network::settings(js)?;
     let token = js.get(&settings, "gistToken")?;
     if !js.truthy(&token)? {
@@ -497,13 +500,23 @@ pub(crate) async fn artifact_upload<'js>(js: &Js<'js>, files: Value<'js>) -> rqu
     js.set(&options, "key", js.value("Sub-Store Artifacts Repository")?)?;
     let manager = object(js)?;
     initialize_gist(js.ctx.clone(), manager.clone(), options)?;
-    js.set(&manager, "locate", Function::new(js.ctx.clone(), Async(locate))?.into_value())?;
+    js.set(
+        &manager,
+        "locate",
+        Function::new(js.ctx.clone(), Async(locate))?.into_value(),
+    )?;
     let fallback = object(js)?;
     js.set(&fallback, "filename", js.value(".sub-store-placeholder")?)?;
     js.set(&fallback, "content", js.value("Sub-Store placeholder\nThis file keeps the Gist alive when all sync configuration files are deleted.")?)?;
     let options = object(js)?;
     js.set(&options, "emptyFileFallback", fallback)?;
-    upload(js.ctx.clone(), This(manager), Opt(Some(files)), Opt(Some(options))).await
+    upload(
+        js.ctx.clone(),
+        This(manager),
+        Opt(Some(files)),
+        Opt(Some(options)),
+    )
+    .await
 }
 
 pub(crate) fn initialize<'js>(ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs::Result<()> {

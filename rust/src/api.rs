@@ -142,7 +142,9 @@ pub fn options(path: &str) -> Reply {
         "/api/token" => "POST,GET,HEAD",
         _ if path.starts_with("/api/token/") => "DELETE,GET,HEAD",
         "/api/storage" => "GET,POST,HEAD",
-        "/api/subs" | "/api/collections" | "/api/modules" | "/api/files" | "/api/artifacts" => "GET,POST,PUT,HEAD",
+        "/api/subs" | "/api/collections" | "/api/modules" | "/api/files" | "/api/artifacts" => {
+            "GET,POST,PUT,HEAD"
+        }
         _ if path.starts_with("/api/archives/") && path.ends_with("/restore") => "POST,GET,HEAD",
         _ if path.starts_with("/api/archives/") => "GET,DELETE,HEAD",
         "/api/proxy/parse"
@@ -961,14 +963,20 @@ pub(crate) fn prepare_create(
     body: &Body,
 ) -> Result<Value, ResourceError> {
     let subscription = key == "subs";
-    let label = if subscription { "Subscription" } else { "Collection" };
+    let label = if subscription {
+        "Subscription"
+    } else {
+        "Collection"
+    };
     let mut item = if subscription {
         Value::Object(body.fields())
     } else {
         body.clone().into_json()
     };
     if !subscription && item.is_null() {
-        return Err(ResourceError::plain("Cannot read properties of null (reading 'name')"));
+        return Err(ResourceError::plain(
+            "Cannot read properties of null (reading 'name')",
+        ));
     }
     if cannot_coerce(&item["age-public-key"]) {
         return Err(ResourceError::plain(PRIMITIVE_ERROR));
@@ -978,14 +986,24 @@ pub(crate) fn prepare_create(
     if cannot_coerce(&item["name"]) {
         return Err(ResourceError::plain(PRIMITIVE_ERROR));
     }
-    let item_name = item.get("name").map(js_string).unwrap_or_else(|| "undefined".to_owned());
+    let item_name = item
+        .get("name")
+        .map(js_string)
+        .unwrap_or_else(|| "undefined".to_owned());
     if item_name.contains('/') {
-        return Err(ResourceError::invalid("INVALID_NAME", format!("{label} {item_name} is invalid")));
+        return Err(ResourceError::invalid(
+            "INVALID_NAME",
+            format!("{label} {item_name} is invalid"),
+        ));
     }
-    let items = store.list(key).ok_or_else(|| ResourceError::plain("e.find is not a function"))?;
+    let items = store
+        .list(key)
+        .ok_or_else(|| ResourceError::plain("e.find is not a function"))?;
     for old in items {
         if old.is_null() {
-            return Err(ResourceError::plain("Cannot read properties of null (reading 'name')"));
+            return Err(ResourceError::plain(
+                "Cannot read properties of null (reading 'name')",
+            ));
         }
         let duplicate = match (old.get("name"), item.get("name")) {
             (Some(Value::Number(old)), Some(Value::Number(new))) => old.as_f64() == new.as_f64(),
@@ -994,17 +1012,22 @@ pub(crate) fn prepare_create(
         };
         if duplicate {
             if truthy(old) {
-                return Err(ResourceError::invalid("DUPLICATE_KEY", format!("{label} {item_name} already exists.")));
+                return Err(ResourceError::invalid(
+                    "DUPLICATE_KEY",
+                    format!("{label} {item_name} already exists."),
+                ));
             }
             break;
         }
     }
     let top = next["settings"]["appearanceSetting"]["createItemPosition"] == "top";
-    let items = next[key].as_array_mut().ok_or_else(|| ResourceError::plain(if top {
-        "e.unshift is not a function"
-    } else {
-        "e.push is not a function"
-    }))?;
+    let items = next[key].as_array_mut().ok_or_else(|| {
+        ResourceError::plain(if top {
+            "e.unshift is not a function"
+        } else {
+            "e.push is not a function"
+        })
+    })?;
     if top {
         items.insert(0, item.clone());
     } else {
@@ -1178,16 +1201,17 @@ pub fn dispatch(
     if path != plural && (method == Method::PATCH || method == Method::DELETE) {
         if method == Method::DELETE
             && let Some(mode) = query.get("mode")
+            && mode != "archive"
+            && mode != ""
+            && mode != "permanent"
         {
-            if mode != "archive" && mode != "" && mode != "permanent" {
-                if cannot_coerce(mode) {
-                    return caught_error(PRIMITIVE_ERROR);
-                }
-                return invalid(
-                    "INVALID_DELETE_MODE",
-                    &format!("Unsupported delete mode: {}", js_string(mode)),
-                );
+            if cannot_coerce(mode) {
+                return caught_error(PRIMITIVE_ERROR);
             }
+            return invalid(
+                "INVALID_DELETE_MODE",
+                &format!("Unsupported delete mode: {}", js_string(mode)),
+            );
         }
         if lookup_failed {
             return if method == Method::DELETE {

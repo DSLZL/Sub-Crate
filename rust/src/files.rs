@@ -1,8 +1,9 @@
 use crate::{
     api,
     body::Body,
-    json as codec, script,
+    json as codec,
     resources::{self, Error},
+    script,
     state::{Store, truthy},
 };
 use hyper::Method;
@@ -24,20 +25,27 @@ pub(crate) fn prepare_create(store: &Store, next: &mut Value, body: &Body) -> Re
         codec::js_string(&file["name"])
     };
     file["name"] = json!(name);
-    let files = store.list("files").ok_or_else(|| Error::plain("e.find is not a function"))?;
+    let files = store
+        .list("files")
+        .ok_or_else(|| Error::plain("e.find is not a function"))?;
     if files.iter().any(|old| old["name"] == file["name"]) {
-        return Err(Error::invalid("DUPLICATE_KEY", if truthy(&Value::Object(body.fields())["name"]) {
-            format!("已存在 name 为 {name} 的文件")
-        } else {
-            "无法同时创建相同的文件 可稍后重试".to_owned()
-        }));
+        return Err(Error::invalid(
+            "DUPLICATE_KEY",
+            if truthy(&Value::Object(body.fields())["name"]) {
+                format!("已存在 name 为 {name} 的文件")
+            } else {
+                "无法同时创建相同的文件 可稍后重试".to_owned()
+            },
+        ));
     }
     let top = next["settings"]["appearanceSetting"]["createItemPosition"] == "top";
-    let files = next["files"].as_array_mut().ok_or_else(|| Error::plain(if top {
-        "e.unshift is not a function"
-    } else {
-        "e.push is not a function"
-    }))?;
+    let files = next["files"].as_array_mut().ok_or_else(|| {
+        Error::plain(if top {
+            "e.unshift is not a function"
+        } else {
+            "e.push is not a function"
+        })
+    })?;
     if top {
         files.insert(0, file.clone());
     } else {
