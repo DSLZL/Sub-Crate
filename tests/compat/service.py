@@ -141,8 +141,10 @@ async function operator(proxies) {
         pending = pool.submit(request, url, step)
         deadline = time.monotonic() + 4
         while True:
-            durable = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
-            if durable.get("m3-script-await", {}).get("started"):
+            # Node writes this file in place; observe its accepted state through HTTP.
+            barrier = request(url, {"method": "GET", "path": "/api/storage"})
+            assert barrier["status"] == 200, barrier
+            if json.loads(barrier["body"]).get("m3-script-await", {}).get("started"):
                 break
             assert not pending.done() and time.monotonic() < deadline, "Script did not publish the await barrier"
             time.sleep(0.01)
