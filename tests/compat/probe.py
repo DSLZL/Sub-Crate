@@ -133,9 +133,19 @@ def check_processor_requests(requests):
     check_json(actual_flow, [{"method": method, "path": "/host/flow/" + path, "body_bytes": [],
                               "user_agent": ua, "token": token, "accept": "*/*"}
                              for method, path, ua, token in expected_flow])
-    check_dns_requests(requests[19:42])
-    check_gist_requests(requests[42:102])
-    check_artifact_requests(requests[102:])
+    transport = requests[19:30]
+    expected_transport = [{"method": "GET", "path": "/host/compressed/" + mode,
+                           "body": "", "accept": "*/*", "proxy_authorization": None}
+                          for mode in ("gzip", "x-gzip", "deflate", "compress", "x-compress", "nested", "status", "unknown", "too-many")]
+    expected_transport.extend({"method": "GET", "path": "http://ip-api.com/json/1.2.3.4", "body": "", "accept": None,
+                               "proxy_authorization": authorization}
+                              for authorization in (None, "Basic Zml4dHVyZTpzZWNyZXQ="))
+    check_json([{"method": item["method"], "path": item["path"], "body": item["body"],
+                 "accept": item["headers"].get("accept"), "proxy_authorization": item["headers"].get("proxy-authorization")}
+                for item in transport], expected_transport)
+    check_dns_requests(requests[30:53])
+    check_gist_requests(requests[53:113])
+    check_artifact_requests(requests[113:])
 
 
 def expected_dns_requests():

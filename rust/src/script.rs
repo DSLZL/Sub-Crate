@@ -67,7 +67,7 @@ pub(crate) fn message(ctx: &Ctx<'_>, error: rquickjs::Error) -> String {
     })
 }
 
-fn serialized<'js>(ctx: &Ctx<'js>, value: JsValue<'js>) -> rquickjs::Result<String> {
+pub(crate) fn serialized<'js>(ctx: &Ctx<'js>, value: JsValue<'js>) -> rquickjs::Result<String> {
     ctx.json_stringify(value)?
         .ok_or_else(|| Exception::throw_type(ctx, "Value is not JSON serializable"))?
         .to_string()
@@ -302,7 +302,7 @@ struct Scope<'js> {
     context: JsValue<'js>,
 }
 
-async fn settled<'js>(js: &Js<'js>, value: JsValue<'js>) -> rquickjs::Result<JsValue<'js>> {
+pub(crate) async fn settled<'js>(js: &Js<'js>, value: JsValue<'js>) -> rquickjs::Result<JsValue<'js>> {
     let promise: Promise = js.call("resolve", (value,))?;
     promise.into_future().await
 }
@@ -602,6 +602,8 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
         .map_err(|_| Exception::throw_message(ctx, "Script job already borrowed"))?;
     let globals = ctx.globals();
     globals.set("__hostWait", Func::from(Async(wait)))?;
+    globals.set("__hostTimer", Func::from(script_io::timer))?;
+    globals.set("__hostCancelTimer", Func::from(script_io::cancel_timer))?;
     globals.set("__hostRequest", Func::from(Async(script_io::request)))?;
     globals.set(
         "__hostDownloadFile",
@@ -665,6 +667,7 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     utils.set("JSON5", utilities.get::<_, JsValue>("JSON5")?)?;
     crate::script_helpers::initialize(ctx, &utils)?;
     crate::script_flow::initialize(ctx)?;
+    crate::script_download::initialize(ctx, &utils)?;
     globals.set("ProxyUtils", utils)?;
     Ok(())
 }
@@ -676,101 +679,126 @@ pub async fn local(
     content: Option<Value>,
     preview: bool,
 ) -> Result<Value, conversion::Error> {
-    tokio::task::spawn_blocking(move || {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|error| conversion::Error::Legacy(error.to_string()))?
-            .block_on(async move {
-                let mut plain = sub.clone();
-                if let Some(fields) = plain.as_object_mut() {
-                    fields.shift_remove("process");
-                }
-                let proxies = conversion::local(&plain, content.as_ref())?;
-                let (cache, root) = {
-                    let store = store
-                        .lock()
-                        .map_err(|_| conversion::Error::Legacy("State lock poisoned".to_owned()))?;
-                    (
-                        store.data.clone(),
-                        store
-                            .script_root()
-                            .map_err(|error| conversion::Error::Legacy(error.to_string()))?,
-                    )
-                };
-                let job = Job {
-                    store,
-                    baseline: Rc::new(RefCell::new((cache, root))),
-                };
-                let runtime = AsyncRuntime::new()
-                    .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
-                let context = AsyncContext::full(&runtime)
-                    .await
-                    .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
-                context
-                    .async_with(async |ctx| {
-                        let result = async {
-                            initialize(&ctx, job)?;
-                            let js = Js::new(ctx.clone());
-                            let original = ctx.json_parse(codec::stringify(&json!(proxies)))?;
-                            let sub_value = ctx.json_parse(codec::stringify(&sub))?;
-                            let sub_name = js.get(&sub_value, "name")?;
-                            let display_name = js.get(&sub_value, "displayName")?;
-                            let next_index = Rc::new(Cell::new(0usize));
-                            let tag_scope = js.clone();
-                            let name_tag = sub_name.clone();
-                            js.each(original.clone(), move |proxy| {
-                                if preview {
-                                    tag_scope.set(
-                                        &proxy,
-                                        "id",
-                                        tag_scope.value(next_index.get())?,
-                                    )?;
-                                    next_index.set(next_index.get() + 1);
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let worker = tokio::task::spawn_blocking(move || {
+        let mut sender = Some(sender);
+        let result = (|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|error| conversion::Error::Legacy(error.to_string()))?
+                .block_on(async {
+                    let mut plain = sub.clone();
+                    if let Some(fields) = plain.as_object_mut() {
+                        fields.shift_remove("process");
+                    }
+                    let proxies = conversion::local(&plain, content.as_ref())?;
+                    let (cache, root) = {
+                        let store = store
+                            .lock()
+                            .map_err(|_| conversion::Error::Legacy("State lock poisoned".to_owned()))?;
+                        (
+                            store.data.clone(),
+                            store
+                                .script_root()
+                                .map_err(|error| conversion::Error::Legacy(error.to_string()))?,
+                        )
+                    };
+                    let job = Job {
+                        store,
+                        baseline: Rc::new(RefCell::new((cache, root))),
+                    };
+                    let runtime = AsyncRuntime::new()
+                        .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
+                    let context = AsyncContext::full(&runtime)
+                        .await
+                        .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
+                    let result = context
+                        .async_with(async |ctx| {
+                            let result = async {
+                                initialize(&ctx, job)?;
+                                let js = Js::new(ctx.clone());
+                                let original = ctx.json_parse(codec::stringify(&json!(proxies)))?;
+                                let sub_value = ctx.json_parse(codec::stringify(&sub))?;
+                                let sub_name = js.get(&sub_value, "name")?;
+                                let display_name = js.get(&sub_value, "displayName")?;
+                                let next_index = Rc::new(Cell::new(0usize));
+                                let tag_scope = js.clone();
+                                let name_tag = sub_name.clone();
+                                js.each(original.clone(), move |proxy| {
+                                    if preview {
+                                        tag_scope.set(
+                                            &proxy,
+                                            "id",
+                                            tag_scope.value(next_index.get())?,
+                                        )?;
+                                        next_index.set(next_index.get() + 1);
+                                    }
+                                    tag_scope.set(&proxy, "_subName", name_tag.clone())?;
+                                    tag_scope.set(&proxy, "_subDisplayName", display_name.clone())?;
+                                    Ok(())
+                                })?;
+                                let items = sub
+                                    .get("process")
+                                    .filter(|value| crate::state::truthy(value))
+                                    .cloned()
+                                    .unwrap_or_else(|| json!([]));
+                                let items = ctx.json_parse(codec::stringify(&items))?;
+                                let source = Object::new(ctx.clone())?;
+                                js.call::<(), _>("set", (source.clone(), sub_name, sub_value))?;
+                                let context = Object::new(ctx.clone())?.into_value();
+                                if let Some(raw) = content.as_ref().or_else(|| sub.get("content")) {
+                                    let raw = ctx.json_parse(codec::stringify(raw))?;
+                                    let raw = if raw.is_array() || (!raw.is_null() && raw.is_object()) {
+                                        raw
+                                    } else {
+                                        js.array([raw])?
+                                    };
+                                    js.set(&context, "raw", raw)?;
                                 }
-                                tag_scope.set(&proxy, "_subName", name_tag.clone())?;
-                                tag_scope.set(&proxy, "_subDisplayName", display_name.clone())?;
-                                Ok(())
-                            })?;
-                            let items = sub
-                                .get("process")
-                                .filter(|value| crate::state::truthy(value))
-                                .cloned()
-                                .unwrap_or_else(|| json!([]));
-                            let items = ctx.json_parse(codec::stringify(&items))?;
-                            let source = Object::new(ctx.clone())?;
-                            js.call::<(), _>("set", (source.clone(), sub_name, sub_value))?;
-                            let context = Object::new(ctx.clone())?.into_value();
-                            if let Some(raw) = content.as_ref().or_else(|| sub.get("content")) {
-                                let raw = ctx.json_parse(codec::stringify(raw))?;
-                                let raw = if raw.is_array() || (!raw.is_null() && raw.is_object()) {
-                                    raw
-                                } else {
-                                    js.array([raw])?
+                                let scope = Scope {
+                                    target: js.value(codec::text(&target))?,
+                                    source: source.into_value(),
+                                    options: js.undefined(),
+                                    context,
                                 };
-                                js.set(&context, "raw", raw)?;
+                                let processed = process(&js, original.clone(), items, scope).await?;
+                                let result = Object::new(ctx.clone())?;
+                                if preview {
+                                    result.set("original", original)?;
+                                }
+                                result.set("processed", processed)?;
+                                let text = serialized(&ctx, result.into_value())?;
+                                codec::parse(&text).map_err(|error| js.error(&error.to_string()))
                             }
-                            let scope = Scope {
-                                target: js.value(codec::text(&target))?,
-                                source: source.into_value(),
-                                options: js.undefined(),
-                                context,
-                            };
-                            let processed = process(&js, original.clone(), items, scope).await?;
-                            let result = Object::new(ctx.clone())?;
-                            if preview {
-                                result.set("original", original)?;
-                            }
-                            result.set("processed", processed)?;
-                            let text = serialized(&ctx, result.into_value())?;
-                            codec::parse(&text).map_err(|error| js.error(&error.to_string()))
-                        }
+                            .await;
+                            result.map_err(|error| conversion::Error::Legacy(message(&ctx, error)))
+                        })
                         .await;
-                        result.map_err(|error| conversion::Error::Legacy(message(&ctx, error)))
-                    })
-                    .await
-            })
-    })
-    .await
-    .map_err(|error| conversion::Error::Legacy(error.to_string()))?
+                    if let Some(sender) = sender.take() {
+                        let _ = sender.send(result);
+                    }
+                    // Optimistic refreshes keep their context after the HTTP reply.
+                    runtime.idle().await;
+                    Ok::<_, conversion::Error>(())
+                })
+        })();
+        if let Some(sender) = sender {
+            let error = result.err().unwrap_or_else(|| {
+                conversion::Error::Legacy("Script job produced no result".to_owned())
+            });
+            let _ = sender.send(Err(error));
+        }
+    });
+    match receiver.await {
+        Ok(result) => result,
+        Err(_) => {
+            worker
+                .await
+                .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
+            Err(conversion::Error::Legacy(
+                "Script job ended without a result".to_owned(),
+            ))
+        }
+    }
 }

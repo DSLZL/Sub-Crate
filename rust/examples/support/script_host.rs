@@ -108,6 +108,8 @@ pub async fn run(
                 }),
             )?;
             globals.set("__hostWait", Func::from(Async(crate::wait)))?;
+            globals.set("__hostTimer", Func::from(script_io::timer))?;
+            globals.set("__hostCancelTimer", Func::from(script_io::cancel_timer))?;
             globals.set("__hostRequest", Func::from(Async(request)))?;
             globals.set("__hostDownloadFile", Func::from(Async(download_file)))?;
             globals.set("__hostReadFile", Func::from(read_file))?;

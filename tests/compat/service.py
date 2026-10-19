@@ -159,6 +159,66 @@ async function operator(proxies) {
     return observation
 
 
+def script_download_background(url, state, upstream, output, name):
+    """The old optimistic value returns before its real refresh can complete."""
+    content = """
+async function operator(proxies) {
+  const OriginalDate=Date;
+  globalThis.Date=class extends OriginalDate {
+    static __m3Original=OriginalDate;
+    constructor(...args) { super(...(args.length ? args : [2300000000000])); }
+    static now() { return 2300000000000; }
+  };
+  $substore.write('old-background','#sub-store-cached-custom-native-background');
+  const value=await ProxyUtils.download($arguments.url,'background-native');
+  if(value!=='old-background') throw new Error('optimistic result');
+  proxies[0].optimistic=value;
+  return proxies;
+}
+"""
+    def step(script, arguments=None):
+        return {"method": "POST", "path": "/api/preview/sub", "body": {
+            "name": "background-download", "source": "local",
+            "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#background",
+            "process": [{"type": "Script Operator", "args": {"content": script, "arguments": arguments or {}}}]}}
+
+    start = len(upstream.requests)
+    try:
+        first = request(url, step(content, {"url": upstream.url + "/host/download/text/background#cacheKey=native-background&cacheTtl=3"}))
+        assert first["status"] == 200 and json.loads(first["body"])["data"]["processed"][0]["optimistic"] == "old-background", first
+        assert upstream.background_started.wait(timeout=2), "Refresh did not start"
+        root = json.loads((state / "root.json").read_text(encoding="utf-8"))
+        assert root["sub-store-cached-custom-native-background"] == "old-background", "Reply waited for the background body"
+        assert not upstream.background_release.is_set()
+        upstream.background_release.set()
+        second = request(url, step("""
+async function operator(proxies) {
+  try {
+    for(let i=0;i<150;i++) {
+      const value=$substore.read('#sub-store-cached-custom-native-background');
+      if(value==='下载🙂\\r\\n\\0尾\\n') { proxies[0].refreshed=value; return proxies; }
+      await $substore.wait(10);
+    }
+    throw new Error('background refresh did not persist after the reply');
+  } finally {
+    if(Date.__m3Original) globalThis.Date=Date.__m3Original;
+  }
+}
+"""))
+        assert second["status"] == 200 and json.loads(second["body"])["data"]["processed"][0]["refreshed"] == "下载🙂\r\n\0尾\n", second
+        outgoing = upstream.requests[start:]
+        check_json([{"method": item["method"], "path": item["path"], "body": item["body"],
+                     "user_agent": item["headers"].get("user-agent")} for item in outgoing],
+                   [{"method": "GET", "path": "/host/download/text/background", "body": "", "user_agent": "background-native"}])
+        observation = {"returned_before_release": True,
+                       "first": {key: first[key] for key in ("status", "body")},
+                       "second": {key: second[key] for key in ("status", "body")}}
+        (output / f"{name}-script-download-background.json").write_text(json.dumps(observation, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return observation
+    finally:
+        upstream.background_release.set()
+
+
 def state_edges(url, state, keys, output, name):
     """Compare actual HTTP values and persisted state without response normalization."""
     observations = []
@@ -1772,6 +1832,7 @@ def main():
         conversion_state = {}
         conversion_responses = {}
         conversion_concurrency = {}
+        conversion_background = {}
         # Cache identities include the source URL; both services need the same upstream origin.
         conversion_upstream_port = 0
         conversion_upstream_origins = {}
@@ -1790,6 +1851,7 @@ def main():
                 conversion_responses[kind] = list(results)
                 report["phases"].append({"name": label, "cases": len(results), "requests": sum(len(case["steps"]) for case in results)})
                 conversion_concurrency[kind] = script_concurrency(url, state, output, label)
+                conversion_background[kind] = script_download_background(url, state, upstream, output, label)
                 conversion_state[kind] = {key: json.loads((state / key).read_text(encoding="utf-8")) for key in ("sub-store.json", "root.json")}
                 if kind == "rust":
                     before_pending = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")}
@@ -1826,6 +1888,8 @@ def main():
                     assert actual["headers"].get(key) == expected["headers"].get(key), (rust_case["id"], key, actual, expected)
         check_json(conversion_state["rust"], conversion_state["node"])
         check_json(conversion_concurrency["rust"], conversion_concurrency["node"])
+        check_json(conversion_background["rust"], conversion_background["node"])
+        report["native_script_background_refresh_and_state_checked"] = True
         report["native_script_concurrency_and_state_checked"] = True
         report["native_local_ss_conversion_checked"] = True
         configurations = [

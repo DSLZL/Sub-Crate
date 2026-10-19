@@ -6,18 +6,57 @@ use hyper::{
     body::{Bytes, Incoming},
 };
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
-use rquickjs::{Ctx, Exception, prelude::Opt};
+use rquickjs::{Ctx, Exception, JsLifetime, Promise, prelude::Opt};
 use serde_json::{Value, json};
 use std::{
-    collections::BTreeMap,
+    cell::RefCell,
+    collections::{BTreeMap, HashMap},
     error::Error,
     io::{Read, Write},
+    rc::Rc,
+    time::Duration,
 };
 
 #[path = "script_transport.rs"]
 mod transport;
 
 type Failure = Box<dyn Error + Send + Sync>;
+
+#[derive(Clone, Default)]
+struct Timers(Rc<RefCell<HashMap<u64, tokio::sync::oneshot::Sender<()>>>>);
+
+// Native cancellation channels contain no JS values or engine borrows.
+unsafe impl<'js> JsLifetime<'js> for Timers {
+    type Changed<'to> = Timers;
+}
+
+fn timers(ctx: &Ctx<'_>) -> rquickjs::Result<Timers> {
+    if let Some(timers) = ctx.userdata::<Timers>() {
+        return Ok(timers.clone());
+    }
+    let timers = Timers::default();
+    ctx.store_userdata(timers.clone())
+        .map_err(|_| Exception::throw_message(ctx, "Timer state already borrowed"))?;
+    Ok(timers)
+}
+
+pub(crate) fn timer(ctx: Ctx<'_>, id: u64, milliseconds: u64) -> rquickjs::Result<Promise<'_>> {
+    let timers = timers(&ctx)?;
+    let (cancel, cancelled) = tokio::sync::oneshot::channel();
+    timers.0.borrow_mut().insert(id, cancel);
+    Promise::wrap_future(&ctx, async move {
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_millis(milliseconds)) => {},
+            _ = cancelled => {},
+        }
+        timers.0.borrow_mut().remove(&id);
+    })
+}
+
+pub(crate) fn cancel_timer(ctx: Ctx<'_>, id: u64) -> rquickjs::Result<()> {
+    timers(&ctx)?.0.borrow_mut().remove(&id);
+    Ok(())
+}
 
 fn decoded(
     status: u16,

@@ -10,17 +10,17 @@ function setTimeout(callback, delay, ...args) {
   if (typeof callback !== 'function') throw new TypeError('Timer callback must be a function');
   const id = hostTimerId++;
   hostTimers.set(id, true);
-  __hostWait(hostDelay(delay)).then(() => { if (hostTimers.delete(id)) callback(...args); });
+  __hostTimer(id, hostDelay(delay)).then(() => { if (hostTimers.delete(id)) callback(...args); });
   return id;
 }
-function clearTimeout(id) { hostTimers.delete(id); }
+function clearTimeout(id) { if (hostTimers.delete(id)) __hostCancelTimer(id); }
 function setInterval(callback, delay, ...args) {
   if (typeof callback !== 'function') throw new TypeError('Timer callback must be a function');
   const id = hostTimerId++;
   hostTimers.set(id, true);
   (async () => {
     while (hostTimers.has(id)) {
-      await __hostWait(hostDelay(delay));
+      await __hostTimer(id, hostDelay(delay));
       if (hostTimers.has(id)) callback(...args);
     }
   })();

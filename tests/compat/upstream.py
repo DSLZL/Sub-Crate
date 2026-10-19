@@ -21,6 +21,8 @@ class ControlledUpstream:
         self.gist_lock = threading.Lock()
         self.flow_lock = threading.Lock()
         self.flow_active = 0
+        self.background_started = threading.Event()
+        self.background_release = threading.Event()
         self.dns_condition = threading.Condition()
         self.dns_active = 0
         self.dns_pair_started = False
@@ -126,6 +128,24 @@ class ControlledUpstream:
         if path.startswith('/host/artifact/'):
             return artifact_response(path)
         text = "订阅🙂\r\nsecond\n".encode("utf-8")
+        if path.startswith('/host/download/'):
+            mode = path.removeprefix('/host/download/')
+            content = "下载🙂\r\n\0尾\n".encode('utf-8')
+            if mode == 'text/background':
+                self.background_started.set()
+                self.background_release.wait(timeout=5)
+            if mode.startswith('status/'):
+                return int(mode.rsplit('/', 1)[-1]), b'provider rejected', []
+            if mode == 'text/white':
+                return 200, b' \t\r\n', []
+            if mode == 'text/slow':
+                time.sleep(0.2)
+            if mode == 'text/preprocess-good':
+                return 200, 'proxies:\n  - {name: 预处理, type: ss, server: example.invalid, port: 8388, cipher: aes-128-gcm, password: pass}\n'.encode('utf-8'), []
+            if mode == 'text/preprocess-invalid':
+                return 200, b'<!DOCTYPE html>no nodes', []
+            flow = 'upload=3; download=0; total=3' if mode == 'text/flow-exhausted' else 'upload=1; download=2; total=100; expire=4102444800'
+            return 200, content, [('Subscription-Userinfo', flow)]
         if path.startswith('/host/compressed/'):
             mode = path.removeprefix('/host/compressed/')
             if mode == 'too-many':
