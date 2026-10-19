@@ -2,7 +2,8 @@
 
 This branch now includes an independent Rust HTTP server in `src/`. It serves
 subscription/collection/settings CRUD and legacy JSON storage without Node.
-Local subscriptions share native Rust parsing and JSON/URI/V2Ray output through
+Local subscriptions share native Rust parsing and JSON/URI/V2Ray and
+Clash/Mihomo/Stash/Shadowrocket output through
 `/api/proxy/parse`, subscription preview and subscription download. Native input
 includes SS/SSR, HTTP/SOCKS, Trojan, Hysteria1/2, TUIC, WireGuard, VMess, VLESS and
 AnyTLS, plus the registered Surge/Loon/QX and Clash JSON5/YAML formats and
@@ -16,7 +17,7 @@ The JavaScript feasibility example remains separate. Remaining conversion,
 script execution inside the application, archive actions, Gist/age and integrations are
 still under development; this is not a complete replacement release.
 
-Clash language parsing embeds only the existing locked JSON5/yaml utility
+Clash language parsing and pretty-YAML output embed only the existing locked JSON5/yaml utility
 packages through rquickjs. Application conversion policies remain native Rust.
 The utility-only build in Actions records package input hashes and license
 notices in `vendor/`; the development application-helper bundle is separate.

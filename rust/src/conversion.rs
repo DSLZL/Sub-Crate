@@ -32,7 +32,7 @@ fn decoded(raw: &str) -> Option<String> {
         .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
 }
 
-fn field_text(object: &Value, key: &str) -> String {
+pub(crate) fn field_text(object: &Value, key: &str) -> String {
     object
         .get(key)
         .map_or_else(|| "undefined".to_owned(), codec::js_string)
@@ -72,7 +72,7 @@ fn safe_integer(raw: &str) -> Option<u64> {
         .filter(|number| *number <= 9_007_199_254_740_991)
 }
 
-fn path_ed(path: &str) -> (String, Option<String>) {
+pub(crate) fn path_ed(path: &str) -> (String, Option<String>) {
     let Some((base, query)) = path.split_once('?') else {
         return (path.to_owned(), None);
     };
@@ -177,6 +177,16 @@ fn ipv6(address: &str) -> bool {
 
 pub(crate) fn is_ip(address: &str) -> bool {
     address.parse::<std::net::Ipv4Addr>().is_ok() || ipv6(address)
+}
+
+pub(crate) fn ss_over_tls(proxy: &Value) -> bool {
+    proxy["type"] == "ss"
+        && proxy["tls"] == true
+        && proxy.get("plugin").is_none_or(Value::is_null)
+        && proxy.get("network").is_none_or(|network| {
+            network.is_null()
+                || network.as_str().is_some_and(|network| codec::trim(network).eq_ignore_ascii_case("tcp"))
+        })
 }
 
 fn url_parts(raw: &str) -> (&str, &str, Option<&str>) {
@@ -3517,12 +3527,19 @@ fn uri(proxy: &Value) -> Option<String> {
     Some(output)
 }
 
-pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str) -> Result<Value, Error> {
+pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str, opts: &Value) -> Result<Value, Error> {
+    use crate::clash_output::Family;
+    let family = match target {
+        "Clash" => Some(Family::Clash),
+        "meta" | "clashmeta" | "clash.meta" | "Clash.Meta" | "ClashMeta" | "mihomo" | "Mihomo" => Some(Family::Meta),
+        "stash" | "Stash" => Some(Family::Stash),
+        "shadowrocket" | "Shadowrocket" | "ShadowRocket" => Some(Family::Shadowrocket),
+        _ => None,
+    };
     match target {
         "json" | "JSON" | "uri" | "URI" | "v2" | "v2ray" | "V2Ray" => {}
-        "qx" | "QX" | "QuantumultX" | "surge" | "Surge" | "SurgeMac" | "Loon" | "Clash"
-        | "meta" | "clashmeta" | "clash.meta" | "Clash.Meta" | "ClashMeta" | "mihomo"
-        | "Mihomo" | "stash" | "Stash" | "shadowrocket" | "Shadowrocket" | "ShadowRocket"
+        _ if family.is_some() => {}
+        "qx" | "QX" | "QuantumultX" | "surge" | "Surge" | "SurgeMac" | "Loon"
         | "surfboard" | "Surfboard" | "singbox" | "sing-box" | "egern" | "Egern" => {
             return Err(Error::Pending("This output format is not implemented yet"));
         }
@@ -3532,15 +3549,27 @@ pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str) -> Result<Valu
             )));
         }
     }
+    if opts.is_null() && !proxies.is_empty() {
+        return Err(Error::Legacy("Cannot read properties of null (reading 'include-unsupported-proxy')".to_owned()));
+    }
+    let normalized_target = target.to_lowercase();
+    let include_unsupported = truthy(&opts["include-unsupported-proxy"]);
     proxies.retain(|proxy| {
-        if proxy["type"] == "ss"
-            && proxy["tls"] == true
-            && proxy.get("plugin").is_none_or(Value::is_null)
-            && proxy["network"]
-                .as_str()
-                .is_none_or(|network| codec::trim(network).eq_ignore_ascii_case("tcp"))
-        {
-            return false;
+        if !include_unsupported {
+            if proxy["supported"][target] == false {
+                return false;
+            }
+            let root_headers = proxy["headers"].as_object().is_some_and(|headers| !headers.is_empty())
+                || proxy["headers"].as_array().is_some_and(|headers| !headers.is_empty());
+            let header_sensitive = matches!(proxy["type"].as_str(), Some("http" | "h2-connect" | "trusttunnel"));
+            let supports_headers = normalized_target.starts_with("surge") || normalized_target == "json"
+                || (proxy["type"] == "http" && ["egern", "meta", "clashmeta", "clash.meta", "mihomo", "singbox", "sing-box"].contains(&normalized_target.as_str()));
+            if root_headers && header_sensitive && !supports_headers {
+                return false;
+            }
+            if ss_over_tls(proxy) && !["qx", "quantumultx", "shadowrocket"].contains(&normalized_target.as_str()) {
+                return false;
+            }
         }
         if proxy["type"] == "vless" {
             let options = &proxy["xhttp-opts"];
@@ -3567,6 +3596,11 @@ pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str) -> Result<Valu
         true
     });
     for proxy in &mut proxies {
+        if let Some(resolved) = proxy.get("resolved").cloned() {
+            proxy["_resolved"] = resolved;
+        } else {
+            proxy.as_object_mut().unwrap().shift_remove("_resolved");
+        }
         if proxy["name"]
             .as_str()
             .is_none_or(|name| codec::trim(name).is_empty())
@@ -3578,12 +3612,16 @@ pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str) -> Result<Valu
                 field_text(proxy, "port")
             ));
         }
-        if truthy(&proxy["disable-sni"]) && proxy["type"] != "tuic" {
-            proxy["sni"] = json!(if proxy["server"].as_str().is_some_and(is_ip) {
-                field_text(proxy, "server")
-            } else {
-                "127.0.0.1".to_owned()
-            });
+        if truthy(&proxy["disable-sni"]) {
+            if ["surge", "surgemac", "shadowrocket"].contains(&normalized_target.as_str()) {
+                proxy["sni"] = json!("off");
+            } else if proxy["type"] != "tuic" && !["singbox", "sing-box"].contains(&normalized_target.as_str()) {
+                proxy["sni"] = json!(if proxy["server"].as_str().is_some_and(is_ip) {
+                    field_text(proxy, "server")
+                } else {
+                    "127.0.0.1".to_owned()
+                });
+            }
         }
         if truthy(&proxy["ports"]) && !truthy(&proxy["port"]) {
             proxy["port"] = random_port(&field_text(proxy, "ports"))?;
@@ -3591,6 +3629,9 @@ pub fn produce(mut proxies: Vec<Value>, target: &str, kind: &str) -> Result<Valu
         if proxy["type"] == "wireguard" {
             normalize_wireguard(proxy);
         }
+    }
+    if let Some(family) = family {
+        return crate::clash_output::produce(proxies, kind, opts, family);
     }
     if matches!(target, "json" | "JSON") {
         let value = Value::Array(proxies);

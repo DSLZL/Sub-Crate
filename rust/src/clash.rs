@@ -75,6 +75,30 @@ impl Parser {
         Ok(Self(context))
     }
 
+    pub fn dump(&self, value: &Value) -> Result<String, Error> {
+        self.0.with(|ctx| {
+            let result = (|| -> rquickjs::Result<String> {
+                let utilities: Object = ctx.globals().get("SubStoreUtilities")?;
+                let dump: Function = utilities.get("stringifyYaml")?;
+                let content = ctx.json_parse(codec::stringify(value))?;
+                let options = ctx.json_parse(r#"{"lineWidth":0}"#)?;
+                let text: String = dump.call((content, options))?;
+                Ok(if text.contains("proxies:")
+                    && text.contains("short-id:")
+                    && value["proxies"].as_array().is_some_and(|proxies| !proxies.is_empty())
+                {
+                    short_ids(&text)
+                } else {
+                    text
+                })
+            })();
+            result.map_err(|error| {
+                ctx.catch();
+                Error::Legacy(error.to_string())
+            })
+        })
+    }
+
     pub fn preprocess(&self, raw: &str) -> Option<String> {
         if !raw.contains("proxies") {
             return None;
