@@ -40,7 +40,7 @@ def wall_time():
 
 
 @contextmanager
-def listener(binary, environment, output, report, log_prefix="rust", image=None):
+def listener(binary, environment, output, report, log_prefix="rust", image=None, host_network=False):
     port = int(environment.get("SUB_STORE_BACKEND_API_PORT", "0"))
     if not port:
         with socket.socket() as reserved:
@@ -57,17 +57,18 @@ def listener(binary, environment, output, report, log_prefix="rust", image=None)
     if image:
         argv = ["docker", "run", "--rm", "--name", name, "--read-only", "--cap-drop=ALL",
                 "--security-opt=no-new-privileges", "--user", f"{os.getuid()}:{os.getgid()}",
-                "-p", f"127.0.0.1:{port}:3000",
                 "--mount", f"type=bind,source={environment['SUB_STORE_DATA_BASE_PATH']},target=/data"]
+        # Conversion callbacks contact the controlled loopback upstream in CI.
+        argv.extend(["--network=host"] if host_network else ["-p", f"127.0.0.1:{port}:3000"])
         if environment.get("SUB_STORE_FRONTEND_PATH"):
             argv.extend(["--mount", f"type=bind,source={environment['SUB_STORE_FRONTEND_PATH']},target=/frontend,readonly"])
-            if not environment.get("SUB_STORE_BACKEND_MERGE"):
+            if not environment.get("SUB_STORE_BACKEND_MERGE") and not host_network:
                 argv.extend(["-p", f"127.0.0.1:{environment['SUB_STORE_FRONTEND_PORT']}:3001"])
         for key, value in environment.items():
             if key.startswith("SUB_STORE_") or key in ("TZ", "NODE_ENV"):
-                value = {"SUB_STORE_DATA_BASE_PATH": "/data", "SUB_STORE_BACKEND_API_PORT": "3000",
-                         "SUB_STORE_BACKEND_API_HOST": "0.0.0.0", "SUB_STORE_FRONTEND_PATH": "/frontend",
-                         "SUB_STORE_FRONTEND_HOST": "0.0.0.0", "SUB_STORE_FRONTEND_PORT": "3001"}.get(key, value)
+                value = {"SUB_STORE_DATA_BASE_PATH": "/data", "SUB_STORE_BACKEND_API_PORT": str(port) if host_network else "3000",
+                         "SUB_STORE_BACKEND_API_HOST": value if host_network else "0.0.0.0", "SUB_STORE_FRONTEND_PATH": "/frontend",
+                         "SUB_STORE_FRONTEND_HOST": value if host_network else "0.0.0.0", "SUB_STORE_FRONTEND_PORT": value if host_network else "3001"}.get(key, value)
                 argv.extend(["--env", f"{key}={value}"])
         argv.append(image)
     else:
@@ -1773,7 +1774,7 @@ def main():
             (state / "root.json").write_text(json.dumps(baseline_root, ensure_ascii=False), encoding="utf-8")
             env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}
             label = kind + "-conversion-local"
-            manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
+            manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image, host_network=bool(image))
             with manager as url, ControlledUpstream() as upstream:
                 results = check_cases(url, state, conversion_cases, output, label, upstream)
                 conversion_responses[kind] = list(results)
@@ -1799,7 +1800,7 @@ def main():
                     assert request(url, {"path": "/download/native-local/URI"})["status"] == 200
             before = (state / "sub-store.json").read_bytes()
             label += "-restart"
-            manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
+            manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image, host_network=bool(image))
             with manager as url:
                 conversion_responses[kind].extend(check_cases(url, state, conversion_restart, output, label))
                 assert (state / "sub-store.json").read_bytes() == before, "Read-only conversion changed durable state"

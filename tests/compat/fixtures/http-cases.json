@@ -858,12 +858,18 @@
             "type": "Script Operator",
             "args": {
               "mode": "script",
-              "content": "function operator(proxies) { Math.random = () => 0; return proxies; }"
+              "content": "function operator(proxies) { globalThis.__m3OriginalRandom = Math.random; Math.random = () => 0; return proxies; }"
             }
           },
           {
             "type": "Sort Operator",
             "args": "random"
+          },
+          {
+            "type": "Script Operator",
+            "args": {
+              "content": "function operator(proxies) { Math.random = globalThis.__m3OriginalRandom; delete globalThis.__m3OriginalRandom; return proxies; }"
+            }
           }
         ]
       },

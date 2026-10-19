@@ -77,7 +77,7 @@ fn store_key<'js>(js: &Js<'js>, key: JsValue<'js>) -> rquickjs::Result<(bool, Js
     if !key.is_string() {
         return Err(Exception::throw_type(
             &js.ctx,
-            "key.indexOf is not a function",
+            "t.indexOf is not a function",
         ));
     }
     let index = js.method(key.clone(), "indexOf", vec![js.value("#")?])?;
