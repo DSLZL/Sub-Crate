@@ -12,6 +12,40 @@ use std::sync::{Arc, Mutex};
 
 pub type Reply = Response<Full<Bytes>>;
 
+#[derive(Clone)]
+pub struct TransformedResponse;
+
+fn script_response(output: Value) -> Result<Reply, ConversionError> {
+    let status = output["status"].as_f64().unwrap_or(200.0) as u16;
+    let body = &output["body"];
+    let binary = output["binary"] == true;
+    let bytes = if binary {
+        base64::engine::general_purpose::STANDARD.decode(body.as_str().unwrap_or("")).map_err(|error| ConversionError::Legacy(error.to_string()))?
+    } else if body.is_null() { Vec::new() }
+    else { body.as_str().map_or_else(|| codec::stringify(body), str::to_owned).into_bytes() };
+    let default_type = if binary { "application/octet-stream" } else if body.is_string() { "text/html; charset=utf-8" } else { "application/json; charset=utf-8" };
+    let content_type = output["headers"]["content-type"].as_str().unwrap_or(default_type);
+    let mut response = send(status, content_type, bytes);
+    if let Some(headers) = output["headers"].as_object() {
+        for (key, value) in headers {
+            if value.is_null() || key == "content-length" { continue; }
+            let key = hyper::header::HeaderName::from_bytes(key.as_bytes()).map_err(|error| ConversionError::Legacy(error.to_string()))?;
+            let values = value.as_array().map_or_else(|| vec![value], |values| values.iter().collect());
+            response.headers_mut().remove(&key);
+            for value in values {
+                let value = hyper::header::HeaderValue::from_str(&js_string(value)).map_err(|error| ConversionError::Legacy(error.to_string()))?;
+                response.headers_mut().append(key.clone(), value);
+            }
+        }
+    }
+    if matches!(status, 204 | 304) {
+        for key in ["content-type", "content-length", "transfer-encoding"] { response.headers_mut().remove(key); }
+        *response.body_mut() = Full::new(Bytes::new());
+    }
+    response.extensions_mut().insert(TransformedResponse);
+    Ok(response)
+}
+
 pub fn text(status: u16, content_type: &str, body: impl Into<Bytes>) -> Reply {
     Response::builder()
         .status(status)
@@ -241,6 +275,7 @@ pub async fn conversion_dispatch(
     body: &Body,
     headers: &HeaderMap,
     store: &Arc<Mutex<Store>>,
+    request: &Value,
 ) -> Option<Reply> {
     if method == Method::POST && path == "/api/rule/parse" {
         let fields = Value::Object(body.fields());
@@ -263,27 +298,7 @@ pub async fn conversion_dispatch(
     }
     if method == Method::POST && path == "/api/proxy/parse" {
         let fields = Value::Object(body.fields());
-        if truthy(&fields["download"]) {
-            return Some(pending("Parser downloads are not implemented yet"));
-        }
-        let raw = fields
-            .get("data")
-            .filter(|value| !value.is_null())
-            .unwrap_or(&fields["content"]);
-        let target = selected_text(
-            fields
-                .get("client")
-                .filter(|value| !value.is_null())
-                .or_else(|| fields.get("platform")),
-        );
-        let result = conversion::parse(raw).and_then(|proxies| {
-            conversion::produce(
-                proxies,
-                &target,
-                fields["type"].as_str().unwrap_or(""),
-                fields.get("produce").unwrap_or(&json!({})),
-            )
-        });
+        let result = crate::script::run(store.clone(), "parse", fields).await;
         return Some(match result {
             Ok(output) => success(Some(json!({"par_res":output})), 200),
             Err(error) => conversion_error(error, None),
@@ -331,7 +346,9 @@ pub async fn conversion_dispatch(
         .split_once('/')
         .map_or((rest, None), |(name, target)| (name, Some(target)));
     let name = codec::encode(&percent_decode_str(name).decode_utf8().ok()?);
-    let sub = if truthy(&query["fakeSub"]) {
+    let sub = if !collection && truthy(&query["_fakeNode"]) {
+        Some(json!({"name":"fakeNodeInfo", "source":"local", "content":"invalid share = ss, 1.0.0.1, 80, encrypt-method=aes-128-gcm, password=password"}))
+    } else if !collection && truthy(&query["fakeSub"]) {
         Some(json!({"name":"fakeSub", "source":"remote", "url":""}))
     } else {
         let store = store.lock().unwrap();
@@ -369,17 +386,6 @@ pub async fn conversion_dispatch(
             ),
         ));
     };
-    // shortcut: output hooks, remote flow headers and encryption join this pipeline in their owning batches.
-    if ["$options", "_fakeNode"]
-        .iter()
-        .any(|key| truthy(&query[*key]))
-        || truthy(&sub["age-public-key"])
-        || (truthy(&sub["subUserinfo"]) && !truthy(&query["noFlow"]) && !truthy(&sub["noFlow"]))
-    {
-        return Some(pending(
-            "Subscription output options are not implemented yet",
-        ));
-    }
     let target = if truthy(&query["platform"]) {
         js_string(&query["platform"])
     } else if let Some(target) = path_target {
@@ -414,8 +420,26 @@ pub async fn conversion_dispatch(
                 produce.insert(destination.to_owned(), value.clone());
             }
         }
+        if !produce.contains_key("prettyYaml") && let Some(value) = query.get("pretty-yaml") { produce.insert("prettyYaml".to_owned(), value.clone()); }
+        let use_external = path_target.map_or(query["target"] == "SurgeMac", |target| target == "SurgeMac");
+        produce.insert("useMihomoExternal".to_owned(), json!(use_external));
+        if use_external {
+            for (key, field) in [("mihomoMerge","merge"),("mihomoMergeName","mergeName"),("mihomoExternal","mihomoExternal")] {
+                if let Some(value) = query.get(key) { produce.insert(field.to_owned(), value.clone()); }
+            }
+            if let Some(value) = query.get("mihomoLocalPort") {
+                let text = js_string(value);
+                let text = codec::trim(&text);
+                let end = text.char_indices().skip(usize::from(text.starts_with(['+','-']))).find(|(_,ch)|!ch.is_ascii_digit()).map_or(text.len(),|(index,_)|index);
+                if let Ok(port) = text[..end].parse::<u16>() && port != 0 { produce.insert("localPort".to_owned(), json!(port)); }
+            }
+        }
         fields.insert("produceOpts".to_owned(), Value::Object(produce));
     }
+    let mut request = request.clone();
+    let mut params = json!({"name":name});
+    if let Some(target) = path_target { params["target"] = json!(codec::encode(&percent_decode_str(target).decode_utf8().ok()?)); request["query"]["target"] = params["target"].clone(); }
+    request["params"] = params;
     let result = crate::script::run(
         store.clone(),
         if collection {
@@ -423,21 +447,11 @@ pub async fn conversion_dispatch(
         } else {
             "download-sub"
         },
-        json!({"item":sub,"options":options}),
+        json!({"item":sub,"options":options,"request":request}),
     )
     .await;
-    Some(match result {
-        Ok(output) => {
-            let content_type = if target == "JSON" {
-                "application/json; charset=utf-8"
-            } else {
-                "text/plain; charset=utf-8"
-            };
-            let bytes = output
-                .as_str()
-                .map_or_else(|| codec::stringify(&output), str::to_owned);
-            send(200, content_type, bytes)
-        }
+    Some(match result.and_then(script_response) {
+        Ok(response) => response,
         Err(error) => conversion_error(
             error,
             Some(&format!(

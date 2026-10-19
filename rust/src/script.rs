@@ -911,6 +911,7 @@ pub async fn run(
                             let js = Js::new(ctx.clone());
                             let input = ctx.json_parse(codec::stringify(&input))?;
                             let result = match operation.as_str() {
+                                "parse" => crate::script_http::parse(&js, input).await?,
                                 "preview-sub" | "preview-collection" => {
                                     crate::script_pipeline::preview(
                                         &js,
@@ -924,11 +925,12 @@ pub async fn run(
                                     settled(&js, function.call((input,))?).await?
                                 }
                                 "download-sub" | "download-collection" => {
-                                    crate::script_pipeline::generate(
+                                    crate::script_http::download(
                                         &js,
-                                        if operation == "download-collection" { "collection" } else { "sub" },
+                                        operation == "download-collection",
                                         js.get(&input, "item")?,
                                         js.get(&input, "options")?,
+                                        js.get(&input, "request")?,
                                     ).await?
                                 }
                                 _ => return Err(js.error("Unknown script job operation")),

@@ -2,11 +2,11 @@
 use crate::{js_language::Js, script, script_download, script_network as network};
 use rquickjs::{Ctx, Function, Object, Promise, Value, prelude::{Async, Func}};
 
-fn object<'js>(js: &Js<'js>) -> rquickjs::Result<Value<'js>> {
+pub(crate) fn object<'js>(js: &Js<'js>) -> rquickjs::Result<Value<'js>> {
     Ok(Object::new(js.ctx.clone())?.into_value())
 }
 
-fn optional<'js>(js: &Js<'js>, value: &Value<'js>, key: &str) -> rquickjs::Result<Value<'js>> {
+pub(crate) fn optional<'js>(js: &Js<'js>, value: &Value<'js>, key: &str) -> rquickjs::Result<Value<'js>> {
     js.call("optional", (value.clone(), key))
 }
 
@@ -38,11 +38,11 @@ fn failed(js: &Js<'_>, mode: &str, message: &str) -> rquickjs::Result<()> {
     Ok(())
 }
 
-fn read<'js>(js: &Js<'js>, key: &str) -> rquickjs::Result<Value<'js>> {
+pub(crate) fn read<'js>(js: &Js<'js>, key: &str) -> rquickjs::Result<Value<'js>> {
     js.method(network::host(js)?, "read", vec![js.value(key)?])
 }
 
-fn find<'js>(js: &Js<'js>, items: Value<'js>, name: Value<'js>) -> rquickjs::Result<Value<'js>> {
+pub(crate) fn find<'js>(js: &Js<'js>, items: Value<'js>, name: Value<'js>) -> rquickjs::Result<Value<'js>> {
     let scope = js.clone();
     let predicate = Function::new(js.ctx.clone(), move |item: Value<'js>| {
         scope.equal(&scope.get(&item, "name")?, &name)
@@ -50,7 +50,7 @@ fn find<'js>(js: &Js<'js>, items: Value<'js>, name: Value<'js>) -> rquickjs::Res
     js.method(items, "find", vec![predicate.into_value()])
 }
 
-async fn utility<'js>(js: &Js<'js>, name: &str, args: Vec<Value<'js>>) -> rquickjs::Result<Value<'js>> {
+pub(crate) async fn utility<'js>(js: &Js<'js>, name: &str, args: Vec<Value<'js>>) -> rquickjs::Result<Value<'js>> {
     let utils: Value = js.ctx.globals().get("ProxyUtils")?;
     script::settled(js, js.method(utils, name, args)?).await
 }
@@ -61,7 +61,7 @@ async fn all<'js>(js: &Js<'js>, promises: Vec<Value<'js>>) -> rquickjs::Result<V
 }
 
 async fn sources<'js>(
-    js: &Js<'js>, sub: Value<'js>, options: Value<'js>, preview: bool,
+    js: &Js<'js>, sub: Value<'js>, options: Value<'js>, preview: bool, saved_raw: &mut Value<'js>,
 ) -> rquickjs::Result<(Value<'js>, Value<'js>)> {
     let content = optional(js, &options, "content")?;
     let override_merge = optional(js, &options, "mergeSources")?;
@@ -111,6 +111,11 @@ async fn sources<'js>(
         pending.push(promise.into_value());
     }
     let downloaded = all(js, pending).await?;
+    let raw_scope = js.clone();
+    *saved_raw = js.map(downloaded.clone(), move |value| {
+        let raw = raw_scope.get(&value, "raw")?;
+        Ok(if nullish(&raw) { value } else { raw })
+    })?;
     let count: usize = js.call("length", (js.call::<Value, _>("entries", (errors.clone(),))?,))?;
     if count > 0 {
         let entries: Vec<Value> = js.call("iterable", (js.call::<Value, _>("entries", (errors,))?,))?;
@@ -399,7 +404,7 @@ async fn subscription<'js>(js: &Js<'js>, sub: Value<'js>, options: Value<'js>, p
     let resolved = mode(js, [optional(js, &options, "ignoreFailedRemoteSub")?, js.get(&sub, "ignoreFailedRemoteSub")?])?;
     let mut source_raw = js.array([])?;
     let result = async {
-        let (raw, source) = sources(js, sub.clone(), options.clone(), preview).await?;
+        let (raw, source) = sources(js, sub.clone(), options.clone(), preview, &mut source_raw).await?;
         source_raw = source;
         if !preview && js.equal(&optional(js, &options, "produceType")?, &js.value("raw")?)? {
             let result = js.ctx.json_stringify(js.method(array(js, raw)?, "flat", vec![])?)?.ok_or_else(|| js.error("Cannot stringify raw sources"))?.into_value();
@@ -481,7 +486,8 @@ async fn collection<'js>(js: &Js<'js>, collection: Value<'js>, options: Value<'j
                         worker.set(&child_options, "noCache", optional(&worker, &options, "noCache")?)?;
                         worker.set(&child_options, "noFlow", network::prefer(&worker, [optional(&worker, &options, "noFlow")?, worker.get(&collection, "noFlow")?])?)?;
                     }
-                    let (raw, source_raw) = sources(&worker, sub.clone(), child_options.clone(), preview).await?;
+                    let mut saved_raw = worker.undefined();
+                    let (raw, source_raw) = sources(&worker, sub.clone(), child_options.clone(), preview, &mut saved_raw).await?;
                     let original = parse(&worker, raw)?;
                     tag(&worker, original.clone(), Some(sub.clone()), Some(collection.clone()), false)?;
                     let source = object(&worker)?;

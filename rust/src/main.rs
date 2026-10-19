@@ -14,6 +14,7 @@ mod script_age;
 mod script_download;
 mod script_flow;
 mod script_helpers;
+mod script_http;
 mod script_io;
 mod script_loading;
 mod script_network;
@@ -598,7 +599,9 @@ async fn handle(
         route(request, &config, &store).await
     };
     let mut response = response;
-    config.headers(&mut response, &raw_origin);
+    if response.extensions().get::<api::TransformedResponse>().is_none() {
+        config.headers(&mut response, &raw_origin);
+    }
     let etag = header(response.headers(), "etag");
     if read && response.status().is_success() && !etag.is_empty() && fresh(&headers, etag, None) {
         *response.status_mut() = hyper::StatusCode::NOT_MODIFIED;
@@ -790,6 +793,8 @@ async fn route(
     let raw_path = request.uri().path().to_owned();
     let headers = request.headers().clone();
     let raw_query = request.uri().query().unwrap_or("").to_owned();
+    let request_method = request.method().as_str().to_owned();
+    let peer = request.extensions().get::<std::net::SocketAddr>().map(|peer| peer.ip().to_string());
     let body = match body::read(request, config.body_limit).await {
         Ok(body) => body,
         Err(error) => return api::uncaught_error(error.status, &error.detail),
@@ -872,8 +877,16 @@ async fn route(
             })),
         );
     }
+    let mut base = api::text(200, "text/plain; charset=utf-8", "");
+    config.headers(&mut base, header(&headers, "origin"));
+    let request = json!({
+        "method":request_method,"url":if raw_query.is_empty(){raw_path.clone()}else{format!("{raw_path}?{raw_query}")},
+        "path":raw_path,"query":query,"body":body.fields(),"socket":{"remoteAddress":peer},
+        "headers":headers.iter().map(|(key,value)|(key.as_str().to_owned(),json!(value.to_str().unwrap_or("")))).collect::<serde_json::Map<String,Value>>(),
+        "responseHeaders":base.headers().iter().map(|(key,value)|(key.as_str().to_owned(),json!(value.to_str().unwrap_or("")))).collect::<serde_json::Map<String,Value>>()
+    });
     if let Some(response) =
-        api::conversion_dispatch(&method, &path, &query, &body, &headers, store).await
+        api::conversion_dispatch(&method, &path, &query, &body, &headers, store, &request).await
     {
         return response;
     }
@@ -930,11 +943,12 @@ async fn serve(
     frontend: bool,
 ) -> io::Result<()> {
     loop {
-        let (stream, _) = listener.accept().await?;
+        let (stream, peer) = listener.accept().await?;
         let config = Arc::clone(&config);
         let store = Arc::clone(&store);
         tokio::spawn(async move {
-            let service = service_fn(move |request| {
+            let service = service_fn(move |mut request: Request<Incoming>| {
+                request.extensions_mut().insert(peer);
                 let config = Arc::clone(&config);
                 let store = Arc::clone(&store);
                 async move {

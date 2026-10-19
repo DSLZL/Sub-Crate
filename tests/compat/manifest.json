@@ -3,6 +3,7 @@
   "frontend_commit": "4bd7b0acbe65466b933ccea14fc61dbebe036ead",
   "suites": {
     "conversion-local": [
+      "PC-native-http-parser-and-output-stages",
       "PC-native-generated-file-pipeline",
       "PC-native-collection-preview-and-download",
       "PC-native-subscription-collection-pipeline",

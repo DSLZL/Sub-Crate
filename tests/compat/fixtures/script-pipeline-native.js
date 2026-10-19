@@ -64,7 +64,7 @@ async function operator(proxies) {
       equal(names(await produce({subscription:{...sub,ignoreFailedRemoteSub:true}})),['remote-a'],'true means quiet partial output');
       equal(await produce({subscription:{...sub,ignoreFailedRemoteSub:'fallbackQuiet'}}),[],'fallback discards partially loaded source');
       equal(await produce({subscription:{...source,content:'',ignoreFailedRemoteSub:'fallbackNotify'}}),[],'empty source fallback');
-      equal(await produce({subscription:{...sub,ignoreFailedRemoteSub:'fallbackQuiet'},produceType:'raw',includeRaw:true}),{result:'[]',raw:[]},'raw fallback retains source array at failure boundary');
+      equal(await produce({subscription:{...sub,ignoreFailedRemoteSub:'fallbackQuiet'},produceType:'raw',includeRaw:true}),{result:'[]',raw:['','ss://YWVzLTEyOC1nY206cGFzcw==@a.invalid:8388#remote-a']},'raw fallback retains source array at failure boundary');
       return {partial:true,wholeFallback:true,rawFallback:true};
     });
     await check('PL-native-collection-partial-and-whole-fallback',async()=>{

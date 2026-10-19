@@ -890,7 +890,7 @@
             {
               "type": "Script Operator",
               "args": {
-                "content": "async function operator(proxies) {\n  const assert=(value,message)=>{if(!value)throw new Error(message);};\n  const equal=(actual,expected,message)=>assert(JSON.stringify(actual)===JSON.stringify(expected),message+': '+JSON.stringify({actual,expected}));\n  const rejects=async(callback,message)=>{try{await callback();}catch(error){assert(error.message.includes(message),'pipeline error '+error.message);return;}throw new Error('expected '+message);};\n  const DateBefore=Date,subsBefore=$substore.read('subs'),colsBefore=$substore.read('collections');\n  globalThis.Date=class extends DateBefore {constructor(...args){super(...(args.length?args:[3300000000000]));}static now(){return 3300000000000;}};\n  const passed=[],results={};\n  const check=async(id,callback)=>{results[id]=await callback();passed.push(id);};\n  const local='ss://YWVzLTEyOC1nY206cGFzcw==@local.invalid:8388#local';\n  const remote='$UPSTREAM/host/pipeline/';\n  const names=value=>value.map(item=>item.name);\n  const produce=options=>produceArtifact({type:'subscription',platform:'JSON',produceType:'internal',noFlow:true,...options});\n  const source={name:'源🙂',displayName:'显示',source:'local',content:local};\n  try {\n    await check('PL-native-subscription-source-precedence-and-typed-output',async()=>{\n      const result=await produce({subscription:source});\n      equal(names(result),['local'],'local source');\n      equal([result[0]._subName,result[0]._subDisplayName],['源🙂','显示'],'provenance');\n      const overridden=await produce({subscription:{...source,source:'remote',url:remote+'a'},content:local});\n      equal(names(overridden),['local'],'content override bypasses URL');\n      const raw=await produce({subscription:source,produceType:'raw',includeRaw:true});\n      equal(raw,{result:JSON.stringify([local]),raw:[local]},'raw output and original source');\n      await rejects(()=>produce({name:'missing'}),'找不到订阅 missing');\n      await rejects(()=>produce({subscription:undefined}),'未提供订阅名称或订阅数据');\n      return {names:names(result),raw,missing:true};\n    });\n    await check('PL-native-parallel-source-order-merge-and-raw',async()=>{\n      const sub={...source,source:'remote',url:remote+'slow\\n'+remote+'b',mergeSources:'localFirst'};\n      const result=await produce({subscription:sub,includeRaw:true});\n      equal(names(result.result),['local','remote-slow','remote-b'],'source order survives completion order');\n      equal(result.raw,[local,'ss://YWVzLTEyOC1nY206cGFzcw==@slow.invalid:8388#remote-slow','ss://YWVzLTEyOC1nY206cGFzcw==@b.invalid:8388#remote-b'],'original raw sources');\n      equal(names(await produce({subscription:{...sub,mergeSources:'remoteFirst'}})),['remote-slow','remote-b','local'],'remoteFirst and shared cache');\n      const override=await produce({subscription:source,url:remote+'a',content:local,mergeSources:'remoteFirst'});\n      equal(names(override),['remote-a','local'],'overrides own source and merge');\n      return {result,override};\n    });\n    await check('PL-native-processing-options-source-and-original-content',async()=>{\n      const sub={...source,process:[{type:'Script Operator',args:{content:`async function operator(items,target,context){\n        if(target!=='JSON'||$options.zero!==0||context.source['源🙂'].displayName!=='显示')throw new Error('pipeline injection');\n        items[0].raw=context.raw;items[0].name+='-processed';return items;}`}}]};\n      const result=await produce({subscription:sub,$options:{zero:0}});\n      equal(result[0].raw,[local],'raw injected unchanged');\n      equal(names(result),['local-processed'],'processor used before producer');\n      return result;\n    });\n    await check('PL-native-collection-explicit-tags-child-and-own-order',async()=>{\n      const first={...source,name:'first',tag:['自动'],process:[{type:'Regex Rename Operator',args:[{expr:'local',now:'child-first'}]}]};\n      const second={name:'second',source:'remote',url:remote+'a',tag:['自动']};\n      const excluded={...source,name:'excluded',tag:['其他']};\n      const collection={name:'组合🙂',displayName:'集合显示',subscriptions:['first'],subscriptionTags:['自动'],process:[{type:'Script Operator',args:{content:`function operator(items,target,context){\n        if($options.zero!==0||context.source._collection.name!=='组合🙂')throw new Error('collection injection');\n        items.forEach(item=>{item.collectionRaw=context.raw;item.name+='-collection';});return items;}`}}]};\n      $substore.write([first,second,excluded],'subs');$substore.write([collection],'collections');\n      const result=await produce({type:'collection',name:'组合🙂',$options:{zero:0},includeRaw:true});\n      equal(names(result.result),['child-first-collection','remote-a-collection'],'explicit then tagged source and own processing');\n      equal(result.result.map(item=>[item._subName,item._collectionName,item._collectionDisplayName]),[['first','组合🙂','集合显示'],['second','组合🙂','集合显示']],'collection provenance');\n      equal(Object.keys(result.raw),['first','second'],'raw map keys');\n      await rejects(()=>produce({type:'collection',name:'missing'}),'找不到组合订阅 missing');\n      return result;\n    });\n    await check('PL-native-source-ignore-and-subscription-fallback',async()=>{\n      const sub={...source,source:'remote',url:remote+'failed\\n'+remote+'a'};\n      await rejects(()=>produce({subscription:sub}),'发生错误, 请查看日志');\n      equal(names(await produce({subscription:{...sub,ignoreFailedRemoteSub:true}})),['remote-a'],'true means quiet partial output');\n      equal(await produce({subscription:{...sub,ignoreFailedRemoteSub:'fallbackQuiet'}}),[],'fallback discards partially loaded source');\n      equal(await produce({subscription:{...source,content:'',ignoreFailedRemoteSub:'fallbackNotify'}}),[],'empty source fallback');\n      equal(await produce({subscription:{...sub,ignoreFailedRemoteSub:'fallbackQuiet'},produceType:'raw',includeRaw:true}),{result:'[]',raw:[]},'raw fallback retains source array at failure boundary');\n      return {partial:true,wholeFallback:true,rawFallback:true};\n    });\n    await check('PL-native-collection-partial-and-whole-fallback',async()=>{\n      const valid={...source,name:'valid'},invalid={name:'invalid',source:'remote',url:remote+'failed'};\n      $substore.write([valid,invalid],'subs');\n      const collection={name:'fallback',subscriptions:['invalid','valid'],ignoreFailedRemoteSub:'fallbackQuiet'};\n      $substore.write([collection],'collections');\n      const result=await produce({type:'collection',name:'fallback',includeRaw:true});\n      equal(names(result.result),['local'],'collection retains successful children');\n      equal(result.raw.invalid,[],'failed child raw replaced by empty array');\n      $substore.write([{...collection,subscriptions:['invalid']}],'collections');\n      equal(await produce({type:'collection',name:'fallback'}),[],'no success falls back whole collection');\n      $substore.write([{...invalid,ignoreFailedRemoteSub:'fallbackQuiet'}],'subs');\n      $substore.write([{name:'child-fallback',subscriptions:['invalid']}],'collections');\n      await rejects(()=>produce({type:'collection',name:'child-fallback'}),'不含有效节点');\n      return {result,empty:true,childFallback:true};\n    });\n    proxies[0].pipelineVerified=passed;proxies[0].pipelineResults=results;return proxies;\n  } finally {$substore.write(subsBefore,'subs');$substore.write(colsBefore,'collections');globalThis.Date=DateBefore;}\n}\n"
+                "content": "async function operator(proxies) {\n  const assert=(value,message)=>{if(!value)throw new Error(message);};\n  const equal=(actual,expected,message)=>assert(JSON.stringify(actual)===JSON.stringify(expected),message+': '+JSON.stringify({actual,expected}));\n  const rejects=async(callback,message)=>{try{await callback();}catch(error){assert(error.message.includes(message),'pipeline error '+error.message);return;}throw new Error('expected '+message);};\n  const DateBefore=Date,subsBefore=$substore.read('subs'),colsBefore=$substore.read('collections');\n  globalThis.Date=class extends DateBefore {constructor(...args){super(...(args.length?args:[3300000000000]));}static now(){return 3300000000000;}};\n  const passed=[],results={};\n  const check=async(id,callback)=>{results[id]=await callback();passed.push(id);};\n  const local='ss://YWVzLTEyOC1nY206cGFzcw==@local.invalid:8388#local';\n  const remote='$UPSTREAM/host/pipeline/';\n  const names=value=>value.map(item=>item.name);\n  const produce=options=>produceArtifact({type:'subscription',platform:'JSON',produceType:'internal',noFlow:true,...options});\n  const source={name:'源🙂',displayName:'显示',source:'local',content:local};\n  try {\n    await check('PL-native-subscription-source-precedence-and-typed-output',async()=>{\n      const result=await produce({subscription:source});\n      equal(names(result),['local'],'local source');\n      equal([result[0]._subName,result[0]._subDisplayName],['源🙂','显示'],'provenance');\n      const overridden=await produce({subscription:{...source,source:'remote',url:remote+'a'},content:local});\n      equal(names(overridden),['local'],'content override bypasses URL');\n      const raw=await produce({subscription:source,produceType:'raw',includeRaw:true});\n      equal(raw,{result:JSON.stringify([local]),raw:[local]},'raw output and original source');\n      await rejects(()=>produce({name:'missing'}),'找不到订阅 missing');\n      await rejects(()=>produce({subscription:undefined}),'未提供订阅名称或订阅数据');\n      return {names:names(result),raw,missing:true};\n    });\n    await check('PL-native-parallel-source-order-merge-and-raw',async()=>{\n      const sub={...source,source:'remote',url:remote+'slow\\n'+remote+'b',mergeSources:'localFirst'};\n      const result=await produce({subscription:sub,includeRaw:true});\n      equal(names(result.result),['local','remote-slow','remote-b'],'source order survives completion order');\n      equal(result.raw,[local,'ss://YWVzLTEyOC1nY206cGFzcw==@slow.invalid:8388#remote-slow','ss://YWVzLTEyOC1nY206cGFzcw==@b.invalid:8388#remote-b'],'original raw sources');\n      equal(names(await produce({subscription:{...sub,mergeSources:'remoteFirst'}})),['remote-slow','remote-b','local'],'remoteFirst and shared cache');\n      const override=await produce({subscription:source,url:remote+'a',content:local,mergeSources:'remoteFirst'});\n      equal(names(override),['remote-a','local'],'overrides own source and merge');\n      return {result,override};\n    });\n    await check('PL-native-processing-options-source-and-original-content',async()=>{\n      const sub={...source,process:[{type:'Script Operator',args:{content:`async function operator(items,target,context){\n        if(target!=='JSON'||$options.zero!==0||context.source['源🙂'].displayName!=='显示')throw new Error('pipeline injection');\n        items[0].raw=context.raw;items[0].name+='-processed';return items;}`}}]};\n      const result=await produce({subscription:sub,$options:{zero:0}});\n      equal(result[0].raw,[local],'raw injected unchanged');\n      equal(names(result),['local-processed'],'processor used before producer');\n      return result;\n    });\n    await check('PL-native-collection-explicit-tags-child-and-own-order',async()=>{\n      const first={...source,name:'first',tag:['自动'],process:[{type:'Regex Rename Operator',args:[{expr:'local',now:'child-first'}]}]};\n      const second={name:'second',source:'remote',url:remote+'a',tag:['自动']};\n      const excluded={...source,name:'excluded',tag:['其他']};\n      const collection={name:'组合🙂',displayName:'集合显示',subscriptions:['first'],subscriptionTags:['自动'],process:[{type:'Script Operator',args:{content:`function operator(items,target,context){\n        if($options.zero!==0||context.source._collection.name!=='组合🙂')throw new Error('collection injection');\n        items.forEach(item=>{item.collectionRaw=context.raw;item.name+='-collection';});return items;}`}}]};\n      $substore.write([first,second,excluded],'subs');$substore.write([collection],'collections');\n      const result=await produce({type:'collection',name:'组合🙂',$options:{zero:0},includeRaw:true});\n      equal(names(result.result),['child-first-collection','remote-a-collection'],'explicit then tagged source and own processing');\n      equal(result.result.map(item=>[item._subName,item._collectionName,item._collectionDisplayName]),[['first','组合🙂','集合显示'],['second','组合🙂','集合显示']],'collection provenance');\n      equal(Object.keys(result.raw),['first','second'],'raw map keys');\n      await rejects(()=>produce({type:'collection',name:'missing'}),'找不到组合订阅 missing');\n      return result;\n    });\n    await check('PL-native-source-ignore-and-subscription-fallback',async()=>{\n      const sub={...source,source:'remote',url:remote+'failed\\n'+remote+'a'};\n      await rejects(()=>produce({subscription:sub}),'发生错误, 请查看日志');\n      equal(names(await produce({subscription:{...sub,ignoreFailedRemoteSub:true}})),['remote-a'],'true means quiet partial output');\n      equal(await produce({subscription:{...sub,ignoreFailedRemoteSub:'fallbackQuiet'}}),[],'fallback discards partially loaded source');\n      equal(await produce({subscription:{...source,content:'',ignoreFailedRemoteSub:'fallbackNotify'}}),[],'empty source fallback');\n      equal(await produce({subscription:{...sub,ignoreFailedRemoteSub:'fallbackQuiet'},produceType:'raw',includeRaw:true}),{result:'[]',raw:['','ss://YWVzLTEyOC1nY206cGFzcw==@a.invalid:8388#remote-a']},'raw fallback retains source array at failure boundary');\n      return {partial:true,wholeFallback:true,rawFallback:true};\n    });\n    await check('PL-native-collection-partial-and-whole-fallback',async()=>{\n      const valid={...source,name:'valid'},invalid={name:'invalid',source:'remote',url:remote+'failed'};\n      $substore.write([valid,invalid],'subs');\n      const collection={name:'fallback',subscriptions:['invalid','valid'],ignoreFailedRemoteSub:'fallbackQuiet'};\n      $substore.write([collection],'collections');\n      const result=await produce({type:'collection',name:'fallback',includeRaw:true});\n      equal(names(result.result),['local'],'collection retains successful children');\n      equal(result.raw.invalid,[],'failed child raw replaced by empty array');\n      $substore.write([{...collection,subscriptions:['invalid']}],'collections');\n      equal(await produce({type:'collection',name:'fallback'}),[],'no success falls back whole collection');\n      $substore.write([{...invalid,ignoreFailedRemoteSub:'fallbackQuiet'}],'subs');\n      $substore.write([{name:'child-fallback',subscriptions:['invalid']}],'collections');\n      await rejects(()=>produce({type:'collection',name:'child-fallback'}),'不含有效节点');\n      return {result,empty:true,childFallback:true};\n    });\n    proxies[0].pipelineVerified=passed;proxies[0].pipelineResults=results;return proxies;\n  } finally {$substore.write(subsBefore,'subs');$substore.write(colsBefore,'collections');globalThis.Date=DateBefore;}\n}\n"
               }
             }
           ],
@@ -1197,6 +1197,156 @@
           },
           "status": 200
         }
+      }
+    ]
+  },
+  {
+    "id": "PC-native-http-parser-and-output-stages",
+    "source": "parser download, download request options, flow headers, full/shortcut response transforms and fakeNode; real HTTP routes",
+    "steps": [
+      {
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "data": {
+              "par_res": [
+                {
+                  "name": "remote-http",
+                  "server": "http.invalid"
+                }
+              ]
+            }
+          }
+        },
+        "upstream": [
+          {
+            "headers": {
+              "user-agent": "parser-native"
+            },
+            "body": "",
+            "path": "/host/pipeline/http",
+            "method": "GET"
+          }
+        ],
+        "body": {
+          "type": "internal",
+          "client": "JSON",
+          "download": [
+            "$UPSTREAM/host/pipeline/http",
+            "parser-native",
+            null,
+            null,
+            null,
+            null,
+            true,
+            true,
+            {
+              "noFlow": true
+            }
+          ]
+        },
+        "path": "/api/proxy/parse",
+        "method": "POST"
+      },
+      {
+        "expect": {
+          "status": 201
+        },
+        "body": {
+          "subUserinfo": "upload=1; download=2; total=99",
+          "source": "local",
+          "process": [
+            {
+              "args": {
+                "content": "function operator(items,target,context) {\n  if ($options.zero !== 0 || $options.flag !== false || $options._req.method !== 'GET' || $options._req.params.name !== 'm3-http-output' || $options._req.params.target !== 'JSON' || $options._req.query.target !== 'JSON' || target !== 'URI' || $options._req.headers['user-agent'] !== 'M3-http-client' || typeof $options._req.socket.remoteAddress !== 'string') throw new Error('request options contract');\n  items[0].name = $options.text; return items;\n}"
+              },
+              "type": "Script Operator"
+            },
+            {
+              "args": {
+                "content": "async function transformFunction(res,context) {\n  if(res.status !== 201 || res.headers['x-stage'] !== 'options' || !context.source['m3-http-output']) throw new Error('response input contract');\n  await $substore.wait(1); res.statusCode = 202; res.header['X-M3-Hook']='full'; delete res.headers['x-powered-by']; res.body += ':full'; return res;\n}"
+              },
+              "type": "Response Transformer"
+            },
+            {
+              "args": {
+                "content": "$res.headers[\"x-m3-second\"] = false; $res.body += \":short\";"
+              },
+              "type": "Response Transformer"
+            }
+          ],
+          "name": "m3-http-output",
+          "content": "ss://YWVzLTEyOC1nY206cGFzcw==@http.invalid:8388#base"
+        },
+        "path": "/api/subs",
+        "method": "POST"
+      },
+      {
+        "headers": {
+          "User-Agent": "M3-http-client"
+        },
+        "expect": {
+          "absent_headers": [
+            "x-powered-by"
+          ],
+          "status": 202,
+          "body": "ss://YWVzLTEyOC1nY206cGFzcw==@http.invalid:8388?udp=1#%E8%BE%93%E5%87%BA%F0%9F%99%82:full:short",
+          "headers": {
+            "x-stage": "options",
+            "x-m3-hook": "full",
+            "x-m3-second": "false",
+            "subscription-userinfo": "upload=1; download=2; total=99"
+          }
+        },
+        "path": "/download/m3-http-output/JSON?platform=URI&$options=%257B%2522text%2522%253A%2522%25E8%25BE%2593%25E5%2587%25BA%25F0%259F%2599%2582%2522%252C%2522flag%2522%253Afalse%252C%2522zero%2522%253A0%252C%2522_res%2522%253A%257B%2522status%2522%253A201%252C%2522headers%2522%253A%257B%2522x-stage%2522%253A%2522options%2522%257D%257D%257D",
+        "method": "GET"
+      },
+      {
+        "expect": {
+          "status": 200,
+          "json_contains": [
+            {
+              "port": 80,
+              "name": "invalid share",
+              "server": "1.0.0.1"
+            }
+          ]
+        },
+        "path": "/download/unused/JSON?_fakeNode=1",
+        "method": "GET"
+      },
+      {
+        "expect": {
+          "status": 200
+        },
+        "body": {
+          "process": []
+        },
+        "path": "/api/sub/m3-http-output",
+        "method": "PATCH"
+      },
+      {
+        "expect": {
+          "status": 200,
+          "json_contains": [
+            {
+              "name": "base",
+              "server": "http.invalid"
+            }
+          ],
+          "headers": {
+            "subscription-userinfo": "upload=1; download=2; total=99"
+          }
+        },
+        "path": "/download/m3-http-output/JSON",
+        "method": "GET"
+      },
+      {
+        "expect": {
+          "status": 200
+        },
+        "path": "/api/sub/m3-http-output?mode=permanent",
+        "method": "DELETE"
       }
     ]
   },
