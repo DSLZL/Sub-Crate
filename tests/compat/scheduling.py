@@ -41,11 +41,24 @@ def run_contracts(binary, node, environment, baseline, root, output, report, ima
             def messages():
                 return [entry["message"] for entry in send({"path": "/api/logs?limit=1000"})["logs"]]
 
+            def stored(filename):
+                deadline = time.monotonic() + 1
+                while True:
+                    content = (state / filename).read_text(encoding="utf-8")
+                    try:
+                        return json.loads(content)
+                    except json.JSONDecodeError:
+                        if kind != "node" or time.monotonic() >= deadline:
+                            raise
+                        proof.append({"concurrent_reference_file_read": filename, "text": content})
+                        (output / f"{label}.json").write_text(json.dumps(proof, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                        time.sleep(0.01)
+
             def durable():
-                return json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+                return stored("sub-store.json")
 
             def stored_root():
-                return json.loads((state / "root.json").read_text(encoding="utf-8"))
+                return stored("root.json")
 
             def file(name, script=None):
                 value = {"name": name, "source": "local", "content": "fixture content", "type": "text"}
