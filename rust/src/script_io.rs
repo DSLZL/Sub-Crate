@@ -51,7 +51,11 @@ fn decoded(
     }
     headers.remove("content-encoding");
     headers.remove("content-length");
-    for encoding in encodings.into_iter().rev().filter(|value| !value.is_empty()) {
+    for encoding in encodings
+        .into_iter()
+        .rev()
+        .filter(|value| !value.is_empty())
+    {
         let input = bytes;
         bytes = Vec::new();
         match encoding {
@@ -186,9 +190,15 @@ pub(crate) async fn request<'js>(
         let bytes = decoded(status, &mut headers, bytes.to_vec())?;
         Ok(json!({"statusCode": status, "headers": headers, "bytes": bytes}).to_string())
     }
-    send(&method, &url, &headers, body.as_deref(), options.0.as_deref())
-        .await
-        .map_err(|error| Exception::throw_message(&ctx, &error.to_string()))
+    send(
+        &method,
+        &url,
+        &headers,
+        body.as_deref(),
+        options.0.as_deref(),
+    )
+    .await
+    .map_err(|error| Exception::throw_message(&ctx, &error.to_string()))
 }
 
 pub(crate) async fn download_file<'js>(

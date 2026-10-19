@@ -45,6 +45,7 @@ PROCESSOR_CASES = [
     "PC35-flow-head-to-get-fallback", "PC36-flow-url-body-and-encoded-headers",
     "PC37-flow-body-fallback-and-status-rejection", "PC38-flow-rejection-empty-and-timeout",
     "PC39-flow-request-queue-and-wait-time", "PC40-flow-http-injected-into-pending-script",
+    "PC125-script-http-compressed-subscription-responses", "PC126-script-http-forward-proxy-and-basic-auth",
     "PC41-doh-a-packet-edns-and-cname", "PC42-doh-aaaa-and-ipv6-edns",
     "PC43-doh-defaults-status-and-rcode", "PC44-doh-malformed-and-custom-timeout",
     "PC45-custom-dns-cache-alias-ttl-and-key", "PC46-custom-dns-aaaa-filter",

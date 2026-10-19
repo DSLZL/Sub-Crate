@@ -269,7 +269,7 @@ globalThis.runHelperContracts = async function(check, host, operator, assert, eq
     });
   } finally { $substore.write(beforeSettings, 'settings'); }
 
-  await check('PC41-script-http-compressed-subscription-responses', async () => {
+  await check('PC125-script-http-compressed-subscription-responses', async () => {
     const results = {};
     for (const mode of ['gzip','x-gzip','deflate','compress','x-compress','nested','status']) {
       const response = await $substore.http.get({url:probeUpstream+'/host/compressed/'+mode});
@@ -288,7 +288,7 @@ globalThis.runHelperContracts = async function(check, host, operator, assert, eq
     return {results,raw:bytes,message};
   });
 
-  await check('PC42-script-http-forward-proxy-and-basic-auth', async () => {
+  await check('PC126-script-http-forward-proxy-and-basic-auth', async () => {
     const results = [];
     for (const proxy of [probeUpstream,probeUpstream.replace('http://','http://fixture:secret@')]) {
       const response = await $substore.http.get({url:'http://ip-api.com/json/1.2.3.4',proxy,headers:{Accept:null}});

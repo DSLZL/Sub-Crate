@@ -259,7 +259,10 @@ impl Transport {
     }
 
     async fn connect(&self, uri: Uri) -> Result<Stream, Failure> {
-        let host = uri.host().ok_or("Missing HTTP host")?.trim_matches(['[', ']']);
+        let host = uri
+            .host()
+            .ok_or("Missing HTTP host")?
+            .trim_matches(['[', ']']);
         let port = uri
             .port_u16()
             .unwrap_or(if uri.scheme_str() == Some("https") {
@@ -270,7 +273,10 @@ impl Transport {
         let proxy = self.proxy(&uri)?;
         let (connect_host, connect_port) = proxy.as_ref().map_or((host, port), |proxy| {
             (
-                proxy.host_str().unwrap_or_default().trim_matches(['[', ']']),
+                proxy
+                    .host_str()
+                    .unwrap_or_default()
+                    .trim_matches(['[', ']']),
                 proxy
                     .port_or_known_default()
                     .unwrap_or(if proxy.scheme() == "socks5" { 1080 } else { 80 }),
@@ -381,7 +387,11 @@ async fn socks(
     let password = percent_decode_str(proxy.password().unwrap_or_default()).decode_utf8()?;
     let credentials = !user.is_empty() || !password.is_empty();
     socket
-        .write_all(if credentials { &[5, 2, 0, 2] } else { &[5, 1, 0] })
+        .write_all(if credentials {
+            &[5, 2, 0, 2]
+        } else {
+            &[5, 1, 0]
+        })
         .await?;
     let mut answer = [0; 2];
     socket.read_exact(&mut answer).await?;
