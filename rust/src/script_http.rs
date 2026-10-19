@@ -57,6 +57,122 @@ async fn flow_call<'js>(js: &Js<'js>, args: Vec<Value<'js>>) -> rquickjs::Result
     script::settled(js, js.method(flow, "getFlowHeaders", args)?).await
 }
 
+fn flow_error<'js>(
+    js: &Js<'js>, status: u16, code: &str, kind: &str, message: &str, details: Option<&str>,
+) -> rquickjs::Result<Value<'js>> {
+    let result = object(js)?;
+    let error = object(js)?;
+    for (key, value) in [("code", code), ("type", kind), ("message", message)] {
+        js.set(&error, key, js.value(value)?)?;
+    }
+    if let Some(details) = details {
+        js.set(&error, "details", js.value(details)?)?;
+    }
+    js.set(&result, "error", error)?;
+    js.set(&result, "status", js.value(status)?)?;
+    Ok(result)
+}
+
+fn flow_parsed<'js>(
+    js: &Js<'js>, name: &str, result: rquickjs::Result<Value<'js>>,
+) -> rquickjs::Result<Value<'js>> {
+    match result {
+        Ok(data) => {
+            let result = object(js)?;
+            js.set(&result, "data", data)?;
+            Ok(result)
+        }
+        Err(error) => {
+            let (reason, _) = pipeline::failure_text(js, error)?;
+            script::log(js, "error", &format!("Failed to parse flow info for local subscription {name}: {reason}"));
+            flow_error(js, 500, "NO_FLOW_INFO", "RequestInvalidError", "N/A", Some("Failed to parse flow info"))
+        }
+    }
+}
+
+async fn info_custom<'js>(js: &Js<'js>, sub: &Value<'js>, name: &str) -> rquickjs::Result<Value<'js>> {
+    let value = js.get(sub, "subUserinfo")?;
+    if !js.regex_test(js.call("regex", (r"^https?://", ""))?, value.clone())? {
+        return Ok(value);
+    }
+    match flow_call(js, vec![js.undefined(), js.undefined(), js.undefined(), js.get(sub, "proxy")?, value.clone()]).await {
+        Ok(value) => Ok(value),
+        Err(error) => {
+            let thrown = if error.is_exception() { js.ctx.catch() } else { js.value(error.to_string())? };
+            let detail = crate::js_values::stringify(&js.ctx, thrown, 0)?;
+            script::log(js, "error", &format!("订阅 {name} 使用自定义流量链接 {} 获取流量信息时发生错误: {}", js.text(value)?, js.text(detail)?));
+            Ok(js.undefined())
+        }
+    }
+}
+
+pub(crate) async fn flow_info<'js>(js: &Js<'js>, input: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    let name = js.get(&input, "name")?;
+    let label = js.text(name.clone())?;
+    let query = js.get(&input, "query")?;
+    let url = js.get(&query, "url")?;
+    if js.truthy(&url)? {
+        script::log(js, "info", &format!("指定远程订阅 URL: {}", crate::script_download::mask_url(js, url.clone())?));
+    }
+    let sub = find(js, read(js, "subs")?, name)?;
+    if !js.truthy(&sub)? {
+        return flow_error(js, 404, "RESOURCE_NOT_FOUND", "ResourceNotFoundError", &format!("Subscription {label} does not exist!"), None);
+    }
+    let no_flow = format!("Subscription {label}: noFlow");
+    if js.truthy(&js.get(&query, "noFlow")?)? || js.truthy(&js.get(&sub, "noFlow")?)? {
+        return flow_error(js, 400, "NO_FLOW_INFO", "RequestInvalidError", "N/A", Some(&no_flow));
+    }
+    let flow: Value = js.ctx.globals().get("flowUtils")?;
+    let merge = js.get(&sub, "mergeSources")?;
+    if js.equal(&js.get(&sub, "source")?, &js.value("local")?)?
+        && !js.equal(&merge, &js.value("localFirst")?)?
+        && !js.equal(&merge, &js.value("remoteFirst")?)?
+    {
+        if !js.truthy(&js.get(&sub, "subUserinfo")?)? {
+            return flow_error(js, 500, "NO_FLOW_INFO", "RequestInvalidError", "N/A", Some(&format!("Local subscription {label} has no flow information!")));
+        }
+        let custom = info_custom(js, &sub, &label).await?;
+        let result = js.method(flow, "parseFlowHeaders", vec![custom])
+            .and_then(|data| js.call("spread", (object(js)?, data)));
+        return flow_parsed(js, &label, result);
+    }
+    let result = async {
+        let url = network::prefer(js, [url, js.get(&sub, "url")?])?;
+        let (url, args) = flow_arguments(js, url)?;
+        if js.truthy(&js.get(&args, "noFlow")?)?
+            || !js.regex_test(js.call("regex", ("^https?", ""))?, url.clone())?
+        {
+            return flow_error(js, 500, "NO_FLOW_INFO", "RequestInvalidError", "N/A", Some(&no_flow));
+        }
+        let url = if js.truthy(&optional(js, &args, "insecure")?)? {
+            js.value(format!("{}#insecure", js.text(url)?))?
+        } else { url };
+        let inherited = flow_call(js, vec![url, js.get(&args, "flowUserAgent")?, js.undefined(), js.get(&sub, "proxy")?, js.get(&args, "flowUrl")?, js.get(&args, "flowHeaders")?]).await?;
+        if !js.truthy(&inherited)? && !js.truthy(&js.get(&sub, "subUserinfo")?)? {
+            return flow_error(js, 500, "NO_FLOW_INFO", "InternalServerError", "No flow info", Some("Failed to fetch flow headers"));
+        }
+        let parsed = async {
+            let options = object(js)?;
+            for key in ["resetDay", "startDate", "cycleDays"] { js.set(&options, key, js.get(&args, key)?)?; }
+            let remaining = js.method(flow.clone(), "getRmainingDays", vec![options])?;
+            let custom = info_custom(js, &sub, &label).await?;
+            let text = joined(js, vec![custom, inherited], "; ")?;
+            let data = js.method(flow, "parseFlowHeaders", vec![text])?;
+            let data: Value = js.call("spread", (object(js)?, data))?;
+            if !remaining.is_null() && !remaining.is_undefined() { js.set(&data, "remainingDays", remaining)?; }
+            Ok(data)
+        }.await;
+        flow_parsed(js, &label, parsed)
+    }.await;
+    match result {
+        Ok(value) => Ok(value),
+        Err(error) => {
+            script::message(&js.ctx, error);
+            flow_error(js, 500, "URL_NOT_ACCESSIBLE", "NetworkError", &format!("The URL for subscription {label} is inaccessible."), None)
+        }
+    }
+}
+
 fn logged<'js>(js: &Js<'js>, result: rquickjs::Result<Value<'js>>) -> Value<'js> {
     result.unwrap_or_else(|error| {
         script::log(
@@ -68,12 +184,7 @@ fn logged<'js>(js: &Js<'js>, result: rquickjs::Result<Value<'js>>) -> Value<'js>
     })
 }
 
-async fn remote_flow<'js>(
-    js: &Js<'js>,
-    url: Value<'js>,
-    proxy: Value<'js>,
-    collection: bool,
-) -> rquickjs::Result<Value<'js>> {
+fn flow_arguments<'js>(js: &Js<'js>, url: Value<'js>) -> rquickjs::Result<(Value<'js>, Value<'js>)> {
     let lines = js.method(
         js.value(js.text(url)?)?,
         "split",
@@ -86,7 +197,16 @@ async fn remote_flow<'js>(
         scope.truthy(&scope.get(&value, "length")?)
     })?;
     let first = network::prefer(js, [js.get(&lines, "0")?, js.value("")?])?;
-    let (url, args) = network::fragment(js, first)?;
+    network::fragment(js, first)
+}
+
+async fn remote_flow<'js>(
+    js: &Js<'js>,
+    url: Value<'js>,
+    proxy: Value<'js>,
+    collection: bool,
+) -> rquickjs::Result<Value<'js>> {
+    let (url, args) = flow_arguments(js, url)?;
     if js.truthy(&optional(js, &args, "noFlow")?)?
         || !js.regex_test(
             js.call(

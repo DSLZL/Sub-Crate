@@ -156,6 +156,7 @@ pub fn options(path: &str) -> Reply {
         | "/api/preview/collection"
         | "/api/preview/file" => "POST,GET,HEAD",
         _ if path.starts_with("/api/sort/") => "POST,GET,HEAD",
+        _ if path.starts_with("/api/sub/flow/") => "GET,HEAD",
         _ if path.starts_with("/api/sub/")
             || path.starts_with("/api/collection/")
             || path.starts_with("/api/module/")

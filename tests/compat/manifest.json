@@ -14,7 +14,7 @@
       "F01-file-crud-and-runtime"
     ],
     "sharing-core": ["T02-merged-share-count-and-origin", "T06-share-subscription-and-collection", "T03-share-datetime-archive"],
-    "utilities-core": ["U01-flow-cache", "U02-download-and-flow-cache-refresh", "U03-remote-failure-policies",
+    "utilities-core": ["U01-flow-cache", "U02-download-and-flow-cache-refresh", "U03-remote-failure-policies", "U04-flow-endpoint-source-branches",
       "Z01-age-rest-key-generation-and-validation", "N01-node-info-uri-and-generation-error",
       "N02-node-info-ipv6-normalization", "N03-node-info-provider-rejection",
       "N04-node-info-http-status-body-precedence", "N05-node-info-missing-server-and-recovery"],

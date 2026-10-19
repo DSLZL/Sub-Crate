@@ -843,6 +843,17 @@ fn api_path(raw: &str) -> Result<Option<String>, ()> {
                 _ => None,
             }
         }
+        ["", api, sub, flow, name]
+            if api.eq_ignore_ascii_case("api")
+                && sub.eq_ignore_ascii_case("sub")
+                && flow.eq_ignore_ascii_case("flow")
+                && !name.is_empty() =>
+        {
+            Some(format!(
+                "/api/sub/flow/{}",
+                json::encode(&percent_decode_str(name).decode_utf8().map_err(|_| ())?)
+            ))
+        }
         ["", api, utils, age, operation]
             if api.eq_ignore_ascii_case("api")
                 && utils.eq_ignore_ascii_case("utils")

@@ -1,5 +1,41 @@
 [
   {
+    "id":"U04-flow-endpoint-source-branches",
+    "source":"backend/src/restful/subscriptions.js:49-251; actual flow endpoint, existing native flow/cache primitives",
+    "steps":[
+      {"path":"/api/sub/flow/flow-missing","expect":{"status":404,"json":{"status":"failed","error":{"code":"RESOURCE_NOT_FOUND","type":"ResourceNotFoundError","message":"Subscription flow-missing does not exist!"}}}},
+      {"method":"POST","path":"/api/subs","body":{"name":"流量🙂","source":"local","subUserinfo":"upload=3; download=7; total=100; expire=4102444800; reset_day=4; app_url=https%3A%2F%2Fexample.invalid%2Flocal; plan_name=Local%20plan"},"expect":{"status":201}},
+      {"path":"/API/SUB/FLOW/%E6%B5%81%E9%87%8F%F0%9F%99%82/","expect":{"status":200,"json":{"status":"success","data":{"usage":{"upload":3,"download":7},"total":100,"expires":4102444800,"remainingDays":4,"appUrl":"https://example.invalid/local","planName":"Local plan"}}}},
+      {"method":"HEAD","path":"/api/sub/flow/%E6%B5%81%E9%87%8F%F0%9F%99%82","expect":{"status":200,"body":""}},
+      {"method":"OPTIONS","path":"/api/sub/flow/%E6%B5%81%E9%87%8F%F0%9F%99%82","expect":{"status":200,"body":"GET,HEAD","headers":{"allow":"GET,HEAD"}}},
+      {"path":"/api/sub/flow/%E6%B5%81%E9%87%8F%F0%9F%99%82?noFlow=0","expect":{"status":400,"json":{"status":"failed","error":{"code":"NO_FLOW_INFO","type":"RequestInvalidError","message":"N/A","details":"Subscription 流量🙂: noFlow"}}}},
+      {"method":"PATCH","path":"/api/sub/%E6%B5%81%E9%87%8F%F0%9F%99%82","body":{"noFlow":true},"expect":{"status":200}},
+      {"path":"/api/sub/flow/%E6%B5%81%E9%87%8F%F0%9F%99%82","expect":{"status":400,"json":{"status":"failed","error":{"code":"NO_FLOW_INFO","type":"RequestInvalidError","message":"N/A","details":"Subscription 流量🙂: noFlow"}}}},
+      {"method":"PATCH","path":"/api/sub/%E6%B5%81%E9%87%8F%F0%9F%99%82","body":{"noFlow":false,"subUserinfo":""},"expect":{"status":200}},
+      {"path":"/api/sub/flow/%E6%B5%81%E9%87%8F%F0%9F%99%82","expect":{"status":500,"json":{"status":"failed","error":{"code":"NO_FLOW_INFO","type":"RequestInvalidError","message":"N/A","details":"Local subscription 流量🙂 has no flow information!"}}}},
+      {"method":"PATCH","path":"/api/sub/%E6%B5%81%E9%87%8F%F0%9F%99%82","body":{"subUserinfo":"invalid flow"},"expect":{"status":200}},
+      {"path":"/api/sub/flow/%E6%B5%81%E9%87%8F%F0%9F%99%82","expect":{"status":500,"json":{"status":"failed","error":{"code":"NO_FLOW_INFO","type":"RequestInvalidError","message":"N/A","details":"Failed to parse flow info"}}}},
+      {"method":"PATCH","path":"/api/sub/%E6%B5%81%E9%87%8F%F0%9F%99%82","body":{"subUserinfo":"$UPSTREAM/host/flow/body"},"expect":{"status":200}},
+      {"path":"/api/sub/flow/%E6%B5%81%E9%87%8F%F0%9F%99%82?url=ignored-local-url","expect":{"status":200,"json":{"status":"success","data":{"total":2000,"usage":{"upload":30,"download":40}}}},"upstream":[{"method":"GET","path":"/host/flow/body","headers":{"user-agent":"clash.meta/v1.19.23"},"body":""}]},
+      {"method":"PATCH","path":"/api/sub/%E6%B5%81%E9%87%8F%F0%9F%99%82","body":{"subUserinfo":"$UPSTREAM/host/flow/rejected"},"expect":{"status":200}},
+      {"path":"/api/sub/flow/%E6%B5%81%E9%87%8F%F0%9F%99%82","expect":{"status":200,"json":{"status":"success","data":{}}},"upstream":[{"method":"GET","path":"/host/flow/rejected","body":""}]},
+      {"method":"PATCH","path":"/api/sub/%E6%B5%81%E9%87%8F%F0%9F%99%82","body":{"source":"remote","url":"not-http","subUserinfo":""},"expect":{"status":200}},
+      {"path":"/api/sub/flow/%E6%B5%81%E9%87%8F%F0%9F%99%82","expect":{"status":500,"json":{"status":"failed","error":{"code":"NO_FLOW_INFO","type":"RequestInvalidError","message":"N/A","details":"Subscription 流量🙂: noFlow"}}}},
+      {"method":"PATCH","path":"/api/sub/%E6%B5%81%E9%87%8F%F0%9F%99%82","body":{"url":"$UPSTREAM/host/flow/empty"},"expect":{"status":200}},
+      {"path":"/api/sub/flow/%E6%B5%81%E9%87%8F%F0%9F%99%82","expect":{"status":500,"json":{"status":"failed","error":{"code":"NO_FLOW_INFO","type":"InternalServerError","message":"No flow info","details":"Failed to fetch flow headers"}}},"upstream":[{"method":"HEAD","path":"/host/flow/empty","body":""},{"method":"GET","path":"/host/flow/empty","body":""}]},
+      {"method":"PATCH","path":"/api/sub/%E6%B5%81%E9%87%8F%F0%9F%99%82","body":{"url":"$UPSTREAM/host/flow/head#noFlow"},"expect":{"status":200}},
+      {"path":"/api/sub/flow/%E6%B5%81%E9%87%8F%F0%9F%99%82","expect":{"status":500,"json":{"status":"failed","error":{"code":"NO_FLOW_INFO","type":"RequestInvalidError","message":"N/A","details":"Subscription 流量🙂: noFlow"}}}},
+      {"method":"PATCH","path":"/api/sub/%E6%B5%81%E9%87%8F%F0%9F%99%82","body":{"url":"$UPSTREAM/host/flow/head#flowUserAgent=%ZZ"},"expect":{"status":200}},
+      {"path":"/api/sub/flow/%E6%B5%81%E9%87%8F%F0%9F%99%82","expect":{"status":500,"json":{"status":"failed","error":{"code":"URL_NOT_ACCESSIBLE","type":"NetworkError","message":"The URL for subscription 流量🙂 is inaccessible."}}}},
+      {"method":"PATCH","path":"/api/sub/%E6%B5%81%E9%87%8F%F0%9F%99%82","body":{"url":" \n$UPSTREAM/host/flow/head#flowUserAgent=Flow-Agent\n$UPSTREAM/host/flow/empty"},"expect":{"status":200}},
+      {"path":"/api/sub/flow/%E6%B5%81%E9%87%8F%F0%9F%99%82","expect":{"status":200,"json":{"status":"success","data":{"total":1000,"usage":{"upload":10,"download":20},"appUrl":"https://example.invalid/flow","planName":"Flow plan"}}},"upstream":[{"method":"HEAD","path":"/host/flow/head","headers":{"user-agent":"Flow-Agent"},"body":""}]},
+      {"path":"/api/sub/flow/%E6%B5%81%E9%87%8F%F0%9F%99%82?url=override-not-http","expect":{"status":500,"json":{"status":"failed","error":{"code":"NO_FLOW_INFO","type":"RequestInvalidError","message":"N/A","details":"Subscription 流量🙂: noFlow"}}}},
+      {"method":"PATCH","path":"/api/sub/%E6%B5%81%E9%87%8F%F0%9F%99%82","body":{"source":"local","mergeSources":"remoteFirst","url":"$UPSTREAM/host/flow/head#flowUserAgent=Merge-Agent","subUserinfo":"download=9; total=99"},"expect":{"status":200}},
+      {"path":"/api/sub/flow/%E6%B5%81%E9%87%8F%F0%9F%99%82","expect":{"status":200,"json":{"status":"success","data":{"total":99,"usage":{"upload":10,"download":9},"appUrl":"https://example.invalid/flow","planName":"Flow plan"}}},"upstream":[{"method":"HEAD","path":"/host/flow/head","headers":{"user-agent":"Merge-Agent"},"body":""}]},
+      {"method":"DELETE","path":"/api/sub/%E6%B5%81%E9%87%8F%F0%9F%99%82?mode=permanent","expect":{"status":200},"state":{"subs":[]}}
+    ]
+  },
+  {
     "id":"G03-log-seeded-retention-and-query",
     "source":"backend/src/utils/debug-logs.js:88,131,142,150,162,167; seeded valid, invalid and ignored root entries",
     "steps":[

@@ -1173,6 +1173,9 @@ pub async fn run(
                                     "node-info" => {
                                         crate::script_http::node_info(&js, input).await?
                                     }
+                                    "flow-info" => {
+                                        crate::script_http::flow_info(&js, input).await?
+                                    }
                                     "logs-query" => {
                                         crate::logs::query(&js, input, &self::job(&ctx)?.store)?
                                     }

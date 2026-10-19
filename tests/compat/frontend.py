@@ -578,6 +578,7 @@ def main():
             command("wait", ".log-item")
             command("fill", ".logs-keyword-input input", "browser-file-renamed")
             command("press", "Enter")
+            command("wait", "--fn", "performance.getEntriesByType('resource').some(entry => entry.name.includes('/api/logs?') && new URL(entry.name).searchParams.get('keyword') === 'browser-file-renamed' && entry.responseEnd > 0 && entry.decodedBodySize > 0)")
             command("wait", "--fn", "document.querySelectorAll('.log-item').length > 0 && Array.from(document.querySelectorAll('.log-item')).every(el => el.innerText.includes('browser-file-renamed'))")
             report["cases"].append({"id": "FE17-read-filter-logs", "source": "src/components/LogsPanel.vue:549,566,613; src/views/FileEditor.vue:1164", "keyword": "browser-file-renamed", "status": "browser_passed"})
             command("click", ".logs-clear-toggle")
