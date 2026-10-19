@@ -1,13 +1,16 @@
 """Loopback-only subscription, Gist and node-info fixtures with observable requests."""
 import copy
 import base64
+import gzip
 from artifact_fixtures import response as artifact_response
 from dns_fixtures import response_bytes
 from gist_fixtures import GistFixture
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 import json
 import threading
 import time
+import zlib
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 
@@ -19,6 +22,8 @@ class ControlledUpstream:
         self.gist_lock = threading.Lock()
         self.flow_lock = threading.Lock()
         self.flow_active = 0
+        self.background_started = threading.Event()
+        self.background_release = threading.Event()
         self.dns_condition = threading.Condition()
         self.dns_active = 0
         self.dns_pair_started = False
@@ -124,6 +129,55 @@ class ControlledUpstream:
         if path.startswith('/host/artifact/'):
             return artifact_response(path)
         text = "订阅🙂\r\nsecond\n".encode("utf-8")
+        if path.startswith('/host/script/'):
+            mode = path.removeprefix('/host/script/')
+            if mode == 'missing':
+                return 404, b'no script', []
+            if mode == 'response':
+                script = 'function transformFunction(res) { res.body += $arguments.text; return res; }'
+            else:
+                script = """async function operator(proxies, target, context) {
+  await $substore.wait(1);
+  for(const proxy of proxies) proxy.linked={arguments:$arguments,target,options:$options??null,raw:context.raw??null,source:context.source?.marker??null};
+  return proxies;
+}"""
+            flow = 'upload=3; download=0; total=3' if mode == 'flow' else 'upload=1; download=2; total=100'
+            return 200, script.encode('utf-8'), [('Subscription-Userinfo', flow)]
+        if path.startswith('/host/download/'):
+            mode = path.removeprefix('/host/download/')
+            content = "下载🙂\r\n\0尾\n".encode('utf-8')
+            if mode.startswith('age/'):
+                vectors = json.loads((Path(__file__).parent / 'fixtures/age-native-vectors.json').read_text(encoding='utf-8'))
+                pair = next((item for item in vectors if item['type'] == mode[4:]), vectors[0])
+                return 200, pair['items'][1]['armor'].encode('ascii'), []
+            if mode == 'text/background':
+                self.background_started.set()
+                self.background_release.wait(timeout=5)
+            if mode.startswith('status/'):
+                return int(mode.rsplit('/', 1)[-1]), b'provider rejected', []
+            if mode == 'text/white':
+                return 200, b' \t\r\n', []
+            if mode == 'text/slow':
+                time.sleep(0.2)
+            if mode == 'text/preprocess-good':
+                return 200, 'proxies:\n  - {name: 预处理, type: ss, server: example.invalid, port: 8388, cipher: aes-128-gcm, password: pass}\n'.encode('utf-8'), []
+            if mode == 'text/preprocess-invalid':
+                return 200, b'<!DOCTYPE html>no nodes', []
+            flow = 'upload=3; download=0; total=3' if mode == 'text/flow-exhausted' else 'upload=1; download=2; total=100; expire=4102444800'
+            return 200, content, [('Subscription-Userinfo', flow)]
+        if path.startswith('/host/compressed/'):
+            mode = path.removeprefix('/host/compressed/')
+            if mode == 'too-many':
+                return 200, b'', [('Content-Encoding', ', '.join(['gzip'] * 6))]
+            encoded = gzip.compress(text, mtime=0)
+            if mode == 'unknown':
+                return 200, encoded, [('Content-Encoding', 'gzip, unknown')]
+            if mode in ('deflate', 'compress', 'x-compress'):
+                encoded = zlib.compress(text)
+            elif mode == 'nested':
+                encoded = zlib.compress(encoded)
+            coding = 'gzip, deflate' if mode == 'nested' else ('gzip' if mode == 'status' else mode)
+            return (503 if mode == 'status' else 200), encoded, [('Content-Encoding', coding)]
         if path.startswith("/host/flow/"):
             mode = path.removeprefix("/host/flow/")
             flow = [("Subscription-Userinfo", "upload=10; download=20; total=1000"),

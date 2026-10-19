@@ -8,7 +8,7 @@ use hyper::{HeaderMap, Method, Response, body::Bytes};
 use percent_encoding::{percent_decode_str, utf8_percent_encode};
 use serde_json::{Value, json};
 use std::io;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 pub type Reply = Response<Full<Bytes>>;
 
@@ -232,13 +232,19 @@ fn header_platform(headers: &HeaderMap) -> &'static str {
     }
 }
 
-pub fn conversion_dispatch(
+fn has_processors(sub: &Value) -> bool {
+    sub.get("process").is_some_and(|process| {
+        truthy(process) && process.as_array().is_none_or(|items| !items.is_empty())
+    })
+}
+
+pub async fn conversion_dispatch(
     method: &Method,
     path: &str,
     query: &Value,
     body: &Body,
     headers: &HeaderMap,
-    store: &Mutex<Store>,
+    store: &Arc<Mutex<Store>>,
 ) -> Option<Reply> {
     if method == Method::POST && path == "/api/rule/parse" {
         let fields = Value::Object(body.fields());
@@ -289,6 +295,19 @@ pub fn conversion_dispatch(
     }
     if method == Method::POST && path == "/api/preview/sub" {
         let sub = Value::Object(body.fields());
+        if has_processors(&sub) {
+            let target = if truthy(&query["target"]) {
+                js_string(&query["target"])
+            } else {
+                "JSON".to_owned()
+            };
+            return Some(
+                match crate::script::local(store.clone(), sub, target, None, true).await {
+                    Ok(output) => success(Some(output), 200),
+                    Err(error) => conversion_error(error, Some("Failed to preview subscription")),
+                },
+            );
+        }
         return Some(match conversion::local(&sub, None) {
             Ok(mut proxies) => {
                 conversion::tag(&mut proxies, &sub, true);
@@ -369,14 +388,27 @@ pub fn conversion_dispatch(
     if kind == "raw" {
         return Some(pending("Raw source output is not implemented yet"));
     }
-    let result = conversion::local(&sub, content.as_ref()).and_then(|mut proxies| {
+    let result = if has_processors(&sub) {
+        crate::script::local(store.clone(), sub.clone(), target.clone(), content, false)
+            .await
+            .and_then(|output| {
+                output["processed"].as_array().cloned().ok_or_else(|| {
+                    ConversionError::Legacy("proxies.filter is not a function".to_owned())
+                })
+            })
+    } else {
+        conversion::local(&sub, content.as_ref()).map(|mut proxies| {
+            conversion::tag(&mut proxies, &sub, false);
+            proxies
+        })
+    };
+    let result = result.and_then(|proxies| {
         if proxies.is_empty() {
             return Err(ConversionError::Legacy(format!(
                 "订阅 {} 中不含有效节点",
                 selected_text(sub.get("name"))
             )));
         }
-        conversion::tag(&mut proxies, &sub, false);
         conversion::produce(proxies, &target, kind, &json!({}))
     });
     Some(match result {

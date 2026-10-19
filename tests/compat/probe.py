@@ -45,6 +45,7 @@ PROCESSOR_CASES = [
     "PC35-flow-head-to-get-fallback", "PC36-flow-url-body-and-encoded-headers",
     "PC37-flow-body-fallback-and-status-rejection", "PC38-flow-rejection-empty-and-timeout",
     "PC39-flow-request-queue-and-wait-time", "PC40-flow-http-injected-into-pending-script",
+    "PC125-script-http-compressed-subscription-responses", "PC126-script-http-forward-proxy-and-basic-auth",
     "PC41-doh-a-packet-edns-and-cname", "PC42-doh-aaaa-and-ipv6-edns",
     "PC43-doh-defaults-status-and-rcode", "PC44-doh-malformed-and-custom-timeout",
     "PC45-custom-dns-cache-alias-ttl-and-key", "PC46-custom-dns-aaaa-filter",
@@ -132,9 +133,19 @@ def check_processor_requests(requests):
     check_json(actual_flow, [{"method": method, "path": "/host/flow/" + path, "body_bytes": [],
                               "user_agent": ua, "token": token, "accept": "*/*"}
                              for method, path, ua, token in expected_flow])
-    check_dns_requests(requests[19:42])
-    check_gist_requests(requests[42:102])
-    check_artifact_requests(requests[102:])
+    transport = requests[19:30]
+    expected_transport = [{"method": "GET", "path": "/host/compressed/" + mode,
+                           "body": "", "accept": "*/*", "proxy_authorization": None}
+                          for mode in ("gzip", "x-gzip", "deflate", "compress", "x-compress", "nested", "status", "unknown", "too-many")]
+    expected_transport.extend({"method": "GET", "path": "http://ip-api.com/json/1.2.3.4", "body": "", "accept": None,
+                               "proxy_authorization": authorization}
+                              for authorization in (None, "Basic Zml4dHVyZTpzZWNyZXQ="))
+    check_json([{"method": item["method"], "path": item["path"], "body": item["body"],
+                 "accept": item["headers"].get("accept"), "proxy_authorization": item["headers"].get("proxy-authorization")}
+                for item in transport], expected_transport)
+    check_dns_requests(requests[30:53])
+    check_gist_requests(requests[53:113])
+    check_artifact_requests(requests[113:])
 
 
 def expected_dns_requests():
@@ -295,7 +306,7 @@ def main():
         mmdb_manifest = verify_mmdb_fixtures()
         report["mmdb_fixture_commit"] = mmdb_manifest["commit"]
         mmdb_files = [str((MMDB_FIXTURES / item["file"]).relative_to(ROOT)).replace("\\", "/") for item in mmdb_manifest["files"]]
-        for relative in ("rust/Cargo.toml", "rust/Cargo.lock", "rust/examples/script_probe.rs", "rust/examples/support/script_host.rs", "rust/examples/support/dns.rs", "rust/examples/support/mmdb.rs",
+        for relative in ("rust/Cargo.toml", "rust/Cargo.lock", "rust/examples/script_probe.rs", "rust/examples/support/script_host.rs", "rust/examples/support/dns.rs", "rust/examples/support/mmdb.rs", "rust/src/script_io.rs", "rust/src/script_transport.rs", "rust/src/script-primitives.js",
                          "tests/compat/probe.py", "tests/compat/runner.py", "tests/compat/reference.py", "tests/compat/upstream.py", "tests/compat/register.cjs",
                          "tests/compat/host-reference.cjs", "scripts/ip-flag-node.js", "tests/compat/fixtures/script-host-probe.js",
                          "tests/compat/fixtures/script-assertions.js", "tests/compat/fixtures/script-host.js",

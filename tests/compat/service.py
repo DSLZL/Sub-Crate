@@ -1,6 +1,7 @@
 """CI acceptance for the actual Rust HTTP listener, separate from the JS probe."""
 import argparse
 import base64
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from html import unescape as unescape_html
@@ -20,25 +21,29 @@ import zlib
 
 from reference import BACKEND, HERE, ROOT, execute, oracle, source_provenance
 from runner import BufferedHTTPConnection, check_json, load_cases, request, run_cases
+from upstream import ControlledUpstream
 
 
-def wall_time():
+def wall_time(latest=False):
     if os.name != "nt":
         return datetime.now(timezone.utc)
-    # Some Windows Python builds sample a coarse clock; export bounds need the precise OS clock.
+    # Node and Rust can sample different Windows clocks; bracket both readings.
     import ctypes
     from ctypes.wintypes import FILETIME
     stamp = FILETIME()
-    precise = ctypes.windll.kernel32.GetSystemTimePreciseAsFileTime
-    precise.argtypes = (ctypes.POINTER(FILETIME),)
-    precise.restype = None
-    precise(ctypes.byref(stamp))
-    ticks = (stamp.dwHighDateTime << 32) | stamp.dwLowDateTime
-    return datetime(1601, 1, 1, tzinfo=timezone.utc) + timedelta(microseconds=ticks // 10)
+    samples = []
+    for clock in (ctypes.windll.kernel32.GetSystemTimeAsFileTime,
+                  ctypes.windll.kernel32.GetSystemTimePreciseAsFileTime):
+        clock.argtypes = (ctypes.POINTER(FILETIME),)
+        clock.restype = None
+        clock(ctypes.byref(stamp))
+        ticks = (stamp.dwHighDateTime << 32) | stamp.dwLowDateTime
+        samples.append(datetime(1601, 1, 1, tzinfo=timezone.utc) + timedelta(microseconds=ticks // 10))
+    return (max if latest else min)(samples)
 
 
 @contextmanager
-def listener(binary, environment, output, report, log_prefix="rust", image=None):
+def listener(binary, environment, output, report, log_prefix="rust", image=None, host_network=False):
     port = int(environment.get("SUB_STORE_BACKEND_API_PORT", "0"))
     if not port:
         with socket.socket() as reserved:
@@ -55,17 +60,18 @@ def listener(binary, environment, output, report, log_prefix="rust", image=None)
     if image:
         argv = ["docker", "run", "--rm", "--name", name, "--read-only", "--cap-drop=ALL",
                 "--security-opt=no-new-privileges", "--user", f"{os.getuid()}:{os.getgid()}",
-                "-p", f"127.0.0.1:{port}:3000",
                 "--mount", f"type=bind,source={environment['SUB_STORE_DATA_BASE_PATH']},target=/data"]
+        # Conversion callbacks contact the controlled loopback upstream in CI.
+        argv.extend(["--network=host"] if host_network else ["-p", f"127.0.0.1:{port}:3000"])
         if environment.get("SUB_STORE_FRONTEND_PATH"):
             argv.extend(["--mount", f"type=bind,source={environment['SUB_STORE_FRONTEND_PATH']},target=/frontend,readonly"])
-            if not environment.get("SUB_STORE_BACKEND_MERGE"):
+            if not environment.get("SUB_STORE_BACKEND_MERGE") and not host_network:
                 argv.extend(["-p", f"127.0.0.1:{environment['SUB_STORE_FRONTEND_PORT']}:3001"])
         for key, value in environment.items():
             if key.startswith("SUB_STORE_") or key in ("TZ", "NODE_ENV"):
-                value = {"SUB_STORE_DATA_BASE_PATH": "/data", "SUB_STORE_BACKEND_API_PORT": "3000",
-                         "SUB_STORE_BACKEND_API_HOST": "0.0.0.0", "SUB_STORE_FRONTEND_PATH": "/frontend",
-                         "SUB_STORE_FRONTEND_HOST": "0.0.0.0", "SUB_STORE_FRONTEND_PORT": "3001"}.get(key, value)
+                value = {"SUB_STORE_DATA_BASE_PATH": "/data", "SUB_STORE_BACKEND_API_PORT": str(port) if host_network else "3000",
+                         "SUB_STORE_BACKEND_API_HOST": value if host_network else "0.0.0.0", "SUB_STORE_FRONTEND_PATH": "/frontend",
+                         "SUB_STORE_FRONTEND_HOST": value if host_network else "0.0.0.0", "SUB_STORE_FRONTEND_PORT": value if host_network else "3001"}.get(key, value)
                 argv.extend(["--env", f"{key}={value}"])
         argv.append(image)
     else:
@@ -107,11 +113,110 @@ def listener(binary, environment, output, report, log_prefix="rust", image=None)
                 record["exit_code"] = child.wait(timeout=5)
 
 
-def check_cases(url, state, cases, output, name):
-    results = run_cases(url, state, cases)
+def check_cases(url, state, cases, output, name, upstream=None):
+    results = run_cases(url, state, cases, upstream)
     (output / f"{name}.json").write_text(json.dumps(results, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     assert len(results) == len(cases) and all(case["status"] == "passed" for case in results), f"{name}: {[(case['id'], case.get('error')) for case in results if case['status'] != 'passed']}"
     return results
+
+
+def script_concurrency(url, state, output, name):
+    """A pending script must observe and preserve a concurrent ordinary write."""
+    step = {"method": "POST", "path": "/api/preview/sub", "body": {
+        "name": "concurrent-script", "source": "local",
+        "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#concurrent",
+        "process": [{"type": "Script Operator", "args": {"content": """
+async function operator(proxies) {
+  $substore.write({started: true}, 'm3-script-await');
+  const deadline = Date.now() + 3000;
+  while (!$substore.read('settings').m3Concurrent) {
+    if (Date.now() > deadline) throw new Error('Concurrent write was blocked');
+    await $substore.wait(10);
+  }
+  $substore.write({completed: true}, 'm3-script-await');
+  return proxies;
+}
+"""}}]}}
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(request, url, step)
+        deadline = time.monotonic() + 4
+        while True:
+            # Node writes this file in place; observe its accepted state through HTTP.
+            barrier = request(url, {"method": "GET", "path": "/api/storage"})
+            assert barrier["status"] == 200, barrier
+            if json.loads(barrier["body"]).get("m3-script-await", {}).get("started"):
+                break
+            assert not pending.done() and time.monotonic() < deadline, "Script did not publish the await barrier"
+            time.sleep(0.01)
+        patch = request(url, {"method": "PATCH", "path": "/api/settings", "body": {"m3Concurrent": True}})
+        response = pending.result(timeout=5)
+    assert patch["status"] == response["status"] == 200, (patch, response)
+    durable = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+    assert durable["settings"]["m3Concurrent"] is True and durable["m3-script-await"] == {"completed": True}
+    observation = {"patch": {key: patch[key] for key in ("status", "body")},
+                   "script": {key: response[key] for key in ("status", "body")}}
+    (output / f"{name}-script-concurrency.json").write_text(json.dumps(observation, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return observation
+
+
+def script_download_background(url, state, upstream, output, name):
+    """The old optimistic value returns before its real refresh can complete."""
+    content = """
+async function operator(proxies) {
+  const OriginalDate=Date;
+  globalThis.Date=class extends OriginalDate {
+    static __m3Original=OriginalDate;
+    constructor(...args) { super(...(args.length ? args : [2300000000000])); }
+    static now() { return 2300000000000; }
+  };
+  $substore.write('old-background','#sub-store-cached-custom-native-background');
+  const value=await ProxyUtils.download($arguments.url,'background-native');
+  if(value!=='old-background') throw new Error('optimistic result');
+  proxies[0].optimistic=value;
+  return proxies;
+}
+"""
+    def step(script, arguments=None):
+        return {"method": "POST", "path": "/api/preview/sub", "body": {
+            "name": "background-download", "source": "local",
+            "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#background",
+            "process": [{"type": "Script Operator", "args": {"content": script, "arguments": arguments or {}}}]}}
+
+    start = len(upstream.requests)
+    try:
+        first = request(url, step(content, {"url": upstream.url + "/host/download/text/background#cacheKey=native-background&cacheTtl=3"}))
+        assert first["status"] == 200 and json.loads(first["body"])["data"]["processed"][0]["optimistic"] == "old-background", first
+        assert upstream.background_started.wait(timeout=2), "Refresh did not start"
+        root = json.loads((state / "root.json").read_text(encoding="utf-8"))
+        assert root["sub-store-cached-custom-native-background"] == "old-background", "Reply waited for the background body"
+        assert not upstream.background_release.is_set()
+        upstream.background_release.set()
+        second = request(url, step("""
+async function operator(proxies) {
+  try {
+    for(let i=0;i<150;i++) {
+      const value=$substore.read('#sub-store-cached-custom-native-background');
+      if(value==='下载🙂\\r\\n\\0尾\\n') { proxies[0].refreshed=value; return proxies; }
+      await $substore.wait(10);
+    }
+    throw new Error('background refresh did not persist after the reply');
+  } finally {
+    if(Date.__m3Original) globalThis.Date=Date.__m3Original;
+  }
+}
+"""))
+        assert second["status"] == 200 and json.loads(second["body"])["data"]["processed"][0]["refreshed"] == "下载🙂\r\n\0尾\n", second
+        outgoing = upstream.requests[start:]
+        check_json([{"method": item["method"], "path": item["path"], "body": item["body"],
+                     "user_agent": item["headers"].get("user-agent")} for item in outgoing],
+                   [{"method": "GET", "path": "/host/download/text/background", "body": "", "user_agent": "background-native"}])
+        observation = {"returned_before_release": True,
+                       "first": {key: first[key] for key in ("status", "body")},
+                       "second": {key: second[key] for key in ("status", "body")}}
+        (output / f"{name}-script-download-background.json").write_text(json.dumps(observation, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return observation
+    finally:
+        upstream.background_release.set()
 
 
 def state_edges(url, state, keys, output, name):
@@ -460,7 +565,7 @@ def backup_edges(url, state, output, name, offset=None):
         previous = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")} if status >= 400 else None
         before = wall_time()
         response = request(url, {"method": method, "path": path, **({"body": body} if body is not None else {})})
-        after = wall_time()
+        after = wall_time(latest=True)
         stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
         root = json.loads((state / "root.json").read_text(encoding="utf-8"))
         record = {"method": method, "path": path, "body": body, "response": response,
@@ -1045,7 +1150,7 @@ def api_entities(url, state, output, name, origin=None):
                    "request_body_base64": base64.b64encode(body or b"").decode("ascii"),
                    "status": response.status, "headers": {key.lower(): value for key, value in response.getheaders()},
                    "body_base64": base64.b64encode(content).decode("ascii"), "before": before.isoformat(),
-                   "after": wall_time().astimezone().isoformat(),
+                   "after": wall_time(latest=True).astimezone().isoformat(),
                    "state": json.loads((state / "sub-store.json").read_text(encoding="utf-8"))}
         finally:
             connection.close()
@@ -1466,7 +1571,7 @@ def standalone_resources(frontend_url, backend_url, mount, state, output, name):
                    "body_base64": base64.b64encode(content).decode("ascii")}
         finally:
             connection.close()
-        after_request = wall_time().astimezone()
+        after_request = wall_time(latest=True).astimezone()
         raw.update(before=before_request.isoformat(), after=after_request.isoformat())
         with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
             evidence.write(json.dumps(raw, ensure_ascii=False) + "\n")
@@ -1666,7 +1771,7 @@ def main():
     try:
         report.update(source_provenance(environment, output))
         report["sources"] = {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
-                             for path in [ROOT / "rust/Cargo.toml", ROOT / "rust/Cargo.lock", *sorted((ROOT / "rust/src").glob("*.rs")), *sorted((ROOT / "rust/vendor").iterdir())]}
+                             for path in [ROOT / "rust/Cargo.toml", ROOT / "rust/Cargo.lock", ROOT / "rust/Dockerfile", *sorted(path for path in (ROOT / "rust/src").iterdir() if path.is_file()), *sorted((ROOT / "rust/vendor").iterdir())]}
         report["harness_sha256"] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
         version = execute([args.node, "--version"], ROOT, environment, output, "node-version")
         assert version.returncode == 0 and version.stdout.strip() == "v24.16.0", "Pinned Node required"
@@ -1726,6 +1831,11 @@ def main():
         _, conversion_restart = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "conversion-local-restart")
         conversion_state = {}
         conversion_responses = {}
+        conversion_concurrency = {}
+        conversion_background = {}
+        # Cache identities include the source URL; both services need the same upstream origin.
+        conversion_upstream_port = 0
+        conversion_upstream_origins = {}
         for kind in ("node", "rust"):
             state = output / f"{kind}-conversion-local"
             state.mkdir()
@@ -1733,12 +1843,16 @@ def main():
             (state / "root.json").write_text(json.dumps(baseline_root, ensure_ascii=False), encoding="utf-8")
             env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}
             label = kind + "-conversion-local"
-            manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
-            with manager as url:
-                results = check_cases(url, state, conversion_cases, output, label)
+            manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image, host_network=bool(image))
+            with ControlledUpstream(conversion_upstream_port) as upstream, manager as url:
+                conversion_upstream_port = upstream.server.server_address[1]
+                conversion_upstream_origins[kind] = upstream.url
+                results = check_cases(url, state, conversion_cases, output, label, upstream)
                 conversion_responses[kind] = list(results)
                 report["phases"].append({"name": label, "cases": len(results), "requests": sum(len(case["steps"]) for case in results)})
-                conversion_state[kind] = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+                conversion_concurrency[kind] = script_concurrency(url, state, output, label)
+                conversion_background[kind] = script_download_background(url, state, upstream, output, label)
+                conversion_state[kind] = {key: json.loads((state / key).read_text(encoding="utf-8")) for key in ("sub-store.json", "root.json")}
                 if kind == "rust":
                     before_pending = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")}
                     pending_steps = [
@@ -1749,7 +1863,6 @@ def main():
                         {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "Huge = snell, 127.0.0.1, 443, psk=p, version=" + "9" * 400, "client": "JSON"}},
                         {"method": "POST", "path": "/api/proxy/parse", "body": {"data": 'Huge = AnyTLS, 127.0.0.1, 443, "password", min-idle-session=' + "9" * 400, "client": "JSON"}},
                         {"method": "POST", "path": "/api/proxy/parse", "body": {"data": 'WG = WireGuard, private-key=p, peers=[{public-key=k}]', "client": "JSON"}},
-                        {"method": "POST", "path": "/api/preview/sub", "body": {"name": "later", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#later", "process": [{"type": "Script Operator", "args": {"mode": "script", "content": "$substore.write('must-not-write', true);"}}]}},
                         {"path": "/download/native-local/URI?$options=response-hook"},
                     ]
                     pending_responses = [{"request": step, "response": request(url, step)} for step in pending_steps]
@@ -1759,11 +1872,13 @@ def main():
                     assert request(url, {"path": "/download/native-local/URI"})["status"] == 200
             before = (state / "sub-store.json").read_bytes()
             label += "-restart"
-            manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
+            manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image, host_network=bool(image))
             with manager as url:
                 conversion_responses[kind].extend(check_cases(url, state, conversion_restart, output, label))
                 assert (state / "sub-store.json").read_bytes() == before, "Read-only conversion changed durable state"
                 report["phases"].append({"name": label, "cases": len(conversion_restart)})
+        assert conversion_upstream_origins["node"] == conversion_upstream_origins["rust"]
+        report["conversion_upstream_origins"] = conversion_upstream_origins
         for rust_case, node_case in zip(conversion_responses["rust"], conversion_responses["node"], strict=True):
             assert rust_case["id"] == node_case["id"]
             for rust_step, node_step in zip(rust_case["steps"], node_case["steps"], strict=True):
@@ -1772,6 +1887,10 @@ def main():
                 for key in ("content-type", "content-length", "etag", "allow"):
                     assert actual["headers"].get(key) == expected["headers"].get(key), (rust_case["id"], key, actual, expected)
         check_json(conversion_state["rust"], conversion_state["node"])
+        check_json(conversion_concurrency["rust"], conversion_concurrency["node"])
+        check_json(conversion_background["rust"], conversion_background["node"])
+        report["native_script_background_refresh_and_state_checked"] = True
+        report["native_script_concurrency_and_state_checked"] = True
         report["native_local_ss_conversion_checked"] = True
         configurations = [
             ("default", {}, 1048576, [("https://sub-store.vercel.app", "https://sub-store.vercel.app")], "https://denied.invalid", False),

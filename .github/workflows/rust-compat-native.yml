@@ -130,6 +130,7 @@ jobs:
           mkdir -p tests/compat/evidence/frontend-setup
           npm install --global pnpm@11.0.9 agent-browser@0.27.3 2>&1 | tee tests/compat/evidence/frontend-setup/tools.log
           pnpm --dir backend install --frozen-lockfile 2>&1 | tee tests/compat/evidence/frontend-setup/backend-install.log
+          pnpm --dir tests/compat install --frozen-lockfile 2>&1 | tee tests/compat/evidence/frontend-setup/compat-install.log
           pnpm --dir .compat-frontend install --frozen-lockfile 2>&1 | tee tests/compat/evidence/frontend-setup/frontend-install.log
           node tests/compat/build-native-utilities.cjs
       - name: Build the unchanged frontend with type checks

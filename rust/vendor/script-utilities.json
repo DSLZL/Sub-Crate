@@ -1,0 +1,29 @@
+{
+  "packages": {
+    "lodash": "4.18.1",
+    "buffer": "6.0.3",
+    "js-base64": "3.7.8",
+    "ip-address": "10.3.1",
+    "base64-js": "1.5.1",
+    "ieee754": "1.2.1"
+  },
+  "esbuild": "0.19.8",
+  "bundle_sha256": "3208af2e7fa9643e5fbe30710d73fffee1973d6f08cacba000d3e5fad6aeabcd",
+  "licenses_sha256": "776ba38be4eb4d32a2ee743fd42deeed7083af9bfe8c966f30ea7586c66dfa5b",
+  "inputs": {
+    "base64-js@1.5.1/index.js": "829eadd8a1a441d25be0cb93b00e16a0d0c20fd294db95d8f2ed87e6954b7182",
+    "buffer@6.0.3/index.js": "c25853fd31addfce188b01061fe85bfe667d5fb6c7a7bbb1c83d0ddfd8627acc",
+    "ieee754@1.2.1/index.js": "fe3e2b20c1ebb57c3b390c8f685ad1e04e6f493517fa7e432f4351bb77a1a4d0",
+    "ip-address@10.3.1/dist/address-error.js": "d0bb8495a78ce2a1e2c1ad231c15b3a8146fec8c8ea32b121fcbe1e032b9cc0e",
+    "ip-address@10.3.1/dist/common.js": "830fbb3afd49b6bedf8f7c1019370547f1b1ae507569f352a364fda5b4441182",
+    "ip-address@10.3.1/dist/ip-address.js": "3e38a4b349282e67a811aece46e273b1b24abbba2897bea707a00170ebdfc200",
+    "ip-address@10.3.1/dist/ipv4.js": "ce0177ddc59f757fc79aaea75c54cab368693f9fb1af66c6d7e6c1117dd2cb2d",
+    "ip-address@10.3.1/dist/ipv6.js": "e6141bbb7c6d02b5fd10fb1c0ef9ff4acfba0ad020438d273b8bc79d701fa6d7",
+    "ip-address@10.3.1/dist/v4/constants.js": "1b1b9c5faf45d551c82e5321bbe06fc5eba2d89bcf0f95bbe7e5ff7937af1d48",
+    "ip-address@10.3.1/dist/v6/constants.js": "0e65bc3554afc387d509f4ad7157fd765deaaf25e96ef9257fe01f67702a6738",
+    "ip-address@10.3.1/dist/v6/helpers.js": "80660cbe876ed3e7224268638582db8def929a53bc8822c5a5d8a0c321cca50f",
+    "ip-address@10.3.1/dist/v6/regular-expressions.js": "31f99f670ac43ebe9694dc84b6cc9a00eb5af08f90c0ca0d2d8c5c63e5b67415",
+    "js-base64@3.7.8/base64.mjs": "d5159202389f3fca95d3f5f6a5c3066a9ba282f2127765d2bfcde5dbbfac5cd9",
+    "lodash@4.18.1/lodash.js": "f5465f55566bf544aad0a31c6135889ca1ed81eea8f53ec61c6cbe86926f07cf"
+  }
+}

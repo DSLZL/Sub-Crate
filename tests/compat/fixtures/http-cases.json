@@ -1,4 +1,2908 @@
 [
+  {
+    "id": "PC-native-script-yaml-cache",
+    "source": "PC13-PC17 retained assertions; utils/yaml.js and utils/script-resource-cache.js",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/preview/sub",
+        "body": {
+          "name": "public-helpers",
+          "source": "local",
+          "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#helper",
+          "process": [
+            {
+              "type": "Script Operator",
+              "args": {
+                "content": "async function operator(proxies) {\n  const OriginalDate = Date;\n  let probeNow = 4102444800000;\n  globalThis.Date = class extends OriginalDate {\n    constructor(...args) { super(...(args.length ? args : [probeNow])); }\n    static now() { return probeNow; }\n  };\n  try {\n  const passed = [], observations = {};\n  const assert = (value, message) => { if (!value) throw new Error(message); };\n  const equal = (actual, expected, message) => assert(JSON.stringify(actual) === JSON.stringify(expected), message);\n  const copy = value => JSON.parse(JSON.stringify(value));\n  const check = async (id, callback) => { observations[id] = await callback(); passed.push(id); };\n  const processorHost = {scriptResourceCache, YAML: yaml};\n  const cache = processorHost.scriptResourceCache;\r\n  await check('PC13-script-cache-defaults-and-ttl-coercion', async () => {\r\n    const now = Date.now();\r\n    const initial = copy($substore.read('settings'));\r\n    cache.revokeAll();\r\n    for (const ttl of [undefined, null, 0, -1, '', false, 'invalid', Infinity]) {\r\n      assert(cache.set('default', false, ttl) === undefined, 'set returns undefined');\r\n      assert(cache.gettime('default') === now + 172800000, 'invalid TTL uses 48 hours');\r\n    }\r\n    for (const [ttl, milliseconds] of [['12.5', 12.5], [true, 1], [20, 20]]) {\r\n      cache.set('explicit', 0, ttl);\r\n      assert(cache.gettime('explicit') === now + milliseconds, 'positive TTL is milliseconds');\r\n    }\r\n    $substore.write({...initial, scriptCacheTtl: '1.5'}, 'settings');\r\n    cache.set('settings', '', NaN);\r\n    assert(cache.gettime('settings') === now + 1500, 'settings TTL is seconds');\r\n    for (const ttl of ['invalid', -2, Infinity]) {\r\n      $substore.write({...initial, scriptCacheTtl: ttl === Infinity ? 'Infinity' : ttl}, 'settings');\r\n      cache.set('settings', null);\r\n      assert(cache.gettime('settings') === now + 172800000, 'invalid settings fallback');\r\n    }\r\n    $substore.write(initial, 'settings');\r\n    cache.revokeAll();\r\n    return {defaultMs: 172800000, explicitMs: [12.5, 1, 20], settingsMs: 1500};\r\n  });\r\n\r\n  await check('PC14-script-cache-expiry-removal-and-prefix', async () => {\r\n    const start = probeNow;\r\n    cache.set('zero', 0, 10);\r\n    cache.set('false', false, 10);\r\n    cache.set('nil', null, 10);\r\n    cache.set('empty', '', 10);\r\n    probeNow += 10;\r\n    equal([cache.get('zero'), cache.get('false'), cache.get('nil'), cache.get('empty')], [0, false, null, ''], 'inclusive expiry retains falsy values');\r\n    assert(cache.gettime('zero') === start + 10, 'gettime inclusive boundary');\r\n    assert(cache.get('zero', 1) === null && cache.resourceCache.zero !== undefined, 'future threshold does not remove');\r\n    probeNow += 1;\r\n    assert(cache.gettime('zero') === null && cache.get('zero', 0, true) === null, 'expired remove');\r\n    assert(!Object.hasOwn(cache.resourceCache, 'zero'), 'remove persists deletion');\r\n    cache.set('prefix-a', {unknown: false}, 20);\r\n    cache.set('other-a', '保留🙂\\r\\n', 20);\r\n    cache._cleanup('prefix-', 21);\r\n    assert(!Object.hasOwn(cache.resourceCache, 'prefix-a') && cache.get('other-a') === '保留🙂\\r\\n', 'prefix cleanup threshold');\r\n    cache._cleanup();\r\n    equal(Object.keys(cache.resourceCache), ['other-a'], 'expired keys cleaned');\r\n    assert(cache.get('missing') === null && cache.gettime('missing') === null, 'missing cache results');\r\n    probeNow = start;\r\n    cache.revokeAll();\r\n    return {inclusive: [0, false, null, ''], missing: null, prefixRetained: '保留🙂\\r\\n'};\r\n  });\r\n\r\n  await check('PC15-script-cache-root-persistence-and-aliases', async () => {\r\n    const value = {unknown: {nil: null, zero: 0, flag: false, empty: ''}, text: '订阅🙂\\r\\n', script: \"require('node:fs')\"};\r\n    cache.set('restart', value, 60000);\r\n    assert(cache.get('restart') === value, 'cache retains value aliases');\r\n    value.unknown.zero = false;\r\n    cache._persist();\r\n    equal(JSON.parse($substore.read('#sub-store-cached-script-resource')), cache.resourceCache, 'public root contains JSON string');\r\n    assert(!Object.hasOwn($substore.cache, '#sub-store-cached-script-resource'), 'script cache belongs to root');\r\n    assert(typeof $substore.root['sub-store-cached-script-resource'] === 'string', 'serialized cache is not an object');\r\n    return copy(cache.resourceCache);\r\n  });\r\n\r\n  await check('PC16-project-yaml-parse-merge-tags-and-errors', async () => {\r\n    const yaml = processorHost.YAML;\r\n    const merged = yaml.safeLoad('base: &base {unknown: false, zero: 0}\\nchild: {<<: *base, text: \"订阅🙂\"}\\n');\r\n    equal(merged, {base: {unknown: false, zero: 0}, child: {unknown: false, zero: 0, text: '订阅🙂'}}, 'merge enabled by default');\r\n    equal(yaml.safeLoad('port: !<str> 0123\\n'), {port: '0123'}, 'legacy string tag retry');\r\n    assert(yaml.load('nil: null\\n').nil === null && yaml.parse('false') === false, 'public parse aliases');\r\n    let rejected = false;\r\n    try { yaml.safeLoad('x: 1\\nx: 2\\n'); } catch (error) { rejected = error.name === 'YAMLParseError'; }\r\n    assert(rejected, 'duplicate keys reject');\r\n    return merged;\r\n  });\r\n\r\n  await check('PC17-project-yaml-dump-options-and-json-boundary', async () => {\r\n    const yaml = processorHost.YAML;\r\n    const result = yaml.safeDump({z: ['订阅🙂'], a: {flag: false, zero: 0}}, {sortKeys: true, forceQuotes: true, quotingType: \"'\", noArrayIndent: true, lineWidth: -1});\r\n    equal(result, \"'a':\\n  'flag': false\\n  'zero': 0\\n'z':\\n- '订阅🙂'\\n\", 'legacy option aliases');\r\n    const shared = {nil: null};\r\n    const serialized = yaml.dump({a: shared, b: shared, missing: undefined}, {noRefs: true});\r\n    assert(!serialized.includes('&') && !serialized.includes('*') && !serialized.includes('missing'), 'JSON boundary and no references');\r\n    let rejected = false;\r\n    const circular = {}; circular.self = circular;\r\n    try { yaml.stringify(circular); } catch (error) { rejected = error instanceof TypeError; }\r\n    assert(rejected, 'circular input rejects');\r\n    return {options: result, serialized};\r\n  });\r\n\r\n\n    proxies[0].helpersVerified = passed;\n    proxies[0].helperResults = observations;\n    return proxies;\n  } finally { globalThis.Date = OriginalDate; }\n}"
+              }
+            }
+          ]
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "data": {
+              "processed": [
+                {
+                  "helpersVerified": [
+                    "PC13-script-cache-defaults-and-ttl-coercion",
+                    "PC14-script-cache-expiry-removal-and-prefix",
+                    "PC15-script-cache-root-persistence-and-aliases",
+                    "PC16-project-yaml-parse-merge-tags-and-errors",
+                    "PC17-project-yaml-dump-options-and-json-boundary"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "PC-native-script-pure-helpers",
+    "source": "PC18-PC40 and PC125-PC126 retained assertions through real script helpers; header cache observed through its durable root interface",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/preview/sub",
+        "body": {
+          "name": "public-helpers",
+          "source": "local",
+          "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#helper",
+          "process": [
+            {
+              "type": "Script Operator",
+              "args": {
+                "content": "async function operator(proxies) {\n  let probeNow = 2000000000000;\n  const OriginalDate = Date;\n  globalThis.Date = class extends OriginalDate {\n    constructor(...args) { super(...(args.length ? args : [probeNow])); }\n    static now() { return probeNow; }\n  };\n  try {\n    const probeUpstream = '$UPSTREAM';\n    const passed = [], observations = {};\n    const assert = (value, message) => { if (!value) throw new Error(message); };\n    const equal = (actual, expected, message) => assert(JSON.stringify(actual) === JSON.stringify(expected), message);\n    const check = async (id, callback) => { observations[id] = await callback(); passed.push(id); };\nglobalThis.runHelperContracts = async function(check, host, operator, assert, equal) {\n  const utils = host.ProxyUtils;\n  const flow = host.flowUtils;\n  function errorName(callback) {\n    try { callback(); } catch (error) { return error.name; }\n    throw new Error('Expected helper rejection');\n  }\n\n  await check('PC18-ip-validation-and-coercion', () => {\n    const valid4 = ['0.0.0.0', '127.0.0.1', '255.255.255.255'];\n    const valid6 = ['::', '::1', '2001:db8::1', '::ffff:192.0.2.1', 'fe80::1%eth0'];\n    const invalid = ['01.2.3.4', '256.1.1.1', '1.2.3', '127.0.0.1/24', '[::1]', '2001:::1', ' ::1', '', null, false, 0, undefined];\n    assert(valid4.every(ip => utils.isIPv4(ip) && !utils.isIPv6(ip) && utils.isIP(ip)), 'IPv4 boundaries');\n    assert(valid6.every(ip => utils.isIPv6(ip) && !utils.isIPv4(ip) && utils.isIP(ip)), 'IPv6 compressed/mapped/zone');\n    assert(invalid.every(ip => !utils.isIP(ip)), 'invalid addresses');\n    const coerced = {toString: () => '192.0.2.1'};\n    assert(utils.isIPv4(coerced) && utils.isIP(['::1']), 'regex string coercion is retained');\n    assert(errorName(() => utils.isIP(Symbol('ip'))) === 'TypeError', 'Symbol coercion rejects');\n    return {valid4, valid6, invalidCount: invalid.length, coerced: true};\n  });\n\n  await check('PC19-address4-construction-subnets-and-bigint', () => {\n    const {Address4, AddressError} = utils.ipAddress;\n    const ip = new Address4('192.168.1.42/24');\n    const result = {form: ip.correctForm(), start: ip.startAddress().correctForm(), end: ip.endAddress().correctForm(),\n      bytes: ip.toArray(), integer: ip.bigInt().toString(), member: ip.isInSubnet(new Address4('192.168.1.0/24')),\n      outside: ip.isInSubnet(new Address4('192.168.2.0/24')), private: ip.isPrivate(), mask: ip.subnetMask};\n    equal(result, {form: '192.168.1.42', start: '192.168.1.0', end: '192.168.1.255', bytes: [192,168,1,42],\n      integer: '3232235818', member: true, outside: false, private: true, mask: 24}, 'Address4 values');\n    assert(Address4.isValid('192.0.2.1/24') && !Address4.isValid('300.1.1.1'), 'CIDR validation differs from public regex');\n    assert(Address4.fromInteger(0xffffffff).correctForm() === '255.255.255.255', 'integer boundary');\n    try { new Address4('invalid'); throw new Error('accepted invalid IPv4'); }\n    catch (error) { assert(error instanceof AddressError && error.message === 'Invalid IPv4 address.', 'public AddressError identity/message'); }\n    return result;\n  });\n\n  await check('PC20-address6-construction-mapping-and-url', () => {\n    const {Address6} = utils.ipAddress;\n    const ip = new Address6('2001:db8::1234/64');\n    const url = Address6.fromURL('http://[2001:db8::1]:8080/');\n    const result = {form: ip.correctForm(), canonical: ip.canonicalForm(), start: ip.startAddress().correctForm(),\n      end: ip.endAddress().correctForm(), mask: ip.subnetMask, mapped: Address6.fromAddress4('192.0.2.1').to4in6(),\n      loopback: new Address6('::1').isLoopback(), linkLocal: new Address6('fe80::1').isLinkLocal(),\n      integer: Address6.fromBigInt(1n).bigInt().toString(), url: url.address.correctForm(), port: url.port};\n    equal(result, {form: '2001:db8::1234', canonical: '2001:0db8:0000:0000:0000:0000:0000:1234', start: '2001:db8::',\n      end: '2001:db8::ffff:ffff:ffff:ffff', mask: 64, mapped: '::ffff:192.0.2.1', loopback: true, linkLocal: true,\n      integer: '1', url: '2001:db8::1', port: 8080}, 'Address6 values');\n    assert(new Address6('fe80::1%eth0').zone === '%eth0' && Address6.isValid('2001:db8::1/64'), 'zone and CIDR');\n    assert(errorName(() => new Address6('2001:::1')) === 'AddressError', 'IPv6 parse rejection');\n    return result;\n  });\n\n  await check('PC21-uuid-shape-and-types', () => {\n    const values = ['00000000-0000-0000-0000-000000000000', 'ABCDEFAB-CDEF-FFFF-0000-ABCDEFABCDEF',\n      'abcdefabcdefabcdefabcdefabcdefab', '00000000-0000-0000-0000-00000000000g', '', 0, null, undefined,\n      {toString: () => '00000000-0000-0000-0000-000000000000'}];\n    const result = values.map(utils.isValidUUID);\n    equal(result, [true, true, false, false, false, false, false, false, false], 'UUID is a string shape check, not a version check');\n    return result;\n  });\n\n  await check('PC22-port-selection-boundaries-and-legacy-inputs', () => {\n    const original = Math.random;\n    const choose = (input, draws) => {\n      let index = 0;\n      Math.random = () => { assert(index < draws.length, 'unexpected random draw'); return draws[index++]; };\n      const value = utils.getRandomPort(input);\n      assert(index === draws.length, 'all expected draws consumed');\n      return value;\n    };\n    try {\n      const result = [choose('80,443/1000-1002', [0]), choose('80,443/1000-1002', [.4]),\n        choose('80,443/1000-1002', [.99, 0]), choose('80,443/1000-1002', [.99, .999]),\n        choose(' 8080 ', [0]), choose('', [0]), choose('10-5', [0, 0])];\n      equal(result, [80, 443, 1000, 1002, 8080, 0, 10], 'part selection, inclusive range and legacy coercion');\n      assert(Number.isNaN(choose('invalid', [0])), 'invalid numeric input yields NaN');\n      assert(errorName(() => utils.getRandomPort(80)) === 'TypeError', 'non-string port rejects');\n      return result;\n    } finally { Math.random = original; }\n  });\n\n  await check('PC23-country-flags-iso-and-unicode-removal', () => {\n    const names = ['香港 01', 'Tokyo', 'us-01', 'US-01', 'CN2', '内蒙古', '剩余流量', '🇯🇵 mystery', '🇯🇵 美国', 'mystery'];\n    const result = names.map(name => ({flag: utils.getFlag(name), iso: utils.getISO(name) ?? null}));\n    equal(result, [{flag:'🇭🇰',iso:'HK'}, {flag:'🇯🇵',iso:'JP'}, {flag:'🏴‍☠️',iso:null}, {flag:'🇺🇸',iso:'US'},\n      {flag:'🏴‍☠️',iso:null}, {flag:'🇨🇳',iso:'CN'}, {flag:'🏳️‍🌈',iso:'EXP'}, {flag:'🇯🇵',iso:'JP'},\n      {flag:'🇺🇸',iso:'US'}, {flag:'🏴‍☠️',iso:null}], 'keyword priority, case-sensitive ISO and existing flags');\n    assert(utils.removeFlag(' 🇭🇰 🇯🇵🏴‍☠️🏳️‍🌈 节点🙂 ') === '节点🙂', 'remove full Unicode flag sequences');\n    assert(errorName(() => utils.getFlag(null)) === 'TypeError' && errorName(() => utils.removeFlag(0)) === 'TypeError', 'name type errors');\n    return result;\n  });\n\n  await check('PC24-json5-parsing-reviver-and-own-properties', () => {\n    const parsed = utils.JSON5.parse(\"// source\\n{unquoted:'订阅🙂', hex:0x10, plus:+2, trailing:[false,0,null,], infinity:Infinity, nan:NaN, '__proto__':{polluted:true}}\", (key, value) => key === 'hex' ? value + 1 : value);\n    assert(parsed.unquoted === '订阅🙂' && parsed.hex === 17 && parsed.plus === 2 && parsed.infinity === Infinity && Number.isNaN(parsed.nan), 'JSON5 extensions/reviver');\n    equal(parsed.trailing, [false,0,null], 'falsy values retained');\n    assert(Object.hasOwn(parsed, '__proto__') && parsed.__proto__.polluted === true && ({}).polluted === undefined, 'own prototype-named property');\n    assert(errorName(() => utils.JSON5.parse('{broken:}')) === 'SyntaxError', 'invalid JSON5');\n    return {text: parsed.unquoted, integer: parsed.hex, values: parsed.trailing, infinity: parsed.infinity === Infinity, nan: Number.isNaN(parsed.nan)};\n  });\n\n  await check('PC25-json5-stringify-options-and-errors', () => {\n    const source = {z:'订阅🙂', a:NaN, inf:Infinity, missing:undefined, values:[false,0,null,undefined]};\n    const text = utils.JSON5.stringify(source, ['z','a','values'], 2);\n    equal(text, \"{\\n  z: '订阅🙂',\\n  a: NaN,\\n  values: [\\n    false,\\n    0,\\n    null,\\n    null,\\n  ],\\n}\", 'JSON5 formatting and replacer');\n    assert(utils.JSON5.stringify(undefined) === undefined && utils.JSON5.stringify({inf:Infinity}) === '{inf:Infinity}', 'undefined and non-JSON numbers');\n    const circular = {}; circular.self = circular;\n    assert(errorName(() => utils.JSON5.stringify(circular)) === 'TypeError', 'circular JSON5 rejects');\n    return text;\n  });\n\n  await check('PC26-md5-fixed-ascii-and-unicode-vectors', () => {\n    const vectors = [['','d41d8cd98f00b204e9800998ecf8427e'], ['abc','900150983cd24fb0d6963f7d28e17f72'],\n      ['message digest','f96b697d7cb7938d525a2f31aaf161d0'], ['订阅🙂\\r\\n','0cb5f141a0427155bace27275da7b434']];\n    const result = vectors.map(([input, expected]) => { const actual = utils.hex_md5(input); assert(actual === expected, 'fixed MD5 vector'); return actual; });\n    assert(errorName(() => utils.hex_md5(null)) === 'TypeError', 'non-string MD5 rejects');\n    return result;\n  });\n\n  await check('PC27-flow-header-casing-encoding-and-numbers', () => {\n    const header = flow.getFlowField({'Subscription-Userinfo':'upload=-1.5e2; download=+2E2; total=1e3; expire=0; reset_day=03',\n      'PROFILE-WEB-PAGE-URL':'https://example.invalid/订阅?a=1&b=2', 'Plan-Name':'套餐🙂; A=B'});\n    const expected = {expires:0, total:1000, usage:{upload:-150, download:200}, remainingDays:3,\n      appUrl:'https://example.invalid/订阅?a=1&b=2', planName:'套餐🙂; A=B'};\n    equal(flow.parseFlowHeaders(header), expected, 'encoded header values and numeric forms');\n    assert(flow.getFlowField({'subscription-userinfo':0, 'plan-name':false}) === '', 'falsy metadata');\n    equal(flow.parseFlowHeaders('download=0; total=0'), {total:0,usage:{upload:0,download:0}}, 'optional fields and absent upload');\n    equal(flow.parseFlowHeaders('download=1; total=3; download=99; total=100'), {total:3,usage:{upload:0,download:1}}, 'first numeric matches');\n    return {header, parsed: flow.parseFlowHeaders(header)};\n  });\n\n  await check('PC28-flow-parser-malformed-and-falsy-inputs', () => {\n    for (const input of ['', null, false, 0, undefined]) assert(flow.parseFlowHeaders(input) === undefined, 'empty flow returns undefined');\n    const errors = ['total=2', 'download=2', 'DOWNLOAD=1; TOTAL=2', 1, 'download=1; total=2; app_url=%ZZ'].map(input => errorName(() => flow.parseFlowHeaders(input)));\n    equal(errors, ['TypeError','TypeError','TypeError','TypeError','URIError'], 'missing/case-sensitive fields and URI decoding reject');\n    assert(errorName(() => flow.getFlowField(null)) === 'TypeError', 'headers must be an object');\n    return errors;\n  });\n\n  await check('PC29-flow-units-quota-and-expiry-boundary', () => {\n    const units = [flow.flowTransfer(1023), flow.flowTransfer(1024), flow.flowTransfer(1536), flow.flowTransfer(-1024), flow.flowTransfer(1024,'YB')];\n    equal(units, [{value:'1023',unit:'B'}, {value:'1',unit:'KB'}, {value:'1.5',unit:'KB'}, {value:'-1024',unit:'B'}, {value:'1024',unit:'YB'}], 'binary units and negative values');\n    const messages = [undefined, {total:1024,usage:{upload:512,download:512}}, {total:1024,usage:{upload:1024,download:512}}].map(input => {\n      try { flow.validCheck(input); } catch (error) { return error.message; }\n      throw new Error('quota failure expected');\n    });\n    equal(messages, ['没有流量信息','流量已用完: 1 KB / 1 KB','流量已用完: 1.5 KB / 1 KB'], 'quota errors');\n    assert(flow.validCheck({expires:probeNow/1000,total:0}) === undefined, 'exact expiry boundary and unlimited quota');\n    assert(flow.validCheck({total:10,usage:{upload:-10,download:10}}) === undefined, 'negative usage retained');\n    return {units,messages};\n  });\n\n  await check('PC30-flow-reset-calendar-and-invalid-options', () => {\n    // The isolated fixture uses UTC; deployment timezone variants remain separate acceptance cases.\n    equal([new Date().getFullYear(),new Date().getMonth(),new Date().getDate()], [2033,4,18], 'shared fixed UTC clock');\n    const result = [flow.getRmainingDays(20), flow.getRmainingDays('18'), flow.getRmainingDays({resetDay:1}),\n      flow.getRmainingDays({startDate:'2033-05-01',cycleDays:10}), flow.getRmainingDays({startDate:'2033-05-08',cycleDays:'10'})];\n    equal(result, [2,31,14,3,0], 'monthly equality rolls forward; cyclic equality returns zero');\n    for (const input of [undefined, 0, 32, 'invalid', {startDate:'2033-06-01',cycleDays:10}, {startDate:'invalid',cycleDays:10}, {startDate:'2033-05-01',cycleDays:-1}])\n      assert(flow.getRmainingDays(input) === undefined, 'invalid options return undefined');\n    assert(typeof flow.getRemainingDays === 'undefined', 'published spelling stays getRmainingDays');\n    return result;\n  });\n\n  await check('PC31-flow-normalization-duplicates-and-fallback', () => {\n    const source = 'download=1.6; upload=-1.5; total=Infinity; expire=0; reset_day=-1; download=9; app_url=https%3A%2F%2Fexample.invalid%2F; plan_name=套餐%F0%9F%99%82; extra=a=b; broken=%ZZ; ignored';\n    const text = 'download=2; upload=-2; total=0; expire=; reset_day=; app_url=https%3A%2F%2Fexample.invalid%2F; plan_name=%E5%A5%97%E9%A4%90%F0%9F%99%82; extra=a%3Db; broken=%25ZZ';\n    assert(flow.normalizeFlowHeader(source) === text, 'first duplicate, numeric rounding and malformed URI fallback');\n    equal(flow.normalizeFlowHeader(source,true), {'subscription-userinfo':'download=2; upload=-2; total=0; expire=; reset_day=; extra=a%3Db; broken=%25ZZ',\n      'profile-web-page-url':'https://example.invalid/', 'plan-name':'套餐🙂'}, 'split metadata headers');\n    assert(flow.normalizeFlowHeader(null) === null, 'invalid input fallback');\n    equal(flow.normalizeFlowHeader(null,true), {'subscription-userinfo':null}, 'split invalid input fallback');\n    assert(flow.normalizeFlowHeader('Total=9; total=4; total=5') === 'Total=9; total=4', 'key case retained');\n    return text;\n  });\n\n  await check('PC32-public-helpers-in-actual-script-operator', async () => {\n    const result = await operator(`function operator(proxies) {\n      if (flowUtils.getRmainingDays(20) !== 2 || typeof flowUtils.getRemainingDays !== 'undefined') throw new Error('flow injection');\n      return proxies.map(proxy => ({...proxy, name: ProxyUtils.getFlag('香港') + '-' + ProxyUtils.hex_md5(proxy.name),\n        helper: ProxyUtils.JSON5.parse('{ok:true,zero:0,}'), flow: flowUtils.parseFlowHeaders('download=1; total=2'),\n        ip: new ProxyUtils.ipAddress.Address6('2001:db8::1').correctForm()}));\n    }`, [{name:'abc',unknown:{flag:false}}]);\n    equal(result, [{name:'🇭🇰-900150983cd24fb0d6963f7d28e17f72',unknown:{flag:false},helper:{ok:true,zero:0},\n      flow:{total:2,usage:{upload:0,download:1}},ip:'2001:db8::1'}], 'source wrapper exposes real helpers');\n    return result;\n  });\n\n  const headersCache = host.headersResourceCache;\n  const beforeSettings = $substore.read('settings');\n  $substore.write({...beforeSettings, defaultFlowUserAgent:'Flow Default/1', headersCacheTtl:1.5}, 'settings');\n  const flowValue = 'upload=10; download=20; total=1000; app_url=https%3A%2F%2Fexample.invalid%2Fflow; plan_name=Flow%20plan';\n  try {\n    await check('PC33-flow-download-short-circuits', async () => {\n      const before = JSON.stringify(headersCache.resourceCache);\n      for (const url of ['', '/api/file/local', 'file:///tmp/local', probeUpstream + '/host/flow/head#noFlow'])\n        assert(await flow.getFlowHeaders(url) === undefined, 'non-HTTP and noFlow return undefined');\n      assert(JSON.stringify(headersCache.resourceCache) === before, 'short circuits do not cache');\n      return {requests:0, cacheUnchanged:true};\n    });\n\n    await check('PC34-flow-head-cache-ttl-and-no-cache', async () => {\n      const start = probeNow;\n      const url = probeUpstream + '/host/flow/head';\n      const customHeaders = {'X-Flow-Token':'direct', 'User-Agent':'Flow Helper/1'};\n      const get = suffix => flow.getFlowHeaders(url + suffix, undefined, undefined, undefined, undefined, customHeaders);\n      try {\n        const id = utils.hex_md5(JSON.stringify({'user-agent':'Flow Helper/1','x-flow-token':'direct'}) + url);\n        assert(await get('#headersCacheTtl=2') === flowValue, 'HEAD header result');\n        equal(headersCache.resourceCache[id], {time:start+2000,data:flowValue}, 'fragment TTL is seconds');\n        assert(await get('') === flowValue, 'cached call makes no request');\n        assert(await get('#noCache&headersCacheTtl=2') === flowValue, 'noCache fetches and updates cache');\n        probeNow += 2000;\n        assert(await get('') === flowValue, 'cache expiry equality is inclusive');\n        probeNow += 1;\n        assert(await get('') === flowValue, 'expired cache fetches again');\n        equal(headersCache.resourceCache[id], {time:probeNow+1500,data:flowValue}, 'settings TTL is seconds');\n        return {id, cached:headersCache.resourceCache[id]};\n      } finally { probeNow = start; }\n    });\n\n    await check('PC35-flow-head-to-get-fallback', async () => {\n      const result = await flow.getFlowHeaders(probeUpstream + '/host/flow/get');\n      assert(result === flowValue, 'empty HEAD falls back to GET headers');\n      return result;\n    });\n\n    await check('PC36-flow-url-body-and-encoded-headers', async () => {\n      const flowUrl = probeUpstream + '/host/flow/body#' + encodeURIComponent(JSON.stringify({headers:{'X-Flow-Token':'fragment','User-Agent':'Flow Fragment/1'}}));\n      const result = await flow.getFlowHeaders('https://unused.invalid/sub', undefined, undefined, undefined, flowUrl);\n      assert(result === 'upload=30; download=40; total=2000', 'flowUrl takes precedence and trims body');\n      return result;\n    });\n\n    await check('PC37-flow-body-fallback-and-status-rejection', async () => {\n      const results = [];\n      for (const path of ['fallback','badstatus']) results.push(await flow.getFlowHeaders(undefined, 'Flow Explicit/1', undefined, undefined,\n        probeUpstream + '/host/flow/' + path, JSON.stringify({'X-Flow-Token':'argument'})));\n      equal(results, [flowValue,undefined], 'invalid body can use headers; HTTP failure rejects before saving headers');\n      assert(results[1] === undefined, 'HTTP failure returns undefined, not null');\n      return {bodyFallback:results[0], statusRejectedUndefined:true};\n    });\n\n    await check('PC38-flow-rejection-empty-and-timeout', async () => {\n      const count = Object.keys(headersCache.resourceCache).length;\n      assert(await flow.getFlowHeaders(undefined, undefined, undefined, undefined, probeUpstream + '/host/flow/rejected') === undefined, 'failed flow URL returns undefined');\n      assert(await flow.getFlowHeaders(probeUpstream + '/host/flow/empty') === '', 'empty HEAD and GET return an empty string');\n      assert(await flow.getFlowHeaders(undefined, undefined, 30, undefined, probeUpstream + '/host/flow/delay') === undefined, 'flow URL timeout returns undefined');\n      await $substore.wait(240);\n      assert(Object.keys(headersCache.resourceCache).length === count, 'errors and late timeout response do not cache');\n      return {rejectedUndefined:true, empty:'', timeoutUndefined:true, cacheUnchanged:true};\n    });\n\n    await check('PC39-flow-request-queue-and-wait-time', async () => {\n      $substore.write({...$substore.read('settings'),backendRequestConcurrency:1,backendRequestConcurrencyWaitTime:5}, 'settings');\n      const result = await Promise.all(['first','second'].map(name => flow.getFlowHeaders(probeUpstream + '/host/flow/queued/' + name)));\n      equal(result, ['download=0; total=1; plan_name=first-active-1','download=0; total=1; plan_name=second-active-1'], 'actual network operations are serialized by the source queue');\n      return result;\n    });\n\n    await check('PC40-flow-http-injected-into-pending-script', async () => {\n      const result = await operator(`async function operator(proxies) {\n        const value = await flowUtils.getFlowHeaders($arguments.url);\n        return proxies.map(proxy => ({...proxy,flow:flowUtils.parseFlowHeaders(value)}));\n      }`, [{name:'flow-script',unknown:false}], {url:probeUpstream+'/host/flow/head'});\n      equal(result, [{name:'flow-script',unknown:false,flow:{total:1000,usage:{upload:10,download:20},appUrl:'https://example.invalid/flow',planName:'Flow plan'}}], 'flow helper uses pending Rust HTTP from the actual script wrapper');\n      equal(JSON.parse($substore.read('#sub-store-cached-headers-resource')), headersCache.resourceCache, 'persisted header cache');\n      return {result, cacheEntries:Object.keys(headersCache.resourceCache).length};\n    });\n  } finally { $substore.write(beforeSettings, 'settings'); }\n\n  await check('PC125-script-http-compressed-subscription-responses', async () => {\n    const results = {};\n    for (const mode of ['gzip','x-gzip','deflate','compress','x-compress','nested','status']) {\n      const response = await $substore.http.get({url:probeUpstream+'/host/compressed/'+mode});\n      assert(response.body === '订阅🙂\\r\\nsecond\\n', 'decoded subscription text: '+mode);\n      assert(response.statusCode === (mode === 'status' ? 503 : 200), 'status retained: '+mode);\n      assert(response.headers['content-encoding'] === undefined && response.headers['content-length'] === undefined, 'decoded headers removed: '+mode);\n      results[mode] = {body:response.body,status:response.statusCode};\n    }\n    const raw = await $substore.http.get({url:probeUpstream+'/host/compressed/unknown',encoding:null});\n    const bytes = Array.from(new Uint8Array(raw.body));\n    assert(bytes[0] === 31 && bytes[1] === 139 && Number(raw.headers['content-length']) === bytes.length, 'unknown chain stays raw');\n    assert(raw.headers['content-encoding'] === 'gzip, unknown', 'unknown encoding retained');\n    let message;\n    try { await $substore.http.get({url:probeUpstream+'/host/compressed/too-many'}); } catch (error) { message=error.message; }\n    assert(message === 'too many content-encodings in response: 6, maximum allowed is 5', 'source encoding-chain limit');\n    return {results,raw:bytes,message};\n  });\n\n  await check('PC126-script-http-forward-proxy-and-basic-auth', async () => {\n    const results = [];\n    for (const proxy of [probeUpstream,probeUpstream.replace('http://','http://fixture:secret@')]) {\n      const response = await $substore.http.get({url:'http://ip-api.com/json/1.2.3.4',proxy,headers:{Accept:null}});\n      const body = JSON.parse(response.body);\n      assert(response.statusCode === 200 && body.query === '1.2.3.4' && body.countryCode === 'US', 'actual HTTP forward proxy');\n      results.push(body);\n    }\n    let message;\n    try { await $substore.http.get({url:'http://ip-api.com/json/1.2.3.4',proxy:probeUpstream,headers:{'Proxy-Authorization':'forbidden'}}); }\n    catch (error) { message=error.message; }\n    assert(message === 'Proxy-Authorization should be sent in ProxyAgent constructor', 'proxy credentials have one owner');\n    return {results,message};\n  });\n};\n\n    const operate = (script, input, args = {}, options = {}) => ProxyUtils.process(input,\n      [{type:'Script Operator',args:{content:script,arguments:args}}],\n      'ClashMeta', {name:'source'}, options);\n    const headers = {get resourceCache() { return JSON.parse($substore.read('#sub-store-cached-headers-resource') || '{}'); }};\n    await runHelperContracts(check, {ProxyUtils,flowUtils,headersResourceCache:headers}, operate, assert, equal);\n    proxies[0].helpersVerified = passed;\n    proxies[0].helperResults = observations;\n    return proxies;\n  } finally { globalThis.Date = OriginalDate; }\n}"
+              }
+            }
+          ]
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "data": {
+              "processed": [
+                {
+                  "helpersVerified": [
+                    "PC18-ip-validation-and-coercion",
+                    "PC19-address4-construction-subnets-and-bigint",
+                    "PC20-address6-construction-mapping-and-url",
+                    "PC21-uuid-shape-and-types",
+                    "PC22-port-selection-boundaries-and-legacy-inputs",
+                    "PC23-country-flags-iso-and-unicode-removal",
+                    "PC24-json5-parsing-reviver-and-own-properties",
+                    "PC25-json5-stringify-options-and-errors",
+                    "PC26-md5-fixed-ascii-and-unicode-vectors",
+                    "PC27-flow-header-casing-encoding-and-numbers",
+                    "PC28-flow-parser-malformed-and-falsy-inputs",
+                    "PC29-flow-units-quota-and-expiry-boundary",
+                    "PC30-flow-reset-calendar-and-invalid-options",
+                    "PC31-flow-normalization-duplicates-and-fallback",
+                    "PC32-public-helpers-in-actual-script-operator",
+                    "PC33-flow-download-short-circuits",
+                    "PC34-flow-head-cache-ttl-and-no-cache",
+                    "PC35-flow-head-to-get-fallback",
+                    "PC36-flow-url-body-and-encoded-headers",
+                    "PC37-flow-body-fallback-and-status-rejection",
+                    "PC38-flow-rejection-empty-and-timeout",
+                    "PC39-flow-request-queue-and-wait-time",
+                    "PC40-flow-http-injected-into-pending-script",
+                    "PC125-script-http-compressed-subscription-responses",
+                    "PC126-script-http-forward-proxy-and-basic-auth"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "upstream": [
+          {
+            "method": "HEAD",
+            "path": "/host/flow/head",
+            "headers": {
+              "user-agent": "Flow Helper/1",
+              "x-flow-token": "direct"
+            },
+            "body": ""
+          },
+          {
+            "method": "HEAD",
+            "path": "/host/flow/head",
+            "headers": {
+              "user-agent": "Flow Helper/1",
+              "x-flow-token": "direct"
+            },
+            "body": ""
+          },
+          {
+            "method": "HEAD",
+            "path": "/host/flow/head",
+            "headers": {
+              "user-agent": "Flow Helper/1",
+              "x-flow-token": "direct"
+            },
+            "body": ""
+          },
+          {
+            "method": "HEAD",
+            "path": "/host/flow/get",
+            "headers": {
+              "user-agent": "Flow Default/1"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/flow/get",
+            "headers": {
+              "user-agent": "Flow Default/1"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/flow/body",
+            "headers": {
+              "user-agent": "Flow Fragment/1",
+              "x-flow-token": "fragment"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/flow/fallback",
+            "headers": {
+              "user-agent": "Flow Explicit/1",
+              "x-flow-token": "argument"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/flow/badstatus",
+            "headers": {
+              "user-agent": "Flow Explicit/1",
+              "x-flow-token": "argument"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/flow/rejected",
+            "headers": {
+              "user-agent": "Flow Default/1"
+            },
+            "body": ""
+          },
+          {
+            "method": "HEAD",
+            "path": "/host/flow/empty",
+            "headers": {
+              "user-agent": "Flow Default/1"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/flow/empty",
+            "headers": {
+              "user-agent": "Flow Default/1"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/flow/delay",
+            "headers": {
+              "user-agent": "Flow Default/1"
+            },
+            "body": ""
+          },
+          {
+            "method": "HEAD",
+            "path": "/host/flow/queued/first",
+            "headers": {
+              "user-agent": "Flow Default/1"
+            },
+            "body": ""
+          },
+          {
+            "method": "HEAD",
+            "path": "/host/flow/queued/second",
+            "headers": {
+              "user-agent": "Flow Default/1"
+            },
+            "body": ""
+          },
+          {
+            "method": "HEAD",
+            "path": "/host/flow/head",
+            "headers": {
+              "user-agent": "Flow Default/1"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/compressed/gzip",
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/compressed/x-gzip",
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/compressed/deflate",
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/compressed/compress",
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/compressed/x-compress",
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/compressed/nested",
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/compressed/status",
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/compressed/unknown",
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/compressed/too-many",
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "http://ip-api.com/json/1.2.3.4",
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "http://ip-api.com/json/1.2.3.4",
+            "headers": {
+              "proxy-authorization": "Basic Zml4dHVyZTpzZWNyZXQ="
+            },
+            "body": ""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "PC-native-script-cache-restart",
+    "source": "PC15 root cache persistence in a fresh actual service",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/preview/sub",
+        "body": {
+          "name": "public-helpers",
+          "source": "local",
+          "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#helper",
+          "process": [
+            {
+              "type": "Script Operator",
+              "args": {
+                "content": "function operator(proxies) { const value = scriptResourceCache.get('restart'); if (!value || value.unknown.zero !== false || value.unknown.flag !== false || value.script !== \"require('node:fs')\") throw new Error('cache restart lost data'); proxies[0].cacheRestart = value; return proxies; }"
+              }
+            }
+          ]
+        },
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "data": {
+              "processed": [
+                {
+                  "cacheRestart": {
+                    "unknown": {
+                      "nil": null,
+                      "zero": false,
+                      "flag": false,
+                      "empty": ""
+                    },
+                    "text": "订阅🙂\r\n",
+                    "script": "require('node:fs')"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "PC-native-download-source-helpers",
+    "source": "download.js Node-backend branch, RF01 absolute-path correction remains separate; public actual Script Operator",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/preview/sub",
+        "body": {
+          "source": "local",
+          "name": "download-source-helpers",
+          "process": [
+            {
+              "args": {
+                "content": "async function operator(proxies) {\n  const OriginalDate = Date;\n  let probeNow = 3000000000000;\n  globalThis.Date = class extends OriginalDate {\n    constructor(...args) { super(...(args.length ? args : [probeNow])); }\n    static now() { return probeNow; }\n  };\n  const savedSettings = $substore.read('settings');\n  const savedModules = $substore.read('modules');\n  const passed = [], observations = {};\n  const assert = (value, message) => { if (!value) throw new Error(message); };\n  const equal = (actual, expected, message) => assert(JSON.stringify(actual) === JSON.stringify(expected), message);\n  const check = async (id, callback) => { observations[id]=await callback(); passed.push(id); };\n  const base = '$UPSTREAM/host/download';\n  const text = '下载🙂\\r\\n\\0尾\\n';\n  const url = path => base + path;\n  const id = (path, agent='clash.meta/v1.19.23') => ProxyUtils.hex_md5(agent+url(path));\n  const entry = (key, root='resource') => JSON.parse($substore.read('#sub-store-cached-'+root)||'{}')[key];\n  const settings = value => $substore.write(value,'settings');\n  const fetch = (path, options={}, flags={}) => ProxyUtils.download(url(path),flags.ua,flags.timeout,undefined,\n    flags.skip,flags.await,flags.noCache,flags.preprocess,options);\n  const rejects = async (callback, message) => {\n    let caught=false;\n    try { await callback(); } catch(error) {\n      caught=error instanceof Error;\n      assert(String(error).includes(message),'download error: '+error);\n    }\n    assert(caught,'download rejects with Error'); return true;\n  };\n  try {\n    settings({});\n    await check('DL01-native-defaults-raw-and-durable-cache', async () => {\n      equal(await fetch('/text/default'),text,'default text');\n      equal(await fetch('/text/default',{returnRaw:true}),{result:text,raw:text},'cache raw result');\n      equal(entry(id('/text/default')),{time:probeNow+3600000,data:text},'regular cache stores original text');\n      return {text,cached:entry(id('/text/default'))};\n    });\n    await check('DL02-native-defaults-and-fragment-headers', async () => {\n      settings({defaultUserAgent:'download-default',defaultTimeout:1500});\n      equal(await fetch('/text/settings'),text,'settings');\n      const headers=JSON.stringify({'User-Agent':'download-custom','X-Download-Token':'token-2'});\n      equal(await fetch('/text/headers#'+encodeURIComponent(JSON.stringify({headers}))),text,'JSON fragment');\n      equal(await fetch('/text/pairs#headers='+encodeURIComponent(headers)+'&noCache=true#noFlow'),text,'pair fragment');\n      equal(await fetch('/text/invalid-headers#headers=%7Bbroken'),text,'invalid headers fallback');\n      settings({}); return {settings:true,custom:true,invalidFallback:true};\n    });\n    await check('DL03-native-github-prefix-and-invalid-regex', async () => {\n      settings({githubProxy:url('/proxy'),githubProxyRegex:'/text/proxied$'});\n      equal(await fetch('/text/proxied'),text,'prefix');\n      equal(await ProxyUtils.download(url('/proxy')+'/'+url('/text/proxied')),text,'no double prefix and cache identity');\n      settings({githubProxy:url('/proxy'),githubProxyRegex:'['});\n      equal(await fetch('/text/invalid-regex'),text,'invalid regex continues');\n      settings({}); return {prefix:true,noDoublePrefix:true,invalidRegex:true};\n    });\n    await check('DL05-native-internal-modules-and-missing-file', async () => {\n      $substore.write([{name:'模块🙂',content:text},{name:'zero',content:0},{name:'false',content:false}],'modules');\n      equal(await ProxyUtils.download('/api/module/'+encodeURIComponent('模块🙂')),text,'module name');\n      equal(await ProxyUtils.download('/api/module/zero',undefined,undefined,undefined,undefined,undefined,undefined,false,\n        {returnRaw:true}),{result:0,raw:0},'numeric module');\n      equal(await ProxyUtils.download('/api/module/false'),false,'boolean module');\n      await rejects(()=>ProxyUtils.download('/api/module/missing'),'无法加载 module');\n      await rejects(()=>ProxyUtils.download('/api/file/missing'),'无法加载 file');\n      return {text,zero:0,flag:false,missing:['module','file']};\n    });\n    await check('DL06-native-cache-expiry-equality-and-bypass', async () => {\n      settings({resourceCacheTtl:2});\n      const start=probeNow;\n      try {\n        await fetch('/text/ttl#cacheTtl=1');\n        assert(entry(id('/text/ttl')).time===start+1000,'fragment seconds');\n        probeNow=start+1000; await fetch('/text/ttl');\n        probeNow++; await fetch('/text/ttl');\n        assert(entry(id('/text/ttl')).time===probeNow+2000,'settings seconds after expiry');\n        await fetch('/text/ttl',{}, {noCache:true});\n        await fetch('/text/ttl#noCache');\n        return {inclusive:true,expired:true,bypasses:2,cached:entry(id('/text/ttl'))};\n      } finally { probeNow=start; settings({}); }\n    });\n    await check('DL07-native-cache-size-and-custom-eligibility', async () => {\n      settings({cacheThreshold:0.001});\n      await fetch('/text/threshold#cacheKey=native-oversize');\n      await fetch('/text/threshold');\n      assert(entry(id('/text/threshold'))===undefined,'oversize uncached');\n      assert($substore.read('#sub-store-cached-custom-native-oversize')===undefined,'custom oversize uncached');\n      settings({}); return {regularAbsent:true,customAbsent:true};\n    });\n    await check('DL08-native-awaited-optimistic-refresh-and-fallback', async () => {\n      $substore.write('旧缓存🙂','#sub-store-cached-custom-native-optimistic');\n      equal(await fetch('/text/optimistic#cacheKey=native-optimistic',{}, {await:true}),'旧缓存🙂','returns original optimistic value');\n      equal($substore.read('#sub-store-cached-custom-native-optimistic'),text,'awaited refresh persisted');\n      equal(await fetch('/text/optimistic#cacheKey=native-optimistic'),text,'regular cache');\n      $substore.write('回退🙂','#sub-store-cached-custom-native-fallback');\n      equal(await fetch('/status/503#cacheKey=native-fallback',{}, {skip:true}),'回退🙂','provider failure falls back');\n      return {old:'旧缓存🙂',updated:text,fallback:'回退🙂'};\n    });\n    await check('DL09-native-flow-ttl-and-cache-before-validation', async () => {\n      await fetch('/text/flow#headersCacheTtl=2&validCheck&noFlow');\n      equal(entry(id('/text/flow'),'headers-resource'),{time:probeNow+2000,data:'upload=1; download=2; total=100; expire=4102444800'},'flow TTL');\n      equal(await fetch('/text/flow-options#validCheck',{noFlow:true}),text,'options bypass');\n      equal(await fetch('/text/flow-valid#validCheck'),text,'valid flow reuses headers');\n      await rejects(()=>fetch('/text/flow-exhausted#validCheck'),'流量已用完');\n      equal(entry(id('/text/flow-exhausted')).data,text,'cache write precedes quota validation');\n      equal(await fetch('/text/flow-exhausted#validCheck&noFlow'),text,'fragment bypasses exhausted cached flow');\n      return {header:entry(id('/text/flow'),'headers-resource'),bypass:true,validation:true,exhaustedCached:true};\n    });\n    await check('DL10-native-status-empty-timeout-and-recovery', async () => {\n      await rejects(()=>fetch('/status/404'),'statusCode: 404');\n      await rejects(()=>fetch('/text/white'),'远程资源内容为空');\n      await rejects(()=>fetch('/text/slow',{}, {timeout:20}),'exceeds the timeout 20 ms');\n      await $substore.wait(240);\n      assert(entry(id('/text/slow'))===undefined,'late response not cached');\n      equal(await fetch('/text/recovered'),text,'queue recovers');\n      return {status:404,empty:true,timeout:true,recovered:text};\n    });\n    await check('DL16-native-preprocess-return-raw-and-invalid-cache', async () => {\n      const raw='proxies:\\n  - {name: 预处理, type: ss, server: example.invalid, port: 8388, cipher: aes-128-gcm, password: pass}\\n';\n      const processed='proxies:\\n  - {\"name\":\"预处理\",\"type\":\"ss\",\"server\":\"example.invalid\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\\n';\n      equal(await fetch('/text/preprocess-good',{returnRaw:true},{preprocess:true}),{result:processed,raw},'preprocessed result and original raw');\n      equal(entry(id('/text/preprocess-good')).data,raw,'cache is original body');\n      equal(await fetch('/text/preprocess-good'),raw,'without preprocessing');\n      for(let i=0;i<2;i++) equal(await fetch('/text/preprocess-invalid',{}, {preprocess:true}),'<!DOCTYPE html>no nodes','invalid resource still returned');\n      assert(entry(id('/text/preprocess-invalid'))===undefined,'invalid resource not cached');\n      return {result:processed,raw,invalidNotCached:true};\n    });\n    proxies[0].downloadsVerified=passed;\n    proxies[0].downloadResults=observations;\n    return proxies;\n  } finally {\n    $substore.write(savedSettings,'settings');\n    $substore.write(savedModules,'modules');\n    globalThis.Date=OriginalDate;\n  }\n}\n"
+              },
+              "type": "Script Operator"
+            }
+          ],
+          "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#download"
+        },
+        "upstream": [
+          {
+            "method": "GET",
+            "path": "/host/download/text/default",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/settings",
+            "headers": {
+              "user-agent": "download-default"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/headers",
+            "headers": {
+              "user-agent": "download-custom",
+              "x-download-token": "token-2"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/pairs",
+            "headers": {
+              "user-agent": "download-custom",
+              "x-download-token": "token-2"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/invalid-headers",
+            "headers": {
+              "user-agent": "download-default"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/proxy/$UPSTREAM/host/download/text/proxied",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/invalid-regex",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/ttl",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/ttl",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/ttl",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/ttl",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/threshold",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/threshold",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/optimistic",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/status/503",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/flow",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/flow-options",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/flow-valid",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/flow-exhausted",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/status/404",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/white",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/slow",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/recovered",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/preprocess-good",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/preprocess-invalid",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/text/preprocess-invalid",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          }
+        ],
+        "expect": {
+          "json_contains": {
+            "data": {
+              "processed": [
+                {
+                  "downloadsVerified": [
+                    "DL01-native-defaults-raw-and-durable-cache",
+                    "DL02-native-defaults-and-fragment-headers",
+                    "DL03-native-github-prefix-and-invalid-regex",
+                    "DL05-native-internal-modules-and-missing-file",
+                    "DL06-native-cache-expiry-equality-and-bypass",
+                    "DL07-native-cache-size-and-custom-eligibility",
+                    "DL08-native-awaited-optimistic-refresh-and-fallback",
+                    "DL09-native-flow-ttl-and-cache-before-validation",
+                    "DL10-native-status-empty-timeout-and-recovery",
+                    "DL16-native-preprocess-return-raw-and-invalid-cache"
+                  ]
+                }
+              ]
+            }
+          },
+          "status": 200
+        }
+      }
+    ]
+  },
+  {
+    "id": "PC-native-age-public-and-download",
+    "source": "utils/age.js public wrappers and download.js auto-decrypt; immutable independent Node vectors from Actions39240258412",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/preview/sub",
+        "body": {
+          "name": "age-native",
+          "process": [
+            {
+              "args": {
+                "arguments": {
+                  "pairs": [
+                    {
+                      "type": "x25519",
+                      "secret": "AGE-SECRET-KEY-1DC4Q4VEECN5SWG6N2DSMN47TE64R634RTCW7SA99PLF8ACAGC6TSNEXPCX",
+                      "public": "age1tknrrax70y43sg9048c9tm4za8xupndc0nqkfktymydwk64pgg2qglg4cw",
+                      "items": [
+                        {
+                          "id": "empty",
+                          "armor": "-----BEGIN AGE ENCRYPTED FILE-----\nYWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBlUmVCK0w3cDV6SE5WRUpx\nci9VWFFyNmlGdzkzaUMxdm5WbjNFM205REFnCkNSQzFhSE56ellaN2ZKWUNueStL\nTzkzNjNjTVJaZmVYb2xrSk1zajdjVWMKLS0tIGVaVU1GalNDNmc5c0hUdkRjZm81\nWlk2dGV5NGtCZXR2V0dablNhbTREdGcK6xFG8IcHIFnYbmNtKH6fJpZbAKgpBf9H\n/a4Ny0VxgZI=\n-----END AGE ENCRYPTED FILE-----\n"
+                        },
+                        {
+                          "id": "unicode",
+                          "armor": "-----BEGIN AGE ENCRYPTED FILE-----\nYWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBiQkVHa09VSklKUUtzOTFI\nR0djNlRKK3lPZzV6eUlsQm9lYmJGWno0S2dRCkRrNnhwcU5nb213TU9hOTRXekdy\nVmx6bmMzZ0ZrcXROWm5yMkdmU3Rsd1UKLS0tIGNLQzF3aUZpUGhLUnBKQkhTSGtq\nTjVxOCs0ZEhtUStJSThDYWpxaHBmcUkKhIfjELhS2vDiMVOmoRZJ1ma6nXRemt4I\nDFJo4CNKdLOmqW7nQn3CpJG8YZ9Dj43zqQ==\n-----END AGE ENCRYPTED FILE-----\n"
+                        },
+                        {
+                          "id": "view",
+                          "armor": "-----BEGIN AGE ENCRYPTED FILE-----\nYWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAyV1htZFRHQnFRZkJOVzFF\nRDVqVmJ3YTZRS1AyRXp5V09IQzI2TGZncndRCnk2TjJJSm5FUTJEQ3NCZkFrOXd3\nVjVQcVE3WnFOU3o3NGg1QXdmNVN5VjgKLS0tIGJyQVBydGZzRWJTY25RT2VaeE0w\ndXg1OVUwVWpnZFhKSFBSb1ROaGUyZlUKTn7E5UXVdnXTAXgypT2BU6XPxQ8H/jJo\nZ2P3j58jh8KK4Ki2+WqRdnqpO7sw\n-----END AGE ENCRYPTED FILE-----\n"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "mlkem768-x25519",
+                      "secret": "AGE-SECRET-KEY-PQ-18HDKZERWTXJTPK90YPND3AAUJWCRWYHL7XYUVHR5T5XXEP5884QSGKNQZG",
+                      "public": "age1pq1lg3hm0v5hvnr322gadaplpdnh0nnyzu8jpeh9vhmjpy5yg69vn688elctzx0wwch9pqvk7gjzltjhwl2dn6kkf4fcu7suzf5vnur98fyce9mp9ve7an9dx6wnutp3428wqt0rphysc2crauakjyfl6uxv807fqql7nr40undsl9uwrce4v2sdgu5dd8ruptkwzmzyrzv9rguk6mc64r4uxg9g24m30r9dkq2sgar6jrmmevlyfgza3hgzvy0g9flfxprvx6tzh4hf7ys8crv9zhdqxrzwxx9lmtfkjer2yun4zhz6xc4sydcwsuj3nyyq7wkw8wxufpzduvrnzjgf6ayteqxdtwkkc9lcjsl5a5pflzpkq3wglm0pjfw0s3hfzv57xnf5mzs2k4rngr6myfftnemqjfhp2newz60vurgrry556ejmr09rjdu9sek423qpztcq63qpr3rjhh6cu6d63haj96armvsw0ut47laxj8tdjn0gdrnmv3cqjjjd54nv78v3fwgzfnkdkg6yt0qcnyped3v7q0qtzuu7tpqp3etsksdq33jfyvhxmzldax9600jtt2489cjp30fs6ejgvspr0djncent9v5ga69qdv54aqefmrgevdr2qrv62xv0wdddsy48acx4tep5tn4vpf64zvzt3use68nhy4fch0ncwu0l3v7naf2m44u8v3pgp0u5txkd2a238gj9trkxgp0yd56ver3l3zwz5t6gqxrn56k28p226ddxkwwq0xy6gur2rq6gexyqvymmkarj3d26wj495cf40l6sfhucgjvdt9hgtvfhlrksteg23csj6mrecdxxffxv66ew5n8fgdcuku5fa4exc83v9cdyhyz6xmmc5g2gea3atyc29x4fnj4szkgr5chk8ypg9sp2qcpd2ecn22gydt75lmmvnlths6fxn5swjx7av32hj6mz9hx8t0ujsmdnsu98wc7d2rqrshhy5lzdd0aqsg3p662ekehx3j3hk09pts7ddgsx39hxlrf5kjecxyjkwcf3yamsajrgm5ck4j8vxxurpulw395w7fk5dzzua4gvwr5sqsnqfpe5a2pxvvr8fknrq3zpj0w79687cgd5ue883pneqjt52f067jrywtet09jsapj4ke6g0g73s69ascnuhznwashneqms0zys5yn4966eprxgu58flvj2pjapq657h9um7qr2grfz5xvxm6e2p02l5jxvkcz0tkmq22s3jru25qzuwpmmv38kqdepl4ttqlmswyeuuqhcw7vdu3435ulxt8ewr9zdcuw7xusq69qg5e0sdkwx9xsgwfnlej2vmf34xq2vlacqan83x59dqunc7ceqxg0zzzj2f7atznge6yyy7l8dgfeeguw5elqck2vy3avruj348hxkh2htfmr5juq8cc8zjyy33lwsyvgc687m2507yqcug7sxa5ds7f3rzdmh4534fgea0vjvt6g54xx63g0lpq7g4cn6f4xkm57gp3ajunjykrw8wdpvtu5femsgmw9asmpjaat2hsz74yvywk0qryafxk2eyqnud6rt2vx8aghwyjv6qqwv8rdxqgf0s0x2vszcepxua5hk2jky06xqhgt22z4gsj2g4wxkcnrcj62zkyv360w5xc8qwz44vc2c5t4yrj2whkakjrv6up72yv5zsqmj79ejnk80jedq3pf4pv6p0j5wuj6yzt2yteek94nnf40k392spxerknyn3w9kffc68ztvnnjsyg9caryjps62hxdmu2umm2h0lxj3226j8r6nd9gq24rlt26vlgpzzep3y5lqudsxdcrxqyxfmmx5fxqjxl8sgydtnjt9zmp45tyl87txududdkhraeeuuc6t2msadtcrqvkq3j7hx67jrv2kuyr6axgx6fj9rr948vsvq7f5au4",
+                      "items": [
+                        {
+                          "id": "empty",
+                          "armor": "-----BEGIN AGE ENCRYPTED FILE-----\nYWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IG1sa2VtNzY4eDI1NTE5IDFneFRWVWZa\nN01BdWJVa1hZN0FEVHFRcFpld1dZaExKYkZleGlZUituYkZKazhsVG81WGVtRnlR\nZ1NlVzZoSlhRY1lGSDk2TlNucDF3dC9yVUE2NFdNTU5tbUNXVVVHeUpqMnAxdlRk\na1g3L2J1U1VsSkYvckFtTEV3ekhqVE1rWGlSN3VkUTViQlI4ZE9WcHFjQTlXak5u\nTVRscXZVMjR0dU5VMG03ODBacXFMcC9mbGlqVWhFdFBFY3hvVDhsYnNuUVZnRllQ\nWVRqMGY2WWdtbVNIY0V5aXRpNHNNTjV1UjJHWXNldzhObktXUHcrbGJRSGVrbFFK\nU2kxaHdrVGhsUlhiUWVWWXM3eDRaLzdseWI4bUtmQTVOcmRiRThtYUg2MjkxSFJ3\nNXBqb05CaUdYMHd2L2tTN2tvUEVGQ3NGcHNQeWd6b1ZrYk5oN1dBd3lCVGZyZVRW\nWkNTcWRSTHFyY3hQL1pOTnAxbmdBUEI3WVZLMTVYdU1ZSSsyQ2VrNlY0SFN4NW1p\nb1dGL1YwdmZTdmRmMk5UbWxVK1hZVGhLb3IvQXFEcldHNmZZc3djWkJVUUJWYktW\nY0R1ZVIrUGZJYVJVQmg4R0ZBamszRmFGVG9ZejY0NDVuMk9FOXlOMkRhQnZ5Nkht\neG1MS3BQcjU5bUJpTUZKdllqNDZWK21kbEhBcTQ0VDNKb3F0bXZyTmhMVlRTcktx\nUG5MYWhVb2tKVkN1WUdGVmtsQ0kxVEhuM2xPdnRXSk85NGtCYnM5eTR0amg3Y21T\nNDZlakNPYnB0eWNjOGFIa1V2bzFTYUhKMVpvVmRwalNaR0w0b21NZTRYV2ZqcTVG\nWFQzMW55aU4yNTRkQzRpZHhGRkN5NHQ2dHNuR2tITUsyZVlJMm9ENUJBRCthc1dH\nUlF2em00SitjRDRaL2QrRjJNZjRZUytYZ2RLT0lXZElQS3k1UTErZW5jYlZadnJ6\nQUhucjJ6cDFjV2o1QnpXQ1pURUJPeVZ0TVhXQU1pa0ZINmN2OGVVU3JzK2U4TENM\nVnNsMlpRbWVzZ2o3SWVFTFJ4NW5UWVhuU2x5VkRwelFQWjN3RGF3Ync5UDhHZGx2\nS3lEb2czN3BKNVF5SjJ3VituZFZ2OEdiVVVsOU11M3ZCNmFRdEdFOFhaSWxqY2FS\nUFA4dmpERGRnYUxBT3p6NGVhQjlPcW5Wd3lnVXZPcFFOWUNrNW11dzNSODJMZk5l\nakVsVkdGemFWQVAxaDBrRDhHNUo2aWxKcDZUTm9nYTAxVmlKdDhadE1aQTZZdW90\nWTJHY1psTURqK1BUeGpKdk03RG1ycEluZFl1RnFUOVFHWTZsQkducEgwc01QVDNu\nY1M4VUhaNjE0TEpneHIyTml5UlJjUHBtQjR4RUNGd1ZJNnVYZmVpa2xWT2VZRG9n\nMjkwbzVVNk81UjBTVDFRNlZjVEczNG9MbzBKa00wT3ZlV05RcHlUVTBpTzRJY1Ar\nNENZYTRpNTNyME5tQ1pTK3ErcTgxa0dwdGxEb3JYR2c0RUptaWUxeDZMdCt0dVBH\nVGw2eXp3YmZkYTk1aGZNSFJFMTVwZlZUaW8rNnJxNGdEZ01vMy83NVhmK09uWTFV\nV282QXdxQlY3TWY5ZHNoVzV6Y0UxL3VRL2N5M3FvRmRvMnMzb0lRb2xIbUYxb1pM\nbi9QaTFVamFCK1VvRTViR0hmL0UxTnZJd2kyWWhlSW1vZ2cwc3dkeDZiVzZVanho\nbGx3QXFJcDBtUXU2ZlFWY3dRRFhwV0o2bGduMHdKOUNsVEZuOU5wQXowQjRuckVx\nM29pYnM0VC9YTFlucG9iM2hZMDl2NE1PSCtWVEJpN2VsTnJuY0RoeW5EVUF5Vmt4\ncmFkbFNja0h2dVFBZVdyM1UvVHRLWHREUWsxSEt6Qys0cWMrZ3ZDZEFDdWRXeUhE\nODV0cWg5U2tLWHQyODhHMStyTXpPWHQrWmYra0Qxb3g0aHI4M21tMlFtU2tGQQp6\nRzBuaEo2cGwxUWFiYUQ3UTkwV2NNOUZpS0xwZzREVDFKVHQ1UnpWckZvCi0tLSB2\nZExYZGxSK0RaeEgzS3UxYVVBT3dUekR6b2dUQzIxc2VLV1NkUHFUemlBCooIXSL9\n8RQP8srrvqSvI0Uz+pR1bhnhzLFi76aqMhSE\n-----END AGE ENCRYPTED FILE-----\n"
+                        },
+                        {
+                          "id": "unicode",
+                          "armor": "-----BEGIN AGE ENCRYPTED FILE-----\nYWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IG1sa2VtNzY4eDI1NTE5IElqbS95cVNI\nc0FCZnBEZURRQ3JNNEw5NXVGREZQTkkwdEtWaFFGM0tUSXdjc2RISWZzMWVpT3cv\naHBtTXRZTGtiQ05Gb2NsQmhmYVJYdDc4azQ0T1FCam9wUm1PbmJBaG5CbkZ3NnA4\nT3VBNjBleWNXTkIxNUdFYmJhWExrT2tVV3JyaW9SSFV3UlRVTGx6dzZhMHlsQjNO\nd3ZBaGVpMW1WMmh6RWJjdVZ1R29UelIvbEdsWnlLMFAvbnZGSFBaampqdGRyK3gv\nNkZ6V3VLLzY5Y1dJblVSdml3aS9SaUN0RnR0cnMyT2V0UWJsci93RDhLYUx0RERL\nVm5LVngvbm5hQW94N3JMejNZc0JIVmVqYnRCQTB3SllJV3g3Y1VOZHNsSko4RWQv\nMWs0TGdWemVSTEIxa1FkNVhQM1FhSEIzOFBuZjBvYlRqUnFnaWZYZlpEYzliTU1q\nSkQvUGwrWnRlbkxyak85YlJoREFhSDlxMUVHdzZxdmdOcUpkNDlVcnFrTDVSUmNn\nbGNGSVgzZ2R3Y2VSdmdMTVBudUtJaW9kekNZdzdBOExKd1JmZ1E1S21LWWZvZTYy\nMDF4VVpUeDFBZHhna1hxRVdlaDdJdnkxMU12MXcwdWdTMVhKQnBZNFJoWG5ub2Yv\nWDBKVm1Kb2hiZEFyaFl4dFl0VUQ5UXNEdW56dktKQ0c1dmJnL05tSnd2WkJnZzk3\ndVM2elZvTUVNNWgzTGVBUjNEbTlNNS84SmZBdWtlVElpWVJ2dVViUFEwUnNRSkpE\nM3RycU1DbkR3My9OdW9sUVNyQWF0K2RaaHpHMm5xR01VdHRYSzR6UUtib0dEaXhu\nVy9UTlVVNiswRmdMWVlzYU02UDh3YlUzbzZuY0l4YldaQWgyVVd4UXZSeHgyQ3pn\nLzhFZEtEdW5IcDMrQU5KNitOQTAwdUM4aGJ0NEhFcWlFYlhQS1dneTNmRzVzcllx\nNHc4bU8xalB5bWp0MjFhQ0xlYzE2K0grdDJWZ3Mxd2txeVRVVUFVbDlZckZnRE9r\nS2xEVmxsTTF6bnViWUZiaXA3V2VJdlo4c3FMcFpOd2Nac0J0TnhaQTY5MFNOUjhS\namlQSXZsZno3aGd1NWE1a1gwdGp0aEZZZlFsNHdBSlVpcGRhaFU3TzY2U0Y3SUVj\nUmhUUjUremNkY0R2YWxXSlJ2TysrRmEyalBlSlRHY3FKN3RycFNtL04rMDJTMTMy\nQzlKOFVDWEt2UXQxOTFRZ3MraXpRMTBPRS81bDAzZHRWaS9CcFhvcW84WGd0OEdC\nZkE5aS91dTZBamtBVjhTdU9EYkxKWUZVZTNQdFFaTjRmb1dSN2tabm1tVk5PVTUz\nQ3VhTmxlR1BYdHJENERpaWZQVEtDMGg2RXZ3TkZtQkxlQU1IRjI4NGY4bmU0TmhI\nU296R0NNRGRhTGQ0OXVxK2xkeDBLblAxdDM3Y3l0TDJ1V1UvQlY4MENiZkl6ZzJh\nT0d2dm5EZHFPdXo2OWcvWENOY3hNMGdUMWhXR1d0UzZzQjBXc0VCRk9GdG8yQjkz\nanJQdzg3aXdRSkZiUVFwRVVudFhBVXRIL29FVSsrU3BrUHF3Mkd4NVZHTit3OUJs\nS2N1UDRCWlZKMXVzbjV0cFo2S1VTRzNwSklNTjRXbGd6eEMybEJQOU5zaEIzbUR1\nR1pENWdUMXJMVDRXZU9QY3NNME5jN1R1MWFWUi91UTZZV1I5T040N2dRWTdoOUhm\nYzlma24vSGd4QTJ1SlQwbUw1dEhHZG8yUUh4cHNvNTZmUWIrYnNHQnF1MGs2THdr\neDB1UDk0OFQ3Tmk2elExWWUzb2VTTVJ1RTl4NzFwdTVKS1JnK3g4WWdyeWJwSERQ\nbVZEOFJ0TFhLaWhvMFFrVnkwNkxOWUFsUWNkdlJVbE1XSXBwVTJ3NVl3VU9PNVdV\nUHFHTk5mVE9KN1BZOG05VlE1U1Y3ZjRxUDZhUi9ZbGxJUUdhWWx4NGJXR1VPUQow\nNDNvd1pjZGY4TG9nTksreVRkQkxQaTZGV3hXeU9FcWhIbDlqaGRvQjVRCi0tLSAv\nVEdrK0h6Rlg2cXBTMzhZY1h5M0xvRDVueDl0QzRBU04veGlOR2RpQ0x3CoKswiZt\nl34PdAZf6u72ovNqwBBOA7KP8hNRkzbn1QuAF5nSpLJHJjKb9v0lvi+Qqgs=\n-----END AGE ENCRYPTED FILE-----\n"
+                        },
+                        {
+                          "id": "view",
+                          "armor": "-----BEGIN AGE ENCRYPTED FILE-----\nYWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IG1sa2VtNzY4eDI1NTE5IGNWYzQ3UlNX\nRElReVRYbWRjZ1crZXhkOXRETVZVMGlsa3ltVUlmSXhBSFU0ZG1FVHdtaStPR0pV\naXBndnpxaFVobWEzb2t6UVdXNDVHSk9aOG96eVJkdndoeEdscXpVblVnNzFNRmpQ\nMEdOYURlcUJ4ZUpLREdLNGg4blp6L1pvaTdlTnU4aC92b1BzVzlQS3M2UW5CWG1q\nOVYvTEphYjY2c1B4OXRQT3lEVGZEdHFWeGxNcUdqZlNCN1gvZU5IVWI1Q0pPN1du\nbmJyL1g1RHRId3F1ZWkvNmhZdExhUDNINTRDYWd2NDlrV3Z0SFEzbllobXlCSmE0\nQmpVeTFLZEhJV01JcXhzOFgyeVdSSG9qY2dPN0trRHBjWGRTRGFvM09ONnB6ekFx\ncUdGRDRucXdXU2VhcC9MSkFvRGRydU1oOEU2ZkRJSWt5ZDdUaWNQV0VBc0NXeFM2\nVStwMU96b0FwMlBtTld2anVKcUJvUEVvQ2dJaTNXbTZMZ2NURUlSek85S2d1MkRo\nUk5UMHRLQ3JDdXFXd1NITmJidnZGUlpZNFRURVNweHFvVEtDYmxzR1JPdGtLSWVT\neXRTQXgvN2RRNEJTc0VhOGgvbk5CZ1BsS0RkTlBnNzk3UnZIUU00dDl4QTBscWZH\nZ215RThWZDhqRjhZWlFwU3NqcURZbEhuR1RudFlWSXFzcVJhazhUUmRiaksyeGIw\ncFFuRXY5NnlOSFFZVHFQLytBdDVxdS8rdjRhV2gvRktpRi9tQ0ZiN2hGaVNkUUpJ\nUkM0MWVyMHdXeER5Ujk1ZDdGVG1IZENLOG9jcXp2NVRYZ2Q3NlJwei9IeXdhZ0xt\nOEVLcWVrSkxtdk40dHdXNktEbEVwT0lNZ2Y5STlzS1lKekRYUDZlOG1LRVVpOVVB\nR3hYTHYwd3Q5WjJBLzZlRE9XVmJsL0FvNUc4V29kWm1PMXN5bGlYaGNRNnNRWGJs\nVk5zM2VTMnNJZEV2T1MyeEVXQm1tNHprejhsd1N0R25BL05IQ2JYc3VFdlhwbytt\nVlA3T0FrZkljUm01ZW44TktkakhpR1pOSDQyczVhOVFFZTFZeEpyNVZONncydVBX\ndEdJZ041QklRdit5TGY4UHI0a2ZENVUvQzdvc002V3dDTzRvN3ZodkFRdXRSTWlY\nbGNwWUF0VVhhMExDclBwVzR1VUg2c25ScHJocWVlZ3BRaGJ0SDl6d1AvWUFpRm5v\nb2ZmMXpuT2VtODNvQTJFQW5iWk5mSzhhb0libVJZUXFuYXhIVjBDaVNsV05wMDdy\nSHNDWWxoeWZKcGpEZVVPS05VTm4vODhRZmxiU0dIcVFBcG9TSEdDRWJ5a0ZNUGRK\nVExvWHdWQXc3Ymw5QzVmeTJNU1pSZ0VBWjB0ZTNiNnMzZGpTbHpmVEFyNVlnU3RU\ncmM4bWUxaGVGQ0lVU3F2QUcrQzAwbXg2dTNIcTNMYjZOSVJQZmJYVW9EaU9oU016\nenlVK29pc3pBM2Roek5sWE9lQi9EWE1xMXMvUFdoQXBKTWpXRUh6TGRFd3VNdXN2\nTis4UnJnNmxIMnF3bHRDMkZKc0xlZnprcjgxVWdMUHpLSFBUVzhFR1h3K0dIZUJH\nN05YMjg0UFlqTFo3QitrQ01JQ2h2V25waURyZVNySUFPR1lBaVU2WUFxUjdqMFhs\nN1BUNm5KWm42YTk2aFhZc0xkeDFBWGlLck9zaDFGWUxmZ3Y4YllHQitDR0FGUkg1\nZWducjF3VnpDbWxkendDM3BLZ0FlV1NMMlhyVHNka2hpTTdQbU1TZnJyRjRyRFNP\nczJZMWo5dEFmREtlS04rb3FITkU2bWs0MzQ1RW5QQ1Byc0YyMlE1WVdsTTBoZG9r\nUlU4Vyt3UWVvQ3ZhMkV1cmdmc3pXc0lEdG5iVXNia0hNZHg1V0gyUVozK3A0b21x\nWERReHBHNlYxK3EvL0t5V0Y0RkVGUzhXc21WajVubDMwWElsTG1TQVY5NjdGQQpH\nTmJXUVoyaDVlK0RBZWd4dVl1K0ZENGJEMWtLNFRMdXd3ejBIWWVidnZ3Ci0tLSBP\neEJ0WkRzaW5QMXduZGs0b1RsSlVQK2JjSXZhRUlIZERTalBPMk1VR3ZnCgkuGJpY\nVD8tKx2CYUQE867Lk4z1mgW8rvGNKu8K76HWHQyPNbZRS2PNm4xuZQ==\n-----END AGE ENCRYPTED FILE-----\n"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "content": "async function operator(proxies) {\n  const api=ProxyUtils.age, pairs=$arguments.pairs;\n  const passed=[], results={};\n  const assert=(value,message)=>{if(!value) throw new Error(message);};\n  const equal=(a,b,message)=>assert(JSON.stringify(a)===JSON.stringify(b),message);\n  const check=async(id,callback)=>{results[id]=await callback();passed.push(id);};\n  const reject=async(callback,predicate)=>{\n    try {await callback();} catch(error) {assert(predicate(error),'age error: '+error?.message);return;}\n    throw new Error('age operation did not reject');\n  };\n  const texts={empty:'',unicode:'订阅🙂\\r\\n\\0尾\\n',view:'视图🙂\\0\\r\\n'};\n  await check('AG-native-public-contract-and-normalized-keys',async()=>{\n    equal(Object.keys(api).sort(),['decrypt','derivePublicKey','encrypt'],'public API');\n    for(const pair of pairs) equal(await api.derivePublicKey(' \\n'+pair.secret+'\\r\\n'),pair.public,'normalized key');\n    return pairs.map(pair=>pair.type);\n  });\n  await check('AG-native-independent-node-ciphertexts',async()=>{\n    for(const pair of pairs) for(const item of pair.items) {\n      equal(await api.decrypt(item.armor,pair.secret),texts[item.id],'Node ciphertext');\n      const bytes=Buffer.from('x'+item.armor+'y');\n      equal(await api.decrypt(bytes.subarray(1,bytes.length-1),pair.secret),texts[item.id],'armored view');\n    }\n    return {types:2,payloads:6,offsetViews:6};\n  });\n  await check('AG-native-live-entropy-and-chunk-boundary',async()=>{\n    const large='a'.repeat(65535)+'🙂尾';\n    for(const pair of pairs) {\n      const one=await api.encrypt(texts.unicode,pair.public),two=await api.encrypt(texts.unicode,pair.public);\n      assert(one!==two,'encryption uses independent system entropy');\n      equal(await api.decrypt(one,pair.secret),texts.unicode,'fresh roundtrip');\n      equal(await api.decrypt(await api.encrypt(null,pair.public),pair.secret),'','null plaintext');\n      const bytes=Buffer.from('x'+texts.view+'y');\n      equal(await api.decrypt(await api.encrypt(bytes.subarray(1,bytes.length-1),pair.public),pair.secret),texts.view,'plaintext view');\n      equal(await api.decrypt(await api.encrypt(large,pair.public),pair.secret),large,'chunk boundary');\n    }\n    return {independentEntropy:true,chunkBoundary:65535,types:2};\n  });\n  await check('AG-native-pass-through-and-validation',async()=>{\n    for(const value of ['',false,0,'plain🙂',Buffer.from([255,0])]) {\n      // Non-string primitives follow TextDecoder's input validation.\n      if(typeof value==='boolean'||typeof value==='number') {\n        await reject(()=>api.decrypt(value,'invalid'),error=>error instanceof TypeError);\n      } else assert(await api.decrypt(value,'invalid')===value,'plain value retains identity');\n    }\n    equal(await api.decrypt(null,'invalid'),'','null pass-through');\n    for(const value of ['', 'age1invalid','age1tag1invalid','age1tagpq1invalid',null,0])\n      await reject(()=>api.encrypt('x',value),error=>error.code==='INVALID_AGE_PUBLIC_KEY'&&error.type==='RequestInvalidError');\n    for(const value of ['', 'AGE-SECRET-KEY-1INVALID','AGE-SECRET-KEY-PQ-1INVALID',null,0])\n      await reject(()=>api.derivePublicKey(value),error=>error.code==='INVALID_AGE_SECRET_KEY'&&error.type==='RequestInvalidError');\n    for(let i=0;i<pairs.length;i++) {\n      await reject(()=>api.decrypt(pairs[i].items[1].armor,pairs[1-i].secret),error=>error.message.startsWith('age 解密失败:'));\n      await reject(()=>api.decrypt('-----BEGIN AGE ENCRYPTED FILE-----\\nbad\\n',pairs[i].secret),error=>error.message.startsWith('age 解密失败:'));\n      equal(await api.decrypt(pairs[i].items[1].armor,pairs[i].secret),texts.unicode,'recovery');\n    }\n    return {identity:true,validation:true,recovery:true};\n  });\n  await check('AG-native-required-runtime-diagnostics',async()=>{\n    for(const name of ['TextEncoder','TextDecoder','ReadableStream','TransformStream','Response','Uint8Array','crypto']) {\n      const descriptor=Object.getOwnPropertyDescriptor(globalThis,name);\n      try {\n        Object.defineProperty(globalThis,name,{value:undefined,writable:true,configurable:true});\n        await reject(()=>api.encrypt('x',pairs[0].public),error=>error.message==='当前运行环境缺少 age 加解密所需 Web API: '+(name==='crypto'?'crypto.getRandomValues':name));\n        equal(await api.decrypt('plain','invalid'),'plain','plaintext does not require crypto runtime');\n      } finally { Object.defineProperty(globalThis,name,descriptor); }\n    }\n    return {missingBeforeCrypto:true,plainPassThrough:true};\n  });\n  const OriginalDate=Date;\n  globalThis.Date=class extends OriginalDate {\n    constructor(...args){super(...(args.length?args:[3100000000000]));}\n    static now(){return 3100000000000;}\n  };\n  try {\n    await check('AG-native-download-auto-decrypt-and-original-cache',async()=>{\n      for(const pair of pairs) {\n        const url='$UPSTREAM/host/download/age/'+pair.type;\n        const value=await ProxyUtils.download(url,undefined,undefined,undefined,undefined,undefined,undefined,false,{ageSecretKey:pair.secret,returnRaw:true});\n        equal(value,{result:texts.unicode,raw:texts.unicode},'download decrypt');\n        const cache=JSON.parse($substore.read('#sub-store-cached-resource'));\n        equal(cache[ProxyUtils.hex_md5('clash.meta/v1.19.23'+url)].data,pair.items[1].armor,'cache retains ciphertext');\n        equal(await ProxyUtils.download(url+'#age-secret-key='+encodeURIComponent(pair.secret)),texts.unicode,'fragment decrypts cache');\n      }\n      const url='$UPSTREAM/host/download/age/wrong-key';\n      await reject(()=>ProxyUtils.download(url+'#age-secret-key='+pairs[1].secret),error=>error.message.includes('age 解密失败:')&&!error.message.includes(pairs[1].secret));\n      equal(await ProxyUtils.download(url,undefined,undefined,undefined,undefined,undefined,undefined,false,{'age-secret-key':pairs[0].secret}),texts.unicode,'download recovery');\n      return {types:2,cacheContainsCiphertext:true,secretRedacted:true,recovered:true};\n    });\n  } finally {globalThis.Date=OriginalDate;}\n  proxies[0].ageVerified=passed;proxies[0].ageResults=results;\n  return proxies;\n}\n"
+              },
+              "type": "Script Operator"
+            }
+          ],
+          "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#age",
+          "source": "local"
+        },
+        "upstream": [
+          {
+            "method": "GET",
+            "path": "/host/download/age/x25519",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/age/mlkem768-x25519",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/age/wrong-key",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/age/wrong-key",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          }
+        ],
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "data": {
+              "processed": [
+                {
+                  "ageVerified": [
+                    "AG-native-public-contract-and-normalized-keys",
+                    "AG-native-independent-node-ciphertexts",
+                    "AG-native-live-entropy-and-chunk-boundary",
+                    "AG-native-pass-through-and-validation",
+                    "AG-native-required-runtime-diagnostics",
+                    "AG-native-download-auto-decrypt-and-original-cache"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "PC-native-linked-scripts-and-response-helpers",
+    "source": "proxy-utils loadScriptItem/processResponseFn and processor ResponseTransformer; real nested engine reentry plus top-level link",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/preview/sub",
+        "body": {
+          "name": "loading-response-native",
+          "source": "local",
+          "process": [
+            {
+              "args": {
+                "content": "async function operator(proxies) {\n  const passed=[], observations={};\n  const assert=(value,message)=>{if(!value)throw new Error(message);};\n  const equal=(a,b,message)=>assert(JSON.stringify(a)===JSON.stringify(b),message);\n  const check=async(id,callback)=>{observations[id]=await callback();passed.push(id);};\n  const rejects=async(callback,message)=>{try{await callback();}catch(error){assert(error.message.includes(message),'loader/response error: '+error.message);return;}throw new Error('expected error');};\n  const OriginalDate=Date;\n  globalThis.Date=class extends OriginalDate {\n    constructor(...args){super(...(args.length?args:[3200000000000]));}\n    static now(){return 3200000000000;}\n  };\n  const modules=$substore.read('modules');\n  const base='$UPSTREAM/host/script/';\n  const source={marker:'source-marker'},options={zero:0,flag:false};\n  const link=(content,type='Script Operator')=>({type,args:{mode:'link',content}});\n  const process=(items,execution={})=>ProxyUtils.process([{name:'linked',server:'example.invalid',port:443}],items,'JSON',source,options,false,execution);\n  const transformed=(input,items,execution={})=>ProxyUtils.processResponse(input,items,'JSON',source,options,execution);\n  const transform=content=>({type:'Response Transformer',args:{content}});\n  try {\n    await check('SC-native-linked-remote-arguments-cache-and-two-fragments',async()=>{\n      const args={zero:0,flag:false,text:'链接🙂'};\n      let result=await process([link(base+'operator#'+encodeURIComponent(JSON.stringify(args)))]);\n      equal(result[0].linked,{arguments:args,target:'JSON',options,raw:[false],source:'source-marker'},'full linked injection');\n      equal((await process([link(base+'operator#zero=0&flag=false&empty=&enabled')]))[0].linked.arguments,\n        {zero:'0',flag:'false',empty:true,enabled:true},'paired arguments share the cached source');\n      const headers=JSON.stringify({'User-Agent':'linked-script-native','X-Script-Token':'two-fragments'});\n      result=await process([link(base+'headers#'+encodeURIComponent(JSON.stringify(args))+'#headers='+encodeURIComponent(headers))]);\n      equal(result[0].linked.arguments,args,'third fragment only controls download');\n      return {jsonArguments:true,pairArguments:true,sourceCached:true,thirdFragment:true};\n    });\n    await check('SC-native-linked-no-cache-and-execution-context',async()=>{\n      await process([link(base+'nocache#noCache')]);\n      await process([link(base+'nocache#noCache')]);\n      await process([link(base+'flow#zero=0#validCheck&noCache')],{noFlow:true});\n      await rejects(()=>process([link(base+'flow#zero=0#validCheck&noCache')]),'无法下载脚本:');\n      return {refreshRequests:2,noFlowPropagates:true,flowError:true};\n    });\n    await check('SC-native-linked-modules-filter-and-errors',async()=>{\n      $substore.write([{name:'模块🙂',content:'function operator(proxies) { proxies[0].module=$arguments.text; return proxies; }'},\n        {name:'过滤',content:'return $server.port===443;'}],'modules');\n      equal((await process([link('/api/module/'+encodeURIComponent('模块🙂')+'#text='+encodeURIComponent('内容🙂'))]))[0].module,'内容🙂','module source and args');\n      equal((await process([link('/api/module/'+encodeURIComponent('过滤'),'Script Filter')])).length,1,'linked shortcut filter');\n      await rejects(()=>process([link('/api/module/missing#x=1')]),'无法加载 module: /api/module/missing');\n      await rejects(()=>process([link(base+'missing')]),'无法下载脚本:');\n      await process([link(base+'unknown','Unknown Script Operator')]);\n      return {modules:true,filter:true,missing:true,unknownStillLoads:true};\n    });\n    await check('RS-native-normalization-aliases-and-full-transform',async()=>{\n      const input={statusCode:201,headers:{before:'yes'},body:'响应🙂\\r\\n',unknown:false};\n      const output=await transformed(input,[transform(`async function transformFunction(res,context) {\n        if(context.source.marker!=='source-marker'||$options.zero!==0)throw new Error('response injection');\n        if(res.header!==res.headers)throw new Error('headers are aliases');\n        await $substore.wait(1);res.header={changed:false};res.headers.zero=0;res.body+='after';return res;\n      }`)]);\n      equal(output,{status:201,body:'响应🙂\\r\\nafter',headers:{changed:false,zero:0},header:{changed:false,zero:0}},'normalized full response');\n      assert(output.header===output.headers&&!Object.hasOwn(output,'unknown'),'aliases and selected fields');\n      equal(input.headers,{before:'yes'},'replaced aliases retain original header object');\n      output.header=null;assert(output.header===output.headers&&Object.keys(output.headers).length===0,'invalid alias setter');\n      return {status:201,body:'响应🙂\\r\\nafter',aliases:true,unknownDropped:true};\n    });\n    await check('RS-native-shortcut-http-and-falsy-results',async()=>{\n      const output=await transformed({status:202,body:'响应🙂\\r\\n',header:{}},[transform(`const response=await $substore.http.post({url:'$UPSTREAM/host/echo',body:$res.body,headers:{'X-Probe':'native-response'}});\n        $res.headers.echo=JSON.parse(response.body).body;$res.body+='shortcut';`)]);\n      equal(output,{status:202,body:'响应🙂\\r\\nshortcut',headers:{echo:'响应🙂\\r\\n'},header:{echo:'响应🙂\\r\\n'}},'shortcut native HTTP');\n      for(const value of ['undefined','null','false','0','\"\"']) {\n        const result=await transformed({body:'start'},[transform('function transformFunction(res){res.body=\"mutated\";return '+value+';}')]);\n        equal(result.body,'mutated','falsy result retains mutation');\n      }\n      equal(await transformed({status:0,statusCode:203,header:false,headers:{zero:0}},[]),\n        {status:203,body:'',headers:{zero:0},header:{zero:0}},'truthy precedence and missing body');\n      return {nativeHttp:true,falsyResults:5,precedence:true};\n    });\n    await check('RS-native-control-linked-transform-errors-and-recovery',async()=>{\n      const output=await transformed({body:'a'},[\n        {type:'Script Operator',args:{content:'throw new Error(\"wrong stage\");'}},\n        {...transform('throw new Error(\"disabled\");'),disabled:true},\n        transform('function transformFunction(res,context){context.process={type:\"disable\",customNames:[\"skip\"]};res.body+=\"b\";return res;}'),\n        {...transform('throw new Error(\"skipped\");'),customName:'skip'},\n        link(base+'response#text='+encodeURIComponent('链接🙂'),'Response Transformer'),\n      ]);\n      equal(output.body,'ab链接🙂','stage skipping and linked transform');\n      await rejects(()=>transformed({body:''},[transform('throw new Error(\"response-sentinel\");')]),'响应修改 执行失败 response-sentinel');\n      equal((await transformed({body:'recovered'},[])).body,'recovered','response error recovery');\n      return {controls:true,linked:true,error:true,recovery:true};\n    });\n    proxies[0].loadingResponseVerified=passed;proxies[0].loadingResponseResults=observations;\n    return proxies;\n  } finally {$substore.write(modules,'modules');globalThis.Date=OriginalDate;}\n}\n"
+              },
+              "type": "Script Operator"
+            }
+          ],
+          "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#loading"
+        },
+        "upstream": [
+          {
+            "method": "GET",
+            "path": "/host/script/operator",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/script/headers",
+            "headers": {
+              "user-agent": "linked-script-native",
+              "x-script-token": "two-fragments"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/script/nocache",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/script/nocache",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/script/flow",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/script/flow",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/script/missing",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/script/unknown",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "POST",
+            "path": "/host/echo",
+            "headers": {
+              "x-probe": "native-response"
+            },
+            "body": "响应🙂\r\n"
+          },
+          {
+            "method": "GET",
+            "path": "/host/script/response",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          }
+        ],
+        "expect": {
+          "json_contains": {
+            "data": {
+              "processed": [
+                {
+                  "loadingResponseVerified": [
+                    "SC-native-linked-remote-arguments-cache-and-two-fragments",
+                    "SC-native-linked-no-cache-and-execution-context",
+                    "SC-native-linked-modules-filter-and-errors",
+                    "RS-native-normalization-aliases-and-full-transform",
+                    "RS-native-shortcut-http-and-falsy-results",
+                    "RS-native-control-linked-transform-errors-and-recovery"
+                  ]
+                }
+              ]
+            }
+          },
+          "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/preview/sub",
+        "body": {
+          "name": "loading-top-native",
+          "source": "local",
+          "process": [
+            {
+              "args": {
+                "content": "$UPSTREAM/host/script/top#zero=0&flag=false",
+                "mode": "link"
+              },
+              "type": "Script Operator"
+            }
+          ],
+          "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#loading"
+        },
+        "upstream": [
+          {
+            "method": "GET",
+            "path": "/host/script/top",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          }
+        ],
+        "expect": {
+          "json_contains": {
+            "data": {
+              "processed": [
+                {
+                  "linked": {
+                    "target": "JSON",
+                    "arguments": {
+                      "zero": "0",
+                      "flag": "false"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "status": 200
+        }
+      }
+    ]
+  },
+{
+  "id": "PC-native-local-filters",
+  "source": "backend/src/core/proxy-utils/processors/index.js:1366-1485",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Useless Filter",
+            "args": {}
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Region Filter",
+            "args": [
+              "HK",
+              "JP"
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "JP three"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Region Filter",
+            "args": {
+              "value": [
+                "HK",
+                "US"
+              ],
+              "keep": false
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Region Filter",
+            "args": {
+              "value": "invalid"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": []
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Regex Filter",
+            "args": {
+              "regex": [
+                "(?i)^hk",
+                "three$"
+              ]
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "JP three"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Regex Filter",
+            "args": {
+              "regex": [
+                "(?i)^hk"
+              ],
+              "keep": false
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Type Filter",
+            "args": [
+              "http"
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Type Filter",
+            "args": {
+              "value": [
+                "ss"
+              ],
+              "keep": false
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-local-conditional",
+  "source": "backend/src/core/proxy-utils/processors/index.js:92-133",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Conditional Filter",
+            "args": {
+              "rule": {
+                "operator": "AND",
+                "child": [
+                  {
+                    "attr": "type",
+                    "proposition": "IN",
+                    "value": [
+                      "ss"
+                    ]
+                  },
+                  {
+                    "operator": "NOT",
+                    "child": {
+                      "attr": "name",
+                      "proposition": "CONTAINS",
+                      "value": "流量"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Conditional Filter",
+            "args": {
+              "rule": {
+                "attr": "notThere",
+                "proposition": "EXISTS"
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Conditional Filter",
+            "args": {
+              "rule": {
+                "operator": "OR",
+                "child": [
+                  {
+                    "attr": "port",
+                    "proposition": "EQUALS",
+                    "value": 8080
+                  },
+                  {
+                    "attr": "name",
+                    "proposition": "EQUALS",
+                    "value": "US two"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "US two"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-local-quick-settings",
+  "source": "backend/src/core/proxy-utils/processors/index.js:135-239",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Quick Setting Operator",
+            "args": {
+              "useless": "ENABLED",
+              "udp": "DISABLED",
+              "tfo": "ENABLED",
+              "scert": "ENABLED",
+              "block-quic": "off",
+              "ip-version": "ipv4"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "data": {
+            "processed": [
+              {
+                "name": "HK one",
+                "udp": false,
+                "tfo": true,
+                "fast-open": true,
+                "skip-cert-verify": true,
+                "block-quic": "off",
+                "ip-version": "ipv4"
+              },
+              {
+                "name": "US two",
+                "udp": false
+              },
+              {
+                "name": "JP three",
+                "udp": false
+              },
+              {
+                "name": "DE four",
+                "udp": false
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Quick Setting Operator",
+            "args": {}
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-local-flags",
+  "source": "backend/src/core/proxy-utils/processors/index.js:202-240; backend/src/utils/geo.js:728-780",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Flag Operator",
+            "args": {
+              "mode": "add",
+              "tw": "tw"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "🇭🇰 HK one"
+              },
+              {
+                "name": "🇺🇸 US two"
+              },
+              {
+                "name": "🇯🇵 JP three"
+              },
+              {
+                "name": "🏳️‍🌈 流量 remaining"
+              },
+              {
+                "name": "🇩🇪 DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"🇹🇼 台湾 节点\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"内蒙古\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"未知\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}",
+        "process": [
+          {
+            "type": "Flag Operator",
+            "args": {
+              "mode": "add",
+              "tw": "ws"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "🇼🇸 台湾 节点"
+              },
+              {
+                "name": "🇨🇳 内蒙古"
+              },
+              {
+                "name": "🏴‍☠️ 未知"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"🇹🇼 台湾 节点\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"🏳️‍🌈 🏴‍☠️ 未知\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}",
+        "process": [
+          {
+            "type": "Flag Operator",
+            "args": {
+              "mode": "remove"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "台湾 节点"
+              },
+              {
+                "name": "未知"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-local-sort",
+  "source": "backend/src/core/proxy-utils/processors/index.js:285-370",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Sort Operator",
+            "args": "asc"
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "DE four"
+              },
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "流量 remaining"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Sort Operator",
+            "args": "desc"
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Regex Sort Operator",
+            "args": [
+              "^JP",
+              "(?i)^hk"
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "DE four"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "流量 remaining"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Regex Sort Operator",
+            "args": {
+              "expressions": [
+                "^JP"
+              ],
+              "order": "original"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { globalThis.__m3OriginalRandom = Math.random; Math.random = () => 0; return proxies; }"
+            }
+          },
+          {
+            "type": "Sort Operator",
+            "args": "random"
+          },
+          {
+            "type": "Script Operator",
+            "args": {
+              "content": "function operator(proxies) { Math.random = globalThis.__m3OriginalRandom; delete globalThis.__m3OriginalRandom; return proxies; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              },
+              {
+                "name": "HK one"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-local-rename-delete",
+  "source": "backend/src/core/proxy-utils/processors/index.js:377-410",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Regex Rename Operator",
+            "args": [
+              {
+                "expr": "(?i)^hk",
+                "now": " 港 "
+              },
+              {
+                "expr": "one$",
+                "now": "一"
+              }
+            ]
+          },
+          {
+            "type": "Regex Delete Operator",
+            "args": [
+              "^US\\s*",
+              "three"
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "港  一"
+              },
+              {
+                "name": "two"
+              },
+              {
+                "name": "JP"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-local-duplicates",
+  "source": "backend/src/core/proxy-utils/processors/index.js:242-335",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"same\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"same\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"other\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}",
+        "process": [
+          {
+            "type": "Handle Duplicate Operator",
+            "args": {}
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "same-1"
+              },
+              {
+                "name": "same-2"
+              },
+              {
+                "name": "other"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"same\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"same\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"same\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":false}}",
+        "process": [
+          {
+            "type": "Handle Duplicate Operator",
+            "args": {
+              "action": "delete",
+              "field": [
+                "name",
+                "note.zero"
+              ]
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "same"
+              },
+              {
+                "name": "same"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"same\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"same\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}",
+        "process": [
+          {
+            "type": "Handle Duplicate Operator",
+            "args": {
+              "position": "front",
+              "link": ":",
+              "template": "⓪ ① ② ③ ④ ⑤ ⑥ ⑦ ⑧ ⑨"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "①:same"
+              },
+              {
+                "name": "②:same"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-script-full-operator",
+  "source": "backend/src/core/proxy-utils/processors/index.js:411-577; tests/compat/fixtures/script-processor-contracts.js:PC01",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "async function operator(proxies, targetPlatform, context) { await $substore.wait(1); if (targetPlatform !== 'JSON' || context.source['processors-local'].displayName !== '处理🙂' || $arguments.zero !== 0 || typeof $options !== 'undefined' || context.env.backend !== ($substore.env.isNode ? 'Node' : 'Rust')) throw new Error('lost parameters'); if (!$substore.env.isNode && (typeof require !== 'undefined' || typeof process !== 'undefined' || typeof $substore.node !== 'undefined')) throw new Error('Node API leaked'); if (context.raw.length !== 1 || typeof context.raw[0] !== 'string') throw new Error('raw missing'); proxies[0].note.zero = 1; return proxies.map(p => ({...p,name:b64d(b64e(p.name)) + lodash.get($arguments,'suffix')})); }",
+              "arguments": {
+                "zero": 0,
+                "suffix": "-全🙂"
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one-全🙂"
+              },
+              {
+                "name": "US two-全🙂"
+              },
+              {
+                "name": "JP three-全🙂"
+              },
+              {
+                "name": "流量 remaining-全🙂"
+              },
+              {
+                "name": "DE four-全🙂"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-script-filter-identity",
+  "source": "backend/src/core/proxy-utils/processors/index.js:1487-1535; tests/compat/fixtures/script-processor-contracts.js:PC03",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Script Filter",
+            "args": {
+              "content": "async function filter(proxies) { await $substore.wait(1); proxies[0].name += '-mutated'; return proxies.map((p,i) => i === 0 || i === 4); }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one-mutated"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Script Filter",
+            "args": {
+              "content": "await $substore.wait(1); return $server.type === 'http';"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Script Filter",
+            "args": {
+              "content": "$server.type === 'http';"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": []
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-script-fallback-and-returns",
+  "source": "backend/src/core/proxy-utils/processors/index.js:411-577; tests/compat/fixtures/script-processor-contracts.js:PC04-PC05",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { proxies[0].name += '-before-error'; throw new Error('operator failed'); }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one-before-error"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { proxies[0].name = 'retained'; return undefined; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "retained"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { proxies[0].name = 'retained'; return null; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "retained"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { proxies[0].name = 'retained'; return false; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "retained"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { proxies[0].name = 'retained'; return 0; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "retained"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { proxies[0].name = 'retained'; return \"\"; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "retained"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator() { return []; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": []
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-script-context-order",
+  "source": "backend/src/core/proxy-utils/processors/index.js:138-277",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies,target,context) { context.process = {type:'disable',customNames:['skip']}; return proxies; }"
+            }
+          },
+          {
+            "type": "Regex Rename Operator",
+            "args": [
+              {
+                "expr": "^",
+                "now": "must-not-"
+              }
+            ],
+            "customName": "skip"
+          },
+          {
+            "type": "Regex Rename Operator",
+            "args": [
+              {
+                "expr": "$",
+                "now": "-yes"
+              }
+            ],
+            "customName": "keep"
+          },
+          {
+            "type": "Script Operator",
+            "args": {
+              "content": "throw new Error('disabled ran')"
+            },
+            "disabled": true
+          },
+          {
+            "type": "Unknown Operator",
+            "args": {}
+          },
+          {
+            "type": "Response Transformer",
+            "args": {
+              "content": "throw new Error('response transformer ran early')"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one-yes"
+              },
+              {
+                "name": "US two-yes"
+              },
+              {
+                "name": "JP three-yes"
+              },
+              {
+                "name": "流量 remaining-yes"
+              },
+              {
+                "name": "DE four-yes"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-script-nested-processing",
+  "source": "backend/src/core/proxy-utils/processors/index.js:138-277",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "async function operator(proxies) { const parsed = ProxyUtils.parse('ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#nested'); const processed = await ProxyUtils.process(parsed,[{type:'Regex Rename Operator',args:[{expr:'$',now:'-nested'}]}],'JSON'); if (!ProxyUtils.produce(processed,'URI').includes('#nested-nested')) throw new Error('nested native conversion failed'); proxies[0].name = processed[0].name; return proxies; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "nested-nested"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-script-storage-and-errors",
+  "source": "backend/src/core/proxy-utils/processors/index.js:411-577; backend/src/vendor/open-api.js:68-408",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { const value = {unknown:{nil:null,zero:0,flag:false},name:'持久🙂'}; $substore.write(value,'m3-script-state'); if ($substore.read('m3-script-state') !== value) throw new Error('storage identity lost'); $substore.write({persisted:true},'#m3-script-root'); if ($substore.read('#m3-script-root').persisted !== true) throw new Error('root write failed'); $substore.write('remove','m3-script-delete'); $substore.delete('m3-script-delete'); if ($substore.read('m3-script-delete') !== undefined) throw new Error('delete failed'); return proxies; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      },
+      "state": {
+        "m3-script-state": {
+          "unknown": {
+            "nil": null,
+            "zero": 0,
+            "flag": false
+          },
+          "name": "持久🙂"
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "$substore.write('must-not-write', true);"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 500,
+        "json_contains": {
+          "status": "failed"
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "throw new Error('fixture broken');"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 500,
+        "json_contains": {
+          "status": "failed",
+          "error": {
+            "details": "Reason: 脚本操作 执行失败 fixture broken"
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { if ($substore.read('m3-script-state').name !== '持久🙂') throw new Error('lost state'); return proxies; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-script-pending-http",
+  "source": "backend/src/core/proxy-utils/processors/index.js:411-577; tests/compat/fixtures/script-processor-contracts.js:PC02",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "const response = await $substore.http.get({url:$arguments.url,headers:{'X-Probe':'native-script'}}); if (JSON.parse(response.body).probe !== 'native-script') throw new Error('HTTP response lost'); await $substore.wait(1); $server.name += '-快捷🙂';",
+              "arguments": {
+                "url": "$UPSTREAM/host/echo"
+              }
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one-快捷🙂"
+              },
+              {
+                "name": "US two-快捷🙂"
+              },
+              {
+                "name": "JP three-快捷🙂"
+              },
+              {
+                "name": "流量 remaining-快捷🙂"
+              },
+              {
+                "name": "DE four-快捷🙂"
+              }
+            ]
+          }
+        }
+      },
+      "upstream": [
+        {
+          "method": "GET",
+          "path": "/host/echo",
+          "headers": {
+            "x-probe": "native-script"
+          },
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/host/echo",
+          "headers": {
+            "x-probe": "native-script"
+          },
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/host/echo",
+          "headers": {
+            "x-probe": "native-script"
+          },
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/host/echo",
+          "headers": {
+            "x-probe": "native-script"
+          },
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/host/echo",
+          "headers": {
+            "x-probe": "native-script"
+          },
+          "body": ""
+        }
+      ]
+    }
+  ]
+},
+{
+  "id": "PC-native-saved-download",
+  "source": "backend/src/core/proxy-utils/processors/index.js:138-277; backend/src/utils/artifacts.js:271-479",
+  "steps": [
+    {
+      "method": "POST",
+      "path": "/api/subs",
+      "body": {
+        "name": "native-processors",
+        "source": "local",
+        "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#saved",
+        "process": [
+          {
+            "type": "Regex Rename Operator",
+            "args": [
+              {
+                "expr": "$",
+                "now": "-native"
+              }
+            ]
+          },
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { if ($substore.read('m3-script-state').unknown.flag !== false) throw new Error('saved storage read failed'); return proxies; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 201,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "name": "native-processors"
+          }
+        }
+      }
+    },
+    {
+      "path": "/download/native-processors/URI",
+      "expect": {
+        "status": 200,
+        "body": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388?udp=1#saved-native"
+      }
+    }
+  ]
+},
+{
+  "id": "PC-native-script-restart",
+  "source": "backend/src/vendor/open-api.js:68-408; backend/src/utils/artifacts.js:271-479",
+  "steps": [
+    {
+      "path": "/download/native-processors/URI",
+      "expect": {
+        "status": 200,
+        "body": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388?udp=1#saved-native"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/preview/sub",
+      "body": {
+        "name": "processors-local",
+        "displayName": "处理🙂",
+        "source": "local",
+        "content": "{\"type\":\"ss\",\"name\":\"HK one\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"note\":{\"zero\":0}}\n{\"type\":\"ss\",\"name\":\"US two\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"JP three\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"ss\",\"name\":\"流量 remaining\",\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\"}\n{\"type\":\"http\",\"name\":\"DE four\",\"server\":\"127.0.0.1\",\"port\":8080}",
+        "process": [
+          {
+            "type": "Script Operator",
+            "args": {
+              "mode": "script",
+              "content": "function operator(proxies) { if ($substore.read('#m3-script-root').persisted !== true || $substore.read('m3-script-state').name !== '持久🙂') throw new Error('restart lost script writes'); return proxies; }"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "status": 200,
+        "json_contains": {
+          "status": "success",
+          "data": {
+            "processed": [
+              {
+                "name": "HK one"
+              },
+              {
+                "name": "US two"
+              },
+              {
+                "name": "JP three"
+              },
+              {
+                "name": "流量 remaining"
+              },
+              {
+                "name": "DE four"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+},
 {
     "id": "R04-type-mappings",
     "source": "backend/src/core/rule-utils/index.js:7-65; parsers.js:1-59; preprocessors.js:1-18; producers.js:3-101; restful/parser.js:48-61",

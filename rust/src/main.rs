@@ -5,8 +5,18 @@ mod clash_output;
 mod classic;
 mod conversion;
 mod egern_output;
+mod js_language;
 mod json;
+mod processors;
 mod rules;
+mod script;
+mod script_age;
+mod script_download;
+mod script_flow;
+mod script_helpers;
+mod script_io;
+mod script_loading;
+mod script_network;
 mod singbox_output;
 mod state;
 mod surge;
@@ -754,7 +764,7 @@ fn api_path(raw: &str) -> Result<Option<String>, ()> {
 async fn route(
     request: Request<Incoming>,
     config: &Config,
-    store: &Mutex<state::Store>,
+    store: &Arc<Mutex<state::Store>>,
 ) -> api::Reply {
     let method = if request.method() == Method::HEAD {
         Method::GET
@@ -846,7 +856,8 @@ async fn route(
             })),
         );
     }
-    if let Some(response) = api::conversion_dispatch(&method, &path, &query, &body, &headers, store)
+    if let Some(response) =
+        api::conversion_dispatch(&method, &path, &query, &body, &headers, store).await
     {
         return response;
     }

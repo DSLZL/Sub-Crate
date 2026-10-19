@@ -1,0 +1,24 @@
+{
+  "packages": {
+    "@kayahr/text-encoding": "2.2.0",
+    "web-streams-polyfill": "4.3.0"
+  },
+  "esbuild": "0.19.8",
+  "bundle_sha256": "396991ce895c3ed59059ce75fd7b2287ca40c67c77581c71c224fa1b44ac3a60",
+  "licenses_sha256": "83cb76d87e1b275481cb8c57b1461b5dbd83d97cc46bf82bfc1261985cc2e832",
+  "inputs": {
+    "@kayahr/text-encoding@2.2.0/lib/main/AbstractDecoder.js": "5aaec6d918797c91fe756578d2bf1fd72b6cfee90c3ad8e922bc52d980df11f4",
+    "@kayahr/text-encoding@2.2.0/lib/main/AbstractEncoder.js": "b9eb1dad850280e02da19dbd57fabd35711dfb7363343b73da76a9e0440cb82a",
+    "@kayahr/text-encoding@2.2.0/lib/main/ByteBuffer.js": "6d4ef171ffd6070d782e5927800e3f2797a1ced6a052d5b40859183f274b54db",
+    "@kayahr/text-encoding@2.2.0/lib/main/Encoding.js": "30453ea61e7a16260f300b6233a4b09e35b70e4c1f230bcaee721fdf367aacef",
+    "@kayahr/text-encoding@2.2.0/lib/main/TextDecoder.js": "e502f359dc14ad04c0bab1b664ebb3b2b0b793cc92129988782438aecb651a56",
+    "@kayahr/text-encoding@2.2.0/lib/main/TextEncoder.js": "db943276d3c677eff11a0cd643710f556f70bdbad9d919da8f2be7cd62d418ce",
+    "@kayahr/text-encoding@2.2.0/lib/main/constants.js": "ead589ec501ade11cb5b7126587311d55174d5c5927ac42d4e12fdcabb3e98dc",
+    "@kayahr/text-encoding@2.2.0/lib/main/decoders/UTF8Decoder.js": "2bbd8618860d1a605b95aa3a18e5818e815d5754d458e5cb0960df5310cf9a76",
+    "@kayahr/text-encoding@2.2.0/lib/main/encoders/UTF8Encoder.js": "b8b61f82eae142dc461f22d6405f4bf34b759432668a1af5daf4fe07155a22b7",
+    "@kayahr/text-encoding@2.2.0/lib/main/encodings/utf-8.js": "bbf8356132621d1de81ecdde00e8ff7546411a03bb102a24ad891de87562b16f",
+    "@kayahr/text-encoding@2.2.0/lib/main/index-no-encodings.js": "27aece342acc67f8cf0c7364b6c96154a1bed0a81f6501fa5ca4848c4e44cdff",
+    "@kayahr/text-encoding@2.2.0/lib/main/util.js": "09a3bd8dba7905290c66ab11e2cb422d10b2a4420bdd8eacb3c91b5199ba7353",
+    "web-streams-polyfill@4.3.0/dist/ponyfill.js": "fe4d30b1a69f423305bdb942847a546be92b7041ce71706174fbb5465081e549"
+  }
+}
