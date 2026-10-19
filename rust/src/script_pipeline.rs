@@ -1279,7 +1279,10 @@ pub(crate) async fn add<'js>(
     Ok(input)
 }
 
-pub(crate) async fn artifact<'js>(ctx: Ctx<'js>, options: Value<'js>) -> rquickjs::Result<Value<'js>> {
+pub(crate) async fn artifact<'js>(
+    ctx: Ctx<'js>,
+    options: Value<'js>,
+) -> rquickjs::Result<Value<'js>> {
     let js = Js::new(ctx);
     let kind = js.text(js.get(&options, "type")?)?;
     let name = js.get(&options, "name")?;

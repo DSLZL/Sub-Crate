@@ -158,6 +158,14 @@ pub async fn dispatch(
     body: &Body,
     store: &Arc<Mutex<Store>>,
 ) -> Option<api::Reply> {
+    if path == "/api/artifacts/restore" && method == Method::GET {
+        let result = restore(store).await;
+        return Some(match result {
+            Ok(()) => api::success(None, 200),
+            Err(error) if error.code == "STATE_WRITE_FAILED" => error.reply(500),
+            Err(error) => Error::internal("FAILED_TO_RESTORE_ARTIFACTS", "Failed to restore artifacts", error.message).reply(500),
+        });
+    }
     if path != "/api/artifacts" && !path.starts_with("/api/artifact/") {
         return None;
     }
@@ -169,6 +177,16 @@ pub async fn dispatch(
         ));
     }
     Some(manage(method, path, body, &mut store.lock().unwrap()))
+}
+
+async fn restore(store: &Arc<Mutex<Store>>) -> Result<(), Error> {
+    if !truthy(&store.lock().unwrap().data["settings"]["gistToken"]) {
+        return Err(Error::plain("未设置 GitHub Token！"));
+    }
+    let response = crate::settings::job(store, "gist-request", json!({"key":"Sub-Store Artifacts Repository","action":"locate"})).await?;
+    let items = crate::settings::job(store, "artifact-restored", response.get("result").cloned().unwrap_or(Value::Null)).await?;
+    let mut store = store.lock().unwrap(); let mut next = store.data.clone(); next["artifacts"] = items;
+    store.commit(next).map_err(Error::state)
 }
 
 fn manage(method: &Method, path: &str, body: &Body, store: &mut Store) -> api::Reply {

@@ -519,6 +519,25 @@ pub(crate) async fn artifact_upload<'js>(
     .await
 }
 
+pub(crate) async fn request<'js>(js: &Js<'js>, input: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    let settings = network::settings(js)?;
+    let options = object(js)?;
+    js.set(&options, "token", js.get(&settings, "gistToken")?)?;
+    js.set(&options, "syncPlatform", js.get(&settings, "syncPlatform")?)?;
+    js.set(&options, "key", js.get(&input, "key")?)?;
+    let manager = object(js)?;
+    initialize_gist(js.ctx.clone(), manager.clone(), options)?;
+    js.set(&manager, "locate", Function::new(js.ctx.clone(), Async(locate))?.into_value())?;
+    let result = match js.text(js.get(&input, "action")?)?.as_str() {
+        "download" => download(js.ctx.clone(), This(manager), Opt(Some(js.get(&input, "filename")?))).await?,
+        "upload" => upload(js.ctx.clone(), This(manager), Opt(Some(js.get(&input, "files")?)), Opt(None)).await?,
+        _ => locate(js.ctx.clone(), This(manager)).await?,
+    };
+    let wrapped = object(js)?;
+    js.set(&wrapped, "result", result)?;
+    Ok(wrapped)
+}
+
 pub(crate) fn initialize<'js>(ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs::Result<()> {
     ctx.globals()
         .set("__initGist", Func::from(initialize_gist))?;

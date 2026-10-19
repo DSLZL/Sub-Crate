@@ -1,6 +1,7 @@
 mod api;
 mod archives;
 mod artifacts;
+mod backup;
 mod body;
 mod clash;
 mod clash_output;
@@ -19,6 +20,7 @@ mod resources;
 mod rules;
 mod script;
 mod script_age;
+mod script_backup;
 mod script_conversion;
 mod script_dns;
 mod script_download;
@@ -34,6 +36,7 @@ mod script_pipeline;
 mod script_tokens;
 mod script_sync;
 mod singbox_output;
+mod settings;
 mod sort;
 mod state;
 mod sync;
@@ -1063,6 +1066,12 @@ async fn route(
         return response;
     }
     if let Some(response) = sync::dispatch(&method, &path, store).await {
+        return response;
+    }
+    if let Some(response) = settings::dispatch(&method, &path, &body, store).await {
+        return response;
+    }
+    if let Some(response) = backup::dispatch(&method, &path, &query, store).await {
         return response;
     }
     if let Some(response) = artifacts::dispatch(&method, &path, &query, &body, store).await {

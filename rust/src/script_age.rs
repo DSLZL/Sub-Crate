@@ -93,7 +93,7 @@ fn recipient<'js>(js: &Js<'js>, input: Value<'js>) -> rquickjs::Result<Value<'js
     Ok(key)
 }
 
-async fn identity<'js>(js: &Js<'js>, input: Value<'js>) -> rquickjs::Result<Value<'js>> {
+pub(crate) async fn identity<'js>(js: &Js<'js>, input: Value<'js>) -> rquickjs::Result<Value<'js>> {
     let key = key(js, input)?;
     let text = js.text(key.clone())?;
     if !text.starts_with("AGE-SECRET-KEY-1") && !text.starts_with("AGE-SECRET-KEY-PQ-1") {

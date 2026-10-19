@@ -204,6 +204,11 @@ def sync_contracts(binary, node, environment, baseline, root, output, report, im
                             assert lower <= value <= upper, (case["id"], key, value, lower, upper)
             report["phases"].append({"name": label, "cases": len(cases), "requests": sum(len(case["steps"]) for case in paired[kind])})
             final[kind] = {filename: json.loads((state / filename).read_text(encoding="utf-8")) for filename in ("sub-store.json", "root.json")}
+            if kind == "rust":
+                approved = [case for case in json.loads((HERE / "fixtures/http-cases.json").read_text(encoding="utf-8")) if case["id"] == "Y03-restore-without-token-stays-alive"]
+                assert len(approved) == 1
+                check_cases(url, state, approved, output, label + "-approved-rf02", upstream)
+                report["approved_rf02_missing_restore_token_kept_process_and_state"] = True
     for actual_case, reference_case in zip(paired["rust"], paired["node"], strict=True):
         assert actual_case["id"] == reference_case["id"]
         for actual, reference in zip(actual_case["steps"], reference_case["steps"], strict=True):

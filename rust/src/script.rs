@@ -1019,6 +1019,13 @@ pub async fn run(
                                         let size: f64 = js.call("number", (input,))?;
                                         js.value(if size.is_finite() && size.floor() > 0.0 { size.floor() } else { 10.0 })?
                                     }
+                                    "gist-request" => crate::script_gist::request(&js, input).await?,
+                                    "settings-age" => crate::script_backup::settings(&js, input).await?,
+                                    "backup-serialize" => crate::script_backup::serialize(&js, input)?,
+                                    "backup-encrypt" => crate::script_backup::crypt(&js, input, true).await?,
+                                    "backup-decrypt" => crate::script_backup::crypt(&js, input, false).await?,
+                                    "backup-decode" => crate::script_backup::decode(&js, input)?,
+                                    "artifact-restored" => crate::script_backup::restored_artifacts(&js, input)?,
                                     "module-name" => {
                                         let name = js.get(&input, "name")?;
                                         let name = if name.is_null() || name.is_undefined() {
