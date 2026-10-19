@@ -1264,7 +1264,7 @@
             },
             {
               "args": {
-                "content": "async function transformFunction(res,context) {\n  if(res.status !== 201 || res.headers['x-stage'] !== 'options' || !context.source['m3-http-output']) throw new Error('response input contract');\n  await $substore.wait(1); res.statusCode = 202; res.header['X-M3-Hook']='full'; delete res.headers['x-powered-by']; res.body += ':full'; return res;\n}"
+                "content": "async function transformFunction(res,context) {\n  if(res.status !== 201 || res.headers['x-stage'] !== 'options' || !context.source['m3-http-output']) throw new Error('response input contract');\n  await $substore.wait(1); res.status = 202; res.header['X-M3-Hook']='full'; res.headers['x-powered-by']=null; delete res.headers['x-stage']; res.body += ':full'; return res;\n}"
               },
               "type": "Response Transformer"
             },

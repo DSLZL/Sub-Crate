@@ -375,10 +375,17 @@ async fn apply_script<'js>(
     } else {
         js.json_clone(input.clone())?
     };
-    if !filter && crate::script_pipeline::mihomo(js, &js.call::<JsValue, _>("optional", (output.clone(), "$file"))?)? {
+    if !filter
+        && crate::script_pipeline::mihomo(
+            js,
+            &js.call::<JsValue, _>("optional", (output.clone(), "$file"))?,
+        )?
+    {
         match crate::script_pipeline::patch(js, &output, js.value(script.clone())?) {
             Ok(value) => return Ok(value),
-            Err(_) => { js.ctx.catch(); }
+            Err(_) => {
+                js.ctx.catch();
+            }
         }
     }
     let first = invoke(js, entry, &script, arguments.clone(), scope, output.clone()).await;
@@ -403,9 +410,14 @@ async fn apply_script<'js>(
                     "async function filter(input = [], targetPlatform, context) {{ let list = []; const fn = async ($server) => {{ {script}\n }}; for await (let $server of input) list.push(await fn($server)); return list; }}"
                 )
             } else {
-                let main = if crate::script_pipeline::mihomo(js, &js.call::<JsValue, _>("optional", (output.clone(), "$file"))?)? {
+                let main = if crate::script_pipeline::mihomo(
+                    js,
+                    &js.call::<JsValue, _>("optional", (output.clone(), "$file"))?,
+                )? {
                     "if (typeof main === 'function') $content = await __fileMain(main, $content);"
-                } else { "" };
+                } else {
+                    ""
+                };
                 format!(
                     "async function operator(input = [], targetPlatform, context) {{ if (input && (input.$files || input.$content)) {{ let {{$content,$files,$options,$file}} = input; {script}\n {main} return {{$content,$files,$options,$file}}; }} let list = []; for await (let $server of input) {{ {script}\n list.push($server); }} return list; }}"
                 )
@@ -541,17 +553,37 @@ async fn process<'js>(
             };
         } else if name == "Add Proxies From Subscription Operator" {
             let output = js.json_clone(input)?;
-            let args = crate::script_network::prefer(js, [js.get(&item, "args")?, Object::new(js.ctx.clone())?.into_value()])?;
-            match crate::script_pipeline::add(js, output.clone(), args.clone(), scope.execution.clone()).await {
+            let args = crate::script_network::prefer(
+                js,
+                [
+                    js.get(&item, "args")?,
+                    Object::new(js.ctx.clone())?.into_value(),
+                ],
+            )?;
+            match crate::script_pipeline::add(
+                js,
+                output.clone(),
+                args.clone(),
+                scope.execution.clone(),
+            )
+            .await
+            {
                 Ok(value) => input = value,
                 Err(error) => {
                     let first = message(&js.ctx, error);
-                    match crate::script_pipeline::add(js, output, args, scope.execution.clone()).await {
+                    match crate::script_pipeline::add(js, output, args, scope.execution.clone())
+                        .await
+                    {
                         Ok(value) => input = value,
                         Err(error) => {
                             let second = message(&js.ctx, error);
-                            let detail = if first == second { format!("执行失败 {first}") }
-                                else { format!("执行 function operator 失败 {first}; 执行快捷脚本 失败 {second}") };
+                            let detail = if first == second {
+                                format!("执行失败 {first}")
+                            } else {
+                                format!(
+                                    "执行 function operator 失败 {first}; 执行快捷脚本 失败 {second}"
+                                )
+                            };
                             return Err(js.error(&format!("脚本操作 {detail}")));
                         }
                     }
@@ -869,6 +901,7 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     crate::script_flow::initialize(ctx)?;
     crate::script_download::initialize(ctx, &utils)?;
     crate::script_age::initialize(ctx, &utils)?;
+    crate::script_mmdb::initialize(ctx, &utils)?;
     globals.set("ProxyUtils", utils)?;
     crate::script_pipeline::initialize(ctx)
 }
@@ -894,7 +927,9 @@ pub async fn run(
                         })?;
                         (
                             store.data.clone(),
-                            store.script_root().map_err(|error| conversion::Error::Legacy(error.to_string()))?,
+                            store
+                                .script_root()
+                                .map_err(|error| conversion::Error::Legacy(error.to_string()))?,
                         )
                     };
                     let job = Job {
@@ -903,44 +938,57 @@ pub async fn run(
                     };
                     let runtime = AsyncRuntime::new()
                         .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
-                    let context = AsyncContext::full(&runtime).await
+                    let context = AsyncContext::full(&runtime)
+                        .await
                         .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
-                    let result = context.async_with(async |ctx| {
-                        let result = async {
-                            initialize(&ctx, job)?;
-                            let js = Js::new(ctx.clone());
-                            let input = ctx.json_parse(codec::stringify(&input))?;
-                            let result = match operation.as_str() {
-                                "parse" => crate::script_http::parse(&js, input).await?,
-                                "preview-sub" | "preview-collection" => {
-                                    crate::script_pipeline::preview(
-                                        &js,
-                                        if operation == "preview-collection" { "collection" } else { "sub" },
-                                        js.get(&input, "item")?,
-                                        js.get(&input, "target")?,
-                                    ).await?
-                                }
-                                "artifact" => {
-                                    let function: Function = ctx.globals().get("produceArtifact")?;
-                                    settled(&js, function.call((input,))?).await?
-                                }
-                                "download-sub" | "download-collection" => {
-                                    crate::script_http::download(
-                                        &js,
-                                        operation == "download-collection",
-                                        js.get(&input, "item")?,
-                                        js.get(&input, "options")?,
-                                        js.get(&input, "request")?,
-                                    ).await?
-                                }
-                                _ => return Err(js.error("Unknown script job operation")),
-                            };
-                            let text = serialized(&ctx, result)?;
-                            codec::parse(&text).map_err(|error| js.error(&error.to_string()))
-                        }.await;
-                        result.map_err(|error| conversion::Error::Legacy(message(&ctx, error)))
-                    }).await;
-                    if let Some(sender) = sender.take() { let _ = sender.send(result); }
+                    let result = context
+                        .async_with(async |ctx| {
+                            let result = async {
+                                initialize(&ctx, job)?;
+                                let js = Js::new(ctx.clone());
+                                let input = ctx.json_parse(codec::stringify(&input))?;
+                                let result = match operation.as_str() {
+                                    "parse" => crate::script_http::parse(&js, input).await?,
+                                    "preview-sub" | "preview-collection" => {
+                                        crate::script_pipeline::preview(
+                                            &js,
+                                            if operation == "preview-collection" {
+                                                "collection"
+                                            } else {
+                                                "sub"
+                                            },
+                                            js.get(&input, "item")?,
+                                            js.get(&input, "target")?,
+                                        )
+                                        .await?
+                                    }
+                                    "artifact" => {
+                                        let function: Function =
+                                            ctx.globals().get("produceArtifact")?;
+                                        settled(&js, function.call((input,))?).await?
+                                    }
+                                    "download-sub" | "download-collection" => {
+                                        crate::script_http::download(
+                                            &js,
+                                            operation == "download-collection",
+                                            js.get(&input, "item")?,
+                                            js.get(&input, "options")?,
+                                            js.get(&input, "request")?,
+                                        )
+                                        .await?
+                                    }
+                                    _ => return Err(js.error("Unknown script job operation")),
+                                };
+                                let text = serialized(&ctx, result)?;
+                                codec::parse(&text).map_err(|error| js.error(&error.to_string()))
+                            }
+                            .await;
+                            result.map_err(|error| conversion::Error::Legacy(message(&ctx, error)))
+                        })
+                        .await;
+                    if let Some(sender) = sender.take() {
+                        let _ = sender.send(result);
+                    }
                     // Optimistic refreshes keep their context after the HTTP reply.
                     runtime.idle().await;
                     Ok::<_, conversion::Error>(())
@@ -956,8 +1004,12 @@ pub async fn run(
     match receiver.await {
         Ok(result) => result,
         Err(_) => {
-            worker.await.map_err(|error| conversion::Error::Legacy(error.to_string()))?;
-            Err(conversion::Error::Legacy("Script job ended without a result".to_owned()))
+            worker
+                .await
+                .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
+            Err(conversion::Error::Legacy(
+                "Script job ended without a result".to_owned(),
+            ))
         }
     }
 }

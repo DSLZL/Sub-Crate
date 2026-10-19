@@ -1,5 +1,5 @@
 use crate::body::Body;
-use crate::conversion::{self, Error as ConversionError};
+use crate::conversion::Error as ConversionError;
 use crate::json::{self as codec, js_string, to_number as number};
 use crate::state::{Store, decode, legacy_object_order, migrate, truthy, valid_records};
 use base64::Engine;
@@ -20,26 +20,49 @@ fn script_response(output: Value) -> Result<Reply, ConversionError> {
     let body = &output["body"];
     let binary = output["binary"] == true;
     let bytes = if binary {
-        base64::engine::general_purpose::STANDARD.decode(body.as_str().unwrap_or("")).map_err(|error| ConversionError::Legacy(error.to_string()))?
-    } else if body.is_null() { Vec::new() }
-    else { body.as_str().map_or_else(|| codec::stringify(body), str::to_owned).into_bytes() };
-    let default_type = if binary { "application/octet-stream" } else if body.is_string() { "text/html; charset=utf-8" } else { "application/json; charset=utf-8" };
-    let content_type = output["headers"]["content-type"].as_str().unwrap_or(default_type);
+        base64::engine::general_purpose::STANDARD
+            .decode(body.as_str().unwrap_or(""))
+            .map_err(|error| ConversionError::Legacy(error.to_string()))?
+    } else if body.is_null() {
+        Vec::new()
+    } else {
+        body.as_str()
+            .map_or_else(|| codec::stringify(body), str::to_owned)
+            .into_bytes()
+    };
+    let default_type = if binary {
+        "application/octet-stream"
+    } else if body.is_string() {
+        "text/html; charset=utf-8"
+    } else {
+        "application/json; charset=utf-8"
+    };
+    let content_type = output["headers"]["content-type"]
+        .as_str()
+        .unwrap_or(default_type);
     let mut response = send(status, content_type, bytes);
     if let Some(headers) = output["headers"].as_object() {
         for (key, value) in headers {
-            if value.is_null() || key == "content-length" { continue; }
-            let key = hyper::header::HeaderName::from_bytes(key.as_bytes()).map_err(|error| ConversionError::Legacy(error.to_string()))?;
-            let values = value.as_array().map_or_else(|| vec![value], |values| values.iter().collect());
+            if value.is_null() || key == "content-length" {
+                continue;
+            }
+            let key = hyper::header::HeaderName::from_bytes(key.as_bytes())
+                .map_err(|error| ConversionError::Legacy(error.to_string()))?;
+            let values = value
+                .as_array()
+                .map_or_else(|| vec![value], |values| values.iter().collect());
             response.headers_mut().remove(&key);
             for value in values {
-                let value = hyper::header::HeaderValue::from_str(&js_string(value)).map_err(|error| ConversionError::Legacy(error.to_string()))?;
+                let value = hyper::header::HeaderValue::from_str(&js_string(value))
+                    .map_err(|error| ConversionError::Legacy(error.to_string()))?;
                 response.headers_mut().append(key.clone(), value);
             }
         }
     }
     if matches!(status, 204 | 304) {
-        for key in ["content-type", "content-length", "transfer-encoding"] { response.headers_mut().remove(key); }
+        for key in ["content-type", "content-length", "transfer-encoding"] {
+            response.headers_mut().remove(key);
+        }
         *response.body_mut() = Full::new(Bytes::new());
     }
     response.extensions_mut().insert(TransformedResponse);
@@ -347,7 +370,9 @@ pub async fn conversion_dispatch(
         .map_or((rest, None), |(name, target)| (name, Some(target)));
     let name = codec::encode(&percent_decode_str(name).decode_utf8().ok()?);
     let sub = if !collection && truthy(&query["_fakeNode"]) {
-        Some(json!({"name":"fakeNodeInfo", "source":"local", "content":"invalid share = ss, 1.0.0.1, 80, encrypt-method=aes-128-gcm, password=password"}))
+        Some(
+            json!({"name":"fakeNodeInfo", "source":"local", "content":"invalid share = ss, 1.0.0.1, 80, encrypt-method=aes-128-gcm, password=password"}),
+        )
     } else if !collection && truthy(&query["fakeSub"]) {
         Some(json!({"name":"fakeSub", "source":"remote", "url":""}))
     } else {
@@ -420,25 +445,49 @@ pub async fn conversion_dispatch(
                 produce.insert(destination.to_owned(), value.clone());
             }
         }
-        if !produce.contains_key("prettyYaml") && let Some(value) = query.get("pretty-yaml") { produce.insert("prettyYaml".to_owned(), value.clone()); }
-        let use_external = path_target.map_or(query["target"] == "SurgeMac", |target| target == "SurgeMac");
+        if !produce.contains_key("prettyYaml")
+            && let Some(value) = query.get("pretty-yaml")
+        {
+            produce.insert("prettyYaml".to_owned(), value.clone());
+        }
+        let use_external =
+            path_target.map_or(query["target"] == "SurgeMac", |target| target == "SurgeMac");
         produce.insert("useMihomoExternal".to_owned(), json!(use_external));
         if use_external {
-            for (key, field) in [("mihomoMerge","merge"),("mihomoMergeName","mergeName"),("mihomoExternal","mihomoExternal")] {
-                if let Some(value) = query.get(key) { produce.insert(field.to_owned(), value.clone()); }
+            for (key, field) in [
+                ("mihomoMerge", "merge"),
+                ("mihomoMergeName", "mergeName"),
+                ("mihomoExternal", "mihomoExternal"),
+            ] {
+                if let Some(value) = query.get(key) {
+                    produce.insert(field.to_owned(), value.clone());
+                }
             }
             if let Some(value) = query.get("mihomoLocalPort") {
                 let text = js_string(value);
                 let text = codec::trim(&text);
-                let end = text.char_indices().skip(usize::from(text.starts_with(['+','-']))).find(|(_,ch)|!ch.is_ascii_digit()).map_or(text.len(),|(index,_)|index);
-                if let Ok(port) = text[..end].parse::<u16>() && port != 0 { produce.insert("localPort".to_owned(), json!(port)); }
+                let end = text
+                    .char_indices()
+                    .skip(usize::from(text.starts_with(['+', '-'])))
+                    .find(|(_, ch)| !ch.is_ascii_digit())
+                    .map_or(text.len(), |(index, _)| index);
+                if let Ok(port) = text[..end].parse::<u16>()
+                    && port != 0
+                {
+                    produce.insert("localPort".to_owned(), json!(port));
+                }
             }
         }
         fields.insert("produceOpts".to_owned(), Value::Object(produce));
     }
     let mut request = request.clone();
     let mut params = json!({"name":name});
-    if let Some(target) = path_target { params["target"] = json!(codec::encode(&percent_decode_str(target).decode_utf8().ok()?)); request["query"]["target"] = params["target"].clone(); }
+    if let Some(target) = path_target {
+        params["target"] = json!(codec::encode(
+            &percent_decode_str(target).decode_utf8().ok()?
+        ));
+        request["query"]["target"] = params["target"].clone();
+    }
     request["params"] = params;
     let result = crate::script::run(
         store.clone(),

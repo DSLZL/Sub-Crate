@@ -3,6 +3,7 @@ WORKDIR /work
 COPY rust/Cargo.toml rust/Cargo.lock rust/
 COPY rust/examples rust/examples
 COPY rust/src/script_io.rs rust/src/script_transport.rs rust/src/script-primitives.js rust/src/
+COPY rust/src/dns_transport.rs rust/src/mmdb.rs rust/src/
 COPY scripts/ip-flag-node.js scripts/ip-flag-node.js
 COPY tests/compat/fixtures tests/compat/fixtures
 COPY tests/compat/.generated/script-helpers.js tests/compat/.generated/script-helpers.js

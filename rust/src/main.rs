@@ -7,6 +7,7 @@ mod conversion;
 mod egern_output;
 mod js_language;
 mod json;
+mod mmdb;
 mod processors;
 mod rules;
 mod script;
@@ -17,6 +18,7 @@ mod script_helpers;
 mod script_http;
 mod script_io;
 mod script_loading;
+mod script_mmdb;
 mod script_network;
 mod script_pipeline;
 mod singbox_output;
@@ -599,7 +601,11 @@ async fn handle(
         route(request, &config, &store).await
     };
     let mut response = response;
-    if response.extensions().get::<api::TransformedResponse>().is_none() {
+    if response
+        .extensions()
+        .get::<api::TransformedResponse>()
+        .is_none()
+    {
         config.headers(&mut response, &raw_origin);
     }
     let etag = header(response.headers(), "etag");
@@ -794,7 +800,10 @@ async fn route(
     let headers = request.headers().clone();
     let raw_query = request.uri().query().unwrap_or("").to_owned();
     let request_method = request.method().as_str().to_owned();
-    let peer = request.extensions().get::<std::net::SocketAddr>().map(|peer| peer.ip().to_string());
+    let peer = request
+        .extensions()
+        .get::<std::net::SocketAddr>()
+        .map(|peer| peer.ip().to_string());
     let body = match body::read(request, config.body_limit).await {
         Ok(body) => body,
         Err(error) => return api::uncaught_error(error.status, &error.detail),

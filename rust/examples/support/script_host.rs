@@ -11,9 +11,9 @@ mod script_io;
 pub(crate) use script_io::random_values;
 use script_io::{download_file, read_file, request};
 
-#[path = "dns.rs"]
+#[path = "../../src/dns_transport.rs"]
 mod dns;
-#[path = "mmdb.rs"]
+#[path = "../../src/mmdb.rs"]
 mod mmdb;
 
 #[derive(Clone, Copy)]

@@ -101,3 +101,8 @@ snapshot(new Map([
   ['@noble/post-quantum', '0.5.4'], ['@scure/base', '2.2.0'],
 ]), "export {Encrypter, Decrypter, identityToRecipient, armor} from 'age-encryption';",
   'SubStoreAgeUtilities', ['age-utilities.js', 'AGE-LICENSES.txt', 'age-utilities.json']);
+snapshot(new Map([
+  ['dns-packet', '5.6.1'], ['@leichtgewicht/ip-codec', '2.0.5'],
+  ['buffer', '6.0.3'], ['base64-js', '1.5.1'], ['ieee754', '1.2.1'],
+]), "import * as dnsPacket from 'dns-packet'; export {dnsPacket};",
+  'SubStoreDnsUtilities', ['dns-utilities.js', 'DNS-LICENSES.txt', 'dns-utilities.json']);
