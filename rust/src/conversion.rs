@@ -2282,8 +2282,7 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
         proxy.as_object_mut().unwrap().shift_remove("alpn");
     }
     if proxy["network"] == "ws" {
-        if !truthy(&proxy["ws-opts"])
-            && (truthy(&proxy["ws-path"]) || truthy(&proxy["ws-headers"]))
+        if !truthy(&proxy["ws-opts"]) && (truthy(&proxy["ws-path"]) || truthy(&proxy["ws-headers"]))
         {
             proxy["ws-opts"] = json!({});
             for (from, to) in [("ws-path", "path"), ("ws-headers", "headers")] {

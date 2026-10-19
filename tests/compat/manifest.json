@@ -3,6 +3,21 @@
   "frontend_commit": "4bd7b0acbe65466b933ccea14fc61dbebe036ead",
   "suites": {
     "conversion-local": [
+      "R04-type-mappings",
+      "R04-options-duplicates-missing-content",
+      "R04-preprocess-boundaries",
+      "R04-request-precedence-and-errors",
+      "R01-output-QX",
+      "R01-output-Surge",
+      "R01-output-Loon",
+      "R01-output-Clash",
+      "R02-unsupported-QX",
+      "R02-unsupported-Surge",
+      "R02-unsupported-Loon",
+      "R02-unsupported-Clash",
+      "R03-input-provider-and-html",
+      "P04-invalid-rule-target",
+      "P04-invalid-rule-missing-target",
       "P02-output-singbox-native",
       "P02-output-singbox-transports",
       "P02-output-singbox-tls",
@@ -97,6 +112,10 @@
       "T03-share-datetime-archive"
     ],
     "full": [
+      "R04-type-mappings",
+      "R04-options-duplicates-missing-content",
+      "R04-preprocess-boundaries",
+      "R04-request-precedence-and-errors",
       "P02-output-singbox-native",
       "P02-output-singbox-transports",
       "P02-output-singbox-tls",
@@ -251,6 +270,10 @@
       "M1-complete-inventory-and-fixtures"
     ],
     "conversion": [
+      "R04-type-mappings",
+      "R04-options-duplicates-missing-content",
+      "R04-preprocess-boundaries",
+      "R04-request-precedence-and-errors",
       "P02-output-singbox-native",
       "P02-output-singbox-transports",
       "P02-output-singbox-tls",
@@ -398,7 +421,7 @@
       "N05-node-info-missing-server-and-recovery"
     ]
   },
-  "coverage_state": "129 scoped scenarios; full suite intentionally fails until M1 inventory and fixtures are complete",
+  "coverage_state": "133 scoped scenarios; full suite intentionally fails until M1 inventory and fixtures are complete",
   "pending_domains": [
     "artifacts",
     "files",

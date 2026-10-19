@@ -1,5 +1,330 @@
 [
 {
+    "id": "R04-type-mappings",
+    "source": "backend/src/core/rule-utils/index.js:7-65; parsers.js:1-59; preprocessors.js:1-18; producers.js:3-101; restful/parser.js:48-61",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": "DOMAIN,one.example\nhost,two.example\nHOST,three.example\nDomain,rejected\nDOMAIN-KEYWORD,word\nhost-keyword,word2\nHOST-KEYWORD,word3\nDOMAIN-SUFFIX,suffix.example\nhost-suffix,suffix2.example\nHOST-SUFFIX,suffix3.example\nuser-agent,Agent*\nPROCESS-NAME,program\nDEST-PORT,443\nDST-PORT,80\nSRC-IP,10.0.0.1\nSRC-IP-CIDR,10.0.0.0/8\nIN-PORT,123\nSRC-PORT,456\nPROTOCOL,tcp\nip-cidr,192.0.2.0/24,no-resolve,drop-me\nip6-cidr,2001:db8::/32,no-resolve\nIP6-CIDR,2001:db8:1::/48\nIP-CIDR6,2001:db8:2::/48\ngeoip,CN,no-resolve\ngeosite,cn\n# ignored\nDOMAIN,hash#inside.example\nFINAL,ignored\nDOMAIN,duplicate.example\nDOMAIN,duplicate.example",
+          "client": "Clash"
+        },
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": "host,one\nDOMAIN-KEYWORD,key\nHOST-SUFFIX,suffix\nUSER-AGENT,Agent\nPROCESS-NAME,program\nDEST-PORT,443\nIP-CIDR,10.0.0.0/8,no-resolve\nip6-cidr,::/0,no-resolve",
+          "client": "QX"
+        },
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": "DOMAIN,one\nUSER-AGENT,Agent\nPROCESS-NAME,program\nDST-PORT,443\nSRC-IP-CIDR,10.0.0.0/8\nIN-PORT,80\nPROTOCOL,tcp",
+          "client": "Surge"
+        },
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": "DOMAIN,one\nUSER-AGENT,Agent\nPROCESS-NAME,program\nDST-PORT,443\nIN-PORT,80\nPROTOCOL,tcp",
+          "client": "Loon"
+        },
+        "expect": {
+          "status": 200
+        }
+      }
+    ]
+  },
+  {
+    "id": "R04-options-duplicates-missing-content",
+    "source": "backend/src/core/rule-utils/index.js:7-65; parsers.js:1-59; preprocessors.js:1-18; producers.js:3-101; restful/parser.js:48-61",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": "DOMAIN, \nDOMAIN\nUSER-AGENT\nPROCESS-NAME,\nDST-PORT,443\nIP-CIDR, 10.0.0.0/8,other,no-resolve,no-resolve,\nIP-CIDR6,2001:db8::/32,no-resolve,other\nhost,duplicate.example\nhost,duplicate.example\nInvalid,skip",
+          "client": "QX"
+        },
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": "DOMAIN, \nDOMAIN\nUSER-AGENT\nPROCESS-NAME,\nDST-PORT,443\nIP-CIDR, 10.0.0.0/8,other,no-resolve,no-resolve,\nIP-CIDR6,2001:db8::/32,no-resolve,other\nhost,duplicate.example\nhost,duplicate.example\nInvalid,skip",
+          "client": "Surge"
+        },
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": "DOMAIN, \nDOMAIN\nUSER-AGENT\nPROCESS-NAME,\nDST-PORT,443\nIP-CIDR, 10.0.0.0/8,other,no-resolve,no-resolve,\nIP-CIDR6,2001:db8::/32,no-resolve,other\nhost,duplicate.example\nhost,duplicate.example\nInvalid,skip",
+          "client": "Loon"
+        },
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": "DOMAIN, \nDOMAIN\nUSER-AGENT\nPROCESS-NAME,\nDST-PORT,443\nIP-CIDR, 10.0.0.0/8,other,no-resolve,no-resolve,\nIP-CIDR6,2001:db8::/32,no-resolve,other\nhost,duplicate.example\nhost,duplicate.example\nInvalid,skip",
+          "client": "Clash"
+        },
+        "expect": {
+          "status": 200
+        }
+      }
+    ]
+  },
+  {
+    "id": "R04-preprocess-boundaries",
+    "source": "backend/src/core/rule-utils/index.js:7-65; parsers.js:1-59; preprocessors.js:1-18; producers.js:3-101; restful/parser.js:48-61",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": "<!DOCTYPE html>\nDOMAIN,discard.example",
+          "client": "Clash"
+        },
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": " <!DOCTYPE html>\nDOMAIN,keep.example",
+          "client": "Surge"
+        },
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": "<!doctype html>\nDOMAIN,keep.example",
+          "client": "Surge"
+        },
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": "prefix payload: ignored\npayload:\n  - DOMAIN,one\n--- DOMAIN,rejected\n-\n-DOMAIN,two\n  -\n  - DOMAIN,rejected2\n﻿- IP-CIDR,10.0.0.0/8,no-resolve\n",
+          "client": "Surge"
+        },
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": "payload:\r - DOMAIN,cr-inline\r\n - DOMAIN,crlf\npayload: - DOMAIN,line-separator\n",
+          "client": "Clash"
+        },
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": "payload:\n- USER-AGENT,long value with spaces long value with spaces long value with spaces long value with spaces long value with spaces long value with spaces long value with spaces long value with spaces \n- DOMAIN,'quoted value'\n- DOMAIN,with: colon\n",
+          "client": "Clash"
+        },
+        "expect": {
+          "status": 200
+        }
+      }
+    ]
+  },
+  {
+    "id": "R04-request-precedence-and-errors",
+    "source": "backend/src/core/rule-utils/index.js:7-65; parsers.js:1-59; preprocessors.js:1-18; producers.js:3-101; restful/parser.js:48-61",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": "DOMAIN,data",
+          "content": "DOMAIN,content",
+          "client": "QX",
+          "platform": "Clash"
+        },
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": null,
+          "content": "DOMAIN,content",
+          "client": null,
+          "platform": "Loon"
+        },
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": "",
+          "content": "DOMAIN,ignored",
+          "client": "Surge"
+        },
+        "expect": {
+          "status": 200
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": "DOMAIN,data",
+          "client": "",
+          "platform": "Clash"
+        },
+        "expect": {
+          "status": 500
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": "DOMAIN,data",
+          "client": "clash"
+        },
+        "expect": {
+          "status": 500
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": "DOMAIN,data"
+        },
+        "expect": {
+          "status": 500
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "client": "Surge"
+        },
+        "expect": {
+          "status": 500
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "content": null,
+          "client": "Surge"
+        },
+        "expect": {
+          "status": 500
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": false,
+          "client": "Surge"
+        },
+        "expect": {
+          "status": 500
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": 0,
+          "client": "Surge"
+        },
+        "expect": {
+          "status": 500
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": [],
+          "client": "Surge"
+        },
+        "expect": {
+          "status": 500
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/rule/parse",
+        "body": {
+          "data": {},
+          "client": "Surge"
+        },
+        "expect": {
+          "status": 500
+        }
+      },
+      {
+        "method": "OPTIONS",
+        "path": "/api/rule/parse",
+        "expect": {
+          "status": 200,
+          "body": "POST,GET,HEAD",
+          "headers": {
+            "allow": "POST,GET,HEAD"
+          }
+        }
+      }
+    ]
+  },
+{
     "id": "P02-output-singbox-native",
     "source": "backend/src/core/proxy-utils/producers/sing-box.js:1-1702; producers/clashmeta.js; producers/utils.js:110-184; proxy-utils/index.js:424-640",
     "steps": [

@@ -16,6 +16,8 @@ Egern retains its protocol filters, stream/TLS/ShadowTLS fields, WireGuard peers
 internal objects and compact or pretty YAML through both legacy aliases.
 Both sing-box aliases retain the existing protocol filters, transport/TLS and
 plugin options, paired ShadowTLS outputs and separate WireGuard/Tailscale endpoints.
+`/api/rule/parse` uses native HTML/provider preprocessing and all thirteen rule
+types to produce QX, Surge, Loon and Clash rules with the existing error policies.
 These protocol slices remain partial while the complete source-branch inventory is verified.
 Raw input starting `<!DOCTYPE html>` is discarded before parsing. Other formats,
 processors, remote sources and unported value branches return a pending error.
