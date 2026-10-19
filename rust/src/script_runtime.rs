@@ -1,11 +1,23 @@
 use crate::{js_language::Js, script, script_backup, script_download, script_pipeline::object};
 use rquickjs::{Function, Value};
 
-pub(crate) async fn download(ctx: rquickjs::Ctx<'_>, url: String, file: String) -> rquickjs::Result<String> {
+pub(crate) async fn download(
+    ctx: rquickjs::Ctx<'_>,
+    url: String,
+    file: String,
+) -> rquickjs::Result<String> {
     let js = Js::new(ctx.clone());
-    script::log(&js, "info", &format!("Downloading file...\nURL: {url}\nFile: {file}"));
+    script::log(
+        &js,
+        "info",
+        &format!("Downloading file...\nURL: {url}\nFile: {file}"),
+    );
     let result = crate::script_io::download_file(ctx, url.clone(), file.clone()).await?;
-    script::log(&js, "info", &format!("File downloaded from {url} to {file}"));
+    script::log(
+        &js,
+        "info",
+        &format!("File downloaded from {url} to {file}"),
+    );
     Ok(result)
 }
 

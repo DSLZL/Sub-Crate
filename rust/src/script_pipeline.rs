@@ -57,12 +57,62 @@ fn fallback(mode: &str) -> bool {
     matches!(mode, "fallbackNotify" | "fallbackQuiet")
 }
 
-fn failed(js: &Js<'_>, mode: &str, message: &str) -> rquickjs::Result<()> {
+fn notify(js: &Js<'_>, title: &str, name: &str, message: &str) -> rquickjs::Result<()> {
+    js.method(
+        network::host(js)?,
+        "notify",
+        vec![
+            js.value(title)?,
+            js.value(format!("❌ {name}"))?,
+            js.value(message)?,
+        ],
+    )?;
+    Ok(())
+}
+
+fn failed(
+    js: &Js<'_>,
+    mode: &str,
+    message: &str,
+    title: &str,
+    name: &str,
+) -> rquickjs::Result<()> {
     if mode == "disabled" || fallback(mode) {
         return Err(js.error(message));
     }
     if mode == "enabled" {
-        eprintln!("[sub-store:notify] {message}");
+        notify(js, title, name, message)?;
+    }
+    Ok(())
+}
+
+fn warn_duplicate<'js>(
+    js: &Js<'js>,
+    proxies: &Value<'js>,
+    options: &Value<'js>,
+    kind: &str,
+) -> rquickjs::Result<()> {
+    let seen = object(js)?;
+    let proxies: Vec<Value> = js.call("iterable", (proxies.clone(),))?;
+    for proxy in proxies {
+        let name = js.text(js.get(&proxy, "name")?)?;
+        if js.truthy(&js.get(&seen, &name)?)? {
+            let resource = js.text(optional(js, options, "name")?)?;
+            let media = object(js)?;
+            js.set(&media, "media-url", js.value("https://cdn3.iconfinder.com/data/icons/seo-outline-1/512/25_code_program_programming_develop_bug_search_developer-512.png")?)?;
+            js.method(
+                network::host(js)?,
+                "notify",
+                vec![
+                    js.value("🌍 Sub-Store")?,
+                    js.value(format!("⚠️ {kind} {resource} 包含重复节点 {name}！"))?,
+                    js.value("请仔细检测配置！")?,
+                    media,
+                ],
+            )?;
+            break;
+        }
+        js.set(&seen, &name, js.value(true)?)?;
     }
     Ok(())
 }
@@ -223,6 +273,12 @@ async fn sources<'js>(
                 js.text(js.get(&sub, "name")?)?,
                 urls.join(", ")
             ),
+            if preview {
+                "🌍 Sub-Store 预览订阅失败"
+            } else {
+                "🌍 Sub-Store 处理订阅失败"
+            },
+            &js.text(js.get(&sub, "name")?)?,
         )?;
     }
     let result_scope = js.clone();
@@ -575,7 +631,18 @@ async fn file_raw<'js>(
             return Err(js.error(&message));
         }
         if js.equal(&ignore, &js.value("enabled")?)? {
-            eprintln!("[sub-store:notify] {message}");
+            notify(
+                js,
+                &js.text(network::prefer(
+                    js,
+                    [
+                        optional(js, &options, "notifyTitle")?,
+                        js.value("🌍 Sub-Store 处理文件失败")?,
+                    ],
+                )?)?,
+                &js.text(js.get(&file, "name")?)?,
+                &format!("远程文件 {} 发生错误, 请查看日志", urls.join(", ")),
+            )?;
         }
     }
     let content = if override_url {
@@ -609,6 +676,9 @@ pub(crate) async fn file<'js>(
     options: Value<'js>,
     preview: bool,
 ) -> rquickjs::Result<Value<'js>> {
+    if preview {
+        js.set(&options, "notifyTitle", js.value("🌍 Sub-Store 预览文件失败")?)?;
+    }
     let raw = if mihomo(js, &file)? {
         let source = js.text(js.get(&file, "sourceType")?)?;
         let source = if matches!(
@@ -848,6 +918,7 @@ async fn subscription<'js>(
                 js.text(optional(js, &options, "name")?)?
             )));
         }
+        warn_duplicate(js, &processed, &options, "订阅")?;
         let result = utility(
             js,
             "produce",
@@ -865,7 +936,28 @@ async fn subscription<'js>(
     match result {
         Ok(value) => Ok(value),
         Err(error) if fallback(&resolved) => {
-            script::log(js, "error", &script::message(&js.ctx, error));
+            let reason = script::message(&js.ctx, error);
+            let name = js.text(js.get(&sub, "name")?)?;
+            if resolved == "fallbackNotify" {
+                notify(
+                    js,
+                    if preview {
+                        "🌍 Sub-Store 预览订阅失败"
+                    } else {
+                        "🌍 Sub-Store 处理订阅失败"
+                    },
+                    &name,
+                    &format!("🤔 原因：{reason}"),
+                )?;
+            }
+            script::log(
+                js,
+                "error",
+                &format!(
+                    "订阅 {name} {}启用兜底后返回空结果: {reason}",
+                    if preview { "预览" } else { "" }
+                ),
+            );
             if preview {
                 preview_result(js, js.array([])?, js.array([])?)
             } else {
@@ -1050,8 +1142,22 @@ async fn collection<'js>(
                 }
                 .await;
                 if let Err(error) = child {
-                    script::log(&worker, "error", &script::message(&worker.ctx, error));
+                    let reason = script::message(&worker.ctx, error);
+                    let sub_name = worker.text(worker.get(&sub, "name")?)?;
+                    script::log(&worker, "error", &reason);
                     if fallback(&child_mode) {
+                        if child_mode == "fallbackNotify" {
+                            notify(
+                                &worker,
+                                if preview {
+                                    "🌍 Sub-Store 预览订阅失败"
+                                } else {
+                                    "🌍 Sub-Store 处理订阅失败"
+                                },
+                                &sub_name,
+                                &format!("🤔 原因：{reason}"),
+                            )?;
+                        }
                         worker.set(&results, &key, worker.array([])?)?;
                         worker.set(&raw_results, &key, worker.array([])?)?;
                     } else {
@@ -1088,6 +1194,12 @@ async fn collection<'js>(
                         js.text(js.get(&collection, "name")?)?,
                         failed_names.join(", ")
                     ),
+                    if preview {
+                        "🌍 Sub-Store 预览组合订阅失败"
+                    } else {
+                        "🌍 Sub-Store 处理组合订阅失败"
+                    },
+                    &js.text(js.get(&collection, "name")?)?,
                 )?;
             }
         }
@@ -1145,6 +1257,7 @@ async fn collection<'js>(
                 js.text(optional(js, &options, "name")?)?
             )));
         }
+        warn_duplicate(js, &processed, &options, "组合订阅")?;
         let result = utility(
             js,
             "produce",
@@ -1162,7 +1275,28 @@ async fn collection<'js>(
     match result {
         Ok(value) => Ok(value),
         Err(error) if fallback(&resolved) => {
-            script::log(js, "error", &script::message(&js.ctx, error));
+            let reason = script::message(&js.ctx, error);
+            let name = js.text(js.get(&collection, "name")?)?;
+            if resolved == "fallbackNotify" {
+                notify(
+                    js,
+                    if preview {
+                        "🌍 Sub-Store 预览组合订阅失败"
+                    } else {
+                        "🌍 Sub-Store 处理组合订阅失败"
+                    },
+                    &name,
+                    &format!("🤔 原因：{reason}"),
+                )?;
+            }
+            script::log(
+                js,
+                "error",
+                &format!(
+                    "组合订阅 {name} {}启用兜底后返回空结果: {reason}",
+                    if preview { "预览" } else { "" }
+                ),
+            );
             if preview {
                 preview_result(js, js.array([])?, js.array([])?)
             } else {

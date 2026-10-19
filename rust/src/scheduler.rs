@@ -114,18 +114,18 @@ fn schedule(
             if let Action::Artifact { name, .. } = &action
                 && !running.lock().unwrap().insert(name.clone())
             {
-                    log(
-                        &store,
-                        false,
-                        &format!("{label} skipped: previous run is still running"),
-                    );
-                    match cron::next(&masks, &jiff::Zoned::now()) {
-                        Ok(next) => {
-                            due = next;
-                            continue;
-                        }
-                        Err(_) => break,
+                log(
+                    &store,
+                    false,
+                    &format!("{label} skipped: previous run is still running"),
+                );
+                match cron::next(&masks, &jiff::Zoned::now()) {
+                    Ok(next) => {
+                        due = next;
+                        continue;
                     }
+                    Err(_) => break,
+                }
             }
             tokio::spawn(async move {
                 log(&store, false, &format!("{label} started"));

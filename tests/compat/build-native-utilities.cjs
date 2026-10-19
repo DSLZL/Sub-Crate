@@ -101,6 +101,9 @@ snapshot(new Map([['@kayahr/text-encoding', '2.2.0'], ['web-streams-polyfill', '
   'export {TextEncoder, TextDecoder} from ' + JSON.stringify(fromCompat.resolve('@kayahr/text-encoding/no-encodings')) + '; ' +
   'export {ReadableStream, WritableStream, TransformStream} from ' + JSON.stringify(fromCompat.resolve('web-streams-polyfill')) + ';',
   'SubStoreWebUtilities', ['web-utilities.js', 'WEB-LICENSES.txt', 'web-utilities.json']);
+snapshot(new Map([['core-js', '3.49.0']]),
+  "export {default as URL} from 'core-js/actual/url'; export {default as URLSearchParams} from 'core-js/actual/url-search-params';",
+  'SubStoreUrlUtilities', ['url-utilities.js', 'URL-LICENSES.txt', 'url-utilities.json']);
 snapshot(new Map([
   ['age-encryption', '0.3.0'], ['@noble/ciphers', '2.2.0'],
   ['@noble/curves', ['2.0.0', '2.2.0']], ['@noble/hashes', ['2.0.0', '2.2.0']],

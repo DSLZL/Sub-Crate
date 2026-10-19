@@ -47,8 +47,6 @@ class Response {
     });
   }
   get bodyUsed() { return this.#used; }
-  async text() { return new TextDecoder().decode(await this.arrayBuffer()); }
-  async json() { return JSON.parse(await this.text()); }
   async arrayBuffer() {
     if (this.#used || this.body?.locked) throw new TypeError('Body is unusable');
     if (!this.body) return new ArrayBuffer(0);

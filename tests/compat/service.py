@@ -186,7 +186,7 @@ def compare_step(actual_step, reference_step, label):
 
 def notification_contracts(binary, node, environment, baseline, root, output, report, image):
     upstream_port = 0
-    modes = ("none", "http", "http-fallback", "generic-post", "generic-get", "ntfy", "gotify", "generic-rejected", "unsupported")
+    modes = ("none", "http", "http-fallback", "generic-post", "generic-get", "ntfy", "gotify", "generic-rejected", "unsupported", "business")
     for mode in modes:
         paired = {}
         for kind in ("node", "rust"):
@@ -194,7 +194,6 @@ def notification_contracts(binary, node, environment, baseline, root, output, re
             state = output / label
             state.mkdir()
             document = {**baseline, "settings": {"logsMaxCount": 100}, "subs": [], "collections": [], "files": [], "artifacts": [], "tokens": [], "archives": []}
-            (state / "sub-store.json").write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
             (state / "root.json").write_text(json.dumps({**root, "sub-store-logs": "[]"}, ensure_ascii=False), encoding="utf-8")
             with ControlledUpstream(upstream_port) as upstream:
                 upstream_port = upstream.server.server_address[1]
@@ -208,7 +207,30 @@ def notification_contracts(binary, node, environment, baseline, root, output, re
                     "gotify": f"gotify://{authority}/host/notification/A12345678901234?disabletls=yes",
                     "generic-rejected": "generic+" + upstream.url + "/host/notification-error?template=json",
                     "unsupported": "missing://fixture.invalid",
+                    "business": upstream.url + "/host/notification?title=[推送标题]&content=[推送内容]",
                 }[mode]
+                steps = []
+                if mode == "business":
+                    good = {"name": "good", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture"}
+                    bad = {"name": "bad", "source": "remote", "url": upstream.url + "/host/pipeline/failed"}
+                    remote_file = {"name": "file-warning", "source": "remote", "url": bad["url"], "ignoreFailedRemoteFile": "enabled"}
+                    document["subs"] = [good, {**good, "name": "same-good"}, bad,
+                        {**bad, "name": "fallback", "ignoreFailedRemoteSub": "fallbackNotify"},
+                        {**good, "name": "duplicates-sub", "content": good["content"] + "\n" + good["content"]}]
+                    document["collections"] = [{"name": "duplicates-col", "subscriptions": ["good", "same-good"]}]
+                    document["files"] = [remote_file]
+                    steps = [
+                        {"method": "POST", "path": "/api/preview/sub?target=JSON", "body": {**bad, "ignoreFailedRemoteSub": "enabled"}},
+                        {"method": "POST", "path": "/api/preview/sub?target=JSON", "body": document["subs"][3]},
+                        {"method": "POST", "path": "/api/preview/collection?target=JSON", "body": {"name": "child-fallback", "subscriptions": ["good", "fallback"]}},
+                        {"method": "POST", "path": "/api/preview/collection?target=JSON", "body": {"name": "collection-warning", "subscriptions": ["good", "bad"], "ignoreFailedRemoteSub": "enabled"}},
+                        {"method": "POST", "path": "/api/preview/collection?target=JSON", "body": {"name": "collection-fallback", "subscriptions": ["bad"], "ignoreFailedRemoteSub": "fallbackNotify"}},
+                        {"method": "POST", "path": "/api/preview/file", "body": remote_file},
+                        {"path": "/download/file/file-warning"},
+                        {"path": "/download/duplicates-sub/JSON"},
+                        {"path": "/download/collection/duplicates-col?target=JSON"},
+                    ]
+                (state / "sub-store.json").write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
                 env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state), "SUB_STORE_PUSH_SERVICE": configured}
                 manager = oracle(node, env, output, report, label) if kind == "node" else listener(binary, env, output, report, label, image, host_network=bool(image))
                 with manager as url:
@@ -221,34 +243,44 @@ def notification_contracts(binary, node, environment, baseline, root, output, re
                     step = {"method": "POST", "path": "/api/preview/sub?target=JSON", "body": {"name": "notification-check", "source": "local",
                         "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture",
                         "process": [{"type": "Script Operator", "args": {"content": code, "arguments": {"title": title}}}]}}
-                    response = request(url, step)
-                    assert response["status"] == 200, (label, response)
+                    triggers = []
+                    for trigger in steps or [step]:
+                        response = request(url, trigger)
+                        triggers.append({"request": trigger, "response": response})
+                        (output / f"{label}-triggers.json").write_text(json.dumps(triggers, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                        assert response["status"] == 200, (label, response)
+                    expected = len(steps) if steps else 3
                     completed = []
                     if configured:
                         for _ in range(200):
                             selected = request(url, {"path": "/api/logs?keyword=%5BPush%20Service%5D"})
                             assert selected["status"] == 200, (label, selected)
                             completed = json.loads(selected["body"])["data"]["logs"]
-                            if len(completed) == 3:
+                            if len(completed) == expected:
                                 break
                             time.sleep(0.05)
-                        assert len(completed) == 3, (label, completed)
+                        assert len(completed) == expected, (label, completed)
                     messages = [entry["message"] for entry in completed]
                     if mode in ("generic-rejected", "unsupported"):
                         assert all("ERROR:" in message for message in messages), (label, messages)
                     elif configured:
                         assert all("RES:" in message for message in messages), (label, messages)
                     notices = json.loads(request(url, {"path": "/api/logs?keyword=%5BNotify%5D"})["body"])["data"]["logs"]
-                    assert len(notices) == 3 and all("正文🙂\n点击跳转: https://example.invalid/open\n多媒体: https://example.invalid/media" in entry["message"] for entry in notices)
+                    assert len(notices) == expected, (label, notices)
+                    if mode == "business":
+                        for fragment in ("预览订阅失败", "预览组合订阅失败", "预览文件失败", "处理文件失败", "🤔 原因：", "⚠️ 订阅 duplicates-sub", "⚠️ 组合订阅 duplicates-col", "多媒体: https://cdn3.iconfinder.com"):
+                            assert any(fragment in entry["message"] for entry in notices), (label, fragment, notices)
+                    else:
+                        assert all("正文🙂\n点击跳转: https://example.invalid/open\n多媒体: https://example.invalid/media" in entry["message"] for entry in notices)
                     requests = [{"method": entry["method"], "path": entry["path"], "body": entry["body"],
                         "headers": {key: value for key, value in entry["headers"].items() if key in ("content-type", "authorization", "title", "priority")}}
-                        for entry in upstream.requests]
-                    assert len(requests) == (0 if mode in ("none", "unsupported") else 3), (label, requests)
+                        for entry in upstream.requests if mode != "business" or entry["path"].startswith("/host/notification?")]
+                    assert len(requests) == (0 if mode in ("none", "unsupported") else expected), (label, requests)
                     if mode == "generic-get":
                         assert all(entry["method"] == "GET" and "正文🙂" in entry["body"] for entry in requests), requests
                     paired[kind] = {"requests": sorted(requests, key=lambda entry: json.dumps(entry, ensure_ascii=False, sort_keys=True)),
                                     "messages": sorted(messages), "notices": sorted(entry["message"] for entry in notices)}
-                    (output / f"{label}.json").write_text(json.dumps({"trigger": {"request": step, "response": response}, **paired[kind]}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                    (output / f"{label}.json").write_text(json.dumps({"triggers": triggers, "upstream": upstream.requests, **paired[kind]}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
                     assert request(url, {"path": "/api/settings"})["status"] == 200, "Notification failure stopped the backend"
         check_json(paired["rust"], paired["node"])
     report["native_notification_templates_providers_get_bodies_parallel_delivery_and_recovery_checked"] = True

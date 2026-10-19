@@ -1015,6 +1015,7 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     ctx.eval::<(), _>(include_bytes!("../vendor/utilities.js").as_slice())?;
     ctx.eval::<(), _>(include_bytes!("../vendor/script-utilities.js").as_slice())?;
     ctx.eval::<(), _>(include_bytes!("../vendor/hash-utilities.js").as_slice())?;
+    ctx.eval::<(), _>(include_bytes!("../vendor/url-utilities.js").as_slice())?;
     ctx.eval::<(), _>(include_str!("script-bootstrap.js"))?;
     ctx.eval::<(), _>(include_str!("script-primitives.js"))?;
     globals.set("__geo", ctx.json_parse(include_str!("geo-flags.json"))?)?;

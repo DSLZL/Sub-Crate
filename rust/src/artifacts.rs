@@ -77,12 +77,13 @@ fn normalize_cron(item: &mut Value) -> Result<(), Error> {
 }
 
 pub(crate) fn prepare_create(
-    store: &Store,
+    store: &mut Store,
     next: &mut Value,
     mut item: Value,
 ) -> Result<Value, Error> {
     normalize(&mut item)?;
     validate_name(&item)?;
+    crate::logs::info(store, &format!("正在创建远程配置：{}", name(&item)?));
     normalize_cron(&mut item)?;
     let items = store
         .list("artifacts")
@@ -185,6 +186,7 @@ pub async fn dispatch(
 }
 
 async fn restore(store: &Arc<Mutex<Store>>) -> Result<(), Error> {
+    crate::logs::info(&mut store.lock().unwrap(), "开始恢复远程配置...");
     if !truthy(&store.lock().unwrap().data["settings"]["gistToken"]) {
         return Err(Error::plain("未设置 GitHub Token！"));
     }
@@ -258,6 +260,7 @@ fn manage(method: &Method, path: &str, body: &Body, store: &mut Store) -> api::R
         if method == Method::GET {
             return Ok(api::success(Some(next["artifacts"][index].clone()), 200));
         }
+        crate::logs::info(store, &format!("正在更新远程配置：{name}"));
         let mut patch = body.fields();
         if !patch.get("name").is_some_and(truthy) {
             patch.insert("name".to_owned(), next["artifacts"][index]["name"].clone());
@@ -291,6 +294,7 @@ fn manage(method: &Method, path: &str, body: &Body, store: &mut Store) -> api::R
 }
 
 async fn delete(store: &Arc<Mutex<Store>>, name: &str, query: &Value) -> Result<Value, Error> {
+    crate::logs::info(&mut store.lock().unwrap(), &format!("正在删除远程配置：{name}"));
     let archive = resources::archive_mode(&query["mode"])?;
     let artifact = {
         let mut store = store.lock().unwrap();

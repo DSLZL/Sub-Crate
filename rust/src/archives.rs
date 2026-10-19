@@ -94,14 +94,14 @@ async fn restore(store: &Arc<Mutex<Store>>, id: &str) -> Result<Value, Error> {
     let mut next = store.data.clone();
     let body = Body::Json(snapshot.clone());
     let item = match entry["itemType"].as_str() {
-        Some("sub") => api::prepare_create(&store, &mut next, "subs", &body)?,
-        Some("col") => api::prepare_create(&store, &mut next, "collections", &body)?,
+        Some("sub") => api::prepare_create(&mut store, &mut next, "subs", &body)?,
+        Some("col") => api::prepare_create(&mut store, &mut next, "collections", &body)?,
         Some("file") => files::prepare_create(&mut store, &mut next, &body)?,
         Some("artifact") => {
             let mut fields = body.fields();
             fields.shift_remove("updated");
             fields.shift_remove("url");
-            artifacts::prepare_create(&store, &mut next, Value::Object(fields))?
+            artifacts::prepare_create(&mut store, &mut next, Value::Object(fields))?
         }
         Some("share") => tokens::prepare_create(&store, &mut next, snapshot, expiration)?,
         _ => {

@@ -932,7 +932,7 @@ fn collection_references(
 }
 
 pub(crate) fn prepare_create(
-    store: &Store,
+    store: &mut Store,
     next: &mut Value,
     key: &str,
     body: &Body,
@@ -965,6 +965,11 @@ pub(crate) fn prepare_create(
         .get("name")
         .map(js_string)
         .unwrap_or_else(|| "undefined".to_owned());
+    crate::logs::info(store, &if subscription {
+        format!("正在创建订阅： {item_name}")
+    } else {
+        format!("正在创建组合订阅：{item_name}")
+    });
     if item_name.contains('/') {
         return Err(ResourceError::invalid(
             "INVALID_NAME",
@@ -1155,6 +1160,13 @@ pub fn dispatch(
         };
     }
     if path != plural && (method == Method::PATCH || method == Method::DELETE) {
+        if method == Method::DELETE {
+            crate::logs::info(store, &if subscription {
+                format!("删除订阅：{name}...")
+            } else {
+                format!("正在删除组合订阅：{name}")
+            });
+        }
         if method == Method::DELETE
             && let Some(mode) = query.get("mode")
             && mode != "archive"
@@ -1221,6 +1233,11 @@ pub fn dispatch(
             // The legacy PATCH handler lets this error reach Express's HTML handler.
             return html_error(500, "[object Object]");
         }
+        crate::logs::info(store, &if subscription {
+            format!("正在更新订阅： {name}")
+        } else {
+            format!("正在更新组合订阅：{name}...")
+        });
         let new_name = item["name"].clone();
         let source_type = if subscription {
             "subscription"
