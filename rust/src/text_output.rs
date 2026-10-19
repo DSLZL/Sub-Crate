@@ -4,17 +4,17 @@ use crate::state::truthy;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 
-fn field<'a>(proxy: &'a Value, path: &str) -> Option<&'a Value> {
+pub(crate) fn field<'a>(proxy: &'a Value, path: &str) -> Option<&'a Value> {
     proxy
         .get(path)
         .or_else(|| path.split('.').try_fold(proxy, |value, key| value.get(key)))
 }
 
-fn present(proxy: &Value, path: &str) -> bool {
+pub(crate) fn present(proxy: &Value, path: &str) -> bool {
     field(proxy, path).is_some_and(|value| !value.is_null())
 }
 
-fn append(out: &mut String, proxy: &Value, path: &str, prefix: &str, suffix: &str) {
+pub(crate) fn append(out: &mut String, proxy: &Value, path: &str, prefix: &str, suffix: &str) {
     if let Some(value) = field(proxy, path).filter(|value| !value.is_null()) {
         out.push_str(prefix);
         out.push_str(&codec::js_string(value));
@@ -22,7 +22,7 @@ fn append(out: &mut String, proxy: &Value, path: &str, prefix: &str, suffix: &st
     }
 }
 
-fn param(out: &mut String, proxy: &Value, path: &str, label: &str) {
+pub(crate) fn param(out: &mut String, proxy: &Value, path: &str, label: &str) {
     append(out, proxy, path, &format!(",{label}="), "");
 }
 
@@ -836,7 +836,7 @@ fn loon(proxy: &Value) -> Result<String, String> {
     Ok(out)
 }
 
-fn external(proxy: &Value) -> Result<String, String> {
+pub(crate) fn external(proxy: &Value) -> Result<String, String> {
     if !truthy(&proxy["exec"]) || !truthy(&proxy["local-port"]) {
         return Err("external: exec and local-port are required".to_owned());
     }
@@ -876,16 +876,24 @@ pub fn produce(
     opts: &Value,
     is_loon: bool,
 ) -> Result<Value, crate::conversion::Error> {
+    let list: Vec<String> = proxies
+        .iter()
+        .filter_map(|proxy| if is_loon { loon(proxy) } else { qx(proxy) }.ok())
+        .filter(|line| !line.is_empty())
+        .collect();
+    finish(list, kind, opts)
+}
+
+pub(crate) fn finish(
+    mut list: Vec<String>,
+    kind: &str,
+    opts: &Value,
+) -> Result<Value, crate::conversion::Error> {
     if opts.is_null() {
         return Err(crate::conversion::Error::Legacy(
             "Cannot read properties of null (reading '_merged')".to_owned(),
         ));
     }
-    let mut list: Vec<String> = proxies
-        .iter()
-        .filter_map(|proxy| if is_loon { loon(proxy) } else { qx(proxy) }.ok())
-        .filter(|line| !line.is_empty())
-        .collect();
     if truthy(&opts["_merged"]) && codec::to_number(&opts["localPort"]) >= 1.0 {
         let merged = &opts["_merged"];
         let mut config = crate::body::Body::Json(merged["config"].clone()).fields();

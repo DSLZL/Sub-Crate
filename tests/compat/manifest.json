@@ -3,6 +3,17 @@
   "frontend_commit": "4bd7b0acbe65466b933ccea14fc61dbebe036ead",
   "suites": {
     "conversion-local": [
+      "P02-output-surge-native",
+      "P02-output-surge-tls-options",
+      "P02-output-surge-filters",
+      "P02-output-surge-wireguard",
+      "P02-output-surgemac-external",
+      "P02-output-surge-options",
+      "P01-output-surge",
+      "P01-output-Surge",
+      "P01-output-SurgeMac",
+      "P01-output-surfboard",
+      "P01-output-Surfboard",
       "P02-output-qx-native",
       "P02-output-loon-native",
       "P02-output-text-tls-options",
@@ -70,6 +81,12 @@
       "T03-share-datetime-archive"
     ],
     "full": [
+      "P02-output-surge-native",
+      "P02-output-surge-tls-options",
+      "P02-output-surge-filters",
+      "P02-output-surge-wireguard",
+      "P02-output-surgemac-external",
+      "P02-output-surge-options",
       "P02-output-qx-native",
       "P02-output-loon-native",
       "P02-output-text-tls-options",

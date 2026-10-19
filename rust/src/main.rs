@@ -7,6 +7,7 @@ mod conversion;
 mod json;
 mod state;
 mod surge;
+mod surge_output;
 mod text_output;
 mod xhttp;
 

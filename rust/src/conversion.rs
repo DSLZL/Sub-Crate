@@ -3553,10 +3553,9 @@ pub fn produce(
     };
     match target {
         "json" | "JSON" | "uri" | "URI" | "v2" | "v2ray" | "V2Ray" | "qx" | "QX"
-        | "QuantumultX" | "Loon" => {}
+        | "QuantumultX" | "Loon" | "surge" | "Surge" | "SurgeMac" | "surfboard" | "Surfboard" => {}
         _ if family.is_some() => {}
-        "surge" | "Surge" | "SurgeMac" | "surfboard" | "Surfboard" | "singbox" | "sing-box"
-        | "egern" | "Egern" => {
+        "singbox" | "sing-box" | "egern" | "Egern" => {
             return Err(Error::Pending("This output format is not implemented yet"));
         }
         _ => {
@@ -3675,6 +3674,9 @@ pub fn produce(
     }
     if matches!(target, "qx" | "QX" | "QuantumultX" | "Loon") {
         return crate::text_output::produce(&proxies, kind, opts, target == "Loon");
+    }
+    if matches!(target, "surge" | "Surge" | "SurgeMac" | "surfboard" | "Surfboard") {
+        return crate::surge_output::produce(proxies, target, kind, opts);
     }
     if matches!(target, "json" | "JSON") {
         let value = Value::Array(proxies);
