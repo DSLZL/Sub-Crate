@@ -44,7 +44,7 @@ pub fn parse(raw: Option<&Value>) -> Result<Vec<Value>, Error> {
         } else if raw.is_some_and(Value::is_null) {
             "Cannot read properties of null (reading 'split')"
         } else {
-            "raw.split is not a function"
+            "e.split is not a function"
         };
         return Err(Error::Legacy(message.to_owned()));
     };

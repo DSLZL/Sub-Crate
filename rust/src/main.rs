@@ -729,7 +729,7 @@ fn api_path(raw: &str) -> Result<Option<String>, ()> {
                     json::encode(&percent_decode_str(name).decode_utf8().map_err(|_| ())?)
                 )),
                 "utils" => Some(format!("/api/utils/{}", name.to_ascii_lowercase())),
-                "proxy" | "preview" => {
+                "proxy" | "rule" | "preview" => {
                     Some(format!("/api/{resource}/{}", name.to_ascii_lowercase()))
                 }
                 _ => None,
