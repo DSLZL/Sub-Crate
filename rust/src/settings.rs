@@ -86,6 +86,7 @@ async fn update(store: &Arc<Mutex<Store>>, body: &Body) -> Result<Value, Error> 
         let mut next = store.data.clone();
         next["settings"] = settings.clone();
         store.commit(next).map_err(Error::state)?;
+        store.logs_max_cache = None;
     }
     if ["gistToken", "githubProxy", "githubApiUrl", "defaultProxy"]
         .iter()

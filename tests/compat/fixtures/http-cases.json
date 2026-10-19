@@ -1,5 +1,17 @@
 [
   {
+    "id":"G03-log-seeded-retention-and-query",
+    "source":"backend/src/utils/debug-logs.js:88,131,142,150,162,167; seeded valid, invalid and ignored root entries",
+    "steps":[
+      {"method":"PATCH","path":"/api/settings","body":{"logsMaxCount":3},"expect":{"status":200,"json":{"status":"success","data":{"logsMaxCount":3}}}},
+      {"path":"/api/logs","expect":{"status":200,"json":{"status":"success","data":{"logs":[{"id":"d","time":4,"level":"error","message":"[scope] ERROR: fixture-static-Delta","extra":false},{"id":"c","time":3,"level":"debug","message":"fixture-static-Gamma"},{"id":"b","time":2,"level":"warn","message":"fixture-static-Beta"}],"total":3,"maxCount":3}}}},
+      {"path":"/api/logs?keyword=FIXTURE-static&ignoreCase=on&limit=1","expect":{"status":200,"json":{"status":"success","data":{"logs":[{"id":"d","time":4,"level":"error","message":"[scope] ERROR: fixture-static-Delta","extra":false}],"total":3,"maxCount":3}}}},
+      {"path":"/api/logs?keyword=%5Ewarn%0A&regex=true&limit=0.5","expect":{"status":200,"json":{"status":"success","data":{"logs":[{"id":"b","time":2,"level":"warn","message":"fixture-static-Beta"}],"total":1,"maxCount":3}}}},
+      {"path":"/api/logs?keyword=fixture-static&limit=-1","expect":{"status":200,"json":{"status":"success","data":{"logs":[{"id":"d","time":4,"level":"error","message":"[scope] ERROR: fixture-static-Delta","extra":false},{"id":"c","time":3,"level":"debug","message":"fixture-static-Gamma"},{"id":"b","time":2,"level":"warn","message":"fixture-static-Beta"}],"total":3,"maxCount":3}}}},
+      {"method":"DELETE","path":"/api/logs","expect":{"status":200,"json":{"status":"success"}}}
+    ]
+  },
+  {
     "id":"Z01-age-rest-key-generation-and-validation",
     "source":"backend/src/restful/age.js:15,28; backend/src/utils/age.js:293,312,336",
     "steps":[

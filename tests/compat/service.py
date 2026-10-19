@@ -180,6 +180,94 @@ def compare_step(actual_step, reference_step, label):
         assert actual["headers"].get(key) == expected["headers"].get(key), (label, key, actual, expected)
 
 
+def logs_contracts(binary, node, environment, baseline, root, output, report, image):
+    _, cases = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "logs-core")
+    paired, final = {}, {}
+    seeded = [None, {"id": "invalid"}, {"id": "noise", "time": 0, "level": "info", "message": "[sub-store] INFO: URI Parser is activated!"}]
+    seeded.extend({"id": key, "time": index, "level": level, "message": message, **extra}
+                  for index, (key, level, message, extra) in enumerate([
+                      ("a", "log", "fixture-static-Alpha", {}), ("b", "warn", "fixture-static-Beta", {}),
+                      ("c", "debug", "fixture-static-Gamma", {}), ("d", "error", "[scope] ERROR: fixture-static-Delta", {"extra": False})], 1))
+    for kind in ("node", "rust"):
+        label = kind + "-logs"
+        state = output / label
+        state.mkdir()
+        document = {**baseline, "settings": {"logsMaxCount": 0}, "subs": [], "collections": [], "files": [], "artifacts": [], "tokens": [], "archives": []}
+        (state / "sub-store.json").write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+        (state / "root.json").write_text(json.dumps({**root, "sub-store-logs": seeded}, ensure_ascii=False), encoding="utf-8")
+        env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}
+        proof = []
+
+        def send(step):
+            response = request(url, step)
+            proof.append({"request": step, "response": response})
+            (output / f"{label}-lifecycle.json").write_text(json.dumps(proof, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            return response
+
+        def script(content):
+            return {"method": "POST", "path": "/api/preview/sub?target=JSON", "body": {"name": "log-check", "source": "local",
+                "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture",
+                "process": [{"type": "Script Operator", "args": {"content": content}}]}}
+
+        manager = oracle(node, env, output, report, label) if kind == "node" else listener(binary, env, output, report, label, image)
+        with manager as url:
+            paired[kind] = check_cases(url, state, cases, output, label)
+            report["phases"].append({"name": label, "cases": len(cases), "requests": sum(len(case["steps"]) for case in paired[kind])})
+            final[kind] = {filename: json.loads((state / filename).read_text(encoding="utf-8")) for filename in ("sub-store.json", "root.json")}
+            assert send({"method": "PATCH", "path": "/api/settings", "body": {"logsMaxCount": 100}})["status"] == 200
+            content = """function operator(proxies) {
+                const circular = {}; circular.self = circular;
+                console.info('fixture-format', {zero:0,flag:false,nil:null}, undefined, null, circular);
+                console.warn('[ custom ] fixture-scoped'); console.error('[scope] iNfO: fixture-preserve');
+                console.debug('fixture-debug');
+                $substore.debug=true; $substore.log('fixture-host-debug'); $substore.debug=false;
+                $substore.log('fixture-host-hidden'); $substore.info('fixture-host-info');
+                console.log('Sub-Store -- v2.42.4'); console.log('URI Parser is activated!');
+                const logs = JSON.parse($substore.read('#sub-store-logs'));
+                if (!logs.some(entry => entry.message.includes('fixture-host-info'))) throw new Error('live root logs are stale');
+                return proxies;
+            }"""
+            lower = int(wall_time().timestamp() * 1000)
+            assert send(script(content))["status"] == 200
+            upper = int(wall_time(latest=True).timestamp() * 1000)
+            selected = json.loads(send({"path": "/api/logs?keyword=fixture-"})["body"])["data"]["logs"]
+            messages = [entry["message"] for entry in selected]
+            expected = ["[unknown] INFO: fixture-format {\"zero\":0,\"flag\":false,\"nil\":null} undefined null [object Object]",
+                        "[custom] WARN: fixture-scoped", "[scope] iNfO: fixture-preserve", "[unknown] DEBUG: fixture-debug",
+                        "[sub-store] LOG: fixture-host-debug", "[sub-store] INFO: fixture-host-info"]
+            assert set(messages) == set(expected) and len(messages) == len(expected), messages
+            assert all(lower <= entry["time"] <= upper and re.fullmatch(r"[0-9]+-[a-z0-9]+", entry["id"]) for entry in selected)
+            if kind == "rust":
+                concurrent = [script(f"function operator(proxies){{console.log('fixture-concurrent-{index}');return proxies;}}") for index in range(8)]
+                with ThreadPoolExecutor(max_workers=8) as pool:
+                    responses = list(pool.map(lambda step: request(url, step), concurrent))
+                proof.extend({"request": step, "response": response} for step, response in zip(concurrent, responses, strict=True))
+                assert all(response["status"] == 200 for response in responses)
+                entries = json.loads(send({"path": "/api/logs?keyword=fixture-concurrent-"})["body"])["data"]["logs"]
+                assert {entry["message"] for entry in entries} == {f"[unknown] LOG: fixture-concurrent-{index}" for index in range(8)}, entries
+                saved = state / "logs-saved-root.json"
+                (state / "root.json").rename(saved)
+                (state / "root.json").mkdir()
+                try:
+                    failed = send({"method": "DELETE", "path": "/api/logs"})
+                    assert failed["status"] == 500 and json.loads(failed["body"])["error"]["code"] == "FAILED_TO_CLEAR_LOGS"
+                finally:
+                    (state / "root.json").rmdir()
+                    saved.rename(state / "root.json")
+                assert json.loads(send({"path": "/api/logs?keyword=fixture-concurrent-"})["body"])["data"]["logs"] == entries
+            persisted = json.loads(send({"path": "/api/logs?keyword=fixture-host-"})["body"])["data"]
+        restart_label = label + "-restart"
+        manager = oracle(node, env, output, report, restart_label) if kind == "node" else listener(binary, env, output, report, restart_label, image)
+        with manager as url:
+            assert json.loads(send({"path": "/api/logs?keyword=fixture-host-"})["body"])["data"] == persisted
+    for actual_case, reference_case in zip(paired["rust"], paired["node"], strict=True):
+        assert actual_case["id"] == reference_case["id"]
+        for actual, reference in zip(actual_case["steps"], reference_case["steps"], strict=True):
+            compare_step(actual, reference, actual_case["id"])
+    check_json(final["rust"], final["node"])
+    report["native_log_capture_filter_retention_restart_and_denied_clear_checked"] = True
+
+
 def utilities_contracts(binary, node, environment, baseline, root, output, report, image):
     _, cases = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "utilities-core")
     paired, final, upstream_port = {}, {}, 0
@@ -2232,6 +2320,7 @@ def main():
         archive_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
         sync_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
         utilities_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
+        logs_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
         configurations = [
             ("default", {}, 1048576, [("https://sub-store.vercel.app", "https://sub-store.vercel.app")], "https://denied.invalid", False),
             ("custom-name", {"SUB_STORE_BACKEND_CUSTOM_NAME": "configuration-fixture", "SUB_STORE_BODY_JSON_LIMIT": "+1GB"}, 1073741824,

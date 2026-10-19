@@ -10,7 +10,7 @@ use hyper::Method;
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
-pub(crate) fn prepare_create(store: &Store, next: &mut Value, body: &Body) -> Result<Value, Error> {
+pub(crate) fn prepare_create(store: &mut Store, next: &mut Value, body: &Body) -> Result<Value, Error> {
     let mut file = Value::Object(body.fields());
     if api::cannot_coerce(&file["age-public-key"]) {
         return Err(Error::plain("Cannot convert object to primitive value"));
@@ -25,6 +25,7 @@ pub(crate) fn prepare_create(store: &Store, next: &mut Value, body: &Body) -> Re
         codec::js_string(&file["name"])
     };
     file["name"] = json!(name);
+    crate::logs::info(store, &format!("正在创建文件：{name}"));
     let files = store
         .list("files")
         .ok_or_else(|| Error::plain("e.find is not a function"))?;
@@ -305,6 +306,9 @@ fn manage(
     body: &Body,
     store: &mut Store,
 ) -> api::Reply {
+    if method == Method::DELETE && let Some(name) = path.strip_prefix("/api/file/") {
+        crate::logs::info(store, &format!("正在删除文件：{name}"));
+    }
     if path == "/api/wholefiles" {
         return api::success(Some(store.data["files"].clone()), 200);
     }
@@ -413,5 +417,6 @@ fn manage(
         }
     }
     next["files"][index] = file.clone();
+    crate::logs::info(store, &format!("正在更新文件：{name}..."));
     api::persisted(store.commit(next), api::success(Some(file), 200))
 }

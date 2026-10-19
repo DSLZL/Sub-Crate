@@ -44,7 +44,8 @@ globalThis.__language = {
     .map(key => [key, value[key]])),
   resolve: value => Promise.resolve(value),
   sameType: (a, b) => typeof a === typeof b && (a === null) === (b === null),
+  isError: value => value instanceof Error,
 };
 globalThis.console = Object.fromEntries(['log', 'info', 'warn', 'error', 'debug'].map(
-  level => [level, (...values) => __hostLog(level, values.map(value => String(value)).join(' '))],
+  level => [level, (...values) => __hostLog(level, values)],
 ));

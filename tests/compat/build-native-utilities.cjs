@@ -99,7 +99,7 @@ snapshot(new Map([
   ['age-encryption', '0.3.0'], ['@noble/ciphers', '2.2.0'],
   ['@noble/curves', ['2.0.0', '2.2.0']], ['@noble/hashes', ['2.0.0', '2.2.0']],
   ['@noble/post-quantum', '0.5.4'], ['@scure/base', '2.2.0'],
-]), "export {Encrypter, Decrypter, identityToRecipient, armor} from 'age-encryption';",
+]), "export {Encrypter, Decrypter, identityToRecipient, generateX25519Identity, generateHybridIdentity, armor} from 'age-encryption';",
   'SubStoreAgeUtilities', ['age-utilities.js', 'AGE-LICENSES.txt', 'age-utilities.json']);
 snapshot(new Map([
   ['dns-packet', '5.6.1'], ['@leichtgewicht/ip-codec', '2.0.5'],

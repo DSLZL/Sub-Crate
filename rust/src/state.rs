@@ -11,6 +11,7 @@ pub struct Store {
     path: PathBuf,
     pub data: Value,
     live_buffers: HashSet<&'static str>,
+    pub(crate) logs_max_cache: Option<(u64, usize)>,
 }
 
 pub fn decode(text: &str) -> Result<Value, String> {
@@ -83,6 +84,7 @@ impl Store {
             path,
             data,
             live_buffers: HashSet::new(),
+            logs_max_cache: None,
         };
         atomic_write(&store.path, &codec::pretty(&store.data))?;
         Ok(store)

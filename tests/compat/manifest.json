@@ -2,6 +2,7 @@
   "backend_commit": "9cc6b5fac966993364ae33da8797f446bbf7f571",
   "frontend_commit": "4bd7b0acbe65466b933ccea14fc61dbebe036ead",
   "suites": {
+    "logs-core": ["G03-log-seeded-retention-and-query", "G01-logs-filter-and-clear", "G02-logs-disabled"],
     "business-local": [
       "M02-module-names-order-and-missing-delete",
       "M03-module-content-methods-and-encoded-name",
@@ -167,6 +168,7 @@
       "T03-share-datetime-archive"
     ],
     "full": [
+      "G03-log-seeded-retention-and-query",
       "Z01-age-rest-key-generation-and-validation",
       "S02-gist-age-settings-validation-order",
       "Y06-native-batch-partial-and-local-sync",
@@ -487,7 +489,7 @@
       "N05-node-info-missing-server-and-recovery"
     ]
   },
-  "coverage_state": "233 executable fixtures; full suite intentionally fails until the complete inventory is accepted",
+  "coverage_state": "234 executable fixtures; full suite intentionally fails until the complete inventory is accepted",
   "pending_domains": [
     "artifacts",
     "files",

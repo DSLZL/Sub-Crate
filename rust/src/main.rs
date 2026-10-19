@@ -14,6 +14,7 @@ mod files;
 mod js_language;
 mod js_values;
 mod json;
+mod logs;
 mod mmdb;
 mod processors;
 mod resources;
@@ -1089,6 +1090,9 @@ async fn route(
         return response;
     }
     if let Some(response) = utilities::dispatch(&method, &path, &query, &body, store).await {
+        return response;
+    }
+    if let Some(response) = logs::dispatch(&method, &path, &query, store).await {
         return response;
     }
     if let Some(response) = artifacts::dispatch(&method, &path, &query, &body, store).await {

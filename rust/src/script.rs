@@ -1,7 +1,7 @@
 //! Owned application script jobs and thin native bindings.
 use crate::{conversion, js_language::Js, json as codec, processors, script_io, state::Store};
 use rquickjs::{
-    AsyncContext, AsyncRuntime, Ctx, Exception, Function, JsLifetime, Object, Promise,
+    Array, AsyncContext, AsyncRuntime, Ctx, Exception, Function, JsLifetime, Object, Promise,
     Value as JsValue,
     function::Args,
     object::Accessor,
@@ -224,6 +224,49 @@ fn log_text<'js>(js: &Js<'js>, value: JsValue<'js>) -> rquickjs::Result<String> 
     let text: JsValue = js.call("text", (value,))?;
     let text = crate::js_values::project(&js.ctx, text)?;
     Ok(codec::text(&codec::js_string(&text)))
+}
+
+fn log_value<'js>(js: &Js<'js>, value: JsValue<'js>) -> rquickjs::Result<String> {
+    let text = if js.call::<bool, _>("isError", (value.clone(),))? {
+        let stack = js.get(&value, "stack")?;
+        let message = js.get(&value, "message")?;
+        if js.truthy(&stack)? { stack } else if js.truthy(&message)? { message } else { js.call("text", (value,))? }
+    } else if value.is_string() { value }
+    else if js.call::<String, _>("typeOf", (value.clone(),))? == "object" && !value.is_null() {
+        match crate::js_values::stringify(&js.ctx, value.clone(), 0) {
+            Ok(text) => text,
+            Err(error) => { if error.is_exception() { js.ctx.catch(); } js.call("text", (value,))? }
+        }
+    } else { js.call("text", (value,))? };
+    let text = crate::js_values::project(&js.ctx, text)?;
+    Ok(text.as_str().unwrap_or("").to_owned())
+}
+
+fn record(js: &Js<'_>, level: &str, text: &str) {
+    let result = (|| {
+        let job = job(&js.ctx)?;
+        let raw = { crate::logs::append(&mut job.store.lock().unwrap(), level, text) };
+        if let Some(raw) = raw {
+            let host: JsValue = js.ctx.globals().get("$substore")?;
+            if host.is_object() {
+                let root = js.get(&host, "root")?;
+                js.set(&root, crate::logs::KEY, crate::js_values::decode(&js.ctx, &raw)?)?;
+            }
+            if let Ok(mut baseline) = job.baseline.try_borrow_mut() { baseline.1[crate::logs::KEY] = raw; }
+        }
+        Ok::<_, rquickjs::Error>(())
+    })();
+    if result.is_err() { js.ctx.catch(); }
+}
+
+fn console_log<'js>(ctx: Ctx<'js>, level: String, values: Array<'js>) {
+    let js = Js::new(ctx);
+    let enabled = job(&js.ctx).is_ok_and(|job| crate::logs::enabled(&mut job.store.lock().unwrap()));
+    let result = values.iter::<JsValue>().map(|value| if enabled { log_value(&js, value?) } else { log_text(&js, value?) }).collect::<rquickjs::Result<Vec<_>>>();
+    match result {
+        Ok(values) => { let text = values.join(" "); eprintln!("[sub-store:{level}] {}", codec::text(&text)); record(&js, &level, &text); }
+        Err(_) => { js.ctx.catch(); }
+    }
 }
 
 fn notify<'js>(
@@ -887,7 +930,7 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     globals.set("__hostRandomValues", Func::from(script_io::random_values))?;
     globals.set(
         "__hostLog",
-        Func::from(|level: String, text: String| eprintln!("[sub-store:{level}] {text}")),
+        Func::from(console_log),
     )?;
     ctx.eval::<(), _>(include_bytes!("../vendor/utilities.js").as_slice())?;
     ctx.eval::<(), _>(include_bytes!("../vendor/script-utilities.js").as_slice())?;
@@ -924,12 +967,11 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
                     if level != "log" || js.truthy(&js.get(&this, "debug")?)? {
                         let name = js.get(&this, "name")?;
                         let text = value.0.unwrap_or_else(|| js.undefined());
-                        eprintln!(
-                            "[{}] {}: {}",
-                            log_text(&js, name)?,
-                            level.to_uppercase(),
-                            log_text(&js, text)?
-                        );
+                        let name = crate::js_values::project(&js.ctx, js.call::<JsValue, _>("text", (name,))?)?;
+                        let text = crate::js_values::project(&js.ctx, js.call::<JsValue, _>("text", (text,))?)?;
+                        let text = format!("[{}] {}: {}", codec::js_string(&name), level.to_uppercase(), codec::js_string(&text));
+                        eprintln!("{}", codec::text(&text));
+                        record(&js, level, &text);
                     }
                     Ok::<_, rquickjs::Error>(())
                 },
@@ -1035,6 +1077,7 @@ pub async fn run(
                                     }
                                     "age-rest" => crate::script_age::rest(&js, input).await?,
                                     "node-info" => crate::script_http::node_info(&js, input).await?,
+                                    "logs-query" => crate::logs::query(&js, input, &self::job(&ctx)?.store)?,
                                     "backup-serialize" => {
                                         crate::script_backup::serialize(&js, input)?
                                     }

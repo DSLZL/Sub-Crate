@@ -118,7 +118,7 @@ def main():
                                     "FE07-preview-file", "FE08-create-count-share", "FE09-open-public-share",
                                     "FE10-reopen-update-count-share", "FE11-create-collection", "FE12-reopen-rename-collection",
                                     "FE13-preview-collection", "FE14-archive-file", "FE15-restore-file-archive", "FE16-save-log-settings",
-                                    "FE19-download-manual-backup", "FE20-restore-manual-backup"]
+                                    "FE17-read-filter-logs", "FE18-clear-logs", "FE19-download-manual-backup", "FE20-restore-manual-backup"]
     command_index = 0
 
     def command(*arguments):
@@ -564,15 +564,6 @@ def main():
             command("wait", "--fn", "document.querySelector('.cm-content').innerText.includes('browser file🙂')")
             assert evaluate("document.querySelector('.cm-content').innerText").rstrip("\n") == "browser file🙂", "Restored file editor lost its content"
             report["cases"].append({"id": "FE15-restore-file-archive", "source": "src/views/archive/Archive.vue:837; src/store/archive.ts:73", "archive_id": entry["id"], "status": "browser_passed"})
-            if args.rust_binary:
-                save_settings()
-                download_backup()
-                restore_backup()
-                command("screenshot", output / "frontend-page.png")
-                report["page_errors"] = command("errors")
-                assert not report["page_errors"]["errors"], "Frontend JavaScript errors"
-                assert [case["id"] for case in report["cases"]] == report["required_cases"], "Incomplete Rust browser slice"
-                raise StateSliceComplete
             save_settings()
             command("open", report["server_origin"] + "/edit/files/browser-file-renamed")
             command("wait", ".editor-section-tab-list")

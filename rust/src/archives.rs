@@ -96,7 +96,7 @@ async fn restore(store: &Arc<Mutex<Store>>, id: &str) -> Result<Value, Error> {
     let item = match entry["itemType"].as_str() {
         Some("sub") => api::prepare_create(&store, &mut next, "subs", &body)?,
         Some("col") => api::prepare_create(&store, &mut next, "collections", &body)?,
-        Some("file") => files::prepare_create(&store, &mut next, &body)?,
+        Some("file") => files::prepare_create(&mut store, &mut next, &body)?,
         Some("artifact") => {
             let mut fields = body.fields();
             fields.shift_remove("updated");
