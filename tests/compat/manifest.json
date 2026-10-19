@@ -3,6 +3,13 @@
   "frontend_commit": "4bd7b0acbe65466b933ccea14fc61dbebe036ead",
   "suites": {
     "conversion-local": [
+      "P02-output-egern-native",
+      "P02-output-egern-transports",
+      "P02-output-egern-filters",
+      "P02-output-egern-shadow-wireguard",
+      "P02-output-egern-options",
+      "P01-output-egern",
+      "P01-output-Egern",
       "P02-output-surge-native",
       "P02-output-surge-tls-options",
       "P02-output-surge-filters",
@@ -81,6 +88,11 @@
       "T03-share-datetime-archive"
     ],
     "full": [
+      "P02-output-egern-native",
+      "P02-output-egern-transports",
+      "P02-output-egern-filters",
+      "P02-output-egern-shadow-wireguard",
+      "P02-output-egern-options",
       "P02-output-surge-native",
       "P02-output-surge-tls-options",
       "P02-output-surge-filters",
@@ -223,6 +235,11 @@
       "M1-complete-inventory-and-fixtures"
     ],
     "conversion": [
+      "P02-output-egern-native",
+      "P02-output-egern-transports",
+      "P02-output-egern-filters",
+      "P02-output-egern-shadow-wireguard",
+      "P02-output-egern-options",
       "P02-output-qx-native",
       "P02-output-loon-native",
       "P02-output-text-tls-options",
@@ -358,7 +375,7 @@
       "N05-node-info-missing-server-and-recovery"
     ]
   },
-  "coverage_state": "117 scoped scenarios; full suite intentionally fails until M1 inventory and fixtures are complete",
+  "coverage_state": "122 scoped scenarios; full suite intentionally fails until M1 inventory and fixtures are complete",
   "pending_domains": [
     "artifacts",
     "files",

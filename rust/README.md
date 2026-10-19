@@ -3,7 +3,7 @@
 This branch now includes an independent Rust HTTP server in `src/`. It serves
 subscription/collection/settings CRUD and legacy JSON storage without Node.
 Local subscriptions share native Rust parsing and JSON/URI/V2Ray and
-Clash/Mihomo/Stash/Shadowrocket, QX/Loon and Surge/SurgeMac/Surfboard output through
+Clash/Mihomo/Stash/Shadowrocket, QX/Loon, Surge/SurgeMac/Surfboard and Egern output through
 `/api/proxy/parse`, subscription preview and subscription download. Native input
 includes SS/SSR, HTTP/SOCKS, Trojan, Hysteria1/2, TUIC, WireGuard, VMess, VLESS and
 AnyTLS, plus the registered Surge/Loon/QX and Clash JSON5/YAML formats and
@@ -12,6 +12,8 @@ with transport/TLS normalization. Surge External fields are parsed as data.
 V2Ray also serves the default download target and its three legacy aliases.
 SurgeMac's external/forced/fallback/merged modes generate native configuration
 data and retain port/override policies; configured programs are never executed.
+Egern retains its protocol filters, stream/TLS/ShadowTLS fields, WireGuard peers,
+internal objects and compact or pretty YAML through both legacy aliases.
 These protocol slices remain partial while the complete source-branch inventory is verified.
 Raw input starting `<!DOCTYPE html>` is discarded before parsing. Other formats,
 processors, remote sources and unported value branches return a pending error.

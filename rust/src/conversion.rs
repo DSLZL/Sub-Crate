@@ -258,6 +258,25 @@ fn interface_address(raw: &str) -> Option<(&str, Option<u32>, bool)> {
     Some((host, cidr, v6))
 }
 
+pub(crate) fn wireguard_address(proxy: &Value, family: &str) -> Option<Value> {
+    let (address, cidr_key, max) = if family == "ipv6" {
+        ("ipv6", "ipv6-cidr", 128)
+    } else {
+        ("ip", "ip-cidr", 32)
+    };
+    let raw = field_text(proxy, address);
+    let (host, parsed_cidr, v6) = interface_address(&raw)?;
+    if v6 != (max == 128) {
+        return None;
+    }
+    let cidr = safe_integer(codec::trim(&field_text(proxy, cidr_key)))
+        .filter(|cidr| *cidr <= max)
+        .map(|cidr| cidr as u32)
+        .or(parsed_cidr)
+        .unwrap_or(max as u32);
+    Some(json!(format!("{host}/{cidr}")))
+}
+
 fn normalize_wireguard(proxy: &mut Value) {
     for (address, cidr_key, max) in [("ip", "ip-cidr", 32), ("ipv6", "ipv6-cidr", 128)] {
         let raw = field_text(proxy, address);
@@ -3553,9 +3572,10 @@ pub fn produce(
     };
     match target {
         "json" | "JSON" | "uri" | "URI" | "v2" | "v2ray" | "V2Ray" | "qx" | "QX"
-        | "QuantumultX" | "Loon" | "surge" | "Surge" | "SurgeMac" | "surfboard" | "Surfboard" => {}
+        | "QuantumultX" | "Loon" | "surge" | "Surge" | "SurgeMac" | "surfboard" | "Surfboard"
+        | "egern" | "Egern" => {}
         _ if family.is_some() => {}
-        "singbox" | "sing-box" | "egern" | "Egern" => {
+        "singbox" | "sing-box" => {
             return Err(Error::Pending("This output format is not implemented yet"));
         }
         _ => {
@@ -3680,6 +3700,9 @@ pub fn produce(
         "surge" | "Surge" | "SurgeMac" | "surfboard" | "Surfboard"
     ) {
         return crate::surge_output::produce(proxies, target, kind, opts);
+    }
+    if matches!(target, "egern" | "Egern") {
+        return crate::egern_output::produce(proxies, kind, opts);
     }
     if matches!(target, "json" | "JSON") {
         let value = Value::Array(proxies);

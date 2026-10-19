@@ -4,6 +4,7 @@ mod clash;
 mod clash_output;
 mod classic;
 mod conversion;
+mod egern_output;
 mod json;
 mod state;
 mod surge;

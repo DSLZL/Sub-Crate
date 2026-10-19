@@ -652,6 +652,10 @@ pub fn produce(
     for proxy in &mut list {
         normalize(proxy, family, kind, opts);
     }
+    finish(list, kind, opts)
+}
+
+pub(crate) fn finish(list: Vec<Value>, kind: &str, opts: &Value) -> Result<Value, Error> {
     if kind == "internal" {
         return Ok(json!(list));
     }
