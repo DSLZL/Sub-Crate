@@ -155,6 +155,26 @@ fn normalize_endpoint(proxy: &mut Value) -> Result<(), Error> {
     normalize(proxy)
 }
 
+fn fingerprint(pem: &Value) -> Result<Value, Error> {
+    let raw = pem.as_str().ok_or_else(|| Error::Legacy("a.indexOf is not a function".to_owned()))?;
+    if !raw.contains("-----BEGIN ") {
+        return Err(Error::Legacy("can't find PEM header".to_owned()));
+    }
+    let mut encoded = raw;
+    for (index, _) in raw.match_indices("-----BEGIN ") {
+        let rest = &raw[index + 11..];
+        if let Some((label, body)) = rest.split_once("-----")
+            && !label.is_empty() && !label.contains('-') {
+            encoded = body;
+        }
+    }
+    if let Some((body, _)) = encoded.split_once("-----END ") {encoded = body;}
+    let encoded: String = encoded.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c,'+'|'/'|'=')).collect();
+    let der = codec::decode_base64(&encoded).map_err(|error| Error::Legacy(error.to_string()))?;
+    let digest = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, &der);
+    Ok(json!(digest.as_ref().iter().map(|byte|format!("{byte:02X}")).collect::<Vec<_>>().join(":")))
+}
+
 fn ipv6(address: &str) -> bool {
     if let Some((host, zone)) = address.split_once('%') {
         let Some(rest) = host.strip_prefix("fe80:") else {
@@ -2511,6 +2531,16 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
     }
     if matches!(proxy["sni"].as_str(), Some("" | "off")) {
         proxy["disable-sni"] = json!(true);
+    }
+    let mut ca = proxy["ca_str"].clone();
+    if truthy(&proxy["ca-str"]) {
+        ca = proxy["ca-str"].clone();
+    } else if truthy(&ca) {
+        proxy.as_object_mut().unwrap().shift_remove("ca_str");
+        proxy["ca-str"] = ca.clone();
+    }
+    if !truthy(&proxy["tls-fingerprint"]) && truthy(&ca) {
+        proxy["tls-fingerprint"] = fingerprint(&ca)?;
     }
     if proxy["type"] == "tuic" {
         if !proxy["alpn"].is_array() {

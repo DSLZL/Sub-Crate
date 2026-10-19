@@ -222,20 +222,14 @@ pub(crate) fn produce<'js>(
         if js.equal(&kind, &js.value("internal")?)? {
             return Ok(input);
         }
-        let json = js.ctx.globals().get("JSON")?;
-        return js.method(
-            json,
-            "stringify",
-            vec![input, Value::new_null(js.ctx.clone()), js.value(2)?],
-        );
+        return crate::js_values::stringify(&js.ctx,input,2);
     }
-    let values = crate::js_values::project(&js.ctx, input)?;
+    let values = input.as_array().ok_or_else(|| js.error("Invalid producer input"))?
+        .iter::<Value>().map(|value| crate::js_values::project(&js.ctx,value?))
+        .collect::<rquickjs::Result<Vec<_>>>()?;
     let options = crate::js_values::project(&js.ctx, options)?;
     let output = conversion::produce(
-        values
-            .as_array()
-            .cloned()
-            .ok_or_else(|| js.error("Invalid producer result"))?,
+        values,
         &target,
         &js.text(kind)?,
         &options,

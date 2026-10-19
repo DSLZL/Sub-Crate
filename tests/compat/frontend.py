@@ -69,7 +69,7 @@ def check_network(entries, cases, backend_url):
 
 
 class StateSliceComplete(Exception):
-    """The explicitly selected M2 browser slice finished."""
+    """The explicitly selected Rust browser slice finished."""
 
 
 def main():
@@ -79,7 +79,7 @@ def main():
     parser.add_argument("--node", required=True, type=Path)
     parser.add_argument("--frontend", required=True, type=Path, help="Unchanged pinned checkout with completed dist build")
     parser.add_argument("--browser", required=True, type=Path, help="Installed native agent-browser executable")
-    parser.add_argument("--rust-binary", type=Path, help="Run the M2 CRUD/settings/export slice against this Rust service")
+    parser.add_argument("--rust-binary", type=Path, help="Run the CRUD, conversion preview, settings and export slice against this Rust service")
     parser.add_argument("--standalone", action="store_true", help="Use the separate Rust frontend port and API mount")
     args = parser.parse_args()
     if args.standalone and not args.rust_binary:
@@ -114,7 +114,8 @@ def main():
         report["kind"] = "rust-frontend-service-state"
         report["binary_sha256"] = hashlib.sha256(args.rust_binary.read_bytes()).hexdigest()
         report["required_cases"] = ["FE01-url-backend-setup", "FE02-create-subscription", "FE03-reopen-rename-subscription",
-                                    "FE11-create-collection", "FE12-reopen-rename-collection", "FE16-save-log-settings",
+                                    "FE04-preview-subscription", "FE11-create-collection", "FE12-reopen-rename-collection",
+                                    "FE13-preview-collection", "FE16-save-log-settings",
                                     "FE19-download-manual-backup", "FE20-restore-manual-backup"]
     command_index = 0
 
@@ -217,6 +218,30 @@ def main():
         stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
         assert len(stored["collections"]) == 1 and stored["collections"][0]["name"] == "browser-collection-renamed" and stored["collections"][0]["subscriptions"] == ["browser-renamed"], "Collection rename lost resource references"
         report["cases"].append({"id": "FE12-reopen-rename-collection", "source": "src/components/SubListItem.vue:954; src/views/SubEditor.vue:1063,1379", "navigation": "list-edit-button", "status": "browser_passed"})
+
+    def preview_subscription():
+        command("open", report["server_origin"] + "/edit/subs/browser-renamed")
+        command("wait", ".compare-btn")
+        expect_value('input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-renamed", "Preview editor did not load the subscription")
+        command("snapshot", "-i")
+        command("click", ".compare-btn")
+        command("wait", ".compare-page-wrapper .processed-tr")
+        preview = evaluate("Array.from(document.querySelectorAll('.compare-page-wrapper .processed-tr'), row => row.innerText)")
+        assert len(preview) == 1 and "fixture" in preview[0] and "127.0.0.1:8388" in preview[0], "Subscription preview did not display the parsed fixture"
+        command("snapshot", "-i")
+        assert any(item["method"] == "GET" and item["path"] == "/subscription" for item in upstream.requests), "Preview did not load the controlled subscription"
+        report["cases"].append({"id": "FE04-preview-subscription", "source": "src/views/SubEditor.vue:569", "status": "browser_passed"})
+
+    def preview_collection():
+        click_in_view('.sub-item-wrapper:has(.sub-item-title[title="browser-collection-renamed"]) button:has(svg[data-icon="pen-nib"])')
+        command("wait", "--fn", "location.pathname === '/edit/collections/browser-collection-renamed'")
+        command("wait", ".compare-btn")
+        expect_value(".include-subs-trigger input", "browser-renamed", "Collection preview did not load its selected subscription")
+        command("click", ".compare-btn")
+        command("wait", ".compare-page-wrapper .processed-tr")
+        preview = evaluate("Array.from(document.querySelectorAll('.compare-page-wrapper .processed-tr'), row => row.innerText)")
+        assert len(preview) == 1 and "fixture" in preview[0] and "127.0.0.1:8388" in preview[0], "Collection preview lost its subscription's parsed node"
+        report["cases"].append({"id": "FE13-preview-collection", "source": "src/components/SubListItem.vue:954; src/views/SubEditor.vue:569,1215; src/views/CompareTable.vue:124", "navigation": "list-edit-button", "status": "browser_passed"})
 
     def save_settings():
         command("open", report["server_origin"] + "/my")
@@ -431,26 +456,18 @@ def main():
             assert len(stored["subs"]) == 1 and stored["subs"][0]["name"] == "browser-renamed", "UI rename did not persist"
             report["cases"].append({"id": "FE03-reopen-rename-subscription", "source": "src/views/SubEditor.vue:66", "status": "browser_passed"})
             if args.rust_binary:
+                preview_subscription()
                 collection_crud()
+                preview_collection()
                 save_settings()
                 download_backup()
                 restore_backup()
                 command("screenshot", output / "frontend-page.png")
                 report["page_errors"] = command("errors")
                 assert not report["page_errors"]["errors"], "Frontend JavaScript errors"
-                assert [case["id"] for case in report["cases"]] == report["required_cases"], "Incomplete M2 browser slice"
+                assert [case["id"] for case in report["cases"]] == report["required_cases"], "Incomplete Rust browser slice"
                 raise StateSliceComplete
-            command("open", report["server_origin"] + "/edit/subs/browser-renamed")
-            command("wait", ".compare-btn")
-            expect_value('input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-renamed", "Preview editor did not load the subscription")
-            command("snapshot", "-i")
-            command("click", ".compare-btn")
-            command("wait", ".compare-page-wrapper .processed-tr")
-            preview = evaluate("Array.from(document.querySelectorAll('.compare-page-wrapper .processed-tr'), row => row.innerText)")
-            assert len(preview) == 1 and "fixture" in preview[0] and "127.0.0.1:8388" in preview[0], "Subscription preview did not display the parsed fixture"
-            command("snapshot", "-i")
-            assert any(item["method"] == "GET" and item["path"] == "/subscription" for item in upstream.requests), "Preview did not load the controlled subscription"
-            report["cases"].append({"id": "FE04-preview-subscription", "source": "src/views/SubEditor.vue:569", "status": "browser_passed"})
+            preview_subscription()
             command("open", report["server_origin"] + "/edit/files/UNTITLED")
             command("wait", 'input[placeholder="唯一的标识名称(请勿包含 / )"]')
             command("fill", 'input[placeholder="唯一的标识名称(请勿包含 / )"]', "browser-file")
@@ -525,15 +542,7 @@ def main():
             assert len(stored["tokens"]) == 1 and stored["tokens"][0]["token"] == "browser-token" and stored["tokens"][0]["count"] == 3 and stored["tokens"][0]["usedCount"] == 1, "UI share update lost consumed count or duplicated token"
             report["cases"].append({"id": "FE10-reopen-update-count-share", "source": "src/views/share/ShareEditorPage.vue:869,1096,1465", "status": "browser_passed"})
             collection_crud()
-            click_in_view('.sub-item-wrapper:has(.sub-item-title[title="browser-collection-renamed"]) button:has(svg[data-icon="pen-nib"])')
-            command("wait", "--fn", "location.pathname === '/edit/collections/browser-collection-renamed'")
-            command("wait", ".compare-btn")
-            expect_value(".include-subs-trigger input", "browser-renamed", "Collection preview did not load its selected subscription")
-            command("click", ".compare-btn")
-            command("wait", ".compare-page-wrapper .processed-tr")
-            preview = evaluate("Array.from(document.querySelectorAll('.compare-page-wrapper .processed-tr'), row => row.innerText)")
-            assert len(preview) == 1 and "fixture" in preview[0] and "127.0.0.1:8388" in preview[0], "Collection preview lost its subscription's parsed node"
-            report["cases"].append({"id": "FE13-preview-collection", "source": "src/components/SubListItem.vue:954; src/views/SubEditor.vue:569,1215; src/views/CompareTable.vue:124", "navigation": "list-edit-button", "status": "browser_passed"})
+            preview_collection()
             command("open", report["server_origin"] + "/files")
             command("wait", ".sub-item-actions")
             command("click", ".sub-item-actions button:last-child")

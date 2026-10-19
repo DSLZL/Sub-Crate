@@ -21,6 +21,12 @@ async function operator(proxies) {
     const snell=ProxyUtils.parse('Huge = snell, 127.0.0.1, 443, psk=p, version='+'9'.repeat(400))[0];
     assert(snell.version===Infinity,'overflowed client numeric field remains Infinity');
     passed.push('NC-native-client-nonfinite-fields');
+    const parsedCycle=ProxyUtils.parse('{type: ss, name: cyclic, server: 127.0.0.1, port: 443, cipher: none, password: p, extra: &loop {self: *loop}}')[0];
+    assert(parsedCycle.extra.self===parsedCycle.extra,'YAML cyclic field survives native parse');
+    assert(ProxyUtils.produce([parsedCycle],'URI').startsWith('ss://'),'URI ignores cyclic extra fields');
+    let cycleMessage='';try{ProxyUtils.produce([parsedCycle],'JSON');}catch(error){cycleMessage=error.message;}
+    assert(cycleMessage.includes("property 'self' closes the circle"),'JSON cyclic error identifies the back reference');
+    passed.push('NC-native-yaml-cycles-and-unused-fields');
   } catch(error) {
     return proxies.map(proxy=>({...proxy,conversionHelpersError:String(error),conversionHelpersPassed:passed}));
   }

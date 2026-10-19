@@ -1063,7 +1063,7 @@ fn wg_server_dns(raw: &str) -> Option<Value> {
     None
 }
 
-fn loon_wireguard(line: &str, non_finite: &mut bool) -> Option<Value> {
+fn loon_wireguard(line: &str, _non_finite: &mut bool) -> Option<Value> {
     let (name, raw) = line.split_once('=')?;
     let (_, raw) = raw.split_once(',')?;
     let peer_tail = wg_values(raw, "peers").into_iter().find_map(|tail| {
@@ -1088,12 +1088,11 @@ fn loon_wireguard(line: &str, non_finite: &mut bool) -> Option<Value> {
         .filter(|(server, port)| {
             !server.is_empty() && !port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit())
         });
-    let Some((server, port)) = endpoint else {
-        *non_finite = true;
-        return None;
-    };
-    let port = port.parse::<f64>().ok()?;
-    let mut proxy = json!({"type":"wireguard","name":codec::trim(name),"server":server,"port":codec::numeric(port)});
+    let mut proxy = json!({"type":"wireguard","name":codec::trim(name),"port":codec::numeric(f64::NAN)});
+    if let Some((server, port)) = endpoint {
+        proxy["server"] = json!(server);
+        proxy["port"] = codec::numeric(port.parse::<f64>().ok()?);
+    }
     for (output, input) in [
         ("ip", "interface-ip"),
         ("ipv6", "interface-ipv6"),

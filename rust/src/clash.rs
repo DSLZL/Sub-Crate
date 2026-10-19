@@ -4,11 +4,6 @@ use crate::state::truthy;
 use rquickjs::{Context, Ctx, Exception, Function, Object, Runtime, Value as JsValue};
 use serde_json::Value;
 
-enum Parsed {
-    Proxy(Value),
-    Deferred,
-}
-
 pub struct Parser(Context);
 
 fn yaml<'js>(ctx: &Ctx<'js>, raw: &str) -> rquickjs::Result<JsValue<'js>> {
@@ -169,7 +164,7 @@ impl Parser {
 
     pub fn line(&self, raw: &str) -> Result<Option<Value>, Error> {
         self.0.with(|ctx| {
-            let result = (|| -> rquickjs::Result<Option<Parsed>> {
+            let result = (|| -> rquickjs::Result<Option<Value>> {
                 let utilities: Object = ctx.globals().get("SubStoreUtilities")?;
                 let json5: Object = utilities.get("JSON5")?;
                 let parse: Function = json5.get("parse")?;
@@ -221,16 +216,9 @@ impl Parser {
                 }) {
                     return Ok(None);
                 }
-                let projected = match crate::js_values::project(&ctx, value) {
-                    Ok(value) => value,
-                    Err(_) => {
-                        ctx.catch();
-                        return Ok(Some(Parsed::Deferred));
-                    }
-                };
-                Ok(Some(Parsed::Proxy(projected)))
+                crate::js_values::project(&ctx, value).map(Some)
             })();
-            let Some(parsed) = (match result {
+            let Some(mut proxy) = (match result {
                 Ok(value) => value,
                 Err(_) => {
                     ctx.catch();
@@ -238,12 +226,6 @@ impl Parser {
                 }
             }) else {
                 return Ok(None);
-            };
-            // shortcut: non-finite and cyclic typed values need the M3 script/value bridge.
-            let Parsed::Proxy(mut proxy) = parsed else {
-                return Err(Error::Pending(
-                    "Non-finite or cyclic Clash values are not implemented yet",
-                ));
             };
             if matches!(proxy["type"].as_str(), Some("vmess" | "vless"))
                 && truthy(&proxy["servername"])

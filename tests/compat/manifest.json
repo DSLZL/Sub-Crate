@@ -4,6 +4,7 @@
   "suites": {
     "conversion-local": [
       "PC-native-conversion-helper-contracts",
+      "PC-native-typed-input-boundaries",
       "PC-native-dns-mmdb-and-resolve",
       "PC-native-http-parser-and-output-stages",
       "PC-native-generated-file-pipeline",
