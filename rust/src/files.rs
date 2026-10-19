@@ -212,6 +212,9 @@ pub async fn dispatch(
             file["includeUnsupportedProxy"] = last(&query["includeUnsupportedProxy"]).clone();
         }
         let mut request = request.clone();
+        if let Some(key) = crate::tokens::output_key(&store.lock().unwrap(), &request, "file", &json!(name)) {
+            request["outputAgePublicKey"] = key;
+        }
         request["params"] = json!({"name":name});
         return Some(
             match script::run(

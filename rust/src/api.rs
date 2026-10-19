@@ -138,6 +138,8 @@ pub fn greeting() -> Reply {
 pub fn options(path: &str) -> Reply {
     let methods = match path {
         "/api/settings" => "GET,PATCH,HEAD",
+        "/api/token" => "POST,GET,HEAD",
+        _ if path.starts_with("/api/token/") => "DELETE,GET,HEAD",
         "/api/storage" => "GET,POST,HEAD",
         "/api/subs" | "/api/collections" | "/api/modules" | "/api/files" => "GET,POST,PUT,HEAD",
         "/api/proxy/parse"
@@ -398,9 +400,27 @@ pub async fn conversion_dispatch(
     if method != Method::GET {
         return None;
     }
-    let rest = path.strip_prefix("/download/")?;
-    let collection = rest.starts_with("collection/");
-    let rest = rest.strip_prefix("collection/").unwrap_or(rest);
+    let share = path.starts_with("/share/");
+    let (rest, collection) = if let Some(rest) = path.strip_prefix("/share/col/") {
+        (rest, true)
+    } else if let Some(rest) = path.strip_prefix("/share/sub/") {
+        (rest, false)
+    } else {
+        let rest = path.strip_prefix("/download/")?;
+        (rest.strip_prefix("collection/").unwrap_or(rest), rest.starts_with("collection/"))
+    };
+    if share && !collection {
+        let invalid = if truthy(&query["fakeSub"]) {
+            Some(("UNSUPPORTED_SHARE_FAKE_SUB", "share/sub 不支持 fakeSub 参数"))
+        } else if ["url", "content"].iter().any(|key| !query[*key].is_null() && query[*key] != "") {
+            Some(("UNSUPPORTED_SHARE_SUB_SOURCE_OVERRIDE", "share/sub 不支持 url 或 content 参数"))
+        } else if truthy(&query["mergeSources"]) {
+            Some(("UNSUPPORTED_SHARE_SUB_MERGE_SOURCES", "share/sub 不支持 mergeSources 参数"))
+        } else { None };
+        if let Some((code, message)) = invalid {
+            return Some(failure_details(400, code, "RequestInvalidError", message, Some(json!("详情请查看日志"))));
+        }
+    }
     let (name, path_target) = rest
         .split_once('/')
         .map_or((rest, None), |(name, target)| (name, Some(target)));
@@ -432,7 +452,7 @@ pub async fn conversion_dispatch(
         found
     };
     let Some(sub) = sub else {
-        return Some(failure(
+        return Some(failure_details(
             404,
             "RESOURCE_NOT_FOUND",
             "ResourceNotFoundError",
@@ -445,6 +465,7 @@ pub async fn conversion_dispatch(
                 },
                 codec::text(&name)
             ),
+            share.then(|| json!("详情请查看日志")),
         ));
     };
     let target = if truthy(&query["platform"]) {
@@ -517,6 +538,9 @@ pub async fn conversion_dispatch(
         fields.insert("produceOpts".to_owned(), Value::Object(produce));
     }
     let mut request = request.clone();
+    if let Some(key) = crate::tokens::output_key(&store.lock().unwrap(), &request, if collection { "col" } else { "sub" }, &json!(name)) {
+        request["outputAgePublicKey"] = key;
+    }
     let mut params = json!({"name":name});
     if let Some(target) = path_target {
         params["target"] = json!(codec::encode(
@@ -537,6 +561,13 @@ pub async fn conversion_dispatch(
     .await;
     Some(match result.and_then(script_response) {
         Ok(response) => response,
+        Err(_) if share => failure_details(
+            500,
+            "INTERNAL_SERVER_ERROR",
+            "InternalServerError",
+            &format!("Failed to download {}: {}", if collection { "collection" } else { "subscription" }, codec::text(&name)),
+            Some(json!("详情请查看日志")),
+        ),
         Err(error) => conversion_error(
             error,
             Some(&format!(
@@ -644,6 +675,22 @@ pub(crate) fn normalize_item(item: &mut Value, subscription: bool) -> Result<(),
     if subscription {
         object.shift_remove("subscriptions");
     }
+    normalize_age(item)?;
+    editor_languages(item);
+    if let Some(processes) = item.get_mut("process").and_then(Value::as_array_mut) {
+        for process in processes {
+            if let Some(args) = process.get_mut("args") {
+                editor_languages(args);
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn normalize_age(item: &mut Value) -> Result<(), &'static str> {
+    let Some(object) = item.as_object_mut() else {
+        return Ok(());
+    };
     let key = object
         .get("age-public-key")
         .filter(|key| !key.is_null())
@@ -656,14 +703,6 @@ pub(crate) fn normalize_item(item: &mut Value, subscription: bool) -> Result<(),
         object.insert("age-public-key".to_owned(), json!(key));
     } else {
         return Err("age-public-key 仅支持 X25519(age1...) 或 MLKEM768-X25519(age1pq1...) 公钥");
-    }
-    editor_languages(item);
-    if let Some(processes) = item.get_mut("process").and_then(Value::as_array_mut) {
-        for process in processes {
-            if let Some(args) = process.get_mut("args") {
-                editor_languages(args);
-            }
-        }
     }
     Ok(())
 }
@@ -722,7 +761,7 @@ fn valid_recipient(key: &str) -> bool {
 
 const PRIMITIVE_ERROR: &str = "Cannot convert object to primitive value";
 
-fn cannot_coerce(value: &Value) -> bool {
+pub(crate) fn cannot_coerce(value: &Value) -> bool {
     match value {
         Value::Object(fields) => fields.contains_key("toString"),
         Value::Array(items) => items.iter().any(cannot_coerce),

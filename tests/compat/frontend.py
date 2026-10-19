@@ -115,7 +115,8 @@ def main():
         report["binary_sha256"] = hashlib.sha256(args.rust_binary.read_bytes()).hexdigest()
         report["required_cases"] = ["FE01-url-backend-setup", "FE02-create-subscription", "FE03-reopen-rename-subscription",
                                     "FE04-preview-subscription", "FE05-create-local-file", "FE06-reopen-rename-file",
-                                    "FE07-preview-file", "FE11-create-collection", "FE12-reopen-rename-collection",
+                                    "FE07-preview-file", "FE08-create-count-share", "FE09-open-public-share",
+                                    "FE10-reopen-update-count-share", "FE11-create-collection", "FE12-reopen-rename-collection",
                                     "FE13-preview-collection", "FE16-save-log-settings",
                                     "FE19-download-manual-backup", "FE20-restore-manual-backup"]
     command_index = 0
@@ -498,19 +499,6 @@ def main():
             stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
             assert len(stored["subs"]) == 1 and stored["subs"][0]["name"] == "browser-renamed", "UI rename did not persist"
             report["cases"].append({"id": "FE03-reopen-rename-subscription", "source": "src/views/SubEditor.vue:66", "status": "browser_passed"})
-            if args.rust_binary:
-                preview_subscription()
-                file_crud_preview()
-                collection_crud()
-                preview_collection()
-                save_settings()
-                download_backup()
-                restore_backup()
-                command("screenshot", output / "frontend-page.png")
-                report["page_errors"] = command("errors")
-                assert not report["page_errors"]["errors"], "Frontend JavaScript errors"
-                assert [case["id"] for case in report["cases"]] == report["required_cases"], "Incomplete Rust browser slice"
-                raise StateSliceComplete
             preview_subscription()
             file_crud_preview()
             command("open", report["server_origin"] + "/edit/shares/browser-file-renamed?type=file")
@@ -548,6 +536,15 @@ def main():
             report["cases"].append({"id": "FE10-reopen-update-count-share", "source": "src/views/share/ShareEditorPage.vue:869,1096,1465", "status": "browser_passed"})
             collection_crud()
             preview_collection()
+            if args.rust_binary:
+                save_settings()
+                download_backup()
+                restore_backup()
+                command("screenshot", output / "frontend-page.png")
+                report["page_errors"] = command("errors")
+                assert not report["page_errors"]["errors"], "Frontend JavaScript errors"
+                assert [case["id"] for case in report["cases"]] == report["required_cases"], "Incomplete Rust browser slice"
+                raise StateSliceComplete
             command("open", report["server_origin"] + "/files")
             command("wait", ".sub-item-actions")
             command("click", ".sub-item-actions button:last-child")

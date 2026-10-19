@@ -124,6 +124,148 @@ def check_cases(url, state, cases, output, name, upstream=None):
     return results
 
 
+def share_encryption(url, output, label, public_origin):
+    fixture = next(case for case in json.loads((HERE / "fixtures/http-cases.json").read_text(encoding="utf-8"))
+                   if case["id"] == "PC-native-age-public-and-download")
+    pairs = fixture["steps"][0]["body"]["process"][0]["args"]["arguments"]["pairs"]
+    observations = []
+
+    def send(step):
+        response = request(url, step)
+        observations.append({"request": step, "response": response})
+        (output / f"{label}-age.json").write_text(json.dumps(observations, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return response
+
+    def source(pair):
+        return {"age-public-key": pair["public"], "process": [{"type": "Script Operator", "args": {
+            "arguments": {"resourcePublic": pair["public"]},
+            "content": "function operator(input){if(input.$file['age-public-key']!==$arguments.resourcePublic)throw new Error('share mutated source key');return input;}"}}]}
+
+    assert send({"method": "PATCH", "path": "/api/file/merged-share", "body": source(pairs[0])})["status"] == 200
+    assert send({"method": "POST", "path": "/api/token", "body": {
+        "payload": {"type": "file", "name": "merged-share", "token": "age-once", "age-public-key": pairs[1]["public"]},
+        "options": {"mode": "count", "count": 1}}})["status"] == 200
+    encrypted = []
+    public = {"path": "/share/file/merged-share?token=age-once", "origin": public_origin,
+              "headers": {"x-sub-store-share-age-public-key": pairs[0]["public"]}}
+    encrypted.append((send(public), pairs[1]))
+    assert send({"method": "PATCH", "path": "/api/file/merged-share", "body": source(pairs[1])})["status"] == 200
+    encrypted.append((send({**public, "origin": False}), pairs[0]))
+    encrypted.append((send({"path": public["path"]}), pairs[1]))
+    for response, pair in encrypted:
+        assert response["status"] == 200 and response["body"].startswith("-----BEGIN AGE ENCRYPTED FILE-----\n")
+        assert response["headers"]["content-type"] == "text/plain; charset=utf-8"
+        decrypted = send({"method": "POST", "path": "/api/preview/sub", "body": {
+            "name": "share-decrypt", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture",
+            "process": [{"type": "Script Operator", "args": {"arguments": {"armor": response["body"], "secret": pair["secret"]},
+                "content": "async function operator(proxies){proxies[0].plain=await ProxyUtils.age.decrypt($arguments.armor,$arguments.secret);return proxies;}"}}]}})
+        assert decrypted["status"] == 200
+        assert json.loads(decrypted["body"])["data"]["processed"][0]["plain"] == "share-body"
+    assert send({"method": "DELETE", "path": "/api/token/age-once?type=file&name=merged-share"})["status"] == 200
+    assert send({"method": "PATCH", "path": "/api/file/merged-share", "body": {"age-public-key": "", "process": []}})["status"] == 200
+
+
+def sharing_contracts(binary, node, environment, baseline, root, output, report, image):
+    _, cases = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "sharing-core")
+    paired, final = {}, {}
+    for mode in ("merged", "standalone"):
+        ports = []
+        for _ in range(2):
+            with socket.socket() as reserved:
+                reserved.bind(("127.0.0.1", 0))
+                ports.append(reserved.getsockname()[1])
+        for kind in ("node", "rust"):
+            label = f"{kind}-sharing-{mode}"
+            state = output / label
+            state.mkdir()
+            document = {**baseline, "files": [], "subs": [], "collections": [], "tokens": [], "archives": []}
+            (state / "sub-store.json").write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+            (state / "root.json").write_text(json.dumps(root, ensure_ascii=False), encoding="utf-8")
+            static_fixture(state / "frontend")
+            env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state), "SUB_STORE_BACKEND_API_PORT": str(ports[0]),
+                   "SUB_STORE_FRONTEND_PATH": str(state / "frontend"), "SUB_STORE_FRONTEND_HOST": "127.0.0.1",
+                   "SUB_STORE_FRONTEND_PORT": str(ports[1]), "SUB_STORE_FRONTEND_BACKEND_PATH": "/backend",
+                   "SUB_STORE_BACKEND_PREFIX": "true"}
+            if mode == "merged":
+                env["SUB_STORE_BACKEND_MERGE"] = "true"
+            else:
+                env.pop("SUB_STORE_BACKEND_MERGE", None)
+            selected = json.loads(json.dumps(cases))
+            if mode == "standalone":
+                for case in selected:
+                    for step in case["steps"]:
+                        if step.get("origin") and step.get("method", "GET") != "GET":
+                            step["expect"] = {"status": 500}
+                        if step.get("origin"):
+                            step["origin"] = f"http://127.0.0.1:{ports[1]}"
+            manager = oracle(node, env, output, report, label) if kind == "node" else listener(binary, env, output, report, label, image, host_network=True)
+            with manager as backend_url:
+                url = backend_url
+                public_origin = True if mode == "merged" else f"http://127.0.0.1:{ports[1]}"
+                ready_url = url if mode == "merged" else public_origin + "/backend"
+                deadline = time.monotonic() + 30
+                while True:
+                    try:
+                        if request(ready_url, {"path": "/api/utils/env"})["status"] == 200:
+                            break
+                    except OSError:
+                        pass
+                    assert time.monotonic() < deadline, "Share frontend readiness timeout"
+                    time.sleep(0.1)
+                paired[(mode, kind)] = check_cases(url, state, selected, output, label)
+                signing = {"method": "POST", "path": "/api/token", "body": {
+                    "payload": {"type": "file", "name": "merged-share", "token": "concurrent"},
+                    "options": {"mode": "count", "count": 1}}}
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    signed = list(pool.map(lambda _: request(url, signing), range(2)))
+                proof = {"signing": signed}
+                proof_path = output / f"{label}-concurrency.json"
+                proof_path.write_text(json.dumps(proof, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                assert sorted(response["status"] for response in signed) == [200, 500]
+                assert json.loads(next(response for response in signed if response["status"] == 500)["body"])["error"]["code"] == "DUPLICATE_TOKEN"
+                public = {"path": "/share/file/merged-share?token=concurrent", "origin": public_origin}
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    consumed = list(pool.map(lambda _: request(url, public), range(2)))
+                proof["public"] = consumed
+                proof_path.write_text(json.dumps(proof, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                assert sorted(response["status"] for response in consumed) == [200, 404]
+                assert next(response for response in consumed if response["status"] == 200)["body"] == "share-body"
+                tokens = json.loads(request(url, {"path": "/api/tokens"})["body"])["data"]
+                proof["tokens"] = tokens
+                proof_path.write_text(json.dumps(proof, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                assert len(tokens) == 1 and tokens[0]["count"] == 1 and tokens[0]["usedCount"] == 1
+                assert request(url, {"method": "DELETE", "path": "/api/token/concurrent?type=file&name=merged-share"})["status"] == 200
+                share_encryption(url, output, label, public_origin)
+                if kind == "rust":
+                    unwritable = {**signing, "body": {**signing["body"], "payload": {**signing["body"]["payload"], "token": "write-failure"}}}
+                    assert request(url, unwritable)["status"] == 200
+                    before = request(url, {"path": "/api/tokens"})
+                    saved = state / "saved-sharing.json"
+                    (state / "sub-store.json").rename(saved)
+                    (state / "sub-store.json").mkdir()
+                    try:
+                        rejected = request(url, {"path": "/share/file/merged-share?token=write-failure", "origin": public_origin})
+                        after = request(url, {"path": "/api/tokens"})
+                        (output / f"{label}-write-failure.json").write_text(json.dumps({"before": before, "failure": rejected, "after": after}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                        assert rejected["status"] == 500 and json.loads(rejected["body"])["error"]["code"] == "STATE_WRITE_FAILED"
+                        check_json(json.loads(before["body"]), json.loads(after["body"]))
+                    finally:
+                        (state / "sub-store.json").rmdir()
+                        saved.rename(state / "sub-store.json")
+                    assert request(url, {"method": "DELETE", "path": "/api/token/write-failure?type=file&name=merged-share"})["status"] == 200
+                final[(mode, kind)] = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+        for actual_case, reference_case in zip(paired[(mode, "rust")], paired[(mode, "node")], strict=True):
+            for index, (actual, reference) in enumerate(zip(actual_case["steps"], reference_case["steps"], strict=True)):
+                if actual["path"] == "/api/utils/env":
+                    continue  # Environment metadata retains its accepted M2 runtime differences.
+                a, b = actual["response"], reference["response"]
+                assert (a["status"], a["body"]) == (b["status"], b["body"]), (mode, index, a, b)
+                for key in ("content-type", "content-length", "etag", "allow"):
+                    assert a["headers"].get(key) == b["headers"].get(key), (mode, index, key, a, b)
+        check_json(final[(mode, "rust")], final[(mode, "node")])
+        report[f"native_{mode}_sharing_count_and_state_checked"] = True
+
+
 def script_concurrency(url, state, output, name):
     """A pending script must observe and preserve a concurrent ordinary write."""
     step = {"method": "POST", "path": "/api/preview/sub", "body": {
@@ -1862,7 +2004,15 @@ def main():
             with ControlledUpstream(conversion_upstream_port) as upstream, manager as url:
                 conversion_upstream_port = upstream.server.server_address[1]
                 conversion_upstream_origins[kind] = upstream.url
+                token_start = int(wall_time().timestamp() * 1000)
                 results = check_cases(url, state, conversion_cases, output, label, upstream)
+                token_end = int(wall_time(latest=True).timestamp() * 1000)
+                token_case = next(case for case in results if case["id"] == "T04-token-expiration-inputs-and-order")
+                token_step = next(step for step in token_case["steps"] if "DURATION_EXP" in step.get("captured", {}))
+                captured = token_step["captured"]
+                assert all(token_start <= captured[key] <= token_end for key in ("DURATION_CREATED", "COUNT_CREATED"))
+                assert token_start + 86400000 <= captured["DURATION_EXP"] <= token_end + 86400000
+                report.setdefault("token_clock_bounds", {})[kind] = {"before": token_start, "after": token_end, **captured}
                 conversion_responses[kind] = list(results)
                 report["phases"].append({"name": label, "cases": len(results), "requests": sum(len(case["steps"]) for case in results)})
                 conversion_concurrency[kind] = script_concurrency(url, state, output, label)
@@ -1881,8 +2031,15 @@ def main():
             assert rust_case["id"] == node_case["id"]
             for rust_step, node_step in zip(rust_case["steps"], node_case["steps"], strict=True):
                 actual, expected = rust_step["response"], node_step["response"]
-                assert actual["status"] == expected["status"] and actual["body"] == expected["body"], (rust_case["id"], actual, expected)
+                projected = rust_step.get("capture_projection")
+                reference = node_step.get("capture_projection")
+                assert bool(projected) == bool(reference), "Capture projection missing from a service"
+                if projected:
+                    assert projected["paths"] == reference["paths"], "Capture projection paths differ"
+                assert actual["status"] == expected["status"] and (projected["body"] if projected else actual["body"]) == (reference["body"] if reference else expected["body"]), (rust_case["id"], actual, expected)
                 for key in ("content-type", "content-length", "etag", "allow"):
+                    if projected and key in ("content-length", "etag"):
+                        continue  # Each original body already proved its own length and SHA1 tag.
                     assert actual["headers"].get(key) == expected["headers"].get(key), (rust_case["id"], key, actual, expected)
         check_json(conversion_state["rust"], conversion_state["node"])
         check_json(conversion_concurrency["rust"], conversion_concurrency["node"])
@@ -1890,6 +2047,7 @@ def main():
         report["native_script_background_refresh_and_state_checked"] = True
         report["native_script_concurrency_and_state_checked"] = True
         report["native_local_ss_conversion_checked"] = True
+        sharing_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
         configurations = [
             ("default", {}, 1048576, [("https://sub-store.vercel.app", "https://sub-store.vercel.app")], "https://denied.invalid", False),
             ("custom-name", {"SUB_STORE_BACKEND_CUSTOM_NAME": "configuration-fixture", "SUB_STORE_BODY_JSON_LIMIT": "+1GB"}, 1073741824,

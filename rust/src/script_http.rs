@@ -276,6 +276,7 @@ pub(crate) async fn download<'js>(
     let input = object(js)?;
     js.set(&input, "headers", headers)?;
     js.set(&input, "body", output)?;
+    js.set(&input, "agePublicKey", optional(js, &request, "outputAgePublicKey")?)?;
     let source = object(js)?;
     js.set(
         &source,
@@ -301,6 +302,7 @@ async fn response<'js>(
     supplied: Value<'js>,
     execution: Value<'js>,
 ) -> rquickjs::Result<Value<'js>> {
+    let share_key = optional(js, &input, "agePublicKey")?;
     let headers = js.get(&input, "headers")?;
     let res = optional(js, &supplied, "_res")?;
     let override_headers = optional(js, &res, "headers")?;
@@ -338,7 +340,11 @@ async fn response<'js>(
     }
     set_headers(js, &headers, next)?;
     js.set(&transformed, "headers", headers.clone())?;
-    let key = optional(js, &item, "age-public-key")?;
+    let key = if share_key.is_null() || share_key.is_undefined() {
+        optional(js, &item, "age-public-key")?
+    } else {
+        share_key
+    };
     let key = js.method(
         js.value(if key.is_null() || key.is_undefined() {
             String::new()
@@ -447,6 +453,7 @@ pub(crate) async fn file<'js>(
     let input = object(js)?;
     js.set(&input, "headers", headers)?;
     let body = optional(js, &output, "$content")?;
+    js.set(&input, "agePublicKey", optional(js, &request, "outputAgePublicKey")?)?;
     js.set(
         &input,
         "body",

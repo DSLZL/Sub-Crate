@@ -84,7 +84,7 @@ def request(base_url, step):
     data = json.dumps(step["body"], ensure_ascii=False).encode("utf-8") if "body" in step else None
     headers = {"Content-Type": "application/json", **step.get("headers", {})}
     if step.get("origin"):
-        parsed = urlsplit(base_url)
+        parsed = urlsplit(step["origin"] if isinstance(step["origin"], str) else base_url)
         base_url = f"{parsed.scheme}://{parsed.netloc}"
     req = Request(base_url.rstrip("/") + step["path"], data=data, headers=headers, method=step.get("method", "GET"))
     opener = build_opener(ProxyHandler({}), NoRedirect(), BufferedHTTPHandler())
@@ -151,6 +151,76 @@ def interpolate(value, captures):
     return value
 
 
+def project_captured_scalars(response, expected, captures):
+    """Only fixture-declared scalar paths may differ between the two live clocks."""
+    targets = {}
+
+    def declared(value, path=()):
+        if isinstance(value, str) and re.search(r"\{\{[A-Z][A-Z0-9_]*\}\}", value):
+            assert path not in targets or targets[path] == value, "Conflicting capture paths"
+            targets[path] = value
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                declared(item, path + (key,))
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                declared(item, path + (index,))
+
+    for key in ("json", "json_contains"):
+        if key in expected:
+            declared(expected[key])
+    if not targets:
+        return None
+    body = response["body"]
+    raw = body.encode("utf-8")
+    assert response["headers"]["content-length"] == str(len(raw)), "Captured body length mismatch"
+    digest = base64.b64encode(hashlib.sha1(raw).digest()).decode().rstrip("=")
+    assert response["headers"]["etag"] == f'W/"{len(raw):x}-{digest}"', "Captured body ETag mismatch"
+    decoder, replacements, visited = json.JSONDecoder(), [], set()
+
+    def whitespace(offset):
+        while offset < len(body) and body[offset] in " \r\n\t":
+            offset += 1
+        return offset
+
+    def scan(offset, path):
+        offset = whitespace(offset)
+        if path in targets:
+            value, end = decoder.raw_decode(body, offset)
+            wanted = interpolate(targets[path], captures)
+            assert not isinstance(value, (dict, list)), "Capture projection must be a scalar"
+            assert type(value) is type(wanted) and value == wanted, "Capture projection value mismatch"
+            replacements.append((offset, end, json.dumps(targets[path], ensure_ascii=False)))
+            visited.add(path)
+            return end
+        if body[offset] not in "[{":
+            return decoder.raw_decode(body, offset)[1]
+        mapping = body[offset] == "{"
+        end_char = "}" if mapping else "]"
+        offset, index = whitespace(offset + 1), 0
+        while body[offset] != end_char:
+            if mapping:
+                key, offset = decoder.raw_decode(body, offset)
+                offset = whitespace(offset)
+                assert body[offset] == ":", "Invalid JSON object"
+                offset += 1
+            else:
+                key = index
+            offset = whitespace(scan(offset, path + (key,)))
+            index += 1
+            if body[offset] == ",":
+                offset = whitespace(offset + 1)
+            else:
+                assert body[offset] == end_char, "Invalid JSON container"
+        return offset + 1
+
+    assert whitespace(scan(0, ())) == len(body), "Trailing JSON content"
+    assert visited == targets.keys(), "Missing capture projection path"
+    for start, end, replacement in reversed(replacements):
+        body = body[:start] + replacement + body[end:]
+    return {"body": body, "paths": [{"path": list(path), "template": value} for path, value in targets.items()]}
+
+
 def run_cases(base_url, state_dir, cases, upstream=None):
     results = []
     captures = {}
@@ -188,6 +258,9 @@ def run_cases(base_url, state_dir, cases, upstream=None):
                     assert not captures.keys() & captured.keys(), "Capture names must be unique"
                     captures.update(captured)
                     observed["captured"] = captured
+                projection = project_captured_scalars(response, step["expect"], captures)
+                if projection:
+                    observed["capture_projection"] = projection
                 step = interpolate(step, captures)
                 check_response(response, step["expect"])
                 if "state" in step:

@@ -9452,7 +9452,7 @@
       {"method": "POST", "path": "/api/preview/file", "body": {"name": "preview", "source": "local", "content": [["one", null], 0, false, ""]}, "expect": {"status": 200, "json": {"status": "success", "data": {"original": "one\n0\nfalse", "processed": "one\n0\nfalse"}}}},
       {"method": "POST", "path": "/api/preview/file", "body": {"name": "preview", "source": "local", "content": "before", "process": [{"type": "Script Operator", "args": {"content": "$content += ':' + $file.name;"}}]}, "expect": {"status": 200, "json": {"status": "success", "data": {"original": "before", "processed": "before:preview"}}}},
       {"method": "POST", "path": "/api/preview/file", "body": {"name": "mihomo", "type": "mihomoProfile", "sourceType": "none"}, "expect": {"status": 200, "json": {"status": "success", "data": {"original": "{}\n", "processed": "{}\n"}}}},
-      {"method": "POST", "path": "/api/files", "body": {"name": "file-response", "source": "local", "content": "base", "process": [{"type": "Script Operator", "args": {"content": "function operator(input) { if (input.$options._req.params.name !== 'file-response') throw new Error('file request'); input.$content += ':generated'; input.$options._res = {status:201,headers:{'x-file-generated':'yes'}}; return input; }"}}, {"type": "Response Transformer", "args": {"content": "function transformFunction(res, context) { if (!context.source.$file || res.status !== 201 || res.headers['x-file-generated'] !== 'yes') throw new Error('file response'); res.body += ':response'; res.status = 202; res.headers['x-file-response'] = 'yes'; delete res.headers['x-file-generated']; return res; }"}}]}, "expect": {"status": 201}},
+      {"method": "POST", "path": "/api/files", "body": {"name": "file-response", "source": "local", "content": "base", "process": [{"type": "Script Operator", "args": {"content": "function operator(input) { if (input.$options._req.params.name !== 'file-response') throw new Error('file request'); input.$content += ':generated'; input.$options._res = {status:201,headers:{'x-file-generated':'yes'}}; return input; }"}}, {"type": "Response Transformer", "args": {"content": "function transformFunction(res, context) { if (!context.source.$file || res.status !== 201 || res.headers['x-file-generated'] !== 'yes') throw new Error('file response'); res.body += ':response'; res.status = 202; res.headers['x-file-response'] = 'yes'; res.headers['x-file-generated'] = null; return res; }"}}]}, "expect": {"status": 201}},
       {"path": "/api/file/file-response", "expect": {"status": 202, "body": "base:generated:response", "headers": {"x-file-response": "yes"}, "absent_headers": ["x-file-generated"]}, "state": {"files": [{"name": "file-response", "content": "base"}]}},
       {"method": "HEAD", "path": "/api/file/file-response", "expect": {"status": 202, "body": "", "headers": {"content-length": "23", "x-file-response": "yes"}}},
       {"method": "OPTIONS", "path": "/api/file/file-response", "expect": {"status": 200, "body": "GET,PATCH,DELETE,HEAD", "headers": {"allow": "GET,PATCH,DELETE,HEAD"}}},
@@ -9575,6 +9575,40 @@
     ]
   },
   {
+    "id": "T04-token-expiration-inputs-and-order",
+    "source": "backend/src/restful/token.js:91-258,260-401; locked ms 2.1.3 and age normalization; actual signing/list/delete owners",
+    "steps": [
+      {"method":"POST","path":"/api/files","body":{"name":"options-source","source":"local","content":"options"},"expect":{"status":201}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source","token":0}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_CUSTOM_TOKEN","message":"Invalid custom token: 0"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"unsupported","name":"options-source"}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_TYPE","message":"type options-source not supported"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"mode":false}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_EXPIRATION_MODE","message":"Unsupported expiration mode: false"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"mode":"duration","expiresIn":""}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_EXPIRES_IN"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"expiresIn":1000}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_EXPIRES_IN"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"expiresIn":[]}},"expect":{"status":500,"json_contains":{"error":{"code":"TOKEN_SIGN_FAILED","details":"Reason: val is not a non-empty string or a valid number. val=[]"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"mode":"count","count":2.5}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_SHARE_COUNT"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"mode":"count","count":2,"usedCount":-1}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_SHARE_USED_COUNT"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"mode":"count","count":2,"usedCount":3}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_SHARE_USED_COUNT"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"mode":"datetime","exp":true}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_EXPIRATION_DATETIME"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"mode":"datetime","exp":9007199254740992}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_EXPIRATION_DATETIME"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"expiresIn":"1d","expiresValue":0,"expiresUnit":"day"}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_EXPIRES_VALUE"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"expiresIn":"1d","expiresValue":1,"expiresUnit":"week"}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_EXPIRES_UNIT"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"},"options":{"expiresIn":"1h","expiresValue":1,"expiresUnit":"day"}},"expect":{"status":500,"json_contains":{"error":{"code":"INVALID_DURATION_INPUT"}}},"state":{"tokens":[]}},
+      {"method":"PATCH","path":"/api/settings","body":{"appearanceSetting":{"createItemPosition":"top"}},"expect":{"status":200}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source","token":"options-count","contentEditorLanguage":"unknown","keep":{"zero":0,"nil":null}},"options":{"mode":"count","count":"3","usedCount":"1"}},"expect":{"status":200,"json":{"status":"success","data":{"token":"options-count"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source","token":"options-duration"},"options":{"expiresIn":"1d","expiresValue":"1.00","expiresUnit":" day "}},"expect":{"status":200,"json":{"status":"success","data":{"token":"options-duration"}}}},
+      {"path":"/api/tokens?type=file&name=options-source","capture":{"DURATION_CREATED":{"pointer":"/data/0/createdAt","type":"integer"},"DURATION_EXP":{"pointer":"/data/0/exp","type":"integer"},"COUNT_CREATED":{"pointer":"/data/1/createdAt","type":"integer"}},"expect":{"status":200,"json":{"status":"success","data":[{"type":"file","name":"options-source","token":"options-duration","createdAt":"{{DURATION_CREATED}}","mode":"duration","expiresIn":"1d","expiresValue":"1","expiresUnit":"day","exp":"{{DURATION_EXP}}"},{"type":"file","name":"options-source","token":"options-count","contentEditorLanguage":"unknown","keep":{"zero":0,"nil":null},"createdAt":"{{COUNT_CREATED}}","mode":"count","count":3,"usedCount":1}]}}},
+      {"method":"DELETE","path":"/api/token/options-duration?type=file&name=options-source","expect":{"status":200}},
+      {"method":"DELETE","path":"/api/token/options-count?type=file&name=options-source","expect":{"status":200},"state":{"tokens":[]}},
+      {"method":"DELETE","path":"/api/token/options-count?type=file&name=options-source","expect":{"status":500,"json":{"status":"failed","error":{"code":"RESOURCE_NOT_FOUND","type":"ResourceNotFoundError","message":"Share file/options-source/options-count does not exist!"}}}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"file","name":"options-source"}},"capture":{"AUTO_TOKEN":{"pointer":"/data/token","type":"string","pattern":"[A-Za-z0-9_-]{21}"}},"expect":{"status":200,"json":{"status":"success","data":{"token":"{{AUTO_TOKEN}}"}}}},
+      {"method":"DELETE","path":"/api/token/{{AUTO_TOKEN}}?type=file&name=options-source","expect":{"status":200},"state":{"tokens":[]}},
+      {"method":"OPTIONS","path":"/api/token","expect":{"status":200,"body":"POST,GET,HEAD"}},
+      {"method":"OPTIONS","path":"/api/token/options-count","expect":{"status":200,"body":"DELETE,GET,HEAD"}},
+      {"method":"DELETE","path":"/api/file/options-source","expect":{"status":200},"state":{"files":[]}},
+      {"method":"PATCH","path":"/api/settings","body":{"appearanceSetting":{"createItemPosition":"bottom"}},"expect":{"status":200}}
+    ]
+  },
+  {
     "id": "T01-token-metadata-and-validation",
     "source": "backend/src/restful/token.js:18,25,61,228,260; backend/src/test/restful/token.spec.js:352",
     "steps": [
@@ -9623,6 +9657,28 @@
       {"path": "/share/file/merged-share?token=limited", "origin": true, "expect": {"status": 404, "body": ""}, "state": {"tokens": [{"token": "limited", "usedCount": 2}]}},
       {"path": "/share/file/merged-share?token=limited", "expect": {"status": 200, "body": "share-body"}, "state": {"tokens": [{"token": "limited", "usedCount": 2}]}},
       {"method": "DELETE", "path": "/api/token/limited?type=file&name=merged-share&mode=permanent", "expect": {"status": 200, "json": {"status": "success"}}, "state": {"tokens": []}}
+    ]
+  },
+  {
+    "id": "T06-share-subscription-and-collection",
+    "source": "backend/src/restful/download.js:45-83,85-189,492; token.js:423-483; actual public type/name/target binding and generation",
+    "steps": [
+      {"method":"POST","path":"/api/subs","body":{"name":"public-source","source":"local","content":"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture"},"expect":{"status":201}},
+      {"method":"POST","path":"/api/collections","body":{"name":"public-group","subscriptions":["public-source"]},"expect":{"status":201}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"sub","name":"public-source","token":"public-sub"},"options":{"mode":"count","count":3}},"expect":{"status":200}},
+      {"method":"POST","path":"/api/token","body":{"payload":{"type":"col","name":"public-group","token":"public-col"},"options":{"mode":"count","count":1}},"expect":{"status":200}},
+      {"path":"/share/col/public-group?token=public-sub","origin":true,"expect":{"status":404,"body":""},"state":{"tokens":[{"token":"public-sub","usedCount":0},{"token":"public-col","usedCount":0}]}},
+      {"path":"/share/sub/public-source/URI?token=public-sub","origin":true,"expect":{"status":200},"state":{"tokens":[{"token":"public-sub","usedCount":1},{"token":"public-col","usedCount":0}]}},
+      {"path":"/share/sub/public-source?token=public-sub&fakeSub=true","origin":true,"expect":{"status":400,"json_contains":{"error":{"code":"UNSUPPORTED_SHARE_FAKE_SUB","details":"详情请查看日志"}}}},
+      {"path":"/share/sub/public-source?token=public-sub&content=blocked","origin":true,"expect":{"status":400,"json_contains":{"error":{"code":"UNSUPPORTED_SHARE_SUB_SOURCE_OVERRIDE","details":"详情请查看日志"}}},"state":{"tokens":[{"token":"public-sub","usedCount":3},{"token":"public-col","usedCount":0}]}},
+      {"path":"/share/sub/public-source?token=public-sub","origin":true,"expect":{"status":404,"body":""}},
+      {"path":"/share/sub/public-source/URI?token=public-sub","expect":{"status":200},"state":{"tokens":[{"token":"public-sub","usedCount":3},{"token":"public-col","usedCount":0}]}},
+      {"path":"/share/col/public-group/URI?token=public-col","origin":true,"expect":{"status":200},"state":{"tokens":[{"token":"public-sub","usedCount":3},{"token":"public-col","usedCount":1}]}},
+      {"path":"/share/col/public-group/URI?token=public-col","origin":true,"expect":{"status":404,"body":""}},
+      {"method":"DELETE","path":"/api/token/public-sub?type=sub&name=public-source","expect":{"status":200}},
+      {"method":"DELETE","path":"/api/token/public-col?type=col&name=public-group","expect":{"status":200},"state":{"tokens":[]}},
+      {"method":"DELETE","path":"/api/collection/public-group?mode=permanent","expect":{"status":200}},
+      {"method":"DELETE","path":"/api/sub/public-source?mode=permanent","expect":{"status":200}}
     ]
   },
   {

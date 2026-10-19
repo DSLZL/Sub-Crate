@@ -1003,6 +1003,7 @@ pub async fn run(
                                 let input = ctx.json_parse(codec::stringify(&input))?;
                                 let result = match operation.as_str() {
                                     "parse" => crate::script_http::parse(&js, input).await?,
+                                    "token-options" => crate::script_tokens::options(&js, input)?,
                                     "module-name" => {
                                         let name = js.get(&input, "name")?;
                                         let name = if name.is_null() || name.is_undefined() {

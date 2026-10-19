@@ -1,7 +1,80 @@
 use crate::{api, body::Body, json as codec, script, state::Store};
 use hyper::Method;
 use serde_json::{Value, json};
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+pub(crate) struct Error {
+    pub code: String,
+    pub kind: &'static str,
+    pub message: String,
+    pub details: Option<Value>,
+}
+
+impl Error {
+    pub fn invalid(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            kind: "RequestInvalidError",
+            message: message.into(),
+            details: None,
+        }
+    }
+
+    pub fn missing(message: impl Into<String>) -> Self {
+        Self {
+            code: "RESOURCE_NOT_FOUND".to_owned(),
+            kind: "ResourceNotFoundError",
+            message: message.into(),
+            details: None,
+        }
+    }
+
+    pub fn internal(code: &str, message: &str, reason: impl std::fmt::Display) -> Self {
+        Self {
+            code: code.to_owned(),
+            kind: "InternalServerError",
+            message: message.to_owned(),
+            details: Some(json!(format!("Reason: {reason}"))),
+        }
+    }
+
+    pub fn state(error: std::io::Error) -> Self {
+        eprintln!("State write failed: {error}");
+        Self {
+            code: "STATE_WRITE_FAILED".to_owned(),
+            kind: "InternalServerError",
+            message: "Failed to persist state".to_owned(),
+            details: None,
+        }
+    }
+
+    pub fn reply(self, status: u16) -> api::Reply {
+        api::failure_details(status, &self.code, self.kind, &self.message, self.details)
+    }
+}
+
+pub(crate) fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+pub(crate) fn archive_mode(mode: &Value) -> Result<bool, Error> {
+    if mode.is_null() || mode == "" || mode == "permanent" {
+        Ok(false)
+    } else if mode == "archive" {
+        Ok(true)
+    } else {
+        Err(Error::invalid(
+            "INVALID_DELETE_MODE",
+            format!("Unsupported delete mode: {}", codec::js_string(mode)),
+        ))
+    }
+}
 
 pub async fn dispatch(
     method: &Method,

@@ -8,8 +8,11 @@
       "M01-module-crud",
       "F02-file-normalization-and-order",
       "F03-file-preview-and-response",
+      "T01-token-metadata-and-validation",
+      "T04-token-expiration-inputs-and-order",
       "F01-file-crud-and-runtime"
     ],
+    "sharing-core": ["T02-merged-share-count-and-origin", "T06-share-subscription-and-collection"],
     "conversion-local": [
       "PC-native-conversion-helper-contracts",
       "PC-native-typed-input-boundaries",
@@ -207,6 +210,8 @@
       "D03-excluded-script-import-export",
       "D04-excluded-script-restart",
       "T02-merged-share-count-and-origin",
+      "T04-token-expiration-inputs-and-order",
+      "T06-share-subscription-and-collection",
       "T03-share-datetime-archive",
       "P01-output-qx",
       "P01-output-QX",
@@ -466,7 +471,7 @@
       "N05-node-info-missing-server-and-recovery"
     ]
   },
-  "coverage_state": "210 executable fixtures; full suite intentionally fails until the complete inventory is accepted",
+  "coverage_state": "228 executable fixtures; full suite intentionally fails until the complete inventory is accepted",
   "pending_domains": [
     "artifacts",
     "files",
