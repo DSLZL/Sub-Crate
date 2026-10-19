@@ -1088,11 +1088,12 @@ fn loon_wireguard(line: &str) -> Option<Value> {
         .filter(|(server, port)| {
             !server.is_empty() && !port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit())
         });
-    let mut proxy =
-        json!({"type":"wireguard","name":codec::trim(name),"port":codec::numeric(f64::NAN)});
+    let mut proxy = json!({"type":"wireguard","name":codec::trim(name)});
     if let Some((server, port)) = endpoint {
         proxy["server"] = json!(server);
         proxy["port"] = codec::numeric(port.parse::<f64>().ok()?);
+    } else {
+        proxy["port"] = codec::numeric(f64::NAN);
     }
     for (output, input) in [
         ("ip", "interface-ip"),
