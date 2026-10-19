@@ -337,9 +337,7 @@ fn resource_cache<'js>(
     let cache = Object::new(ctx.clone())?;
     cache.set(
         "_persist",
-        Func::from(move |ctx: Ctx<'js>, this: This<Value<'js>>| {
-            cache_persist(ctx, this, key)
-        }),
+        Func::from(move |ctx: Ctx<'js>, this: This<Value<'js>>| cache_persist(ctx, this, key)),
     )?;
     cache.set("_cleanup", Func::from(cache_cleanup))?;
     cache.set("gettime", Func::from(cache_gettime))?;

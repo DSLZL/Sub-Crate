@@ -56,11 +56,13 @@ fn setting_integer<'js>(
     default: f64,
 ) -> rquickjs::Result<f64> {
     let number: f64 = js.call("number", (value,))?;
-    Ok(if number.is_finite() && number.fract() == 0.0 && number >= minimum {
-        number
-    } else {
-        default
-    })
+    Ok(
+        if number.is_finite() && number.fract() == 0.0 && number >= minimum {
+            number
+        } else {
+            default
+        },
+    )
 }
 
 async fn acquire(js: &Js<'_>) -> rquickjs::Result<Slot> {

@@ -1772,6 +1772,9 @@ def main():
         conversion_state = {}
         conversion_responses = {}
         conversion_concurrency = {}
+        # Cache identities include the source URL; both services need the same upstream origin.
+        conversion_upstream_port = 0
+        conversion_upstream_origins = {}
         for kind in ("node", "rust"):
             state = output / f"{kind}-conversion-local"
             state.mkdir()
@@ -1780,7 +1783,9 @@ def main():
             env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}
             label = kind + "-conversion-local"
             manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image, host_network=bool(image))
-            with manager as url, ControlledUpstream() as upstream:
+            with ControlledUpstream(conversion_upstream_port) as upstream, manager as url:
+                conversion_upstream_port = upstream.server.server_address[1]
+                conversion_upstream_origins[kind] = upstream.url
                 results = check_cases(url, state, conversion_cases, output, label, upstream)
                 conversion_responses[kind] = list(results)
                 report["phases"].append({"name": label, "cases": len(results), "requests": sum(len(case["steps"]) for case in results)})
@@ -1810,6 +1815,8 @@ def main():
                 conversion_responses[kind].extend(check_cases(url, state, conversion_restart, output, label))
                 assert (state / "sub-store.json").read_bytes() == before, "Read-only conversion changed durable state"
                 report["phases"].append({"name": label, "cases": len(conversion_restart)})
+        assert conversion_upstream_origins["node"] == conversion_upstream_origins["rust"]
+        report["conversion_upstream_origins"] = conversion_upstream_origins
         for rust_case, node_case in zip(conversion_responses["rust"], conversion_responses["node"], strict=True):
             assert rust_case["id"] == node_case["id"]
             for rust_step, node_step in zip(rust_case["steps"], node_case["steps"], strict=True):
