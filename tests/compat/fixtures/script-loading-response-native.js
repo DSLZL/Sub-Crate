@@ -60,7 +60,7 @@ async function operator(proxies) {
     });
     await check('RS-native-shortcut-http-and-falsy-results',async()=>{
       const output=await transformed({status:202,body:'响应🙂\r\n',header:{}},[transform(`const response=await $substore.http.post({url:'$UPSTREAM/host/echo',body:$res.body,headers:{'X-Probe':'native-response'}});
-        $res.headers.echo=JSON.parse(response.body).body;$res.body+='shortcut';`)]);
+        $res.headers.echo=Buffer.from(JSON.parse(response.body).body).toString('utf8');$res.body+='shortcut';`)]);
       equal(output,{status:202,body:'响应🙂\r\nshortcut',headers:{echo:'响应🙂\r\n'},header:{echo:'响应🙂\r\n'}},'shortcut native HTTP');
       for(const value of ['undefined','null','false','0','""']) {
         const result=await transformed({body:'start'},[transform('function transformFunction(res){res.body="mutated";return '+value+';}')]);

@@ -1,5 +1,5 @@
 use crate::body::Body;
-use crate::conversion::{self, Error as ConversionError};
+use crate::conversion::Error as ConversionError;
 use crate::json::{self as codec, js_string, to_number as number};
 use crate::state::{Store, decode, legacy_object_order, migrate, truthy, valid_records};
 use base64::Engine;
@@ -11,6 +11,82 @@ use std::io;
 use std::sync::{Arc, Mutex};
 
 pub type Reply = Response<Full<Bytes>>;
+
+#[derive(Clone)]
+pub struct TransformedResponse;
+
+fn script_response(output: Value) -> Result<Reply, ConversionError> {
+    let status = output["status"].as_f64().unwrap_or(200.0) as u16;
+    let body = &output["body"];
+    let binary = output["binary"] == true;
+    let bytes = if binary {
+        base64::engine::general_purpose::STANDARD
+            .decode(body.as_str().unwrap_or(""))
+            .map_err(|error| ConversionError::Legacy(error.to_string()))?
+    } else if body.is_null() {
+        Vec::new()
+    } else {
+        body.as_str()
+            .map_or_else(|| codec::stringify(body), str::to_owned)
+            .into_bytes()
+    };
+    let default_type = if binary {
+        "application/octet-stream"
+    } else if body.is_string() {
+        "text/html; charset=utf-8"
+    } else {
+        "application/json; charset=utf-8"
+    };
+    let mut response = send(status, default_type, bytes);
+    if let Some(headers) = output["headers"].as_object() {
+        for (key, value) in headers {
+            if value.is_null() || key == "content-length" {
+                continue;
+            }
+            let Ok(key) = hyper::header::HeaderName::from_bytes(key.as_bytes()) else {
+                continue;
+            };
+            let values = value
+                .as_array()
+                .map_or_else(|| vec![value], |values| values.iter().collect());
+            let values: Option<Vec<_>> = values
+                .into_iter()
+                .map(|value| {
+                    let mut text = js_string(value);
+                    if key == "content-type" && !binary && body.is_string() {
+                        text = crate::body::response_content_type(&text).unwrap_or(text);
+                    }
+                    if key == "profile-web-page-url"
+                        && let Ok(url) = reqwest::Url::parse(&codec::text(&text))
+                    {
+                        text = codec::encode(url.as_str());
+                    }
+                    let units = codec::units(&text);
+                    if units.iter().any(|unit| *unit > 255) {
+                        return None;
+                    }
+                    let bytes: Vec<_> = units.into_iter().map(|unit| unit as u8).collect();
+                    hyper::header::HeaderValue::from_bytes(&bytes).ok()
+                })
+                .collect();
+            let Some(values) = values else {
+                continue;
+            };
+            response.headers_mut().remove(&key);
+            for value in values {
+                response.headers_mut().append(key.clone(), value);
+            }
+        }
+    }
+    if matches!(status, 204 | 304) {
+        for key in ["content-type", "content-length", "transfer-encoding"] {
+            response.headers_mut().remove(key);
+        }
+        *response.body_mut() = Full::new(Bytes::new());
+    }
+    response.extensions_mut().insert(TransformedResponse);
+    Ok(response)
+}
 
 pub fn text(status: u16, content_type: &str, body: impl Into<Bytes>) -> Reply {
     Response::builder()
@@ -64,7 +140,9 @@ pub fn options(path: &str) -> Reply {
         "/api/settings" => "GET,PATCH,HEAD",
         "/api/storage" => "GET,POST,HEAD",
         "/api/subs" | "/api/collections" => "GET,POST,PUT,HEAD",
-        "/api/proxy/parse" | "/api/rule/parse" | "/api/preview/sub" => "POST,GET,HEAD",
+        "/api/proxy/parse" | "/api/rule/parse" | "/api/preview/sub" | "/api/preview/collection" => {
+            "POST,GET,HEAD"
+        }
         _ if path.starts_with("/api/sub/") || path.starts_with("/api/collection/") => {
             "GET,PATCH,DELETE,HEAD"
         }
@@ -158,7 +236,6 @@ pub fn failure(status: u16, code: &str, kind: &str, message: &str) -> Reply {
 
 fn conversion_error(error: ConversionError, context: Option<&str>) -> Reply {
     match error {
-        ConversionError::Pending(message) => pending(message),
         ConversionError::Legacy(reason) => {
             if let Some(message) = context {
                 send(
@@ -232,12 +309,6 @@ fn header_platform(headers: &HeaderMap) -> &'static str {
     }
 }
 
-fn has_processors(sub: &Value) -> bool {
-    sub.get("process").is_some_and(|process| {
-        truthy(process) && process.as_array().is_none_or(|items| !items.is_empty())
-    })
-}
-
 pub async fn conversion_dispatch(
     method: &Method,
     path: &str,
@@ -245,6 +316,7 @@ pub async fn conversion_dispatch(
     body: &Body,
     headers: &HeaderMap,
     store: &Arc<Mutex<Store>>,
+    request: &Value,
 ) -> Option<Reply> {
     if method == Method::POST && path == "/api/rule/parse" {
         let fields = Value::Object(body.fields());
@@ -267,69 +339,67 @@ pub async fn conversion_dispatch(
     }
     if method == Method::POST && path == "/api/proxy/parse" {
         let fields = Value::Object(body.fields());
-        if truthy(&fields["download"]) {
-            return Some(pending("Parser downloads are not implemented yet"));
-        }
-        let raw = fields
-            .get("data")
-            .filter(|value| !value.is_null())
-            .unwrap_or(&fields["content"]);
-        let target = selected_text(
-            fields
-                .get("client")
-                .filter(|value| !value.is_null())
-                .or_else(|| fields.get("platform")),
-        );
-        let result = conversion::parse(raw).and_then(|proxies| {
-            conversion::produce(
-                proxies,
-                &target,
-                fields["type"].as_str().unwrap_or(""),
-                fields.get("produce").unwrap_or(&json!({})),
-            )
-        });
+        let result = crate::script::run(store.clone(), "parse", fields).await;
         return Some(match result {
             Ok(output) => success(Some(json!({"par_res":output})), 200),
             Err(error) => conversion_error(error, None),
         });
     }
-    if method == Method::POST && path == "/api/preview/sub" {
-        let sub = Value::Object(body.fields());
-        if has_processors(&sub) {
-            let target = if truthy(&query["target"]) {
-                js_string(&query["target"])
-            } else {
-                "JSON".to_owned()
-            };
-            return Some(
-                match crate::script::local(store.clone(), sub, target, None, true).await {
-                    Ok(output) => success(Some(output), 200),
-                    Err(error) => conversion_error(error, Some("Failed to preview subscription")),
+    if method == Method::POST && matches!(path, "/api/preview/sub" | "/api/preview/collection") {
+        let collection = path.ends_with("/collection");
+        let target = if truthy(&query["target"]) {
+            js_string(&query["target"])
+        } else {
+            "JSON".to_owned()
+        };
+        let input = json!({"item":Value::Object(body.fields()),"target":codec::text(&target)});
+        return Some(
+            match crate::script::run(
+                store.clone(),
+                if collection {
+                    "preview-collection"
+                } else {
+                    "preview-sub"
                 },
-            );
-        }
-        return Some(match conversion::local(&sub, None) {
-            Ok(mut proxies) => {
-                conversion::tag(&mut proxies, &sub, true);
-                success(Some(json!({"original":proxies, "processed":proxies})), 200)
-            }
-            Err(error) => conversion_error(error, Some("Failed to preview subscription")),
-        });
+                input,
+            )
+            .await
+            {
+                Ok(output) => success(Some(output), 200),
+                Err(error) => conversion_error(
+                    error,
+                    Some(if collection {
+                        "Failed to preview collection"
+                    } else {
+                        "Failed to preview subscription"
+                    }),
+                ),
+            },
+        );
     }
     if method != Method::GET {
         return None;
     }
     let rest = path.strip_prefix("/download/")?;
+    let collection = rest.starts_with("collection/");
+    let rest = rest.strip_prefix("collection/").unwrap_or(rest);
     let (name, path_target) = rest
         .split_once('/')
         .map_or((rest, None), |(name, target)| (name, Some(target)));
     let name = codec::encode(&percent_decode_str(name).decode_utf8().ok()?);
-    let sub = if truthy(&query["fakeSub"]) {
+    let sub = if !collection && truthy(&query["_fakeNode"]) {
+        Some(
+            json!({"name":"fakeNodeInfo", "source":"local", "content":"invalid share = ss, 1.0.0.1, 80, encrypt-method=aes-128-gcm, password=password"}),
+        )
+    } else if !collection && truthy(&query["fakeSub"]) {
         Some(json!({"name":"fakeSub", "source":"remote", "url":""}))
     } else {
         let store = store.lock().unwrap();
         let mut found = None;
-        for item in store.list("subs").unwrap_or_default() {
+        for item in store
+            .list(if collection { "collections" } else { "subs" })
+            .unwrap_or_default()
+        {
             if item.is_null() {
                 return Some(uncaught_error(
                     500,
@@ -348,20 +418,17 @@ pub async fn conversion_dispatch(
             404,
             "RESOURCE_NOT_FOUND",
             "ResourceNotFoundError",
-            &format!("Subscription {} does not exist!", codec::text(&name)),
+            &format!(
+                "{} {} does not exist!",
+                if collection {
+                    "Collection"
+                } else {
+                    "Subscription"
+                },
+                codec::text(&name)
+            ),
         ));
     };
-    // shortcut: output hooks, remote flow headers and encryption join this pipeline in their owning batches.
-    if ["$options", "mergeSources", "_fakeNode"]
-        .iter()
-        .any(|key| truthy(&query[*key]))
-        || truthy(&sub["age-public-key"])
-        || (truthy(&sub["subUserinfo"]) && !truthy(&query["noFlow"]) && !truthy(&sub["noFlow"]))
-    {
-        return Some(pending(
-            "Subscription output options are not implemented yet",
-        ));
-    }
     let target = if truthy(&query["platform"]) {
         js_string(&query["platform"])
     } else if let Some(target) = path_target {
@@ -379,54 +446,88 @@ pub async fn conversion_dispatch(
     } else {
         query.get("content").filter(|value| truthy(value)).cloned()
     };
-    if content.is_none() && url.is_some() {
-        return Some(pending(
-            "Remote subscription sources are not implemented yet",
+    let mut options = query.clone();
+    if let Some(fields) = options.as_object_mut() {
+        fields.insert("name".to_owned(), json!(name));
+        fields.insert("platform".to_owned(), json!(target));
+        if let Some(content) = content {
+            fields.insert("content".to_owned(), content);
+            fields.shift_remove("url");
+        }
+        let mut produce = serde_json::Map::new();
+        for (source, destination) in [
+            ("includeUnsupportedProxy", "include-unsupported-proxy"),
+            ("prettyYaml", "prettyYaml"),
+        ] {
+            if let Some(value) = query.get(source) {
+                produce.insert(destination.to_owned(), value.clone());
+            }
+        }
+        if !produce.contains_key("prettyYaml")
+            && let Some(value) = query.get("pretty-yaml")
+        {
+            produce.insert("prettyYaml".to_owned(), value.clone());
+        }
+        let use_external =
+            path_target.map_or(query["target"] == "SurgeMac", |target| target == "SurgeMac");
+        produce.insert("useMihomoExternal".to_owned(), json!(use_external));
+        if use_external {
+            for (key, field) in [
+                ("mihomoMerge", "merge"),
+                ("mihomoMergeName", "mergeName"),
+                ("mihomoExternal", "mihomoExternal"),
+            ] {
+                if let Some(value) = query.get(key) {
+                    produce.insert(field.to_owned(), value.clone());
+                }
+            }
+            if let Some(value) = query.get("mihomoLocalPort") {
+                let text = js_string(value);
+                let text = codec::trim(&text);
+                let end = text
+                    .char_indices()
+                    .skip(usize::from(text.starts_with(['+', '-'])))
+                    .find(|(_, ch)| !ch.is_ascii_digit())
+                    .map_or(text.len(), |(index, _)| index);
+                if let Ok(port) = text[..end].parse::<u16>()
+                    && port != 0
+                {
+                    produce.insert("localPort".to_owned(), json!(port));
+                }
+            }
+        }
+        fields.insert("produceOpts".to_owned(), Value::Object(produce));
+    }
+    let mut request = request.clone();
+    let mut params = json!({"name":name});
+    if let Some(target) = path_target {
+        params["target"] = json!(codec::encode(
+            &percent_decode_str(target).decode_utf8().ok()?
         ));
+        request["query"]["target"] = params["target"].clone();
     }
-    let kind = query["produceType"].as_str().unwrap_or("");
-    if kind == "raw" {
-        return Some(pending("Raw source output is not implemented yet"));
-    }
-    let result = if has_processors(&sub) {
-        crate::script::local(store.clone(), sub.clone(), target.clone(), content, false)
-            .await
-            .and_then(|output| {
-                output["processed"].as_array().cloned().ok_or_else(|| {
-                    ConversionError::Legacy("proxies.filter is not a function".to_owned())
-                })
-            })
-    } else {
-        conversion::local(&sub, content.as_ref()).map(|mut proxies| {
-            conversion::tag(&mut proxies, &sub, false);
-            proxies
-        })
-    };
-    let result = result.and_then(|proxies| {
-        if proxies.is_empty() {
-            return Err(ConversionError::Legacy(format!(
-                "订阅 {} 中不含有效节点",
-                selected_text(sub.get("name"))
-            )));
-        }
-        conversion::produce(proxies, &target, kind, &json!({}))
-    });
-    Some(match result {
-        Ok(output) => {
-            let content_type = if target == "JSON" {
-                "application/json; charset=utf-8"
-            } else {
-                "text/plain; charset=utf-8"
-            };
-            let bytes = output
-                .as_str()
-                .map_or_else(|| codec::stringify(&output), str::to_owned);
-            send(200, content_type, bytes)
-        }
+    request["params"] = params;
+    let result = crate::script::run(
+        store.clone(),
+        if collection {
+            "download-collection"
+        } else {
+            "download-sub"
+        },
+        json!({"item":sub,"options":options,"request":request}),
+    )
+    .await;
+    Some(match result.and_then(script_response) {
+        Ok(response) => response,
         Err(error) => conversion_error(
             error,
             Some(&format!(
-                "Failed to download subscription: {}",
+                "Failed to download {}: {}",
+                if collection {
+                    "collection"
+                } else {
+                    "subscription"
+                },
                 codec::text(&name)
             )),
         ),

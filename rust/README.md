@@ -9,7 +9,7 @@ includes SS/SSR, HTTP/SOCKS, Trojan, Hysteria1/2, TUIC, WireGuard, VMess, VLESS 
 AnyTLS, plus the registered Surge/Loon/QX and Clash JSON5/YAML formats and
 Base64/SSD/FullConfig/Clash preprocessing
 with transport/TLS normalization. Surge External fields are parsed as data.
-V2Ray also serves the default download target and its three legacy aliases.
+V2Ray supports all three legacy aliases.
 SurgeMac's external/forced/fallback/merged modes generate native configuration
 data and retain port/override policies; configured programs are never executed.
 Egern retains its protocol filters, stream/TLS/ShadowTLS fields, WireGuard peers,
@@ -18,24 +18,35 @@ Both sing-box aliases retain the existing protocol filters, transport/TLS and
 plugin options, paired ShadowTLS outputs and separate WireGuard/Tailscale endpoints.
 `/api/rule/parse` uses native HTML/provider preprocessing and all thirteen rule
 types to produce QX, Surge, Loon and Clash rules with the existing error policies.
-These protocol slices remain partial while the complete source-branch inventory is verified.
-Raw input starting `<!DOCTYPE html>` is discarded before parsing. Other formats,
-processors, remote sources and unported value branches return a pending error.
-The JavaScript feasibility example remains separate. Remaining conversion,
-script execution inside the application, archive actions, Gist/age and integrations are
-still under development; this is not a complete replacement release.
+The seventeen built-in processors and general JavaScript operators, filters and
+response transforms run in the service through rquickjs. Subscription and
+collection previews/downloads share the native pipeline, including ordered
+local/remote sources, provenance, nested generation, linked/module scripts and
+existing fallback policies. Raw input starting `<!DOCTYPE html>` is discarded
+before parsing. Node builtins, require/npm loading and native addons are excluded;
+stored Node-only scripts remain intact.
 
-Clash language parsing and pretty-YAML output embed only the existing locked JSON5/yaml utility
-packages through rquickjs. Application conversion policies remain native Rust.
+Scripts can use the native storage/cache, HTTP, DNS, MMDB, Gist, age, download,
+flow and conversion helpers. Explicit script writes retain their original timing
+across failures and restart. The development feasibility example remains separate.
+Independent file/module/artifact/share/token/archive/sync/cron/log business routes
+and the remaining encrypted/provider workflows are still under development.
+Full source-branch and frontend qualification remains part of the parent rewrite;
+this is not a complete replacement release.
+
+The engine embeds locked generic utility packages for formats, hashes, IP/bytes,
+cryptography, DNS packets and the Web primitives required by those helpers.
+Application conversion, processing and generation policies remain native Rust.
 The utility-only build in Actions records package input hashes and license
 notices in `vendor/`; the development application-helper bundle is separate.
 
 All builds and tests run in the **Rust service and compatibility** GitHub Actions
 workflow. Native Linux x64/arm64 and Windows x64 jobs produce release binaries;
 Linux x64/arm64 Docker jobs build and run `rust/Dockerfile`. The browser job uses
-the pinned unchanged frontend and runs the M2 CRUD/settings/backup slice against
-both Rust hosting modes, including permanent deletion and restored/deleted-state
-restarts. Complete frontend acceptance still depends on the remaining backend
+the pinned unchanged frontend: twenty Node workflows and ten selected Rust
+workflows in both hosting modes, including subscription/collection preview,
+permanent deletion and restored/deleted-state restarts. Complete frontend
+acceptance still depends on the remaining backend
 features. No local build, test or Docker setup is required.
 
 Downloaded service binaries use the existing environment variables:

@@ -671,6 +671,9 @@ pub(crate) fn finish(list: Vec<Value>, kind: &str, opts: &Value) -> Result<Value
     }
     let mut output = "proxies:\n".to_owned();
     for proxy in list {
+        if let Some(message) = crate::js_values::circular_error(&proxy) {
+            return Err(Error::Legacy(message));
+        }
         output.push_str("  - ");
         output.push_str(&codec::stringify(&proxy));
         output.push('\n');

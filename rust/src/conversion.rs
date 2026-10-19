@@ -6,9 +6,44 @@ use serde_json::{Map, Value, json};
 use std::net::Ipv6Addr;
 
 pub enum Error {
-    Pending(&'static str),
     Legacy(String),
 }
+
+pub(crate) const ALIASES: [&str; 33] = [
+    "qx",
+    "QX",
+    "QuantumultX",
+    "surge",
+    "Surge",
+    "SurgeMac",
+    "Loon",
+    "Clash",
+    "meta",
+    "clashmeta",
+    "clash.meta",
+    "Clash.Meta",
+    "ClashMeta",
+    "mihomo",
+    "Mihomo",
+    "uri",
+    "URI",
+    "v2",
+    "v2ray",
+    "V2Ray",
+    "json",
+    "JSON",
+    "stash",
+    "Stash",
+    "shadowrocket",
+    "Shadowrocket",
+    "ShadowRocket",
+    "surfboard",
+    "Surfboard",
+    "singbox",
+    "sing-box",
+    "egern",
+    "Egern",
+];
 
 fn component(raw: &str) -> Option<String> {
     if raw.as_bytes().iter().enumerate().any(|(index, byte)| {
@@ -52,15 +87,8 @@ fn finite_int(raw: &str) -> Result<Value, Error> {
         .skip(usize::from(raw.starts_with(['+', '-'])))
         .find(|(_, c)| !c.is_ascii_digit())
         .map_or(raw.len(), |(index, _)| index);
-    // shortcut: non-finite numbers need the M3 script/value bridge to retain their identity.
-    let number = raw[..end]
-        .parse::<f64>()
-        .ok()
-        .filter(|number| number.is_finite())
-        .ok_or(Error::Pending(
-            "Non-finite proxy numeric fields are not implemented yet",
-        ))?;
-    Ok(json!(number))
+    let number = raw[..end].parse::<f64>().unwrap_or(f64::NAN);
+    Ok(codec::numeric(number))
 }
 
 fn safe_integer(raw: &str) -> Option<u64> {
@@ -124,6 +152,42 @@ fn normalize_endpoint(proxy: &mut Value) -> Result<(), Error> {
         proxy["server"] = json!(server.strip_suffix(']').unwrap_or(server));
     }
     normalize(proxy)
+}
+
+fn fingerprint(pem: &Value) -> Result<Value, Error> {
+    let raw = pem
+        .as_str()
+        .ok_or_else(|| Error::Legacy("a.indexOf is not a function".to_owned()))?;
+    if !raw.contains("-----BEGIN ") {
+        return Err(Error::Legacy("can't find PEM header".to_owned()));
+    }
+    let mut encoded = raw;
+    for (index, _) in raw.match_indices("-----BEGIN ") {
+        let rest = &raw[index + 11..];
+        if let Some((label, body)) = rest.split_once("-----")
+            && !label.is_empty()
+            && !label.contains('-')
+        {
+            encoded = body;
+        }
+    }
+    if let Some((body, _)) = encoded.split_once("-----END ") {
+        encoded = body;
+    }
+    let encoded: String = encoded
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '='))
+        .collect();
+    let der = codec::decode_base64(&encoded).map_err(|error| Error::Legacy(error.to_string()))?;
+    let digest = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, &der);
+    Ok(json!(
+        digest
+            .as_ref()
+            .iter()
+            .map(|byte| format!("{byte:02X}"))
+            .collect::<Vec<_>>()
+            .join(":")
+    ))
 }
 
 fn ipv6(address: &str) -> bool {
@@ -231,12 +295,7 @@ fn random_port(raw: &str) -> Result<Value, Error> {
     } else {
         number(part)
     };
-    if !port.is_finite() {
-        return Err(Error::Pending(
-            "Non-finite proxy numeric fields are not implemented yet",
-        ));
-    }
-    Ok(json!(port))
+    Ok(codec::numeric(port))
 }
 
 fn interface_address(raw: &str) -> Option<(&str, Option<u32>, bool)> {
@@ -568,12 +627,6 @@ fn vless(line: &str, protocol: &str) -> Result<Option<Value>, Error> {
             } else {
                 json!({"Host":host})
             };
-            if !options["headers"].is_null() && !options["headers"].is_object() {
-                // shortcut: non-object headers need the production script/value bridge.
-                return Err(Error::Pending(
-                    "Non-object transport headers are not implemented yet",
-                ));
-            }
             if network == "xhttp" && truthy(&options["headers"]["Host"]) {
                 options["host"] = options["headers"]["Host"].clone();
                 options["headers"]
@@ -1222,6 +1275,7 @@ fn modern_uri(line: &str) -> Result<Option<Value>, Error> {
                         .unwrap()
                         .split(',')
                         .filter_map(|raw| finite_int(raw).ok())
+                        .filter(Value::is_number)
                         .collect();
                     if items.len() == 3 {
                         proxy["reserved"] = json!(items);
@@ -1238,7 +1292,9 @@ fn modern_uri(line: &str) -> Result<Option<Value>, Error> {
                     }
                 }
                 "mtu" => {
-                    if let Ok(mtu) = finite_int(value.as_str().unwrap()) {
+                    if let Ok(mtu) = finite_int(value.as_str().unwrap())
+                        && mtu.is_number()
+                    {
                         proxy["mtu"] = mtu;
                     }
                 }
@@ -1309,7 +1365,7 @@ fn modern_uri(line: &str) -> Result<Option<Value>, Error> {
     Ok(Some(proxy))
 }
 
-fn trojan(line: &str) -> Result<Option<Value>, Error> {
+fn trojan(line: &str, language: &crate::clash::Parser) -> Result<Option<Value>, Error> {
     let (before_query, query) = line
         .split_once('?')
         .map_or((line, None), |(raw, query)| (raw, Some(query)));
@@ -1433,19 +1489,12 @@ fn trojan(line: &str) -> Result<Option<Value>, Error> {
             proxy[&key] = json!({"grpc-service-name":params["serviceName"], "_grpc-type":params["mode"],
                 "_grpc-authority":params["authority"]});
         } else {
-            if truthy(&params["path"]) || truthy(&params["host"]) {
-                if format!("{network}-opts")
+            if (truthy(&params["path"]) || truthy(&params["host"]))
+                && format!("{network}-opts")
                     .split(['.', '[', ']'])
                     .any(|part| ["__proto__", "constructor", "prototype"].contains(&part))
-                {
-                    return Ok(None);
-                }
-                // shortcut: exotic nested transport property paths need the M3 value bridge.
-                if network.contains(['.', '[', ']']) {
-                    return Err(Error::Pending(
-                        "Nested Trojan transport property paths are not implemented yet",
-                    ));
-                }
+            {
+                return Ok(None);
             }
             let mut early = None;
             if truthy(&params["path"]) {
@@ -1460,10 +1509,22 @@ fn trojan(line: &str) -> Result<Option<Value>, Error> {
                 } else {
                     params["path"].clone()
                 };
-                proxy[&key]["path"] = path;
+                if network.contains(['.', '[', ']']) {
+                    language.set_path(&mut proxy, &format!("{key}.path"), &path)?;
+                } else {
+                    proxy[&key]["path"] = path;
+                }
             }
             if truthy(&params["host"]) {
-                proxy[&key]["headers"]["Host"] = params["host"].clone();
+                if network.contains(['.', '[', ']']) {
+                    language.set_path(
+                        &mut proxy,
+                        &format!("{key}.headers.Host"),
+                        &params["host"],
+                    )?;
+                } else {
+                    proxy[&key]["headers"]["Host"] = params["host"].clone();
+                }
             }
             if upgrade {
                 let ed = early.or_else(|| {
@@ -1658,12 +1719,11 @@ fn ssr(line: &str) -> Result<Option<Value>, Error> {
         }
     }
     proxy["udp"] = json!(true);
-    if port.is_empty() {
-        return Err(Error::Pending(
-            "Non-finite proxy numeric fields are not implemented yet",
-        ));
-    }
-    proxy["port"] = normalized_port(port);
+    proxy["port"] = if port.is_empty() {
+        codec::numeric(f64::NAN)
+    } else {
+        normalized_port(port)
+    };
     normalize_endpoint(&mut proxy)?;
     Ok(Some(proxy))
 }
@@ -2174,25 +2234,26 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
         let range = raw
             .split_once('-')
             .map(|(min, max)| (codec::trim(min), codec::trim(max)));
-        let interval =
-            if let Some((min, max)) = range.filter(|(min, max)| digits(min) && digits(max)) {
-                let min = finite_int(min)?;
-                let max = finite_int(max)?;
-                if min.as_f64().unwrap() > 0.0 && min.as_f64().unwrap() <= max.as_f64().unwrap() {
-                    Some((min, Some(max)))
-                } else {
-                    None
-                }
-            } else if digits(raw) {
-                let value = finite_int(raw)?;
-                if value.as_f64().unwrap() > 0.0 {
-                    Some((value, None))
-                } else {
-                    None
-                }
+        let interval = if let Some((min, max)) =
+            range.filter(|(min, max)| digits(min) && digits(max))
+        {
+            let min = finite_int(min)?;
+            let max = finite_int(max)?;
+            if codec::to_number(&min) > 0.0 && codec::to_number(&min) <= codec::to_number(&max) {
+                Some((min, Some(max)))
             } else {
                 None
-            };
+            }
+        } else if digits(raw) {
+            let value = finite_int(raw)?;
+            if codec::to_number(&value) > 0.0 {
+                Some((value, None))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         if let Some((min, max)) = interval {
             proxy["hop-interval"] = min;
             if let Some(max) = max {
@@ -2215,14 +2276,17 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
         proxy["interface-name"] = proxy["interface"].clone();
         proxy.as_object_mut().unwrap().shift_remove("interface");
     }
-    if let Some(port) = proxy["port"].as_str() {
+    if let Some(port) = proxy["port"]
+        .as_str()
+        .filter(|_| codec::nonfinite(&proxy["port"]).is_none())
+    {
         proxy["port"] = normalized_port(port);
     }
     if let Some(cipher) = proxy["cipher"].as_str() {
         proxy["cipher"] = json!(cipher.to_lowercase());
     }
-    if proxy["password"].is_number() {
-        let number = proxy["password"].as_f64().unwrap();
+    if proxy["password"].is_number() || codec::nonfinite(&proxy["password"]).is_some() {
+        let number = codec::to_number(&proxy["password"]);
         if number.fract() != 0.0 {
             return Err(Error::Legacy(format!(
                 "The number {} cannot be converted to a BigInt because it is not an integer",
@@ -2298,8 +2362,9 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
         let network = field_text(proxy, "network");
         let key = format!("{network}-opts");
         let format_path = |value: &Value| {
-            if let Some(path) = value.as_str() {
-                let path = codec::trim(path);
+            if value.is_string() || value.is_number() {
+                let path = codec::js_string(value);
+                let path = codec::trim(&path);
                 json!(if path.starts_with('/') {
                     path.to_owned()
                 } else {
@@ -2484,6 +2549,24 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
     if matches!(proxy["sni"].as_str(), Some("" | "off")) {
         proxy["disable-sni"] = json!(true);
     }
+    let mut ca = proxy["ca_str"].clone();
+    if truthy(&proxy["ca-str"]) {
+        ca = proxy["ca-str"].clone();
+    } else if truthy(&ca) {
+        proxy.as_object_mut().unwrap().shift_remove("ca_str");
+        proxy["ca-str"] = ca.clone();
+    }
+    if !truthy(&ca)
+        && let Some(path) = proxy["_ca"].as_str()
+    {
+        match std::fs::read(codec::text(path)) {
+            Ok(bytes) => ca = json!(codec::encode(&String::from_utf8_lossy(&bytes))),
+            Err(error) => eprintln!("[sub-store:error] Read ca file failed: {error}"),
+        }
+    }
+    if !truthy(&proxy["tls-fingerprint"]) && truthy(&ca) {
+        proxy["tls-fingerprint"] = fingerprint(&ca)?;
+    }
     if proxy["type"] == "tuic" {
         if !proxy["alpn"].is_array() {
             proxy["alpn"] = json!([if truthy(&proxy["alpn"]) {
@@ -2542,16 +2625,34 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
 
 pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
     let Some(raw) = raw.as_str() else {
-        return Err(Error::Pending(
-            "Non-text subscription parsing is not implemented yet",
-        ));
+        return Err(Error::Legacy("raw.split is not a function".to_owned()));
     };
     if raw.starts_with("<!DOCTYPE html>") {
         return Ok(Vec::new());
     }
-    let raw = String::from_utf16(&codec::units(raw)).map_err(|_| {
-        Error::Pending("URI parsing of isolated UTF-16 surrogates is not implemented yet")
-    })?;
+    let units = codec::units(raw);
+    // Rust strings cannot hold lone UTF-16 units; reserve absent tags until parsing finishes.
+    let (raw, surrogate_tag) = match String::from_utf16(&units) {
+        Ok(raw) => (raw, None),
+        Err(_) => {
+            let lower = raw.to_lowercase();
+            let mut index = 0;
+            let prefix = loop {
+                let prefix = format!("\u{f0000}{index:x}\u{f0001}");
+                if !lower.contains(&prefix) {
+                    break prefix;
+                }
+                index += 1;
+            };
+            let text = char::decode_utf16(units)
+                .map(|character| match character {
+                    Ok(character) => character.to_string(),
+                    Err(error) => format!("{prefix}{:04x}{prefix}", error.unpaired_surrogate()),
+                })
+                .collect::<String>();
+            (text, Some(prefix))
+        }
+    };
     let clash = crate::clash::Parser::new()?;
     let raw = clash.preprocess(&raw).unwrap_or_else(|| preprocess(&raw));
     let mut proxies = Vec::new();
@@ -2594,7 +2695,7 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
                 proxies.push(proxy);
             }
         } else if line.starts_with("trojan://") {
-            if let Some(proxy) = trojan(line)? {
+            if let Some(proxy) = trojan(line, &clash)? {
                 proxies.push(proxy);
             }
         } else if line.split_once("://").is_some_and(|(scheme, _)| {
@@ -2633,50 +2734,50 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
     proxies.retain(|proxy| {
         proxy["type"] != "hysteria2" || !truthy(&proxy["obfs"]) || truthy(&proxy["obfs-password"])
     });
-    Ok(proxies)
-}
-
-pub fn local(sub: &Value, content: Option<&Value>) -> Result<Vec<Value>, Error> {
-    if content.is_none()
-        && (sub["source"] != "local"
-            || matches!(
-                sub["mergeSources"].as_str(),
-                Some("localFirst" | "remoteFirst")
-            ))
-    {
-        return Err(Error::Pending(
-            "Remote and merged subscription sources are not implemented yet",
-        ));
-    }
-    if sub.get("process").is_some_and(|process| {
-        truthy(process) && process.as_array().is_none_or(|items| !items.is_empty())
-    }) {
-        return Err(Error::Pending(
-            "Subscription processors are not implemented yet",
-        ));
-    }
-    let content = content.unwrap_or(&sub["content"]);
-    let sources = content
-        .as_array()
-        .map_or_else(|| vec![content], |items| items.iter().collect());
-    let mut result = Vec::new();
-    for source in sources {
-        result.extend(parse(source)?);
-    }
-    Ok(result)
-}
-
-pub fn tag(proxies: &mut [Value], sub: &Value, preview: bool) {
-    for (index, proxy) in proxies.iter_mut().enumerate() {
-        if preview {
-            proxy["id"] = json!(index);
+    if let Some(prefix) = surrogate_tag {
+        fn text(mut remaining: &str, prefix: &str) -> String {
+            let mut output = String::new();
+            while let Some((before, tail)) = remaining.split_once(prefix) {
+                output.push_str(before);
+                if let Some(unit) = tail
+                    .get(..4)
+                    .and_then(|digits| u16::from_str_radix(digits, 16).ok())
+                    && (0xd800..=0xdfff).contains(&unit)
+                    && tail[4..].starts_with(prefix)
+                {
+                    output.push_str(&codec::from_units(&[unit]));
+                    remaining = &tail[4 + prefix.len()..];
+                } else {
+                    output.push_str(prefix);
+                    remaining = tail;
+                }
+            }
+            output.push_str(remaining);
+            output
         }
-        for (source, field) in [("name", "_subName"), ("displayName", "_subDisplayName")] {
-            if let Some(value) = sub.get(source) {
-                proxy[field] = value.clone();
+        fn restore(value: &mut Value, prefix: &str) {
+            match value {
+                Value::String(value) => *value = text(value, prefix),
+                Value::Array(values) => {
+                    for value in values {
+                        restore(value, prefix);
+                    }
+                }
+                Value::Object(values) => {
+                    let old = std::mem::take(values);
+                    for (key, mut value) in old {
+                        restore(&mut value, prefix);
+                        values.insert(text(&key, prefix), value);
+                    }
+                }
+                _ => {}
             }
         }
+        for proxy in &mut proxies {
+            restore(proxy, &prefix);
+        }
     }
+    Ok(proxies)
 }
 
 fn transport_path(proxy: &Value, embed_ws: bool) -> Option<String> {
@@ -3616,16 +3717,10 @@ pub fn produce(
         "shadowrocket" | "Shadowrocket" | "ShadowRocket" => Some(Family::Shadowrocket),
         _ => None,
     };
-    match target {
-        "json" | "JSON" | "uri" | "URI" | "v2" | "v2ray" | "V2Ray" | "qx" | "QX"
-        | "QuantumultX" | "Loon" | "surge" | "Surge" | "SurgeMac" | "surfboard" | "Surfboard"
-        | "egern" | "Egern" | "singbox" | "sing-box" => {}
-        _ if family.is_some() => {}
-        _ => {
-            return Err(Error::Legacy(format!(
-                "Target platform: {target} is not supported!"
-            )));
-        }
+    if !ALIASES.contains(&target) {
+        return Err(Error::Legacy(format!(
+            "Target platform: {target} is not supported!"
+        )));
     }
     if opts.is_null() && !proxies.is_empty() {
         return Err(Error::Legacy(
@@ -3787,7 +3882,11 @@ mod tests {
             random_port("0x1bb").ok().and_then(|value| value.as_f64()),
             Some(443.0)
         );
-        assert!(matches!(random_port("443;443"), Err(Error::Pending(_))));
+        assert!(
+            codec::nonfinite(&random_port("443;443").ok().unwrap())
+                .unwrap()
+                .is_nan()
+        );
     }
 
     #[test]

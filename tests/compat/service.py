@@ -67,11 +67,15 @@ def listener(binary, environment, output, report, log_prefix="rust", image=None,
             argv.extend(["--mount", f"type=bind,source={environment['SUB_STORE_FRONTEND_PATH']},target=/frontend,readonly"])
             if not environment.get("SUB_STORE_BACKEND_MERGE") and not host_network:
                 argv.extend(["-p", f"127.0.0.1:{environment['SUB_STORE_FRONTEND_PORT']}:3001"])
+        if environment.get("SUB_STORE_MMDB_COUNTRY_PATH"):
+            argv.extend(["--mount", f"type=bind,source={HERE / 'fixtures/mmdb'},target=/mmdb,readonly"])
         for key, value in environment.items():
             if key.startswith("SUB_STORE_") or key in ("TZ", "NODE_ENV"):
                 value = {"SUB_STORE_DATA_BASE_PATH": "/data", "SUB_STORE_BACKEND_API_PORT": str(port) if host_network else "3000",
                          "SUB_STORE_BACKEND_API_HOST": value if host_network else "0.0.0.0", "SUB_STORE_FRONTEND_PATH": "/frontend",
                          "SUB_STORE_FRONTEND_HOST": value if host_network else "0.0.0.0", "SUB_STORE_FRONTEND_PORT": value if host_network else "3001"}.get(key, value)
+                if key in ("SUB_STORE_MMDB_COUNTRY_PATH", "SUB_STORE_MMDB_ASN_PATH"):
+                    value = "/mmdb/" + Path(value).name
                 argv.extend(["--env", f"{key}={value}"])
         argv.append(image)
     else:
@@ -1841,7 +1845,14 @@ def main():
             state.mkdir()
             (state / "sub-store.json").write_text(json.dumps(final["node"], ensure_ascii=False), encoding="utf-8")
             (state / "root.json").write_text(json.dumps(baseline_root, ensure_ascii=False), encoding="utf-8")
+            ca_file = state / "native-ca.pem"
+            ca_file.write_text("-----BEGIN CERTIFICATE-----\nAAECAw==\n-----END CERTIFICATE-----", encoding="utf-8")
+            conversion_cases = json.loads(json.dumps(conversion_cases))
+            helper = next(case for case in conversion_cases if case["id"] == "PC-native-conversion-helper-contracts")
+            helper["steps"][0]["body"]["process"][0]["args"]["arguments"]["caFile"] = "/data/native-ca.pem" if kind == "rust" and image else str(ca_file)
             env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}
+            env.update(SUB_STORE_MMDB_COUNTRY_PATH=str(HERE / "fixtures/mmdb/GeoIP2-Country-Test.mmdb"),
+                       SUB_STORE_MMDB_ASN_PATH=str(HERE / "fixtures/mmdb/GeoLite2-ASN-Test.mmdb"))
             label = kind + "-conversion-local"
             manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image, host_network=bool(image))
             with ControlledUpstream(conversion_upstream_port) as upstream, manager as url:
@@ -1853,23 +1864,6 @@ def main():
                 conversion_concurrency[kind] = script_concurrency(url, state, output, label)
                 conversion_background[kind] = script_download_background(url, state, upstream, output, label)
                 conversion_state[kind] = {key: json.loads((state / key).read_text(encoding="utf-8")) for key in ("sub-store.json", "root.json")}
-                if kind == "rust":
-                    before_pending = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")}
-                    pending_steps = [
-                        {"method": "POST", "path": "/api/proxy/parse", "body": {"data": '{type:"ss",name:"nonfinite",server:"127.0.0.1",port:443,extra:NaN}', "client": "JSON"}},
-                        {"method": "POST", "path": "/api/proxy/parse", "body": {"data": '{type: ss, name: cyclic, server: 127.0.0.1, port: 443, extra: &loop {self: *loop}}', "client": "JSON"}},
-                        {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://none:p@127.0.0.1:443?plugin=shadow-tls%3Bversion%3Dbad", "client": "URI"}},
-                        {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ssr://aG9zdDo6b3JpZ2luOmFlcy0xMjgtY2ZiOnBsYWluOmNBLz8=", "client": "URI"}},
-                        {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "Huge = snell, 127.0.0.1, 443, psk=p, version=" + "9" * 400, "client": "JSON"}},
-                        {"method": "POST", "path": "/api/proxy/parse", "body": {"data": 'Huge = AnyTLS, 127.0.0.1, 443, "password", min-idle-session=' + "9" * 400, "client": "JSON"}},
-                        {"method": "POST", "path": "/api/proxy/parse", "body": {"data": 'WG = WireGuard, private-key=p, peers=[{public-key=k}]', "client": "JSON"}},
-                        {"path": "/download/native-local/URI?$options=response-hook"},
-                    ]
-                    pending_responses = [{"request": step, "response": request(url, step)} for step in pending_steps]
-                    (output / "rust-conversion-pending.json").write_text(json.dumps(pending_responses, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-                    assert all(item["response"]["status"] == 501 and json.loads(item["response"]["body"])["error"]["code"] == "FEATURE_NOT_IMPLEMENTED" for item in pending_responses)
-                    assert all((state / key).read_bytes() == value for key, value in before_pending.items())
-                    assert request(url, {"path": "/download/native-local/URI"})["status"] == 200
             before = (state / "sub-store.json").read_bytes()
             label += "-restart"
             manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image, host_network=bool(image))

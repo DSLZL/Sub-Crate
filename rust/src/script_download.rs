@@ -65,7 +65,7 @@ fn format<'js>(
     Ok(output.into_value())
 }
 
-fn mask_url<'js>(js: &Js<'js>, value: Value<'js>) -> rquickjs::Result<String> {
+pub(crate) fn mask_url<'js>(js: &Js<'js>, value: Value<'js>) -> rquickjs::Result<String> {
     let pattern: Value = js.call("regex", (r"([?#&]age-secret-key=)[^&#\s]+", "gi"))?;
     let value = js.method(value, "replace", vec![pattern, js.value("$1***")?])?;
     let pattern: Value = js.call(
@@ -482,10 +482,7 @@ async fn run<'js>(js: &Js<'js>, input: Download<'js>) -> rquickjs::Result<Value<
     format(js, finalized.result, finalized.raw, return_raw)
 }
 
-async fn download<'js>(
-    ctx: Ctx<'js>,
-    arguments: Rest<Value<'js>>,
-) -> rquickjs::Result<Value<'js>> {
+async fn download<'js>(ctx: Ctx<'js>, arguments: Rest<Value<'js>>) -> rquickjs::Result<Value<'js>> {
     let js = Js::new(ctx);
     // Rest retains all nine public arguments beyond the binding's tuple limit.
     let mut arguments = arguments.0.into_iter();
@@ -514,17 +511,21 @@ pub(crate) async fn source<'js>(
     url: Value<'js>,
     options: Value<'js>,
 ) -> rquickjs::Result<Value<'js>> {
-    run(js, Download {
-        url,
-        ua: js.undefined(),
-        timeout: js.undefined(),
-        proxy: js.undefined(),
-        skip_custom: js.undefined(),
-        await_custom: js.undefined(),
-        no_cache: js.undefined(),
-        preprocess: js.undefined(),
-        options,
-    }).await
+    run(
+        js,
+        Download {
+            url,
+            ua: js.undefined(),
+            timeout: js.undefined(),
+            proxy: js.undefined(),
+            skip_custom: js.undefined(),
+            await_custom: js.undefined(),
+            no_cache: js.undefined(),
+            preprocess: js.undefined(),
+            options,
+        },
+    )
+    .await
 }
 
 pub(crate) fn initialize<'js>(_ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs::Result<()> {

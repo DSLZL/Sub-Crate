@@ -5,6 +5,7 @@ use http_body_util::{BodyExt, Limited};
 use hyper::{HeaderMap, Request, body::Bytes, body::Incoming};
 use percent_encoding::percent_decode_str;
 use serde_json::{Map, Value, json};
+use std::collections::BTreeMap;
 
 pub enum Body {
     Json(Value),
@@ -56,7 +57,11 @@ impl Body {
     }
 }
 
-fn content_type(value: &str) -> Option<(String, String)> {
+fn media_token(c: char) -> bool {
+    c.is_ascii() && (c.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&(c as u8)))
+}
+
+fn media_parameters(value: &str) -> Option<(String, BTreeMap<String, String>)> {
     let delimiter = value.find(';').unwrap_or(value.len());
     let media = value[..delimiter].trim_matches(' ').to_ascii_lowercase();
     let restricted = |s: &str, punctuation: &[u8]| {
@@ -79,14 +84,11 @@ fn content_type(value: &str) -> Option<(String, String)> {
     } else {
         format!("{kind}/{subtype}+{suffix}")
     };
-    let token = |c: char| {
-        c.is_ascii() && (c.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&(c as u8)))
-    };
-    let mut charset = "utf-8".to_owned();
+    let mut parameters = BTreeMap::new();
     let mut rest = &value[delimiter..];
     while !rest.is_empty() {
         rest = rest.strip_prefix(';')?.trim_start_matches(' ');
-        let end = rest.find(|c| !token(c)).unwrap_or(rest.len());
+        let end = rest.find(|c| !media_token(c)).unwrap_or(rest.len());
         if end == 0 {
             return None;
         }
@@ -116,7 +118,7 @@ fn content_type(value: &str) -> Option<(String, String)> {
             }
             value
         } else {
-            let end = rest.find(|c| !token(c)).unwrap_or(rest.len());
+            let end = rest.find(|c| !media_token(c)).unwrap_or(rest.len());
             if end == 0 {
                 return None;
             }
@@ -125,14 +127,30 @@ fn content_type(value: &str) -> Option<(String, String)> {
             value
         };
         rest = rest.trim_start_matches(' ');
-        if key.eq_ignore_ascii_case("charset") {
-            charset = value.to_ascii_lowercase();
-        }
+        parameters.insert(key.to_ascii_lowercase(), value);
     }
-    if charset.is_empty() {
-        charset = "utf-8".to_owned();
-    }
+    Some((media, parameters))
+}
+
+fn content_type(value: &str) -> Option<(String, String)> {
+    let (media, parameters) = media_parameters(value)?;
+    let charset = parameters
+        .get("charset")
+        .filter(|value| !value.is_empty())
+        .map_or_else(|| "utf-8".to_owned(), |value| value.to_ascii_lowercase());
     Some((media, charset))
+}
+
+pub fn response_content_type(value: &str) -> Option<String> {
+    let (mut media, mut parameters) = media_parameters(value)?;
+    parameters.insert("charset".to_owned(), "utf-8".to_owned());
+    for (key, mut value) in parameters {
+        if value.is_empty() || !value.chars().all(media_token) {
+            value = format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""));
+        }
+        media.push_str(&format!("; {key}={value}"));
+    }
+    Some(media)
 }
 
 fn decode(bytes: &[u8], charset: &str) -> String {

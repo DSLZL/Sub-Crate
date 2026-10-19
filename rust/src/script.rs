@@ -9,7 +9,7 @@ use rquickjs::{
 };
 use serde_json::{Value, json};
 use std::{
-    cell::{Cell, RefCell},
+    cell::RefCell,
     rc::Rc,
     sync::{Arc, Mutex},
     time::Duration,
@@ -184,6 +184,78 @@ fn read<'js>(
     js.call("get", (cache, key))
 }
 
+fn init_cache<'js>(ctx: Ctx<'js>, This(this): This<JsValue<'js>>) -> rquickjs::Result<()> {
+    let js = Js::new(ctx);
+    let job = job(&js.ctx)?;
+    let (cache, root) = {
+        let store = job
+            .store
+            .lock()
+            .map_err(|_| js.error("State lock poisoned"))?;
+        (
+            store.data.clone(),
+            store
+                .script_root()
+                .map_err(|error| js.error(&error.to_string()))?,
+        )
+    };
+    js.set(&this, "cache", js.ctx.json_parse(codec::stringify(&cache))?)?;
+    js.set(&this, "root", js.ctx.json_parse(codec::stringify(&root))?)?;
+    job.baseline.replace((cache, root));
+    Ok(())
+}
+
+fn done<'js>(ctx: Ctx<'js>, value: Opt<JsValue<'js>>) -> rquickjs::Result<()> {
+    let js = Js::new(ctx);
+    let context: JsValue = js.ctx.globals().get("$context")?;
+    if !context.is_undefined() {
+        let value = value
+            .0
+            .filter(|value| !value.is_undefined())
+            .unwrap_or(Object::new(js.ctx.clone())?.into_value());
+        for key in ["headers", "statusCode", "body"] {
+            js.set(&context, key, js.get(&value, key)?)?;
+        }
+    }
+    Ok(())
+}
+
+fn log_text<'js>(js: &Js<'js>, value: JsValue<'js>) -> rquickjs::Result<String> {
+    let text: JsValue = js.call("text", (value,))?;
+    let text = crate::js_values::project(&js.ctx, text)?;
+    Ok(codec::text(&codec::js_string(&text)))
+}
+
+fn notify<'js>(
+    ctx: Ctx<'js>,
+    title: Opt<JsValue<'js>>,
+    subtitle: Opt<JsValue<'js>>,
+    content: Opt<JsValue<'js>>,
+    options: Opt<JsValue<'js>>,
+) -> rquickjs::Result<()> {
+    let js = Js::new(ctx);
+    let options = options
+        .0
+        .filter(|value| !value.is_undefined())
+        .unwrap_or(Object::new(js.ctx.clone())?.into_value());
+    for key in ["open-url", "media-url"] {
+        js.get(&options, key)?;
+    }
+    let mut text = Vec::new();
+    for (index, value) in [title, subtitle, content].into_iter().enumerate() {
+        let value = value.0.filter(|value| !value.is_undefined());
+        let value = match value {
+            Some(value) => value,
+            None if index == 0 => js.undefined(),
+            None => js.value("")?,
+        };
+        text.push(log_text(&js, value)?);
+    }
+    // shortcut: configured notification delivery belongs to the M4 provider workflow.
+    eprintln!("[sub-store:notify] {}", text.join("\n"));
+    Ok(())
+}
+
 fn persist<'js>(ctx: Ctx<'js>, This(this): This<JsValue<'js>>) -> rquickjs::Result<()> {
     let js = Js::new(ctx);
     let job = job(&js.ctx)?;
@@ -248,50 +320,14 @@ fn native_parse<'js>(ctx: Ctx<'js>, raw: JsValue<'js>) -> rquickjs::Result<JsVal
         return Err(Exception::throw_type(&ctx, "raw.split is not a function"));
     }
     let js = Js::new(ctx);
-    let raw = js.text(raw)?;
-    let proxies = conversion::parse(&json!(codec::encode(&raw)))
-        .map_err(|error| js.error(&conversion_message(error)))?;
-    js.ctx.json_parse(codec::stringify(&json!(proxies)))
-}
-
-fn native_produce<'js>(
-    ctx: Ctx<'js>,
-    input: JsValue<'js>,
-    target: JsValue<'js>,
-    kind: Opt<JsValue<'js>>,
-    options: Opt<JsValue<'js>>,
-) -> rquickjs::Result<JsValue<'js>> {
-    let js = Js::new(ctx);
-    let input =
-        codec::parse(&serialized(&js.ctx, input)?).map_err(|error| js.error(&error.to_string()))?;
-    let input = input
-        .as_array()
-        .ok_or_else(|| Exception::throw_type(&js.ctx, "proxies.filter is not a function"))?
-        .clone();
-    let target = js.text(target)?;
-    let kind = kind
-        .0
-        .map(|value| js.text(value))
-        .transpose()?
-        .unwrap_or_default();
-    let options = options
-        .0
-        .filter(|value| !value.is_undefined())
-        .map(|value| serialized(&js.ctx, value))
-        .transpose()?
-        .map(|text| codec::parse(&text))
-        .transpose()
-        .map_err(|error| js.error(&error.to_string()))?
-        .unwrap_or_else(|| json!({}));
-    let output = conversion::produce(input, &target, &kind, &options)
-        .map_err(|error| js.error(&conversion_message(error)))?;
-    js.ctx.json_parse(codec::stringify(&output))
+    let raw = crate::js_values::project(&js.ctx, raw)?;
+    let proxies = conversion::parse(&raw).map_err(|error| js.error(&conversion_message(error)))?;
+    crate::js_values::decode(&js.ctx, &json!(proxies))
 }
 
 fn conversion_message(error: conversion::Error) -> String {
     match error {
         conversion::Error::Legacy(message) => message,
-        conversion::Error::Pending(message) => message.to_owned(),
     }
 }
 
@@ -375,6 +411,19 @@ async fn apply_script<'js>(
     } else {
         js.json_clone(input.clone())?
     };
+    if !filter
+        && crate::script_pipeline::mihomo(
+            js,
+            &js.call::<JsValue, _>("optional", (output.clone(), "$file"))?,
+        )?
+    {
+        match crate::script_pipeline::patch(js, &output, js.value(script.clone())?) {
+            Ok(value) => return Ok(value),
+            Err(_) => {
+                js.ctx.catch();
+            }
+        }
+    }
     let first = invoke(js, entry, &script, arguments.clone(), scope, output.clone()).await;
     match first {
         Ok(result) => {
@@ -397,8 +446,16 @@ async fn apply_script<'js>(
                     "async function filter(input = [], targetPlatform, context) {{ let list = []; const fn = async ($server) => {{ {script}\n }}; for await (let $server of input) list.push(await fn($server)); return list; }}"
                 )
             } else {
+                let main = if crate::script_pipeline::mihomo(
+                    js,
+                    &js.call::<JsValue, _>("optional", (output.clone(), "$file"))?,
+                )? {
+                    "if (typeof main === 'function') $content = await __fileMain(main, $content);"
+                } else {
+                    ""
+                };
                 format!(
-                    "async function operator(input = [], targetPlatform, context) {{ if (input && (input.$files || input.$content)) {{ let {{$content,$files,$options,$file}} = input; {script}\n return {{$content,$files,$options,$file}}; }} let list = []; for await (let $server of input) {{ {script}\n list.push($server); }} return list; }}"
+                    "async function operator(input = [], targetPlatform, context) {{ if (input && (input.$files || input.$content)) {{ let {{$content,$files,$options,$file}} = input; {script}\n {main} return {{$content,$files,$options,$file}}; }} let list = []; for await (let $server of input) {{ {script}\n list.push($server); }} return list; }}"
                 )
             };
             match invoke(js, entry, &shortcut, arguments, scope, output.clone()).await {
@@ -530,13 +587,53 @@ async fn process<'js>(
                     return Err(js.error(&format!("{label} 执行 function {entry} 失败 {reason}; 执行快捷{}脚本 失败 {fallback}", if name.contains("Filter") { "过滤" } else { "" })));
                 }
             };
-        } else if [
-            "Resolve Domain Operator",
-            "Add Proxies From Subscription Operator",
-        ]
-        .contains(&name.as_str())
-        {
-            return Err(js.error(&format!("{name} is not implemented yet")));
+        } else if name == "Add Proxies From Subscription Operator" {
+            let output = js.json_clone(input)?;
+            let args = crate::script_network::prefer(
+                js,
+                [
+                    js.get(&item, "args")?,
+                    Object::new(js.ctx.clone())?.into_value(),
+                ],
+            )?;
+            match crate::script_pipeline::add(
+                js,
+                output.clone(),
+                args.clone(),
+                scope.execution.clone(),
+            )
+            .await
+            {
+                Ok(value) => input = value,
+                Err(error) => {
+                    let first = message(&js.ctx, error);
+                    match crate::script_pipeline::add(js, output, args, scope.execution.clone())
+                        .await
+                    {
+                        Ok(value) => input = value,
+                        Err(error) => {
+                            let second = message(&js.ctx, error);
+                            let detail = if first == second {
+                                format!("执行失败 {first}")
+                            } else {
+                                format!(
+                                    "执行 function operator 失败 {first}; 执行快捷脚本 失败 {second}"
+                                )
+                            };
+                            return Err(js.error(&format!("脚本操作 {detail}")));
+                        }
+                    }
+                }
+            }
+        } else if name == "Resolve Domain Operator" {
+            let args = crate::script_network::prefer(
+                js,
+                [
+                    js.get(&item, "args")?,
+                    Object::new(js.ctx.clone())?.into_value(),
+                ],
+            )?;
+            input = crate::script_dns::apply(js, input, args).await?;
         }
     }
     Ok(input)
@@ -547,7 +644,12 @@ async fn native_process<'js>(
     Rest(arguments): Rest<JsValue<'js>>,
 ) -> rquickjs::Result<JsValue<'js>> {
     let js = Js::new(ctx);
-    let argument = |index| arguments.get(index).cloned().unwrap_or_else(|| js.undefined());
+    let argument = |index| {
+        arguments
+            .get(index)
+            .cloned()
+            .unwrap_or_else(|| js.undefined())
+    };
     let input = argument(0);
     let operators = Opt(Some(argument(1)));
     let target = Opt(Some(argument(2)));
@@ -798,40 +900,49 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
         ctx.json_parse(r#"{"backend":"Rust","version":"2.42.4","feature":{},"meta":{}}"#)?,
     )?;
     let host = Object::new(ctx.clone())?;
+    host.set("name", "sub-store")?;
+    host.set("debug", false)?;
     host.set("cache", ctx.json_parse(codec::stringify(&cache))?)?;
     host.set("root", ctx.json_parse(codec::stringify(&root))?)?;
     host.set("env", ctx.json_parse(r#"{"isNode":false,"isQX":false,"isLoon":false,"isSurge":false,"isStash":false,"isShadowRocket":false,"isLanceX":false,"isEgern":false,"isGUIforCores":false}"#)?)?;
     host.set("read", Func::from(read))?;
     host.set("write", Func::from(write))?;
     host.set("delete", Func::from(delete))?;
+    host.set("initCache", Func::from(init_cache))?;
     host.set("persistCache", Func::from(persist))?;
+    host.set("done", Func::from(done))?;
     let wait: Function = ctx.eval("delay => new Promise(resolve => setTimeout(resolve, delay))")?;
     host.set("wait", wait)?;
     let http: Object = ctx.eval("createHostHTTP()")?;
     host.set("http", http)?;
     for level in ["log", "info", "warn", "error"] {
-        let name = level.to_owned();
         host.set(
             level,
-            Func::from(move |text: String| eprintln!("[sub-store:{name}] {text}")),
+            Func::from(
+                move |ctx: Ctx<'js>, This(this): This<JsValue<'js>>, value: Opt<JsValue<'js>>| {
+                    let js = Js::new(ctx);
+                    if level != "log" || js.truthy(&js.get(&this, "debug")?)? {
+                        let name = js.get(&this, "name")?;
+                        let text = value.0.unwrap_or_else(|| js.undefined());
+                        eprintln!(
+                            "[{}] {}: {}",
+                            log_text(&js, name)?,
+                            level.to_uppercase(),
+                            log_text(&js, text)?
+                        );
+                    }
+                    Ok::<_, rquickjs::Error>(())
+                },
+            ),
         )?;
     }
-    host.set(
-        "notify",
-        Func::from(|title: String, subtitle: Opt<String>, text: Opt<String>| {
-            eprintln!(
-                "[sub-store:notify] {title}\n{}\n{}",
-                subtitle.0.unwrap_or_default(),
-                text.0.unwrap_or_default()
-            )
-        }),
-    )?;
+    host.set("notify", Func::from(notify))?;
     globals.set("$substore", host)?;
     let utilities: Object = globals.get("SubStoreUtilities")?;
     let scripts: Object = globals.get("SubStoreScriptUtilities")?;
     let utils = Object::new(ctx.clone())?;
     utils.set("parse", Func::from(native_parse))?;
-    utils.set("produce", Func::from(native_produce))?;
+    utils.set("produce", Func::from(crate::script_conversion::produce))?;
     utils.set("process", Func::from(Async(native_process)))?;
     utils.set("processResponse", Func::from(Async(process_response)))?;
     utils.set("Buffer", scripts.get::<_, JsValue>("Buffer")?)?;
@@ -842,17 +953,19 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     crate::script_flow::initialize(ctx)?;
     crate::script_download::initialize(ctx, &utils)?;
     crate::script_age::initialize(ctx, &utils)?;
+    crate::script_mmdb::initialize(ctx, &utils)?;
+    crate::script_gist::initialize(ctx, &utils)?;
+    crate::script_dns::initialize(ctx, &utils)?;
     globals.set("ProxyUtils", utils)?;
-    Ok(())
+    crate::script_pipeline::initialize(ctx)
 }
 
-pub async fn local(
+pub async fn run(
     store: Arc<Mutex<Store>>,
-    sub: Value,
-    target: String,
-    content: Option<Value>,
-    preview: bool,
+    operation: &str,
+    input: Value,
 ) -> Result<Value, conversion::Error> {
+    let operation = operation.to_owned();
     let (sender, receiver) = tokio::sync::oneshot::channel();
     let worker = tokio::task::spawn_blocking(move || {
         let mut sender = Some(sender);
@@ -862,11 +975,6 @@ pub async fn local(
                 .build()
                 .map_err(|error| conversion::Error::Legacy(error.to_string()))?
                 .block_on(async {
-                    let mut plain = sub.clone();
-                    if let Some(fields) = plain.as_object_mut() {
-                        fields.shift_remove("process");
-                    }
-                    let proxies = conversion::local(&plain, content.as_ref())?;
                     let (cache, root) = {
                         let store = store.lock().map_err(|_| {
                             conversion::Error::Legacy("State lock poisoned".to_owned())
@@ -892,64 +1000,40 @@ pub async fn local(
                             let result = async {
                                 initialize(&ctx, job)?;
                                 let js = Js::new(ctx.clone());
-                                let original = ctx.json_parse(codec::stringify(&json!(proxies)))?;
-                                let sub_value = ctx.json_parse(codec::stringify(&sub))?;
-                                let sub_name = js.get(&sub_value, "name")?;
-                                let display_name = js.get(&sub_value, "displayName")?;
-                                let next_index = Rc::new(Cell::new(0usize));
-                                let tag_scope = js.clone();
-                                let name_tag = sub_name.clone();
-                                js.each(original.clone(), move |proxy| {
-                                    if preview {
-                                        tag_scope.set(
-                                            &proxy,
-                                            "id",
-                                            tag_scope.value(next_index.get())?,
-                                        )?;
-                                        next_index.set(next_index.get() + 1);
+                                let input = ctx.json_parse(codec::stringify(&input))?;
+                                let result = match operation.as_str() {
+                                    "parse" => crate::script_http::parse(&js, input).await?,
+                                    "preview-sub" | "preview-collection" => {
+                                        crate::script_pipeline::preview(
+                                            &js,
+                                            if operation == "preview-collection" {
+                                                "collection"
+                                            } else {
+                                                "sub"
+                                            },
+                                            js.get(&input, "item")?,
+                                            js.get(&input, "target")?,
+                                        )
+                                        .await?
                                     }
-                                    tag_scope.set(&proxy, "_subName", name_tag.clone())?;
-                                    tag_scope.set(
-                                        &proxy,
-                                        "_subDisplayName",
-                                        display_name.clone(),
-                                    )?;
-                                    Ok(())
-                                })?;
-                                let items = sub
-                                    .get("process")
-                                    .filter(|value| crate::state::truthy(value))
-                                    .cloned()
-                                    .unwrap_or_else(|| json!([]));
-                                let items = ctx.json_parse(codec::stringify(&items))?;
-                                let source = Object::new(ctx.clone())?;
-                                js.call::<(), _>("set", (source.clone(), sub_name, sub_value))?;
-                                let context = Object::new(ctx.clone())?.into_value();
-                                if let Some(raw) = content.as_ref().or_else(|| sub.get("content")) {
-                                    let raw = ctx.json_parse(codec::stringify(raw))?;
-                                    let raw =
-                                        if raw.is_array() || (!raw.is_null() && raw.is_object()) {
-                                            raw
-                                        } else {
-                                            js.array([raw])?
-                                        };
-                                    js.set(&context, "raw", raw)?;
-                                }
-                                let scope = Scope {
-                                    target: js.value(codec::text(&target))?,
-                                    source: source.into_value(),
-                                    options: js.undefined(),
-                                    context,
-                                    execution: Object::new(ctx.clone())?.into_value(),
+                                    "artifact" => {
+                                        let function: Function =
+                                            ctx.globals().get("produceArtifact")?;
+                                        settled(&js, function.call((input,))?).await?
+                                    }
+                                    "download-sub" | "download-collection" => {
+                                        crate::script_http::download(
+                                            &js,
+                                            operation == "download-collection",
+                                            js.get(&input, "item")?,
+                                            js.get(&input, "options")?,
+                                            js.get(&input, "request")?,
+                                        )
+                                        .await?
+                                    }
+                                    _ => return Err(js.error("Unknown script job operation")),
                                 };
-                                let processed =
-                                    process(&js, original.clone(), items, scope).await?;
-                                let result = Object::new(ctx.clone())?;
-                                if preview {
-                                    result.set("original", original)?;
-                                }
-                                result.set("processed", processed)?;
-                                let text = serialized(&ctx, result.into_value())?;
+                                let text = serialized(&ctx, result)?;
                                 codec::parse(&text).map_err(|error| js.error(&error.to_string()))
                             }
                             .await;

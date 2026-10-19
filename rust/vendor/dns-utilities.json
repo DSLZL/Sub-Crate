@@ -1,0 +1,24 @@
+{
+  "packages": {
+    "dns-packet": "5.6.1",
+    "@leichtgewicht/ip-codec": "2.0.5",
+    "buffer": "6.0.3",
+    "base64-js": "1.5.1",
+    "ieee754": "1.2.1"
+  },
+  "esbuild": "0.19.8",
+  "bundle_sha256": "9e115442ea7a3f88d5f55d74115161145767ba0b0a03f371b5785cea6b99df5a",
+  "licenses_sha256": "5d1c5b6724baa0ed7c858f563a297954df0de48c31c6482419ccdb199f2b242d",
+  "inputs": {
+    "@leichtgewicht/ip-codec@2.0.5/index.cjs": "3f1857adf781b6d951efc5d43a623259c09f842f222d83cc1639d08d65340e81",
+    "base64-js@1.5.1/index.js": "829eadd8a1a441d25be0cb93b00e16a0d0c20fd294db95d8f2ed87e6954b7182",
+    "buffer@6.0.3/index.js": "c25853fd31addfce188b01061fe85bfe667d5fb6c7a7bbb1c83d0ddfd8627acc",
+    "dns-packet@5.6.1/classes.js": "adc3ba96a6d030294f9356f03cc215e2c53de13ed6dee94fda54ee0d4f5f00ef",
+    "dns-packet@5.6.1/index.js": "dd9d08eac52a0dc5f8214ab188b661bb66b20acaa02e1e812e0400d588aaefd3",
+    "dns-packet@5.6.1/opcodes.js": "2c5ae21809c131194a7f8ee69c96eeb5b347b655b85c833313801e2d1674b8eb",
+    "dns-packet@5.6.1/optioncodes.js": "de965a8eaa8492718a41748a3c993806ca7cadede27185815f080451662071c8",
+    "dns-packet@5.6.1/rcodes.js": "73d019a7d2cd5d8f2c8300182ebd454675f856f816fefd0295d65f89a2deb5b4",
+    "dns-packet@5.6.1/types.js": "389d908703cf3de1a94d8e3f08982b350a809a93abec6ac345d55389d24a5dca",
+    "ieee754@1.2.1/index.js": "fe3e2b20c1ebb57c3b390c8f685ad1e04e6f493517fa7e432f4351bb77a1a4d0"
+  }
+}

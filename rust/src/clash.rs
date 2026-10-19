@@ -4,11 +4,6 @@ use crate::state::truthy;
 use rquickjs::{Array, Context, Ctx, Exception, Function, Object, Runtime, Value as JsValue};
 use serde_json::Value;
 
-enum Parsed {
-    Proxy(Value),
-    Deferred,
-}
-
 pub struct Parser(Context);
 
 fn yaml<'js>(ctx: &Ctx<'js>, raw: &str) -> rquickjs::Result<JsValue<'js>> {
@@ -38,7 +33,7 @@ fn yaml<'js>(ctx: &Ctx<'js>, raw: &str) -> rquickjs::Result<JsValue<'js>> {
     }
 }
 
-fn short_ids(raw: &str) -> String {
+pub(crate) fn short_ids(raw: &str) -> String {
     let mut output = String::new();
     let mut remaining = raw;
     while let Some((before, tail)) = remaining.split_once("short-id:") {
@@ -83,12 +78,62 @@ impl Parser {
         self.dump_with_options(value, true)
     }
 
+    pub fn set_path(&self, value: &mut Value, path: &str, item: &Value) -> Result<(), Error> {
+        let parts: Vec<_> = path
+            .split(['.', '[', ']'])
+            .filter(|part| !part.is_empty())
+            .collect();
+        if parts
+            .iter()
+            .any(|part| ["__proto__", "constructor", "prototype"].contains(part))
+        {
+            return Err(Error::Legacy("Unsafe property path".to_owned()));
+        }
+        self.0.with(|ctx| {
+            let result = (|| -> rquickjs::Result<Value> {
+                let root = crate::js_values::decode(&ctx, value)?;
+                let child: Function = ctx.eval("(object,key) => Object.hasOwn(object,key) && Object(object[key]) === object[key] ? object[key] : undefined")?;
+                let array_key: Function = ctx.eval("key => (Math.abs(key) >> 0) === +key")?;
+                let mut current = root.clone();
+                for (index, key) in parts
+                    .iter()
+                    .take(parts.len().saturating_sub(1))
+                    .enumerate()
+                {
+                    let mut next: JsValue = child.call((current.clone(), *key))?;
+                    if !next.is_object() {
+                        let is_array: bool = array_key.call((parts[index + 1],))?;
+                        next = if is_array {
+                            Array::new(ctx.clone())?.into_value()
+                        } else {
+                            Object::new(ctx.clone())?.into_value()
+                        };
+                        current.as_object().unwrap().set(*key, next.clone())?;
+                    }
+                    current = next;
+                }
+                if let Some(key) = parts.last() {
+                    current
+                        .as_object()
+                        .unwrap()
+                        .set(*key, crate::js_values::decode(&ctx, item)?)?;
+                }
+                crate::js_values::project(&ctx, root)
+            })();
+            *value = result.map_err(|error| {
+                ctx.catch();
+                Error::Legacy(error.to_string())
+            })?;
+            Ok(())
+        })
+    }
+
     fn dump_with_options(&self, value: &Value, defaults: bool) -> Result<String, Error> {
         self.0.with(|ctx| {
             let result = (|| -> rquickjs::Result<String> {
                 let utilities: Object = ctx.globals().get("SubStoreUtilities")?;
                 let dump: Function = utilities.get("stringifyYaml")?;
-                let content = ctx.json_parse(codec::stringify(value))?;
+                let content = crate::js_values::decode(&ctx, value)?;
                 let text: String = if defaults {
                     dump.call((content,))?
                 } else {
@@ -169,7 +214,7 @@ impl Parser {
 
     pub fn line(&self, raw: &str) -> Result<Option<Value>, Error> {
         self.0.with(|ctx| {
-            let result = (|| -> rquickjs::Result<Option<Parsed>> {
+            let result = (|| -> rquickjs::Result<Option<Value>> {
                 let utilities: Object = ctx.globals().get("SubStoreUtilities")?;
                 let json5: Object = utilities.get("JSON5")?;
                 let parse: Function = json5.get("parse")?;
@@ -221,25 +266,9 @@ impl Parser {
                 }) {
                     return Ok(None);
                 }
-                let stringify: Function = ctx.eval(
-                    "(value) => { let nonfinite = false; const text = JSON.stringify(value, \
-                    (_, field) => { if (typeof field === 'number' && !Number.isFinite(field)) \
-                    nonfinite = true; return field; }); return [text, nonfinite]; }",
-                )?;
-                let serialized: Array = match stringify.call((value,)) {
-                    Ok(value) => value,
-                    Err(_) => {
-                        ctx.catch();
-                        return Ok(Some(Parsed::Deferred));
-                    }
-                };
-                if serialized.get::<bool>(1)? {
-                    return Ok(Some(Parsed::Deferred));
-                }
-                let text: String = serialized.get(0)?;
-                Ok(codec::parse(&text).ok().map(Parsed::Proxy))
+                crate::js_values::project(&ctx, value).map(Some)
             })();
-            let Some(parsed) = (match result {
+            let Some(mut proxy) = (match result {
                 Ok(value) => value,
                 Err(_) => {
                     ctx.catch();
@@ -247,12 +276,6 @@ impl Parser {
                 }
             }) else {
                 return Ok(None);
-            };
-            // shortcut: non-finite and cyclic typed values need the M3 script/value bridge.
-            let Parsed::Proxy(mut proxy) = parsed else {
-                return Err(Error::Pending(
-                    "Non-finite or cyclic Clash values are not implemented yet",
-                ));
             };
             if matches!(proxy["type"].as_str(), Some("vmess" | "vless"))
                 && truthy(&proxy["servername"])

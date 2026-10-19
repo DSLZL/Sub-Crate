@@ -32,6 +32,15 @@ impl<'js> Js<'js> {
     }
 
     pub fn get(&self, value: &Value<'js>, key: &str) -> rquickjs::Result<Value<'js>> {
+        if value.is_null() || value.is_undefined() {
+            return Err(Exception::throw_type(
+                &self.ctx,
+                &format!(
+                    "Cannot read properties of {} (reading '{key}')",
+                    if value.is_null() { "null" } else { "undefined" }
+                ),
+            ));
+        }
         self.call("get", (value.clone(), key))
     }
 
