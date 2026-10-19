@@ -14,7 +14,7 @@
     "@scure/base": "2.2.0"
   },
   "esbuild": "0.19.8",
-  "bundle_sha256": "91113630e0c227b3658078cff627b8955699f30ccb359d4c33fa0536ef37aea5",
+  "bundle_sha256": "55bfb643478d54532b8250cb602997984d6c9b4e2ff97d216e44577e1487c4cf",
   "licenses_sha256": "4f6184af420a313f68448686bd69fbecb707d6594f9ce3464529e01f518fdf39",
   "inputs": {
     "@noble/ciphers@2.2.0/_arx.js": "716513b7eaa43115c3371420094eaa7dfb6d9d28d928e4237e705df1e9e2e2e1",

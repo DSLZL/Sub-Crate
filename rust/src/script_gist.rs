@@ -194,6 +194,16 @@ async fn locate<'js>(ctx: Ctx<'js>, This(this): This<Value<'js>>) -> rquickjs::R
     )
     .await?;
     let gists: Value = js.call("jsonParse", (js.get(&response, "body")?,))?;
+    if !gitlab {
+        script::log(
+            &js,
+            "info",
+            &format!(
+                "获取到当前 GitHub 用户的 gist: {} 个",
+                js.text(js.get(&gists, "length")?)?
+            ),
+        );
+    }
     let gists: Vec<Value> = js.call("iterable", (gists,))?;
     for gist in gists {
         if js.equal(

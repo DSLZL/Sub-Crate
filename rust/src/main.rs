@@ -14,10 +14,12 @@ mod files;
 mod js_language;
 mod js_values;
 mod json;
+mod logs;
 mod mmdb;
 mod processors;
 mod resources;
 mod rules;
+mod scheduler;
 mod script;
 mod script_age;
 mod script_backup;
@@ -32,7 +34,9 @@ mod script_io;
 mod script_loading;
 mod script_mmdb;
 mod script_network;
+mod script_notify;
 mod script_pipeline;
+mod script_runtime;
 mod script_sync;
 mod script_tokens;
 mod settings;
@@ -839,6 +843,17 @@ fn api_path(raw: &str) -> Result<Option<String>, ()> {
                 _ => None,
             }
         }
+        ["", api, sub, flow, name]
+            if api.eq_ignore_ascii_case("api")
+                && sub.eq_ignore_ascii_case("sub")
+                && flow.eq_ignore_ascii_case("flow")
+                && !name.is_empty() =>
+        {
+            Some(format!(
+                "/api/sub/flow/{}",
+                json::encode(&percent_decode_str(name).decode_utf8().map_err(|_| ())?)
+            ))
+        }
         ["", api, utils, age, operation]
             if api.eq_ignore_ascii_case("api")
                 && utils.eq_ignore_ascii_case("utils")
@@ -1061,9 +1076,9 @@ async fn route(
             "application/json; charset=utf-8",
             json::stringify(&json!({
                 "status":"success", "data":{
-                    "backend":"Node", "version":env!("CARGO_PKG_VERSION"),
+                    "backend":"Node", "version":"2.42.4",
                     "feature":{"archive":true,"share":!config.frontend_backend_path.is_empty()},
-                    "meta":{"node":{"env":config.environment},"rust":{"version":env!("CARGO_PKG_VERSION"),"milestone":"M2","complete":false}}
+                    "meta":{"node":{"env":config.environment},"rust":{"version":env!("CARGO_PKG_VERSION"),"milestone":"M4","complete":false}}
                 }
             })),
         );
@@ -1088,7 +1103,13 @@ async fn route(
     if let Some(response) = backup::dispatch(&method, &path, &query, store).await {
         return response;
     }
+    if path.starts_with("/api/sub/flow/") && method != Method::GET {
+        return not_found();
+    }
     if let Some(response) = utilities::dispatch(&method, &path, &query, &body, store).await {
+        return response;
+    }
+    if let Some(response) = logs::dispatch(&method, &path, &query, store).await {
         return response;
     }
     if let Some(response) = artifacts::dispatch(&method, &path, &query, &body, store).await {
@@ -1137,6 +1158,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         env!("CARGO_PKG_VERSION"),
         listener.local_addr()?
     );
+    scheduler::start(store.clone())?;
     if config.frontend.is_some() && !config.merge {
         let frontend = TcpListener::bind((
             configured(

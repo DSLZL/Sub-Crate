@@ -118,7 +118,7 @@ def main():
                                     "FE07-preview-file", "FE08-create-count-share", "FE09-open-public-share",
                                     "FE10-reopen-update-count-share", "FE11-create-collection", "FE12-reopen-rename-collection",
                                     "FE13-preview-collection", "FE14-archive-file", "FE15-restore-file-archive", "FE16-save-log-settings",
-                                    "FE19-download-manual-backup", "FE20-restore-manual-backup"]
+                                    "FE17-read-filter-logs", "FE18-clear-logs", "FE19-download-manual-backup", "FE20-restore-manual-backup"]
     command_index = 0
 
     def command(*arguments):
@@ -442,7 +442,7 @@ def main():
             metadata = evaluate("({host:JSON.parse(localStorage.getItem('hostAPI')),env:JSON.parse(localStorage.getItem('envCache')).data.data.data,body:document.body.innerText})")
             report["metadata"] = metadata
             assert any(item["url"] == backend_url and item["name"] == metadata["host"]["current"] for item in metadata["host"]["apis"]), "UI backend setup failed"
-            assert metadata["env"]["backend"] == "Node" and metadata["env"]["version"] == ("0.1.0" if args.rust_binary else "2.42.4"), "Metadata mismatch"
+            assert metadata["env"]["backend"] == "Node" and metadata["env"]["version"] == "2.42.4", "Metadata mismatch"
             if args.rust_binary:
                 assert metadata["env"]["meta"]["rust"]["complete"] is False, "Partial Rust service must not claim final parity"
             assert metadata["env"]["meta"]["node"]["env"]["SUB_STORE_FRONTEND_BACKEND_PATH"] == "/backend", "Legacy config metadata missing"
@@ -564,15 +564,6 @@ def main():
             command("wait", "--fn", "document.querySelector('.cm-content').innerText.includes('browser file🙂')")
             assert evaluate("document.querySelector('.cm-content').innerText").rstrip("\n") == "browser file🙂", "Restored file editor lost its content"
             report["cases"].append({"id": "FE15-restore-file-archive", "source": "src/views/archive/Archive.vue:837; src/store/archive.ts:73", "archive_id": entry["id"], "status": "browser_passed"})
-            if args.rust_binary:
-                save_settings()
-                download_backup()
-                restore_backup()
-                command("screenshot", output / "frontend-page.png")
-                report["page_errors"] = command("errors")
-                assert not report["page_errors"]["errors"], "Frontend JavaScript errors"
-                assert [case["id"] for case in report["cases"]] == report["required_cases"], "Incomplete Rust browser slice"
-                raise StateSliceComplete
             save_settings()
             command("open", report["server_origin"] + "/edit/files/browser-file-renamed")
             command("wait", ".editor-section-tab-list")
@@ -587,6 +578,7 @@ def main():
             command("wait", ".log-item")
             command("fill", ".logs-keyword-input input", "browser-file-renamed")
             command("press", "Enter")
+            command("wait", "--fn", "performance.getEntriesByType('resource').some(entry => entry.name.includes('/api/logs?') && new URL(entry.name).searchParams.get('keyword') === 'browser-file-renamed' && entry.responseEnd > 0 && entry.decodedBodySize > 0)")
             command("wait", "--fn", "document.querySelectorAll('.log-item').length > 0 && Array.from(document.querySelectorAll('.log-item')).every(el => el.innerText.includes('browser-file-renamed'))")
             report["cases"].append({"id": "FE17-read-filter-logs", "source": "src/components/LogsPanel.vue:549,566,613; src/views/FileEditor.vue:1164", "keyword": "browser-file-renamed", "status": "browser_passed"})
             command("click", ".logs-clear-toggle")

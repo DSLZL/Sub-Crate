@@ -1,6 +1,6 @@
 //! Artifact sync owns generation, provider upload and the resulting resource writes.
 use crate::{
-    api, artifacts, json as codec,
+    api, artifacts, json as codec, logs,
     resources::{self, Error},
     script,
     state::{Store, truthy},
@@ -33,7 +33,7 @@ fn mark(item: &mut Value, updated: u64, result: &Value) {
     }
 }
 
-async fn one(store: &Arc<Mutex<Store>>, requested: &str) -> Result<Value, Error> {
+pub(crate) async fn one(store: &Arc<Mutex<Store>>, requested: &str) -> Result<Value, Error> {
     let snapshot = store
         .lock()
         .unwrap()
@@ -41,18 +41,45 @@ async fn one(store: &Arc<Mutex<Store>>, requested: &str) -> Result<Value, Error>
         .unwrap_or_default()
         .iter()
         .find(|item| item["name"] == requested)
-        .cloned()
-        .ok_or_else(|| Error::missing(format!("找不到远程配置 {requested}")))?;
+        .cloned();
+    let snapshot = snapshot.ok_or_else(|| {
+        let message = format!("找不到远程配置 {requested}");
+        logs::error(&mut store.lock().unwrap(), &message);
+        Error::missing(message)
+    })?;
     if !truthy(&snapshot["source"]) {
         let mut error = Error::missing(format!("远程配置 {} 未设置来源", log_name(&snapshot)));
+        logs::error(&mut store.lock().unwrap(), &error.message);
         error.code = "RESOURCE_HAS_NO_SOURCE".to_owned();
         return Err(error);
+    }
+    logs::info(
+        &mut store.lock().unwrap(),
+        &format!("开始同步远程配置 {}...", log_name(&snapshot)),
+    );
+    if snapshot["platform"] == "SurgeMac" {
+        logs::info(
+            &mut store.lock().unwrap(),
+            "手动指定了 target 为 SurgeMac, 将使用 mihomo External",
+        );
     }
     let content = job(store, "artifact-output", snapshot.clone()).await?;
     let mut updated = resources::now();
     let result = if snapshot["upload"] == false {
+        logs::info(
+            &mut store.lock().unwrap(),
+            &format!("配置 {} 已关闭上传, 仅更新执行时间", log_name(&snapshot)),
+        );
         json!({})
     } else {
+        logs::info(
+            &mut store.lock().unwrap(),
+            &format!(
+                "正在上传配置：{}\n>>>{}",
+                log_name(&snapshot),
+                String::from_utf8_lossy(&codec::pretty(&snapshot))
+            ),
+        );
         let encoded =
             codec::uri_component(requested).map_err(|_| Error::plain("URIError: URI malformed"))?;
         let mut files = json!({});
@@ -62,7 +89,7 @@ async fn one(store: &Arc<Mutex<Store>>, requested: &str) -> Result<Value, Error>
         job(
             store,
             "artifact-upload-result",
-            json!({"body":response["body"],"name":requested}),
+            json!({"body":response["body"],"name":requested,"logResponse":true}),
         )
         .await?
     };
@@ -76,6 +103,10 @@ async fn one(store: &Arc<Mutex<Store>>, requested: &str) -> Result<Value, Error>
         mark(item, updated, &result);
         item.clone()
     } else {
+        logs::info(
+            &mut store,
+            &format!("远程配置 {requested} 已不存在, 跳过同步结果写入"),
+        );
         mark(&mut fallback, updated, &result);
         fallback
     };
@@ -118,6 +149,18 @@ fn selected(item: &Value, skip_cron: bool) -> bool {
 }
 
 pub(crate) async fn all(store: &Arc<Mutex<Store>>, skip_cron: bool) -> Result<(), Error> {
+    logs::info(&mut store.lock().unwrap(), "开始同步所有远程配置...");
+    let result = all_inner(store, skip_cron).await;
+    if let Err(error) = &result {
+        logs::error(
+            &mut store.lock().unwrap(),
+            &format!("同步配置失败，原因：{}", error.message),
+        );
+    }
+    result
+}
+
+async fn all_inner(store: &Arc<Mutex<Store>>, skip_cron: bool) -> Result<(), Error> {
     let (mut items, settings, subs, collections) = {
         let store = store.lock().unwrap();
         (
@@ -127,6 +170,17 @@ pub(crate) async fn all(store: &Arc<Mutex<Store>>, skip_cron: bool) -> Result<()
             store.list("collections").unwrap_or_default().to_vec(),
         )
     };
+    let enabled = items
+        .iter()
+        .filter(|item| selected(item, skip_cron))
+        .count();
+    if enabled == 0 {
+        logs::info(
+            &mut store.lock().unwrap(),
+            &format!("需同步的配置: 0, 总数: {}", items.len()),
+        );
+        return Ok(());
+    }
     let mut warm = Vec::new();
     for item in items.iter().filter(|item| selected(item, skip_cron)) {
         let names = if item["type"] == "subscription" {
@@ -172,19 +226,31 @@ pub(crate) async fn all(store: &Arc<Mutex<Store>>, skip_cron: bool) -> Result<()
     {
         let store = store.clone();
         let item = item.clone();
-        jobs.spawn(async move { (index, job(&store, "artifact-output", item).await) });
+        jobs.spawn(async move {
+            logs::info(
+                &mut store.lock().unwrap(),
+                &format!("正在同步云配置：{}...", log_name(&item)),
+            );
+            if item["platform"] == "SurgeMac" {
+                logs::info(
+                    &mut store.lock().unwrap(),
+                    "手动指定了 target 为 SurgeMac, 将使用 mihomo External",
+                );
+            }
+            (index, job(&store, "artifact-output", item).await)
+        });
     }
     if jobs.is_empty() {
         return Ok(());
     }
     let (mut valid, mut invalid, mut files, mut local) =
-        (Vec::new(), Vec::new(), json!({}), 0usize);
+        (Vec::new(), Vec::new(), json!({}), Vec::new());
     while let Some(done) = jobs.join_next().await {
         let (index, result) = done.map_err(|error| Error::plain(error.to_string()))?;
         match result {
             Ok(_) if items[index]["upload"] == false => {
                 mark(&mut items[index], resources::now(), &json!({}));
-                local += 1;
+                local.push(name(&items[index]));
             }
             Ok(content) => {
                 let name = name(&items[index]);
@@ -193,13 +259,63 @@ pub(crate) async fn all(store: &Arc<Mutex<Store>>, skip_cron: bool) -> Result<()
                         files[encoded] = content;
                         valid.push(name);
                     }
-                    Err(_) => invalid.push(name),
+                    Err(_) => {
+                        logs::error(
+                            &mut store.lock().unwrap(),
+                            &format!(
+                                "生成同步配置 {} 发生错误: URI malformed",
+                                log_name(&items[index])
+                            ),
+                        );
+                        invalid.push(name);
+                    }
                 }
             }
-            Err(_) => invalid.push(name(&items[index])),
+            Err(error) => {
+                logs::error(
+                    &mut store.lock().unwrap(),
+                    &format!(
+                        "生成同步配置 {} 发生错误: {}",
+                        log_name(&items[index]),
+                        error.message
+                    ),
+                );
+                invalid.push(name(&items[index]));
+            }
         }
     }
-    if valid.is_empty() && local == 0 {
+    logs::info(
+        &mut store.lock().unwrap(),
+        &format!(
+            "{} 个同步配置生成成功: {}",
+            valid.len() + local.len(),
+            valid
+                .iter()
+                .chain(&local)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    );
+    logs::info(
+        &mut store.lock().unwrap(),
+        &format!(
+            "{} 个同步配置生成失败: {}",
+            invalid.len(),
+            invalid.join(", ")
+        ),
+    );
+    if !local.is_empty() {
+        logs::info(
+            &mut store.lock().unwrap(),
+            &format!(
+                "{} 个同步配置仅生成未上传: {}",
+                local.len(),
+                local.join(", ")
+            ),
+        );
+    }
+    if valid.is_empty() && local.is_empty() {
         return Err(Error::plain(format!(
             "同步配置 {} 生成失败 详情请查看日志",
             invalid.join(", ")
@@ -214,25 +330,57 @@ pub(crate) async fn all(store: &Arc<Mutex<Store>>, skip_cron: bool) -> Result<()
     .as_f64()
     .unwrap_or(10.0) as usize;
     let mut uploaded = 0usize;
-    for batch in valid.chunks(size) {
+    let batches = valid.len().div_ceil(size);
+    if valid.is_empty() {
+        logs::info(&mut store.lock().unwrap(), "没有需要上传的同步配置");
+    } else {
+        logs::info(
+            &mut store.lock().unwrap(),
+            &format!(
+                "准备分批上传同步配置: 共 {} 个, 每批 {size} 个, 批次数 {batches}",
+                valid.len()
+            ),
+        );
+    }
+    for (index, batch) in valid.chunks(size).enumerate() {
         let mut batch_files = json!({});
         for name in batch {
             let encoded =
                 codec::uri_component(name).map_err(|_| Error::plain("URIError: URI malformed"))?;
             batch_files[&encoded] = files[&encoded].clone();
         }
+        logs::info(
+            &mut store.lock().unwrap(),
+            &format!(
+                "正在上传第 {}/{batches} 批同步配置: {}",
+                index + 1,
+                batch.join(", ")
+            ),
+        );
         let response = artifacts::upload(store, batch_files).await;
         match response {
-            Err(_) => invalid.extend(batch.iter().cloned()),
+            Err(error) => {
+                logs::error(
+                    &mut store.lock().unwrap(),
+                    &format!(
+                        "第 {}/{batches} 批同步配置上传失败: {}, 原因: {}",
+                        index + 1,
+                        batch.join(", "),
+                        error.message
+                    ),
+                );
+                invalid.extend(batch.iter().cloned());
+            }
             Ok(response) => {
                 let mut batch_failed = false;
+                let mut log_response = true;
                 for item in items.iter_mut().filter(|item| {
                     truthy(&item["sync"]) && truthy(&item["source"]) && batch.contains(&name(item))
                 }) {
                     match job(
                         store,
                         "artifact-upload-result",
-                        json!({"body":response["body"],"name":item["name"]}),
+                        json!({"body":response["body"],"name":item["name"],"logResponse":log_response}),
                     )
                     .await
                     {
@@ -240,12 +388,17 @@ pub(crate) async fn all(store: &Arc<Mutex<Store>>, skip_cron: bool) -> Result<()
                             mark(item, resources::now(), &result);
                             uploaded += 1;
                         }
-                        Ok(_) => invalid.push(name(item)),
-                        Err(_) => {
+                        Ok(_) => {
+                            logs::error(&mut store.lock().unwrap(), &format!("同步配置 {} 上传成功但响应中未找到文件链接", name(item)));
+                            invalid.push(name(item));
+                        }
+                        Err(error) => {
+                            logs::error(&mut store.lock().unwrap(), &format!("第 {}/{batches} 批同步配置上传失败: {}, 原因: {}", index+1, batch.join(", "), error.message));
                             batch_failed = true;
                             break;
                         }
                     }
+                    log_response = false;
                 }
                 if batch_failed {
                     invalid.extend(batch.iter().cloned());
@@ -259,12 +412,17 @@ pub(crate) async fn all(store: &Arc<Mutex<Store>>, skip_cron: bool) -> Result<()
         next["artifacts"] = json!(items);
         store.commit(next).map_err(Error::state)?;
     }
+    logs::info(&mut store.lock().unwrap(), "同步配置执行完成");
     if invalid.is_empty() {
+        logs::info(
+            &mut store.lock().unwrap(),
+            &format!("同步配置成功 {} 个", uploaded + local.len()),
+        );
         Ok(())
     } else {
         Err(Error::plain(format!(
             "同步配置成功 {} 个, 失败 {} 个, 详情请查看日志",
-            uploaded + local,
+            uploaded + local.len(),
             invalid.len()
         )))
     }
@@ -279,7 +437,15 @@ pub async fn dispatch(
         return None;
     }
     if path == "/api/sync/artifacts" {
-        return Some(match all(store, false).await {
+        logs::info(&mut store.lock().unwrap(), "开始同步所有远程配置...");
+        let result = all(store, false).await;
+        if let Err(error) = &result {
+            logs::error(
+                &mut store.lock().unwrap(),
+                &format!("同步配置失败，原因：{}", error.message),
+            );
+        }
+        return Some(match result {
             Ok(()) => api::success(None, 200),
             Err(error) if error.code == "STATE_WRITE_FAILED" => error.reply(500),
             Err(error) => Error::internal(
@@ -291,7 +457,14 @@ pub async fn dispatch(
         });
     }
     let name = path.strip_prefix("/api/sync/artifact/")?;
-    Some(match one(store, name).await {
+    let result = one(store, name).await;
+    if let Err(error) = &result {
+        logs::error(
+            &mut store.lock().unwrap(),
+            &format!("远程配置 {name} 发生错误: {}", error.message),
+        );
+    }
+    Some(match result {
         Ok(data) => api::success(Some(data), 200),
         Err(error) if error.kind == "ResourceNotFoundError" => error.reply(404),
         Err(error) if error.code == "STATE_WRITE_FAILED" => error.reply(500),

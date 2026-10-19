@@ -77,12 +77,13 @@ fn normalize_cron(item: &mut Value) -> Result<(), Error> {
 }
 
 pub(crate) fn prepare_create(
-    store: &Store,
+    store: &mut Store,
     next: &mut Value,
     mut item: Value,
 ) -> Result<Value, Error> {
     normalize(&mut item)?;
     validate_name(&item)?;
+    crate::logs::info(store, &format!("正在创建远程配置：{}", name(&item)?));
     normalize_cron(&mut item)?;
     let items = store
         .list("artifacts")
@@ -160,6 +161,19 @@ pub async fn dispatch(
 ) -> Option<api::Reply> {
     if path == "/api/artifacts/restore" && method == Method::GET {
         let result = restore(store).await;
+        if let Err(error) = &result {
+            let token = truthy(&store.lock().unwrap().data["settings"]["gistToken"]);
+            if token {
+                crate::logs::error(
+                    &mut store.lock().unwrap(),
+                    &format!("查找 Sub-Store Gist 时发生错误: {}", error.message),
+                );
+            }
+            crate::logs::error(
+                &mut store.lock().unwrap(),
+                &format!("恢复远程配置失败，原因：{}", error.message),
+            );
+        }
         return Some(match result {
             Ok(()) => api::success(None, 200),
             Err(error) if error.code == "STATE_WRITE_FAILED" => error.reply(500),
@@ -175,7 +189,21 @@ pub async fn dispatch(
         return None;
     }
     if method == Method::DELETE && path.starts_with("/api/artifact/") {
-        let result = delete(store, path.strip_prefix("/api/artifact/").unwrap(), query).await;
+        let name = path.strip_prefix("/api/artifact/").unwrap();
+        let result = delete(store, name, query).await;
+        if let Err(error) = &result {
+            crate::logs::error(
+                &mut store.lock().unwrap(),
+                &format!(
+                    "无法删除远程配置：{name}，原因：{}",
+                    if error.kind == "Error" {
+                        &error.message
+                    } else {
+                        "[object Object]"
+                    }
+                ),
+            );
+        }
         return Some(result.map_or_else(
             |error| error.reply(500),
             |data| api::success(Some(data), 200),
@@ -185,6 +213,7 @@ pub async fn dispatch(
 }
 
 async fn restore(store: &Arc<Mutex<Store>>) -> Result<(), Error> {
+    crate::logs::info(&mut store.lock().unwrap(), "开始恢复远程配置...");
     if !truthy(&store.lock().unwrap().data["settings"]["gistToken"]) {
         return Err(Error::plain("未设置 GitHub Token！"));
     }
@@ -203,7 +232,9 @@ async fn restore(store: &Arc<Mutex<Store>>) -> Result<(), Error> {
     let mut store = store.lock().unwrap();
     let mut next = store.data.clone();
     next["artifacts"] = items;
-    store.commit(next).map_err(Error::state)
+    store.commit(next).map_err(Error::state)?;
+    store.cron_refresh.send_replace(());
+    Ok(())
 }
 
 fn manage(method: &Method, path: &str, body: &Body, store: &mut Store) -> api::Reply {
@@ -215,6 +246,7 @@ fn manage(method: &Method, path: &str, body: &Body, store: &mut Store) -> api::R
         if path == "/api/artifacts" && method == Method::POST {
             let item = prepare_create(store, &mut next, body.clone().into_json())?;
             store.commit(next).map_err(Error::state)?;
+            store.cron_refresh.send_replace(());
             return Ok(api::success(Some(item), 201));
         }
         if path == "/api/artifacts" && method == Method::PUT {
@@ -230,6 +262,7 @@ fn manage(method: &Method, path: &str, body: &Body, store: &mut Store) -> api::R
             }
             next["artifacts"] = items;
             store.commit(next).map_err(Error::state)?;
+            store.cron_refresh.send_replace(());
             return Ok(api::success(None, 200));
         }
         let Some(name) = path.strip_prefix("/api/artifact/") else {
@@ -254,6 +287,7 @@ fn manage(method: &Method, path: &str, body: &Body, store: &mut Store) -> api::R
         if method == Method::GET {
             return Ok(api::success(Some(next["artifacts"][index].clone()), 200));
         }
+        crate::logs::info(store, &format!("正在更新远程配置：{name}"));
         let mut patch = body.fields();
         if !patch.get("name").is_some_and(truthy) {
             patch.insert("name".to_owned(), next["artifacts"][index]["name"].clone());
@@ -280,12 +314,17 @@ fn manage(method: &Method, path: &str, body: &Body, store: &mut Store) -> api::R
         normalize_cron(&mut item)?;
         next["artifacts"][index] = item.clone();
         store.commit(next).map_err(Error::state)?;
+        store.cron_refresh.send_replace(());
         Ok(api::success(Some(item), 200))
     })();
     result.unwrap_or_else(|error| error.reply(500))
 }
 
 async fn delete(store: &Arc<Mutex<Store>>, name: &str, query: &Value) -> Result<Value, Error> {
+    crate::logs::info(
+        &mut store.lock().unwrap(),
+        &format!("正在删除远程配置：{name}"),
+    );
     let archive = resources::archive_mode(&query["mode"])?;
     let artifact = {
         let mut store = store.lock().unwrap();
@@ -334,6 +373,10 @@ async fn delete(store: &Arc<Mutex<Store>>, name: &str, query: &Value) -> Result<
                 }
             }
             Err(error) => {
+                crate::logs::error(
+                    &mut store.lock().unwrap(),
+                    &format!("Function syncToGist: {name} : {}", error.message),
+                );
                 remote["status"] = json!("failed");
                 remote["message"] = json!(error.message);
             }
@@ -350,5 +393,6 @@ async fn delete(store: &Arc<Mutex<Store>>, name: &str, query: &Value) -> Result<
         items.remove(index);
     }
     store.commit(next).map_err(Error::state)?;
+    store.cron_refresh.send_replace(());
     Ok(json!({"artifact":artifact,"remote":remote}))
 }

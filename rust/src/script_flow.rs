@@ -85,9 +85,10 @@ fn valid_body<'js>(js: &Js<'js>, body: Value<'js>) -> rquickjs::Result<bool> {
 }
 
 fn report(js: &Js<'_>, operation: &str, error: rquickjs::Error) {
-    eprintln!(
-        "[sub-store:error] {operation}: {}",
-        crate::script::message(&js.ctx, error)
+    crate::script::log(
+        js,
+        "error",
+        &format!("{operation}: {}", crate::script::message(&js.ctx, error)),
     );
 }
 
@@ -416,9 +417,13 @@ fn remaining<'js>(ctx: Ctx<'js>, options: Opt<Value<'js>>) -> rquickjs::Result<V
     match result {
         Ok(value) => Ok(value),
         Err(error) => {
-            eprintln!(
-                "[sub-store:error] getRmainingDays failed: {}",
-                crate::script::message(&js.ctx, error)
+            crate::script::log(
+                &js,
+                "error",
+                &format!(
+                    "getRmainingDays failed: {}",
+                    crate::script::message(&js.ctx, error)
+                ),
             );
             Ok(js.undefined())
         }
@@ -609,9 +614,13 @@ fn normalize<'js>(
     match normalized_inner(&js, raw.clone(), split.clone()) {
         Ok(value) => Ok(value),
         Err(error) => {
-            eprintln!(
-                "[sub-store:error] normalizeFlowHeader failed: {}",
-                crate::script::message(&js.ctx, error)
+            crate::script::log(
+                &js,
+                "error",
+                &format!(
+                    "normalizeFlowHeader failed: {}",
+                    crate::script::message(&js.ctx, error)
+                ),
             );
             if js.truthy(&split)? {
                 let headers = Object::new(js.ctx.clone())?;

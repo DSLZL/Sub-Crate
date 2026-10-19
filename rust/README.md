@@ -29,10 +29,13 @@ stored Node-only scripts remain intact.
 Scripts can use the native storage/cache, HTTP, DNS, MMDB, Gist, age, download,
 flow and conversion helpers. Explicit script writes retain their original timing
 across failures and restart. The development feasibility example remains separate.
-Independent file/module/artifact/share/token/archive/sync/cron/log business routes
-and the remaining encrypted/provider workflows are still under development.
-Full source-branch and frontend qualification remains part of the parent rewrite;
-this is not a complete replacement release.
+Native file/module/artifact management, token sharing, archives and manual/batch
+synchronization use those same helpers. Gist/GitLab providers, plaintext/Base64/age
+backups, cache refresh, logs and configured notifications retain the existing
+business contracts. Artifact and environment jobs use native scheduling and the
+same generation, backup and MMDB owners as HTTP requests.
+Final source-inventory and integration/release qualification remains part of the
+parent rewrite; this is not a complete replacement release.
 
 The engine embeds locked generic utility packages for formats, hashes, IP/bytes,
 cryptography, DNS packets and the Web primitives required by those helpers.
@@ -40,14 +43,17 @@ Application conversion, processing and generation policies remain native Rust.
 The utility-only build in Actions records package input hashes and license
 notices in `vendor/`; the development application-helper bundle is separate.
 
-All builds and tests run in the **Rust service and compatibility** GitHub Actions
+All builds and tests run in the **Rust compatibility native baseline** GitHub Actions
 workflow. Native Linux x64/arm64 and Windows x64 jobs produce release binaries;
 Linux x64/arm64 Docker jobs build and run `rust/Dockerfile`. The browser job uses
-the pinned unchanged frontend: twenty Node workflows and ten selected Rust
-workflows in both hosting modes, including subscription/collection preview,
-permanent deletion and restored/deleted-state restarts. Complete frontend
-acceptance still depends on the remaining backend
-features. No local build, test or Docker setup is required.
+the pinned unchanged frontend: twenty workflows each against Node, merged Rust
+and standalone Rust, including resource editing, previews, shares, archives, logs,
+permanent deletion and restored/deleted-state restarts. No local build, test or
+Docker setup is required.
+
+M4 business-feature acceptance passed at `04357fb8` in
+[Actions 39323623553](https://github.com/DSLZL/Sub-Store/actions/runs/39323623553).
+The M1 final inventory and M5 integration/release gates remain open.
 
 Downloaded service binaries use the existing environment variables:
 
@@ -70,15 +76,25 @@ Downloaded service binaries use the existing environment variables:
 - `NODE_ENV`: `production` returns the legacy HTTP reason in uncaught HTML
   errors; other values include native Rust traces. Trace frames and JSON/zlib
   parser diagnostic wording differ from Node.
+- `SUB_STORE_BACKEND_SYNC_CRON`, `SUB_STORE_BACKEND_UPLOAD_CRON` and
+  `SUB_STORE_BACKEND_DOWNLOAD_CRON`: existing server sync/backup jobs.
+  Artifact `cron` values are managed through the artifact API.
+- `SUB_STORE_PRODUCE_CRON`: existing scheduled generation entries.
+- `SUB_STORE_MMDB_COUNTRY_URL` / `SUB_STORE_MMDB_COUNTRY_PATH`,
+  `SUB_STORE_MMDB_ASN_URL` / `SUB_STORE_MMDB_ASN_PATH` and `SUB_STORE_MMDB_CRON`:
+  configured database download and refresh.
+- `SUB_STORE_DATA_URL` / `SUB_STORE_DATA_URL_POST`: startup data restoration and
+  the existing general-JavaScript postprocessing hook.
 
 Existing data is snapshotted as `sub-store.pre-rust.json` / `root.pre-rust.json`
 before Rust writes. Corrupt data causes startup to fail without resetting it.
 Use copies for evaluation and keep the originals for rollback. Run only one
 backend against a writable data directory.
 
-The HTTP environment keeps the frontend's `Node` discriminator, identifies Rust
-in metadata, and advertises version `0.1.0` with final feature parity incomplete.
-Archive deletion and Gist/age setting mutations return an explicit pending error.
+The HTTP environment keeps the frontend's `Node` discriminator and protocol
+version `2.42.4`, which the unchanged frontend uses to select supported features.
+Rust metadata identifies crate version `0.1.0`, milestone M4 and the incomplete
+parent rewrite. Archive operations and Gist/age settings use their native owners.
 Subscription/collection public recipients are validated and normalized natively
 for both X25519 and MLKEM768-X25519, including checksum and padding. Settings
 retain the submitted JSON types after legacy numeric validation, and old object
@@ -134,14 +150,14 @@ import and restart; valid pairs and literal private-use/backslash sequences keep
 their original values.
 Legacy migration treats falsy lists as empty maps, matching the old backend.
 Malformed recovery records stop startup without resetting either file. Let Rust
-recover a pending restore before rolling back to Node. The no-Gist refresh path
-clears the three resource caches used by frontend restore; Gist refresh remains
-pending. Merged frontend hosting preserves gzip/identity preferences, compressed
-assets, legacy cache headers, filesystem ETag/Last-Modified validators, conditional
+recover a pending restore before rolling back to Node. Refresh uses the native
+resource caches and configured Gist store owners. Merged frontend hosting preserves
+gzip/identity preferences, compressed assets, legacy cache headers,
+filesystem ETag/Last-Modified validators, conditional
 304 responses and representation metadata on HEAD. Standalone hosting reuses
 these assets with legacy Accept-based history fallback and API/download forwarding.
-Its public share proxy returns an explicit pending error until M4 implements
-token enforcement. Both hosting modes support selected-representation byte ranges,
+Its public share proxy uses the same native token, expiry, counter and generation
+owners as the backend. Both hosting modes support selected-representation byte ranges,
 If-Range, If-Match and If-Unmodified-Since, including conditional/HEAD precedence.
 Business API responses and JSON exports retain content-based weak ETags and UTF-8
 lengths. Successful GET/HEAD revalidation returns 304; HEAD preserves entity

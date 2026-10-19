@@ -117,9 +117,13 @@ fn prefixed<'js>(
         Ok(true) => js.value(format!("{prefix}{}", js.text(url)?)),
         Ok(false) => Ok(url),
         Err(error) => {
-            eprintln!(
-                "[sub-store:error] GitHub 加速代理匹配正则无效: {}",
-                script::message(&js.ctx, error)
+            script::log(
+                js,
+                "error",
+                &format!(
+                    "GitHub 加速代理匹配正则无效: {}",
+                    script::message(&js.ctx, error)
+                ),
             );
             Ok(url)
         }
@@ -155,9 +159,13 @@ async fn finalize<'js>(
         let cache = match parsed {
             Ok(value) => value.as_array().is_some_and(|proxies| !proxies.is_empty()),
             Err(error) => {
-                eprintln!(
-                    "[sub-store:error] Downloaded resource cannot be parsed: {}",
-                    script::message(&js.ctx, error)
+                script::log(
+                    js,
+                    "error",
+                    &format!(
+                        "Downloaded resource cannot be parsed: {}",
+                        script::message(&js.ctx, error)
+                    ),
                 );
                 false
             }
@@ -237,9 +245,13 @@ async fn run<'js>(js: &Js<'js>, input: Download<'js>) -> rquickjs::Result<Value<
         match parsed {
             Ok(value) => value,
             Err(error) => {
-                eprintln!(
-                    "[sub-store:error] 解析自定义 headers 失败: {}",
-                    script::message(&js.ctx, error)
+                script::log(
+                    js,
+                    "error",
+                    &format!(
+                        "解析自定义 headers 失败: {}",
+                        script::message(&js.ctx, error)
+                    ),
                 );
                 js.undefined()
             }
@@ -270,7 +282,7 @@ async fn run<'js>(js: &Js<'js>, input: Download<'js>) -> rquickjs::Result<Value<
     )?;
     let cache_key = optional(js, &arguments, "cacheKey")?;
     let custom_key = if js.equal(&cache_key, &js.value(true)?)? {
-        eprintln!("[sub-store:error] 使用自定义缓存时 cacheKey 的值不能为空");
+        script::log(js, "error", "使用自定义缓存时 cacheKey 的值不能为空");
         None
     } else if js.truthy(&cache_key)? {
         Some(js.value(format!("#sub-store-cached-custom-{}", js.text(cache_key)?))?)
@@ -296,9 +308,13 @@ async fn run<'js>(js: &Js<'js>, input: Download<'js>) -> rquickjs::Result<Value<
             refresh.no_cache = js.undefined();
             if js.truthy(&input.await_custom)? {
                 if let Err(error) = Box::pin(run(js, refresh)).await {
-                    eprintln!(
-                        "[sub-store:error] 乐观缓存: URL {safe_url} 更新缓存发生错误 {}",
-                        script::message(&js.ctx, error)
+                    script::log(
+                        js,
+                        "error",
+                        &format!(
+                            "乐观缓存: URL {safe_url} 更新缓存发生错误 {}",
+                            script::message(&js.ctx, error)
+                        ),
                     );
                     let cache = js.ctx.globals().get("__resourceCache")?;
                     js.method(cache, "set", vec![id, custom.clone()])?;
@@ -307,9 +323,13 @@ async fn run<'js>(js: &Js<'js>, input: Download<'js>) -> rquickjs::Result<Value<
                 let worker = js.clone();
                 js.ctx.spawn(async move {
                     if let Err(error) = Box::pin(run(&worker, refresh)).await {
-                        eprintln!(
-                            "[sub-store:error] 乐观缓存: URL {safe_url} 异步更新缓存发生错误 {}",
-                            script::message(&worker.ctx, error)
+                        script::log(
+                            &worker,
+                            "error",
+                            &format!(
+                                "乐观缓存: URL {safe_url} 异步更新缓存发生错误 {}",
+                                script::message(&worker.ctx, error)
+                            ),
                         );
                     }
                 });
@@ -532,6 +552,6 @@ pub(crate) fn initialize<'js>(_ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs:
     utils.set("download", Func::from(Async(download)))?;
     utils.set(
         "downloadFile",
-        Func::from(Async(crate::script_io::download_file)),
+        Func::from(Async(crate::script_runtime::download)),
     )
 }

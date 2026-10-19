@@ -57,12 +57,70 @@ fn fallback(mode: &str) -> bool {
     matches!(mode, "fallbackNotify" | "fallbackQuiet")
 }
 
-fn failed(js: &Js<'_>, mode: &str, message: &str) -> rquickjs::Result<()> {
+pub(crate) fn failure_text(
+    js: &Js<'_>,
+    error: rquickjs::Error,
+) -> rquickjs::Result<(String, String)> {
+    if !error.is_exception() {
+        let text = error.to_string();
+        return Ok((text.clone(), text));
+    }
+    let thrown = js.ctx.catch();
+    let full = js.text(thrown.clone())?;
+    let reason = script::message(&js.ctx, js.ctx.throw(thrown));
+    Ok((reason, full))
+}
+
+fn notify(js: &Js<'_>, title: &str, name: &str, message: &str) -> rquickjs::Result<()> {
+    js.method(
+        network::host(js)?,
+        "notify",
+        vec![
+            js.value(title)?,
+            js.value(format!("❌ {name}"))?,
+            js.value(message)?,
+        ],
+    )?;
+    Ok(())
+}
+
+fn failed(js: &Js<'_>, mode: &str, message: &str, title: &str, name: &str) -> rquickjs::Result<()> {
     if mode == "disabled" || fallback(mode) {
         return Err(js.error(message));
     }
     if mode == "enabled" {
-        eprintln!("[sub-store:notify] {message}");
+        notify(js, title, name, message)?;
+    }
+    Ok(())
+}
+
+fn warn_duplicate<'js>(
+    js: &Js<'js>,
+    proxies: &Value<'js>,
+    options: &Value<'js>,
+    kind: &str,
+) -> rquickjs::Result<()> {
+    let seen = object(js)?;
+    let proxies: Vec<Value> = js.call("iterable", (proxies.clone(),))?;
+    for proxy in proxies {
+        let name = js.text(js.get(&proxy, "name")?)?;
+        if js.truthy(&js.get(&seen, &name)?)? {
+            let resource = js.text(optional(js, options, "name")?)?;
+            let media = object(js)?;
+            js.set(&media, "media-url", js.value("https://cdn3.iconfinder.com/data/icons/seo-outline-1/512/25_code_program_programming_develop_bug_search_developer-512.png")?)?;
+            js.method(
+                network::host(js)?,
+                "notify",
+                vec![
+                    js.value("🌍 Sub-Store")?,
+                    js.value(format!("⚠️ {kind} {resource} 包含重复节点 {name}！"))?,
+                    js.value("请仔细检测配置！")?,
+                    media,
+                ],
+            )?;
+            break;
+        }
+        js.set(&seen, &name, js.value(true)?)?;
     }
     Ok(())
 }
@@ -168,6 +226,7 @@ async fn sources<'js>(
     for url in lines {
         let worker = js.clone();
         let errors = errors.clone();
+        let sub = sub.clone();
         let args = vec![
             url.clone(),
             ua.clone(),
@@ -183,7 +242,16 @@ async fn sources<'js>(
             match utility(&worker, "download", args).await {
                 Ok(value) => Ok(value),
                 Err(error) => {
-                    eprintln!("[sub-store:error] {}", script::message(&worker.ctx, error));
+                    let (_, full) = failure_text(&worker, error)?;
+                    script::log(
+                        &worker,
+                        "error",
+                        &format!(
+                            "订阅 {} 的远程订阅 {} 发生错误: {full}",
+                            worker.text(worker.get(&sub, "name")?)?,
+                            script_download::mask_url(&worker, url.clone())?,
+                        ),
+                    );
                     worker.set(&errors, &worker.text(url)?, worker.value(true)?)?;
                     worker.value("")
                 }
@@ -223,6 +291,12 @@ async fn sources<'js>(
                 js.text(js.get(&sub, "name")?)?,
                 urls.join(", ")
             ),
+            if preview {
+                "🌍 Sub-Store 预览订阅失败"
+            } else {
+                "🌍 Sub-Store 处理订阅失败"
+            },
+            &js.text(js.get(&sub, "name")?)?,
         )?;
     }
     let result_scope = js.clone();
@@ -440,7 +514,7 @@ pub(crate) fn patch<'js>(
     if js.truthy(&content)? {
         match yaml(js, "safeLoad", content) {
             Ok(value) => config = network::prefer(js, [value, object(js)?])?,
-            Err(error) => eprintln!("[sub-store:error] {}", script::message(&js.ctx, error)),
+            Err(error) => script::log(js, "error", &script::message(&js.ctx, error)),
         }
     }
     let merged = merge(js, config, patch)?;
@@ -513,6 +587,7 @@ async fn file_raw<'js>(
     for url in lines {
         let worker = js.clone();
         let errors = errors.clone();
+        let file = file.clone();
         let download_options = object(js)?;
         js.set(
             &download_options,
@@ -544,7 +619,16 @@ async fn file_raw<'js>(
                 match utility(&worker, "download", args).await {
                     Ok(value) => Ok(value),
                     Err(error) => {
-                        eprintln!("[sub-store:error] {}", script::message(&worker.ctx, error));
+                        let (_, full) = failure_text(&worker, error)?;
+                        script::log(
+                            &worker,
+                            "error",
+                            &format!(
+                                "文件 {} 的远程文件 {} 发生错误: {full}",
+                                worker.text(worker.get(&file, "name")?)?,
+                                script_download::mask_url(&worker, url.clone())?,
+                            ),
+                        );
                         worker.set(&errors, &worker.text(url)?, worker.value(true)?)?;
                         worker.value("")
                     }
@@ -575,7 +659,18 @@ async fn file_raw<'js>(
             return Err(js.error(&message));
         }
         if js.equal(&ignore, &js.value("enabled")?)? {
-            eprintln!("[sub-store:notify] {message}");
+            notify(
+                js,
+                &js.text(network::prefer(
+                    js,
+                    [
+                        optional(js, &options, "notifyTitle")?,
+                        js.value("🌍 Sub-Store 处理文件失败")?,
+                    ],
+                )?)?,
+                &js.text(js.get(&file, "name")?)?,
+                &format!("远程文件 {} 发生错误, 请查看日志", urls.join(", ")),
+            )?;
         }
     }
     let content = if override_url {
@@ -609,6 +704,13 @@ pub(crate) async fn file<'js>(
     options: Value<'js>,
     preview: bool,
 ) -> rquickjs::Result<Value<'js>> {
+    if preview {
+        js.set(
+            &options,
+            "notifyTitle",
+            js.value("🌍 Sub-Store 预览文件失败")?,
+        )?;
+    }
     let raw = if mihomo(js, &file)? {
         let source = js.text(js.get(&file, "sourceType")?)?;
         let source = if matches!(
@@ -772,7 +874,7 @@ async fn file_main<'js>(
         match yaml(&js, "safeLoad", content) {
             Ok(value) => network::prefer(&js, [value, object(&js)?])?,
             Err(error) => {
-                eprintln!("[sub-store:error] {}", script::message(&js.ctx, error));
+                script::log(&js, "error", &script::message(&js.ctx, error));
                 object(&js)?
             }
         }
@@ -848,6 +950,7 @@ async fn subscription<'js>(
                 js.text(optional(js, &options, "name")?)?
             )));
         }
+        warn_duplicate(js, &processed, &options, "订阅")?;
         let result = utility(
             js,
             "produce",
@@ -865,7 +968,28 @@ async fn subscription<'js>(
     match result {
         Ok(value) => Ok(value),
         Err(error) if fallback(&resolved) => {
-            eprintln!("[sub-store:error] {}", script::message(&js.ctx, error));
+            let reason = script::message(&js.ctx, error);
+            let name = js.text(js.get(&sub, "name")?)?;
+            if resolved == "fallbackNotify" {
+                notify(
+                    js,
+                    if preview {
+                        "🌍 Sub-Store 预览订阅失败"
+                    } else {
+                        "🌍 Sub-Store 处理订阅失败"
+                    },
+                    &name,
+                    &format!("🤔 原因：{reason}"),
+                )?;
+            }
+            script::log(
+                js,
+                "error",
+                &format!(
+                    "订阅 {name} {}启用兜底后返回空结果: {reason}",
+                    if preview { "预览" } else { "" }
+                ),
+            );
             if preview {
                 preview_result(js, js.array([])?, js.array([])?)
             } else {
@@ -932,6 +1056,8 @@ async fn collection<'js>(
             network::prefer(js, [optional(js, &options, "platform")?, js.value("JSON")?])?
         };
         let mut pending = Vec::new();
+        let processed = std::rc::Rc::new(std::cell::Cell::new(0usize));
+        let total = names.len() as f64;
         for name in &names {
             let worker = js.clone();
             let name = name.clone();
@@ -942,15 +1068,22 @@ async fn collection<'js>(
             let raw_results = raw_results.clone();
             let errors = errors.clone();
             let target = target.clone();
+            let processed = processed.clone();
             let promise = Promise::wrap_future(&js.ctx, async move {
                 let sub = find(&worker, all_subs, name.clone())?;
                 // The source reads sub.ignoreFailedRemoteSub before its per-child try.
                 let child_mode = mode(&worker, [worker.get(&sub, "ignoreFailedRemoteSub")?])?;
                 let key = worker.text(name)?;
+                let percent = || -> rquickjs::Result<String> {
+                    let fixed = worker.method(worker.value(processed.get() as f64 / total)?, "toFixed", vec![worker.value(1)?])?;
+                    let number: f64 = worker.call("number", (fixed,))?;
+                    worker.text(worker.value(100.0 * number)?)
+                };
                 let child = async {
                     let child_options = object(&worker)?;
                     if !preview {
                         let ua = if worker.truthy(&worker.get(&sub, "passThroughUA")?)? {
+                            script::log(&worker, "info", &format!("订阅开启了透传 User-Agent, 使用请求的 User-Agent: {}", worker.text(optional(&worker, &options, "ua")?)?));
                             optional(&worker, &options, "ua")?
                         } else {
                             worker.get(&sub, "ua")?
@@ -984,6 +1117,9 @@ async fn collection<'js>(
                                 ],
                             )?,
                         )?;
+                    }
+                    if !preview {
+                        script::log(&worker, "info", &format!("正在处理子订阅：{}...", worker.text(worker.get(&sub, "name")?)?));
                     }
                     let mut saved_raw = worker.undefined();
                     let (raw, source_raw) = sources(
@@ -1046,15 +1182,39 @@ async fn collection<'js>(
                     .await?;
                     worker.set(&results, &key, output)?;
                     worker.set(&raw_results, &key, raw)?;
+                    if !preview {
+                        processed.set(processed.get()+1);
+                        script::log(&worker, "info", &format!("✅ 子订阅：{}加载成功，进度--{}% ", worker.text(worker.get(&sub, "name")?)?, percent()?));
+                    }
                     Ok::<_, rquickjs::Error>(())
                 }
                 .await;
                 if let Err(error) = child {
-                    eprintln!("[sub-store:error] {}", script::message(&worker.ctx, error));
+                    let (reason, full) = failure_text(&worker, error)?;
+                    let sub_name = worker.text(worker.get(&sub, "name")?)?;
                     if fallback(&child_mode) {
+                        if child_mode == "fallbackNotify" {
+                            notify(
+                                &worker,
+                                if preview {
+                                    "🌍 Sub-Store 预览订阅失败"
+                                } else {
+                                    "🌍 Sub-Store 处理订阅失败"
+                                },
+                                &sub_name,
+                                &format!("🤔 原因：{reason}"),
+                            )?;
+                        }
+                        script::log(&worker, "error", &format!("订阅 {sub_name} 在组合订阅{}中启用兜底后返回空结果: {reason}", if preview { "预览" } else { "处理" }));
                         worker.set(&results, &key, worker.array([])?)?;
                         worker.set(&raw_results, &key, worker.array([])?)?;
                     } else {
+                        let message = if preview {
+                            format!("❌ 处理组合订阅 {} 中的子订阅: {sub_name} 时出现错误：{full}！", worker.text(worker.get(&collection, "name")?)?)
+                        } else {
+                            format!("❌ 处理组合订阅中的子订阅: {sub_name}时出现错误：{full}！进度--{}%", percent()?)
+                        };
+                        script::log(&worker, "error", &message);
                         worker.set(&errors, &key, worker.value(true)?)?;
                         worker.set(&raw_results, &key, worker.undefined())?;
                     }
@@ -1088,6 +1248,12 @@ async fn collection<'js>(
                         js.text(js.get(&collection, "name")?)?,
                         failed_names.join(", ")
                     ),
+                    if preview {
+                        "🌍 Sub-Store 预览组合订阅失败"
+                    } else {
+                        "🌍 Sub-Store 处理组合订阅失败"
+                    },
+                    &js.text(js.get(&collection, "name")?)?,
                 )?;
             }
         }
@@ -1145,6 +1311,7 @@ async fn collection<'js>(
                 js.text(optional(js, &options, "name")?)?
             )));
         }
+        warn_duplicate(js, &processed, &options, "组合订阅")?;
         let result = utility(
             js,
             "produce",
@@ -1162,7 +1329,28 @@ async fn collection<'js>(
     match result {
         Ok(value) => Ok(value),
         Err(error) if fallback(&resolved) => {
-            eprintln!("[sub-store:error] {}", script::message(&js.ctx, error));
+            let reason = script::message(&js.ctx, error);
+            let name = js.text(js.get(&collection, "name")?)?;
+            if resolved == "fallbackNotify" {
+                notify(
+                    js,
+                    if preview {
+                        "🌍 Sub-Store 预览组合订阅失败"
+                    } else {
+                        "🌍 Sub-Store 处理组合订阅失败"
+                    },
+                    &name,
+                    &format!("🤔 原因：{reason}"),
+                )?;
+            }
+            script::log(
+                js,
+                "error",
+                &format!(
+                    "组合订阅 {name} {}启用兜底后返回空结果: {reason}",
+                    if preview { "预览" } else { "" }
+                ),
+            );
             if preview {
                 preview_result(js, js.array([])?, js.array([])?)
             } else {

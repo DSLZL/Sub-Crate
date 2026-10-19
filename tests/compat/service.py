@@ -23,6 +23,8 @@ import zlib
 from reference import BACKEND, HERE, ROOT, execute, oracle, source_provenance
 from runner import BufferedHTTPConnection, check_json, load_cases, request, run_cases
 from upstream import ControlledUpstream
+from scheduling import run_contracts as scheduling_contracts
+from backup_age import run_contracts as backup_age_contracts
 
 
 def wall_time(latest=False):
@@ -68,7 +70,9 @@ def listener(binary, environment, output, report, log_prefix="rust", image=None,
             argv.extend(["--mount", f"type=bind,source={environment['SUB_STORE_FRONTEND_PATH']},target=/frontend,readonly"])
             if not environment.get("SUB_STORE_BACKEND_MERGE") and not host_network:
                 argv.extend(["-p", f"127.0.0.1:{environment['SUB_STORE_FRONTEND_PORT']}:3001"])
-        if environment.get("SUB_STORE_MMDB_COUNTRY_PATH"):
+        database_base = Path(environment['SUB_STORE_DATA_BASE_PATH'])
+        if any(environment.get(key) and not Path(environment[key]).is_relative_to(database_base)
+               for key in ("SUB_STORE_MMDB_COUNTRY_PATH", "SUB_STORE_MMDB_ASN_PATH")):
             argv.extend(["--mount", f"type=bind,source={HERE / 'fixtures/mmdb'},target=/mmdb,readonly"])
         for key, value in environment.items():
             if key.startswith("SUB_STORE_") or key in ("TZ", "NODE_ENV", "HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy"):
@@ -76,7 +80,8 @@ def listener(binary, environment, output, report, log_prefix="rust", image=None,
                          "SUB_STORE_BACKEND_API_HOST": value if host_network else "0.0.0.0", "SUB_STORE_FRONTEND_PATH": "/frontend",
                          "SUB_STORE_FRONTEND_HOST": value if host_network else "0.0.0.0", "SUB_STORE_FRONTEND_PORT": value if host_network else "3001"}.get(key, value)
                 if key in ("SUB_STORE_MMDB_COUNTRY_PATH", "SUB_STORE_MMDB_ASN_PATH"):
-                    value = "/mmdb/" + Path(value).name
+                    value = ("/data/" + Path(value).relative_to(database_base).as_posix()
+                             if Path(value).is_relative_to(database_base) else "/mmdb/" + Path(value).name)
                 argv.extend(["--env", f"{key}={value}"])
         argv.append(image)
     else:
@@ -180,9 +185,273 @@ def compare_step(actual_step, reference_step, label):
         assert actual["headers"].get(key) == expected["headers"].get(key), (label, key, actual, expected)
 
 
+def notification_contracts(binary, node, environment, baseline, root, output, report, image):
+    upstream_port = 0
+    modes = ("none", "http", "http-fallback", "generic-post", "generic-get", "ntfy", "gotify", "generic-rejected", "unsupported", "business")
+    for mode in modes:
+        paired = {}
+        for kind in ("node", "rust"):
+            label = f"{kind}-notification-{mode}"
+            state = output / label
+            state.mkdir()
+            document = {**baseline, "settings": {"logsMaxCount": 100}, "subs": [], "collections": [], "files": [], "artifacts": [], "tokens": [], "archives": []}
+            (state / "root.json").write_text(json.dumps({**root, "sub-store-logs": "[]"}, ensure_ascii=False), encoding="utf-8")
+            with ControlledUpstream(upstream_port) as upstream:
+                upstream_port = upstream.server.server_address[1]
+                authority = urlsplit(upstream.url).netloc
+                configured = {
+                    "none": "", "http": upstream.url + "/host/notification?title=[推送标题]&content=[推送内容]&repeat=[推送标题]",
+                    "http-fallback": upstream.url + "/host/notification?title=[推送标题]&content=[推送内容]",
+                    "generic-post": "generic+" + upstream.url + "/host/notification?template=json&title=fixture-title",
+                    "generic-get": f"generic://{authority}/host/notification?disabletls=yes&method=GET&template=json&title=fixture-title",
+                    "ntfy": f"ntfy://{authority}/host/notification?scheme=http&title=fixture-title",
+                    "gotify": f"gotify://{authority}/host/notification/A12345678901234?disabletls=yes",
+                    "generic-rejected": "generic+" + upstream.url + "/host/notification-error?template=json",
+                    "unsupported": "missing://fixture.invalid",
+                    "business": upstream.url + "/host/notification?title=[推送标题]&content=[推送内容]",
+                }[mode]
+                steps = []
+                if mode == "business":
+                    good = {"name": "good", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture"}
+                    bad = {"name": "bad", "source": "remote", "url": upstream.url + "/host/pipeline/failed"}
+                    remote_file = {"name": "file-warning", "source": "remote", "url": bad["url"], "ignoreFailedRemoteFile": "enabled"}
+                    document["subs"] = [good, {**good, "name": "same-good"}, bad,
+                        {**bad, "name": "fallback", "ignoreFailedRemoteSub": "fallbackNotify"},
+                        {**good, "name": "duplicates-sub", "content": good["content"] + "\n" + good["content"]}]
+                    document["collections"] = [{"name": "duplicates-col", "subscriptions": ["good", "same-good"]}]
+                    document["files"] = [remote_file]
+                    steps = [
+                        {"method": "POST", "path": "/api/preview/sub?target=JSON", "body": {**bad, "ignoreFailedRemoteSub": "enabled"}},
+                        {"method": "POST", "path": "/api/preview/sub?target=JSON", "body": document["subs"][3]},
+                        {"method": "POST", "path": "/api/preview/collection?target=JSON", "body": {"name": "child-fallback", "subscriptions": ["good", "fallback"]}},
+                        {"method": "POST", "path": "/api/preview/collection?target=JSON", "body": {"name": "collection-warning", "subscriptions": ["good", "bad"], "ignoreFailedRemoteSub": "enabled"}},
+                        {"method": "POST", "path": "/api/preview/collection?target=JSON", "body": {"name": "collection-fallback", "subscriptions": ["bad"], "ignoreFailedRemoteSub": "fallbackNotify"}},
+                        {"method": "POST", "path": "/api/preview/file", "body": remote_file},
+                        {"path": "/api/file/file-warning"},
+                        {"path": "/download/duplicates-sub/JSON"},
+                        {"path": "/download/collection/duplicates-col?target=JSON"},
+                    ]
+                (state / "sub-store.json").write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+                env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state), "SUB_STORE_PUSH_SERVICE": configured}
+                manager = oracle(node, env, output, report, label) if kind == "node" else listener(binary, env, output, report, label, image, host_network=bool(image))
+                with manager as url:
+                    title = "" if mode == "http-fallback" else "通知🙂"
+                    code = """function operator(proxies) {
+                        if (!$substore.env.isNode && (typeof process !== 'undefined' || typeof require !== 'undefined')) throw new Error('Node runtime leaked');
+                        for (let index=0; index<3; index++) $substore.notify($arguments.title ? $arguments.title+index : '', '子标题'+index, '正文🙂', {'open-url':'https://example.invalid/open','media-url':'https://example.invalid/media'});
+                        return proxies;
+                    }"""
+                    step = {"method": "POST", "path": "/api/preview/sub?target=JSON", "body": {"name": "notification-check", "source": "local",
+                        "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture",
+                        "process": [{"type": "Script Operator", "args": {"content": code, "arguments": {"title": title}}}]}}
+                    triggers = []
+                    for trigger in steps or [step]:
+                        response = request(url, trigger)
+                        triggers.append({"request": trigger, "response": response})
+                        (output / f"{label}-triggers.json").write_text(json.dumps(triggers, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                        assert response["status"] == 200, (label, response)
+                    expected = len(steps) if steps else 3
+                    completed = []
+                    if configured:
+                        for _ in range(200):
+                            selected = request(url, {"path": "/api/logs?keyword=%5BPush%20Service%5D"})
+                            assert selected["status"] == 200, (label, selected)
+                            completed = json.loads(selected["body"])["data"]["logs"]
+                            if len(completed) == expected:
+                                break
+                            time.sleep(0.05)
+                        assert len(completed) == expected, (label, completed)
+                    messages = [entry["message"] for entry in completed]
+                    if mode in ("generic-rejected", "unsupported"):
+                        assert all("ERROR:" in message for message in messages), (label, messages)
+                    elif configured:
+                        assert all("RES:" in message for message in messages), (label, messages)
+                    notices = json.loads(request(url, {"path": "/api/logs?keyword=%5BNotify%5D"})["body"])["data"]["logs"]
+                    assert len(notices) == expected, (label, notices)
+                    if mode == "business":
+                        for fragment in ("预览订阅失败", "预览组合订阅失败", "预览文件失败", "处理文件失败", "🤔 原因：", "⚠️ 订阅 duplicates-sub", "⚠️ 组合订阅 duplicates-col", "多媒体: https://cdn3.iconfinder.com"):
+                            assert any(fragment in entry["message"] for entry in notices), (label, fragment, notices)
+                    else:
+                        assert all("正文🙂\n点击跳转: https://example.invalid/open\n多媒体: https://example.invalid/media" in entry["message"] for entry in notices)
+                    requests = [{"method": entry["method"], "path": entry["path"], "body": entry["body"],
+                        "headers": {key: value for key, value in entry["headers"].items() if key in ("content-type", "authorization", "title", "priority")}}
+                        for entry in upstream.requests if mode != "business" or entry["path"].startswith("/host/notification?")]
+                    assert len(requests) == (0 if mode in ("none", "unsupported") else expected), (label, requests)
+                    if mode == "generic-get":
+                        assert all(entry["method"] == "GET" and "正文🙂" in entry["body"] for entry in requests), requests
+                    paired[kind] = {"requests": sorted(requests, key=lambda entry: json.dumps(entry, ensure_ascii=False, sort_keys=True)),
+                                    "messages": sorted(messages), "notices": sorted(entry["message"] for entry in notices)}
+                    (output / f"{label}.json").write_text(json.dumps({"triggers": triggers, "upstream": upstream.requests, **paired[kind]}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                    assert request(url, {"path": "/api/settings"})["status"] == 200, "Notification failure stopped the backend"
+        check_json(paired["rust"], paired["node"])
+        for kind in ("node", "rust"):
+            report["phases"].append({"name": f"{kind}-notification-{mode}", "cases": 1,
+                "requests": len(steps) if steps else 1, "notifications": expected, "status": "passed"})
+    report["native_notification_templates_providers_get_bodies_parallel_delivery_and_recovery_checked"] = True
+
+
+def business_logs_contracts(binary, node, environment, baseline, root, output, report, image):
+    paired, upstream_port = {}, 0
+    for kind in ("node", "rust"):
+        label = kind + "-business-logs"
+        state = output / label
+        state.mkdir()
+        document = {**baseline, "settings": {"logsMaxCount": 1000}, "subs": [], "collections": [], "files": [],
+                    "artifacts": [], "tokens": [], "archives": [], "modules": []}
+        (state / "sub-store.json").write_text(json.dumps(document), encoding="utf-8")
+        (state / "root.json").write_text(json.dumps({**root, "sub-store-logs": "[]"}), encoding="utf-8")
+        env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}
+        with ControlledUpstream(upstream_port) as upstream:
+            upstream_port = upstream.server.server_address[1]
+            manager = oracle(node, env, output, report, label) if kind == "node" else listener(binary, env, output, report, label, image, host_network=bool(image))
+            with manager as url:
+                warmup = request(url, {"method": "POST", "path": "/api/preview/sub?target=JSON", "body": {
+                    "name": "log-warmup", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture",
+                    "process": [{"type": "Script Operator", "args": {"content":
+                        "async function operator(proxies) { await $substore.http.get(" +
+                        json.dumps(upstream.url + "/host/text") + "); return proxies; }"}}]}})
+                startup = request(url, {"path": "/api/logs?limit=1000"})
+                cleared = request(url, {"method": "DELETE", "path": "/api/logs"})
+                empty = request(url, {"path": "/api/logs?limit=1000"})
+                (output / f"{label}-startup.json").write_text(json.dumps({"warmup": warmup, "startup": startup,
+                    "clear": cleared, "empty": empty}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                assert all(response["status"] == 200 for response in (warmup, startup, cleared, empty)), label
+                assert any(entry["method"] == "GET" and entry["path"] == "/host/text" for entry in upstream.requests), label
+                assert json.loads(empty["body"])["data"]["logs"] == [], (label, empty)
+                steps = [
+                    {"method": "POST", "path": "/api/subs", "body": {"name": "log-sub", "source": "local", "content": ""}},
+                    {"method": "PATCH", "path": "/api/sub/log-sub", "body": {"displayName": "日志🙂"}},
+                    {"method": "POST", "path": "/api/collections", "body": {"name": "log-col", "subscriptions": ["log-sub"]}},
+                    {"method": "PATCH", "path": "/api/collection/log-col", "body": {"displayName": "组合🙂"}},
+                    {"method": "POST", "path": "/api/files", "body": {"name": "log-file", "source": "local", "content": "fixture"}},
+                    {"method": "PATCH", "path": "/api/file/log-file", "body": {"displayName": "文件🙂"}},
+                    {"method": "POST", "path": "/api/artifacts", "body": {"name": "log-artifact", "type": "file", "source": "log-file", "sync": True, "upload": False}},
+                    {"method": "PATCH", "path": "/api/artifact/log-artifact", "body": {"displayName": "产物🙂"}},
+                    {"path": "/api/sync/artifact/log-artifact"},
+                    {"path": "/api/sync/artifacts"},
+                    {"method": "DELETE", "path": "/api/sub/log-sub?mode=permanent"},
+                    {"method": "DELETE", "path": "/api/collection/log-col?mode=permanent"},
+                    {"method": "DELETE", "path": "/api/file/log-file?mode=permanent"},
+                    {"method": "DELETE", "path": "/api/artifact/log-artifact?mode=permanent"},
+                    {"path": "/api/sync/artifact/log-missing", "status": 404},
+                    {"method": "PATCH", "path": "/api/settings", "body": {"gistDownloadTokenStrategy": "invalid"}, "status": 500},
+                    {"method": "PATCH", "path": "/api/settings", "body": {"gistToken": "helper-token", "githubApiUrl": upstream.url + "/host/gist/github"}},
+                    {"path": "/api/utils/backup?action=upload"},
+                    {"path": "/api/utils/backup?action=download"},
+                ]
+                proof = []
+                for step in steps:
+                    response = request(url, step)
+                    proof.append({"request": step, "response": response})
+                    (output / f"{label}-triggers.json").write_text(json.dumps(proof, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                    assert response["status"] == step.get("status", 201 if step.get("method") == "POST" else 200), (label, step, response)
+                response = request(url, {"path": "/api/logs?limit=1000"})
+                assert response["status"] == 200, (label, response)
+                entries = json.loads(response["body"])["data"]["logs"]
+                paired[kind] = [{"level": entry["level"], "message": entry["message"]} for entry in entries]
+                assert len(entries) >= 25, (label, entries)
+                (output / f"{label}.json").write_text(json.dumps({"logs": entries, "triggers": proof, "upstream": upstream.requests}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    check_json(paired["rust"], paired["node"])
+    for kind in ("node", "rust"):
+        report["phases"].append({"name": kind + "-business-logs", "cases": 1, "requests": len(steps) + 1, "status": "passed"})
+    report["native_business_resource_sync_settings_and_backup_log_callers_checked"] = True
+
+
+def logs_contracts(binary, node, environment, baseline, root, output, report, image):
+    _, cases = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "logs-core")
+    paired, final = {}, {}
+    seeded = [None, {"id": "invalid"}, {"id": "noise", "time": 0, "level": "info", "message": "[sub-store] INFO: URI Parser is activated!"}]
+    seeded.extend({"id": key, "time": index, "level": level, "message": message, **extra}
+                  for index, (key, level, message, extra) in enumerate([
+                      ("a", "log", "fixture-static-Alpha", {}), ("b", "warn", "fixture-static-Beta", {}),
+                      ("c", "debug", "fixture-static-Gamma", {}), ("d", "error", "[scope] ERROR: fixture-static-Delta", {"extra": False})], 1))
+    for kind in ("node", "rust"):
+        label = kind + "-logs"
+        state = output / label
+        state.mkdir()
+        document = {**baseline, "settings": {"logsMaxCount": 0}, "subs": [], "collections": [], "files": [], "artifacts": [], "tokens": [], "archives": []}
+        (state / "sub-store.json").write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+        (state / "root.json").write_text(json.dumps({**root, "sub-store-logs": seeded}, ensure_ascii=False), encoding="utf-8")
+        env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}
+        proof = []
+
+        def send(step):
+            response = request(url, step)
+            proof.append({"request": step, "response": response})
+            (output / f"{label}-lifecycle.json").write_text(json.dumps(proof, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            return response
+
+        def script(content):
+            return {"method": "POST", "path": "/api/preview/sub?target=JSON", "body": {"name": "log-check", "source": "local",
+                "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture",
+                "process": [{"type": "Script Operator", "args": {"content": content}}]}}
+
+        manager = oracle(node, env, output, report, label) if kind == "node" else listener(binary, env, output, report, label, image)
+        with manager as url:
+            paired[kind] = check_cases(url, state, cases, output, label)
+            report["phases"].append({"name": label, "cases": len(cases), "requests": sum(len(case["steps"]) for case in paired[kind])})
+            final[kind] = {filename: json.loads((state / filename).read_text(encoding="utf-8")) for filename in ("sub-store.json", "root.json")}
+            assert send({"method": "PATCH", "path": "/api/settings", "body": {"logsMaxCount": 100}})["status"] == 200
+            content = """function operator(proxies) {
+                const circular = {}; circular.self = circular;
+                console.info('fixture-format', {zero:0,flag:false,nil:null}, undefined, null, circular);
+                console.warn('[ custom ] fixture-scoped'); console.error('[scope] iNfO: fixture-preserve');
+                console.debug('fixture-debug');
+                $substore.debug=true; $substore.log('fixture-host-debug'); $substore.debug=false;
+                $substore.log('fixture-host-hidden'); $substore.info('fixture-host-info');
+                $substore.warn('fixture-host-warn'); $substore.error('fixture-host-error');
+                console.log('Sub-Store -- v2.42.4'); console.log('URI Parser is activated!');
+                const logs = JSON.parse($substore.read('#sub-store-logs'));
+                if (!logs.some(entry => entry.message.includes('fixture-host-info'))) throw new Error('live root logs are stale');
+                return proxies;
+            }"""
+            lower = int(wall_time().timestamp() * 1000)
+            assert send(script(content))["status"] == 200
+            upper = int(wall_time(latest=True).timestamp() * 1000)
+            selected = json.loads(send({"path": "/api/logs?keyword=fixture-"})["body"])["data"]["logs"]
+            messages = [entry["message"] for entry in selected]
+            expected = ["[unknown] INFO: fixture-format {\"zero\":0,\"flag\":false,\"nil\":null} undefined null [object Object]",
+                        "[custom] WARN: fixture-scoped", "[scope] iNfO: fixture-preserve", "[unknown] DEBUG: fixture-debug",
+                        "[sub-store] LOG: fixture-host-debug", "[sub-store] INFO: fixture-host-info",
+                        "[sub-store] WARN: fixture-host-warn", "[sub-store] ERROR: fixture-host-error"]
+            assert set(messages) == set(expected) and len(messages) == len(expected), messages
+            assert {entry["message"]: entry["level"] for entry in selected} == dict(zip(expected,
+                ("info", "warn", "error", "debug", "log", "log", "log", "log"), strict=True)), selected
+            assert all(lower <= entry["time"] <= upper and re.fullmatch(r"[0-9]+-[a-z0-9]+", entry["id"]) for entry in selected)
+            if kind == "rust":
+                concurrent = [script(f"function operator(proxies){{console.log('fixture-concurrent-{index}');return proxies;}}") for index in range(8)]
+                with ThreadPoolExecutor(max_workers=8) as pool:
+                    responses = list(pool.map(lambda step: request(url, step), concurrent))
+                proof.extend({"request": step, "response": response} for step, response in zip(concurrent, responses, strict=True))
+                assert all(response["status"] == 200 for response in responses)
+                entries = json.loads(send({"path": "/api/logs?keyword=fixture-concurrent-"})["body"])["data"]["logs"]
+                assert {entry["message"] for entry in entries} == {f"[unknown] LOG: fixture-concurrent-{index}" for index in range(8)}, entries
+                saved = state / "logs-saved-root.json"
+                (state / "root.json").rename(saved)
+                (state / "root.json").mkdir()
+                try:
+                    failed = send({"method": "DELETE", "path": "/api/logs"})
+                    assert failed["status"] == 500 and json.loads(failed["body"])["error"]["code"] == "FAILED_TO_CLEAR_LOGS"
+                finally:
+                    (state / "root.json").rmdir()
+                    saved.rename(state / "root.json")
+                assert json.loads(send({"path": "/api/logs?keyword=fixture-concurrent-"})["body"])["data"]["logs"] == entries
+            persisted = json.loads(send({"path": "/api/logs?keyword=fixture-host-"})["body"])["data"]
+        restart_label = label + "-restart"
+        manager = oracle(node, env, output, report, restart_label) if kind == "node" else listener(binary, env, output, report, restart_label, image)
+        with manager as url:
+            assert json.loads(send({"path": "/api/logs?keyword=fixture-host-"})["body"])["data"] == persisted
+    for actual_case, reference_case in zip(paired["rust"], paired["node"], strict=True):
+        assert actual_case["id"] == reference_case["id"]
+        for actual, reference in zip(actual_case["steps"], reference_case["steps"], strict=True):
+            compare_step(actual, reference, actual_case["id"])
+    check_json(final["rust"], final["node"])
+    report["native_log_capture_filter_retention_restart_and_denied_clear_checked"] = True
+
+
 def utilities_contracts(binary, node, environment, baseline, root, output, report, image):
     _, cases = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "utilities-core")
-    paired, final, upstream_port = {}, {}, 0
+    paired, final, cache_values, upstream_port = {}, {}, {}, 0
     for kind in ("node", "rust"):
         label = kind + "-utilities"
         state = output / label
@@ -197,14 +466,47 @@ def utilities_contracts(binary, node, environment, baseline, root, output, repor
                    "NO_PROXY": "127.0.0.1,localhost", "no_proxy": "127.0.0.1,localhost"}
             manager = oracle(node, env, output, report, label) if kind == "node" else listener(binary, env, output, report, label, image, host_network=bool(image))
             with manager as url:
+                cache_earliest = int(wall_time().timestamp()) * 1000
                 paired[kind] = check_cases(url, state, cases, output, label, upstream)
                 report["phases"].append({"name": label, "cases": len(cases), "requests": sum(len(case["steps"]) for case in paired[kind])})
+                cache_latest = (int(wall_time(latest=True).timestamp()) + 1) * 1000
+                cached_root = json.loads((state / "root.json").read_text(encoding="utf-8"))
+                cache_values[kind] = {}
+                for key, ttl in (("sub-store-cached-resource", 3600000), ("sub-store-cached-headers-resource", 60000)):
+                    cached = json.loads(cached_root[key])
+                    assert cached, (label, key, "Real download/flow did not persist its cache")
+                    for entry in cached.values():
+                        assert set(entry) == {"time", "data"} and type(entry["time"]) is int
+                        assert cache_earliest + ttl <= entry["time"] <= cache_latest + ttl, (label, key, entry)
+                    cache_values[kind][key] = {identity: entry["data"] for identity, entry in cached.items()}
+                before_data = (state / "sub-store.json").read_bytes()
+                refreshed = request(url, {"path": "/api/utils/refresh"})
+                assert refreshed["status"] == 200
+                check_json(json.loads(refreshed["body"]), {"status": "success"})
+                assert (state / "sub-store.json").read_bytes() == before_data
+                expected_root = {**cached_root, **{key: "{}" for key in ("sub-store-cached-resource", "sub-store-cached-headers-resource", "sub-store-cached-script-resource")}}
+                cleared_root = json.loads((state / "root.json").read_text(encoding="utf-8"))
+                check_json(cleared_root, expected_root)
+                (output / f"{label}-cache-refresh.json").write_text(json.dumps({"earliest_ms": cache_earliest, "latest_ms": cache_latest,
+                    "cached_root": cached_root, "refresh_response": refreshed, "cleared_root": cleared_root}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                report["phases"].append({"name": label + "-cache-refresh", "cases": 1, "requests": 1, "status": "passed"})
+                metadata = [{"path": path, "response": request(url, {"path": path})} for path in ("/api/utils/env", "/")]
+                (output / f"{kind}-root-env-alias.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                assert all(item["response"]["status"] == 200 for item in metadata), metadata
+                assert metadata[0]["response"]["body"] == metadata[1]["response"]["body"], metadata
+                assert metadata[0]["response"]["headers"]["content-type"] == metadata[1]["response"]["headers"]["content-type"]
+                report["phases"].append({"name": kind + "-root-env-alias", "cases": 1, "requests": 2, "status": "passed"})
                 final[kind] = {filename: json.loads((state / filename).read_text(encoding="utf-8")) for filename in ("sub-store.json", "root.json")}
     for actual_case, reference_case in zip(paired["rust"], paired["node"], strict=True):
         assert actual_case["id"] == reference_case["id"]
         for actual, reference in zip(actual_case["steps"], reference_case["steps"], strict=True):
+            if actual["path"] == "/api/utils/env":
+                assert json.loads(actual["response"]["body"])["data"]["meta"]["rust"]["complete"] is False
+                continue  # Retain the accepted M2 runtime metadata qualification.
             compare_step(actual, reference, actual_case["id"])
+    check_json(cache_values["rust"], cache_values["node"])
     check_json(final["rust"], final["node"])
+    report["native_utilities_cache_ttl_data_and_refresh_checked"] = True
     report["native_age_rest_and_node_info_checked"] = True
 
 
@@ -2232,6 +2534,11 @@ def main():
         archive_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
         sync_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
         utilities_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
+        logs_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
+        notification_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
+        scheduling_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image, listener)
+        business_logs_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
+        backup_age_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image, listener)
         configurations = [
             ("default", {}, 1048576, [("https://sub-store.vercel.app", "https://sub-store.vercel.app")], "https://denied.invalid", False),
             ("custom-name", {"SUB_STORE_BACKEND_CUSTOM_NAME": "configuration-fixture", "SUB_STORE_BODY_JSON_LIMIT": "+1GB"}, 1073741824,

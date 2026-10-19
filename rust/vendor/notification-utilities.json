@@ -1,0 +1,14 @@
+{
+  "adapted_from": "shoutrrr-ts@0.2.0/dist/index.js",
+  "original_sha256": "a15c04df88e4d8ebc386ef751a8028dd8dbd568a5cecdfc8766a1b8202de611c",
+  "adapter_sha256": "0be05e1dae47b1c5b974d09fa9c312fc81129d666fbf78e9021e326e6a72e72f",
+  "packages": {
+    "shoutrrr-ts": "0.2.0"
+  },
+  "esbuild": "0.19.8",
+  "bundle_sha256": "f0a65afb6fdc5e62183a01719dc820075b42076056a4473bc251a983db768336",
+  "licenses_sha256": "ce5a3c45ad7b23b4fcad1cc2b43790bd80e25e62d5ddeaa381ad2a16b68a4605",
+  "inputs": {
+    "shoutrrr-ts@0.2.0/dist/native.js": "dfc871325398d4e7c5c0228f5302dc0475e74c3397641568fd2f515bd869aea9"
+  }
+}

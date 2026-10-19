@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 class ControlledUpstream:
     def __init__(self, port=0):
         self.requests = []
+        self.runtime_files = {}
         self.gists = {}
         self.script_gist = GistFixture()
         self.gist_lock = threading.Lock()
@@ -126,6 +127,11 @@ class ControlledUpstream:
         return (503 if mode == 'status' else 200), response_bytes(packet, mode), [('Content-Type', 'application/dns-message')]
 
     def host_response(self, method, path, body, headers):
+        if path in self.runtime_files:
+            status, content = self.runtime_files[path]
+            return status, content, [('Content-Type', 'application/octet-stream')]
+        if path.startswith('/host/notification'):
+            return (503 if path.startswith('/host/notification-error') else 200), b'{"ok":true}', [('Content-Type', 'application/json')]
         if path.startswith('/host/pipeline/'):
             name = path.removeprefix('/host/pipeline/')
             if name == 'failed':
