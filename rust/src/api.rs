@@ -1,6 +1,7 @@
 use crate::body::Body;
 use crate::conversion::Error as ConversionError;
 use crate::json::{self as codec, js_string, to_number as number};
+use crate::resources::Error as ResourceError;
 use crate::state::{Store, decode, legacy_object_order, migrate, truthy, valid_records};
 use base64::Engine;
 use http_body_util::Full;
@@ -141,15 +142,19 @@ pub fn options(path: &str) -> Reply {
         "/api/token" => "POST,GET,HEAD",
         _ if path.starts_with("/api/token/") => "DELETE,GET,HEAD",
         "/api/storage" => "GET,POST,HEAD",
-        "/api/subs" | "/api/collections" | "/api/modules" | "/api/files" => "GET,POST,PUT,HEAD",
+        "/api/subs" | "/api/collections" | "/api/modules" | "/api/files" | "/api/artifacts" => "GET,POST,PUT,HEAD",
+        _ if path.starts_with("/api/archives/") && path.ends_with("/restore") => "POST,GET,HEAD",
+        _ if path.starts_with("/api/archives/") => "GET,DELETE,HEAD",
         "/api/proxy/parse"
         | "/api/rule/parse"
         | "/api/preview/sub"
         | "/api/preview/collection"
         | "/api/preview/file" => "POST,GET,HEAD",
+        _ if path.starts_with("/api/sort/") => "POST,GET,HEAD",
         _ if path.starts_with("/api/sub/")
             || path.starts_with("/api/collection/")
             || path.starts_with("/api/module/")
+            || path.starts_with("/api/artifact/")
             || path.starts_with("/api/file/") =>
         {
             "GET,PATCH,DELETE,HEAD"
@@ -949,6 +954,65 @@ fn collection_references(
     Ok(())
 }
 
+pub(crate) fn prepare_create(
+    store: &Store,
+    next: &mut Value,
+    key: &str,
+    body: &Body,
+) -> Result<Value, ResourceError> {
+    let subscription = key == "subs";
+    let label = if subscription { "Subscription" } else { "Collection" };
+    let mut item = if subscription {
+        Value::Object(body.fields())
+    } else {
+        body.clone().into_json()
+    };
+    if !subscription && item.is_null() {
+        return Err(ResourceError::plain("Cannot read properties of null (reading 'name')"));
+    }
+    if cannot_coerce(&item["age-public-key"]) {
+        return Err(ResourceError::plain(PRIMITIVE_ERROR));
+    }
+    normalize_item(&mut item, subscription)
+        .map_err(|message| ResourceError::invalid("INVALID_AGE_PUBLIC_KEY", message))?;
+    if cannot_coerce(&item["name"]) {
+        return Err(ResourceError::plain(PRIMITIVE_ERROR));
+    }
+    let item_name = item.get("name").map(js_string).unwrap_or_else(|| "undefined".to_owned());
+    if item_name.contains('/') {
+        return Err(ResourceError::invalid("INVALID_NAME", format!("{label} {item_name} is invalid")));
+    }
+    let items = store.list(key).ok_or_else(|| ResourceError::plain("e.find is not a function"))?;
+    for old in items {
+        if old.is_null() {
+            return Err(ResourceError::plain("Cannot read properties of null (reading 'name')"));
+        }
+        let duplicate = match (old.get("name"), item.get("name")) {
+            (Some(Value::Number(old)), Some(Value::Number(new))) => old.as_f64() == new.as_f64(),
+            (_, Some(Value::Array(_) | Value::Object(_))) => false,
+            (old, new) => old == new,
+        };
+        if duplicate {
+            if truthy(old) {
+                return Err(ResourceError::invalid("DUPLICATE_KEY", format!("{label} {item_name} already exists.")));
+            }
+            break;
+        }
+    }
+    let top = next["settings"]["appearanceSetting"]["createItemPosition"] == "top";
+    let items = next[key].as_array_mut().ok_or_else(|| ResourceError::plain(if top {
+        "e.unshift is not a function"
+    } else {
+        "e.push is not a function"
+    }))?;
+    if top {
+        items.insert(0, item.clone());
+    } else {
+        items.push(item.clone());
+    }
+    Ok(item)
+}
+
 pub fn dispatch(
     method: &Method,
     path: &str,
@@ -1106,74 +1170,16 @@ pub fn dispatch(
         return persisted(store.commit_list(next, key, raw), success(None, 200));
     }
     if path == plural && method == Method::POST {
-        let mut item = if subscription {
-            Value::Object(body.fields())
-        } else {
-            body.into_json()
+        return match prepare_create(store, &mut next, key, &body) {
+            Ok(item) => publish(store, next, success(Some(item), 201)),
+            Err(error) => error.reply(500),
         };
-        if cannot_coerce(&item["age-public-key"]) {
-            return caught_error(PRIMITIVE_ERROR);
-        }
-        if let Err(message) = normalize_item(&mut item, subscription) {
-            return invalid("INVALID_AGE_PUBLIC_KEY", message);
-        }
-        if cannot_coerce(&item["name"]) {
-            return caught_error(PRIMITIVE_ERROR);
-        }
-        let item_name = item
-            .get("name")
-            .map(js_string)
-            .unwrap_or_else(|| "undefined".to_owned());
-        if item_name.contains('/') {
-            return invalid("INVALID_NAME", &format!("{label} {item_name} is invalid"));
-        }
-        let Some(items) = store.list(key) else {
-            return caught_error("e.find is not a function");
-        };
-        for old in items {
-            if old.is_null() {
-                return null_name_error(true);
-            }
-            let duplicate = match (old.get("name"), item.get("name")) {
-                (Some(Value::Number(old)), Some(Value::Number(new))) => {
-                    old.as_f64() == new.as_f64()
-                }
-                (_, Some(Value::Array(_) | Value::Object(_))) => false,
-                (old, new) => old == new,
-            };
-            if duplicate {
-                if truthy(old) {
-                    return invalid(
-                        "DUPLICATE_KEY",
-                        &format!("{label} {item_name} already exists."),
-                    );
-                }
-                break;
-            }
-        }
-        let top = next["settings"]["appearanceSetting"]["createItemPosition"] == "top";
-        let Some(items) = next[key].as_array_mut() else {
-            return caught_error(if top {
-                "e.unshift is not a function"
-            } else {
-                "e.push is not a function"
-            });
-        };
-        if top {
-            items.insert(0, item.clone());
-        } else {
-            items.push(item.clone());
-        }
-        return publish(store, next, success(Some(item), 201));
     }
     if path != plural && (method == Method::PATCH || method == Method::DELETE) {
         if method == Method::DELETE
             && let Some(mode) = query.get("mode")
         {
-            if mode == "archive" {
-                return pending("Archive deletion is pending");
-            }
-            if mode != "" && mode != "permanent" {
+            if mode != "archive" && mode != "" && mode != "permanent" {
                 if cannot_coerce(mode) {
                     return caught_error(PRIMITIVE_ERROR);
                 }
@@ -1202,6 +1208,15 @@ pub fn dispatch(
             );
         };
         if method == Method::DELETE {
+            if query["mode"] == "archive"
+                && let Err(error) = crate::archives::insert(
+                    &mut next,
+                    if subscription { "sub" } else { "col" },
+                    &store.data[key][position],
+                )
+            {
+                return error.reply(500);
+            }
             next[key].as_array_mut().unwrap().remove(position);
             if subscription
                 && let Err(message) = collection_references(store, &mut next, name, None)

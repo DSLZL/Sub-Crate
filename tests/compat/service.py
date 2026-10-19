@@ -16,6 +16,7 @@ import shutil
 import socket
 import subprocess
 import time
+import traceback
 from urllib.parse import quote, unquote, urlsplit
 import zlib
 
@@ -165,6 +166,101 @@ def share_encryption(url, output, label, public_origin):
     assert send({"method": "PATCH", "path": "/api/file/merged-share", "body": {"age-public-key": "", "process": []}})["status"] == 200
 
 
+def compare_step(actual_step, reference_step, label):
+    actual, expected = actual_step["response"], reference_step["response"]
+    projected = actual_step.get("capture_projection")
+    reference = reference_step.get("capture_projection")
+    assert bool(projected) == bool(reference), "Capture projection missing from a service"
+    if projected:
+        assert projected["paths"] == reference["paths"], "Capture projection paths differ"
+    assert actual["status"] == expected["status"] and (projected["body"] if projected else actual["body"]) == (reference["body"] if reference else expected["body"]), (label, actual, expected)
+    for key in ("content-type", "content-length", "etag", "allow"):
+        if projected and key in ("content-length", "etag"):
+            continue  # Each original body already proved its own length and SHA1 tag.
+        assert actual["headers"].get(key) == expected["headers"].get(key), (label, key, actual, expected)
+
+
+def archive_contracts(binary, node, environment, baseline, root, output, report, image):
+    _, cases = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "archive-core")
+    paired, final = {}, {}
+    for kind in ("node", "rust"):
+        label = kind + "-archives"
+        state = output / label
+        state.mkdir()
+        document = {**baseline, "settings": {}, "subs": [], "collections": [], "files": [], "artifacts": [], "tokens": [], "archives": []}
+        (state / "sub-store.json").write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+        (state / "root.json").write_text(json.dumps(root, ensure_ascii=False), encoding="utf-8")
+        static_fixture(state / "frontend")
+        env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state), "SUB_STORE_BACKEND_MERGE": "true",
+               "SUB_STORE_FRONTEND_PATH": str(state / "frontend")}
+        proof = []
+
+        def send(step):
+            response = request(url, step)
+            proof.append({"request": step, "response": response})
+            (output / f"{label}-lifecycle.json").write_text(json.dumps(proof, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            return response
+
+        def denied(step):
+            before = send({"path": "/api/storage"})
+            saved = state / "archive-saved-state.json"
+            (state / "sub-store.json").rename(saved)
+            (state / "sub-store.json").mkdir()
+            try:
+                rejected = send(step)
+                after = send({"path": "/api/storage"})
+                assert rejected["status"] == 500 and json.loads(rejected["body"])["error"]["code"] == "STATE_WRITE_FAILED"
+                assert before["body"] == after["body"], "Failed archive write changed live state"
+            finally:
+                (state / "sub-store.json").rmdir()
+                saved.rename(state / "sub-store.json")
+
+        manager = oracle(node, env, output, report, label) if kind == "node" else listener(binary, env, output, report, label, image)
+        with manager as url:
+            lower = int(wall_time().timestamp() * 1000)
+            paired[kind] = check_cases(url, state, cases, output, label)
+            upper = int(wall_time(latest=True).timestamp() * 1000)
+            for case in paired[kind]:
+                for step in case["steps"]:
+                    for key, value in step.get("captured", {}).items():
+                        if type(value) is int:
+                            assert lower <= value <= upper, (case["id"], key, value, lower, upper)
+                        elif key.endswith("ARCHIVE_ID"):
+                            assert lower <= int(value.split("-")[0]) <= upper
+            report["phases"].append({"name": label, "cases": len(cases), "requests": sum(len(case["steps"]) for case in paired[kind])})
+            original = {"name": "restart-owned", "source": "local", "content": "archive restart🙂\n", "unknown": {"nil": None, "zero": 0, "flag": False}}
+            assert send({"method": "POST", "path": "/api/files", "body": original})["status"] == 201
+            deleting = {"method": "DELETE", "path": "/api/file/restart-owned?mode=archive"}
+            if kind == "rust":
+                denied(deleting)
+            assert send(deleting)["status"] == 200
+            entry = next(entry for entry in json.loads(send({"path": "/api/archives"})["body"])["data"] if entry["name"] == "restart-owned")
+            restoring = {"method": "POST", "path": f"/api/archives/{entry['id']}/restore"}
+            if kind == "rust":
+                denied(restoring)
+        manager = oracle(node, env, output, report, label + "-restart") if kind == "node" else listener(binary, env, output, report, label + "-restart", image)
+        with manager as url:
+            before = {filename: (state / filename).read_bytes() for filename in ("sub-store.json", "root.json")}
+            detail = send({"path": f"/api/archives/{entry['id']}"})
+            check_json(json.loads(detail["body"]), {"status": "success", "data": entry})
+            assert before == {filename: (state / filename).read_bytes() for filename in before}
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                restored = list(pool.map(lambda _: request(url, restoring), range(2)))
+            proof.append({"concurrent_restore": restored})
+            (output / f"{label}-lifecycle.json").write_text(json.dumps(proof, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            assert sorted(response["status"] for response in restored) == [200, 404]
+            check_json(json.loads(next(response for response in restored if response["status"] == 200)["body"]), {"status": "success", "data": original})
+            assert send({"method": "DELETE", "path": "/api/file/restart-owned?mode=permanent"})["status"] == 200
+            final[kind] = {filename: json.loads((state / filename).read_text(encoding="utf-8")) for filename in before}
+    for actual_case, reference_case in zip(paired["rust"], paired["node"], strict=True):
+        assert actual_case["id"] == reference_case["id"]
+        for actual, reference in zip(actual_case["steps"], reference_case["steps"], strict=True):
+            compare_step(actual, reference, actual_case["id"])
+    check_json(final["rust"], final["node"])
+    report["native_archive_lifecycle_restart_and_concurrent_restore_checked"] = True
+    report["native_archive_denied_delete_and_restore_preserved_state"] = True
+
+
 def sharing_contracts(binary, node, environment, baseline, root, output, report, image):
     _, cases = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "sharing-core")
     paired, final = {}, {}
@@ -213,7 +309,20 @@ def sharing_contracts(binary, node, environment, baseline, root, output, report,
                         pass
                     assert time.monotonic() < deadline, "Share frontend readiness timeout"
                     time.sleep(0.1)
+                lower = int(wall_time().timestamp() * 1000)
                 paired[(mode, kind)] = check_cases(url, state, selected, output, label)
+                upper = int(wall_time(latest=True).timestamp() * 1000)
+                for case in paired[(mode, kind)]:
+                    for step in case["steps"]:
+                        for key, value in step.get("captured", {}).items():
+                            if type(value) is int:
+                                assert lower <= value <= upper, (case["id"], key, value, lower, upper)
+                            elif key.endswith("ARCHIVE_ID"):
+                                assert lower <= int(value.split("-")[0]) <= upper
+                recreated = request(url, {"method": "POST", "path": "/api/files", "body": {
+                    "name": "merged-share", "source": "local", "content": "share-body"}})
+                (output / f"{label}-after-expiry-setup.json").write_text(json.dumps(recreated, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                assert recreated["status"] == 201
                 signing = {"method": "POST", "path": "/api/token", "body": {
                     "payload": {"type": "file", "name": "merged-share", "token": "concurrent"},
                     "options": {"mode": "count", "count": 1}}}
@@ -262,11 +371,11 @@ def sharing_contracts(binary, node, environment, baseline, root, output, report,
                 a, b = actual["response"], reference["response"]
                 if mode == "standalone" and actual["path"].startswith("/share/") and actual["method"] != "GET":
                     for response, kind in ((a, "rust"), (b, "node")):
-                        diagnostic_response(response, "default", kind, 500, "Error: Method not allowed", True)
+                        assert "etag" not in response["headers"]
+                        diagnostic_response(response, "default", kind, 500, "Error: Method not allowed", True,
+                                            head=actual["method"] == "HEAD")
                     continue
-                assert (a["status"], a["body"]) == (b["status"], b["body"]), (mode, index, a, b)
-                for key in ("content-type", "content-length", "etag", "allow"):
-                    assert a["headers"].get(key) == b["headers"].get(key), (mode, index, key, a, b)
+                compare_step(actual, reference, (mode, actual_case["id"], index))
         check_json(final[(mode, "rust")], final[(mode, "node")])
         report[f"native_{mode}_sharing_count_and_state_checked"] = True
 
@@ -1829,15 +1938,17 @@ def configuration_probes(url, state, output, name, limit, allowed, denied, wildc
     return [{key: value for key, value in row.items() if not key.startswith("files_")} for row in observations]
 
 
-def diagnostic_response(response, mode, kind, status, detail, exact):
+def diagnostic_response(response, mode, kind, status, detail, exact, head=False):
     content = response["body"].encode("utf-8")
     headers = response["headers"]
     assert response["status"] == status, response
     assert headers["content-type"] == "text/html; charset=utf-8"
     assert headers["content-security-policy"] == "default-src 'none'"
     assert headers["x-content-type-options"] == "nosniff"
+    if head:
+        assert not content and int(headers["content-length"]) > 0, "HEAD error body must be suppressed"
+        return "HEAD body suppressed"
     assert int(headers["content-length"]) == len(content)
-    assert "etag" not in headers
     prefix = '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>Error</title>\n</head>\n<body>\n<pre>'
     suffix = '</pre>\n</body>\n</html>\n'
     text = content.decode("utf-8")
@@ -2045,17 +2156,7 @@ def main():
         for rust_case, node_case in zip(conversion_responses["rust"], conversion_responses["node"], strict=True):
             assert rust_case["id"] == node_case["id"]
             for rust_step, node_step in zip(rust_case["steps"], node_case["steps"], strict=True):
-                actual, expected = rust_step["response"], node_step["response"]
-                projected = rust_step.get("capture_projection")
-                reference = node_step.get("capture_projection")
-                assert bool(projected) == bool(reference), "Capture projection missing from a service"
-                if projected:
-                    assert projected["paths"] == reference["paths"], "Capture projection paths differ"
-                assert actual["status"] == expected["status"] and (projected["body"] if projected else actual["body"]) == (reference["body"] if reference else expected["body"]), (rust_case["id"], actual, expected)
-                for key in ("content-type", "content-length", "etag", "allow"):
-                    if projected and key in ("content-length", "etag"):
-                        continue  # Each original body already proved its own length and SHA1 tag.
-                    assert actual["headers"].get(key) == expected["headers"].get(key), (rust_case["id"], key, actual, expected)
+                compare_step(rust_step, node_step, rust_case["id"])
         check_json(conversion_state["rust"], conversion_state["node"])
         check_json(conversion_concurrency["rust"], conversion_concurrency["node"])
         check_json(conversion_background["rust"], conversion_background["node"])
@@ -2063,6 +2164,7 @@ def main():
         report["native_script_concurrency_and_state_checked"] = True
         report["native_local_ss_conversion_checked"] = True
         sharing_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
+        archive_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
         configurations = [
             ("default", {}, 1048576, [("https://sub-store.vercel.app", "https://sub-store.vercel.app")], "https://denied.invalid", False),
             ("custom-name", {"SUB_STORE_BACKEND_CUSTOM_NAME": "configuration-fixture", "SUB_STORE_BODY_JSON_LIMIT": "+1GB"}, 1073741824,
@@ -2558,11 +2660,13 @@ def main():
                 with manager as url:
                     standalone[kind] = standalone_resources(f"http://127.0.0.1:{port}", url, mount, state, output, label)
                     report["phases"].append({"name": label, "requests": len(standalone[kind])})
-                    if kind == "rust" and mode == "prefixed":
-                        pending = request(f"http://127.0.0.1:{port}", {"path": "/share/sub/renamed?token=invalid"})
-                        (output / "standalone-share-pending.json").write_text(json.dumps(pending, indent=2) + "\n", encoding="utf-8")
-                        assert pending["status"] == 501, "Public share forwarding must remain unavailable pending M4"
-                        report["standalone_share_proxy_unavailable"] = True
+                    if mode == "prefixed":
+                        before = {filename: (state / filename).read_bytes() for filename in ("sub-store.json", "root.json")}
+                        rejected = request(f"http://127.0.0.1:{port}", {"path": "/share/sub/renamed?token=invalid"})
+                        (output / f"{label}-share-invalid.json").write_text(json.dumps(rejected, indent=2) + "\n", encoding="utf-8")
+                        assert rejected["status"] == 404 and rejected["body"] == ""
+                        assert before == {filename: (state / filename).read_bytes() for filename in before}
+                        report["standalone_invalid_public_share_preserved_state"] = True
             check_json(standalone["rust"], standalone["node"])
         report["standalone_frontend_http_and_state_equal"] = True
         report["standalone_request_body_forwarding_checked"] = True
@@ -2578,6 +2682,7 @@ def main():
         report["exit_code"] = 0
     except Exception as error:
         report["error"] = f"{type(error).__name__}: {error}"
+        report["traceback"] = traceback.format_exc()
     finally:
         (output / "summary.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"kind": report["kind"], "exit_code": report["exit_code"], "error": report.get("error"), "evidence": str(output)}))

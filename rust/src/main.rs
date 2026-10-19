@@ -1,9 +1,12 @@
 mod api;
+mod archives;
+mod artifacts;
 mod body;
 mod clash;
 mod clash_output;
 mod classic;
 mod conversion;
+mod cron;
 mod dns_transport;
 mod egern_output;
 mod files;
@@ -30,6 +33,7 @@ mod script_network;
 mod script_pipeline;
 mod script_tokens;
 mod singbox_output;
+mod sort;
 mod state;
 mod surge;
 mod surge_output;
@@ -814,16 +818,22 @@ fn api_path(raw: &str) -> Result<Option<String>, ()> {
         ["", api, resource, name] if api.eq_ignore_ascii_case("api") && !name.is_empty() => {
             let resource = resource.to_ascii_lowercase();
             match resource.as_str() {
-                "sub" | "collection" | "module" | "file" | "wholefile" | "token" => Some(format!(
+                "sub" | "collection" | "module" | "file" | "wholefile" | "token" | "artifact" | "archives" => Some(format!(
                     "/api/{resource}/{}",
                     json::encode(&percent_decode_str(name).decode_utf8().map_err(|_| ())?)
                 )),
                 "utils" => Some(format!("/api/utils/{}", name.to_ascii_lowercase())),
-                "proxy" | "rule" | "preview" => {
+                "proxy" | "rule" | "preview" | "sort" => {
                     Some(format!("/api/{resource}/{}", name.to_ascii_lowercase()))
                 }
                 _ => None,
             }
+        }
+        ["", api, archives, id, restore]
+            if api.eq_ignore_ascii_case("api") && archives.eq_ignore_ascii_case("archives")
+                && !id.is_empty() && restore.eq_ignore_ascii_case("restore") =>
+        {
+            Some(format!("/api/archives/{}/restore", json::encode(&percent_decode_str(id).decode_utf8().map_err(|_| ())?)))
         }
         ["", share, kind, name]
             if share.eq_ignore_ascii_case("share")
@@ -1018,7 +1028,7 @@ async fn route(
             json::stringify(&json!({
                 "status":"success", "data":{
                     "backend":"Node", "version":env!("CARGO_PKG_VERSION"),
-                    "feature":{"archive":false,"share":!config.frontend_backend_path.is_empty()},
+                    "feature":{"archive":true,"share":!config.frontend_backend_path.is_empty()},
                     "meta":{"node":{"env":config.environment},"rust":{"version":env!("CARGO_PKG_VERSION"),"milestone":"M2","complete":false}}
                 }
             })),
@@ -1032,6 +1042,12 @@ async fn route(
         "headers":headers.iter().map(|(key,value)|(key.as_str().to_owned(),json!(value.to_str().unwrap_or("")))).collect::<serde_json::Map<String,Value>>(),
         "responseHeaders":base.headers().iter().map(|(key,value)|(key.as_str().to_owned(),json!(value.to_str().unwrap_or("")))).collect::<serde_json::Map<String,Value>>()
     });
+    if let Some(response) = archives::dispatch(&method, &path, &body, store).await {
+        return response;
+    }
+    if let Some(response) = artifacts::dispatch(&method, &path, &query, &body, store).await {
+        return response;
+    }
     if let Some(response) = tokens::dispatch(&method, &path, &query, &body, store).await {
         return response;
     }
@@ -1047,6 +1063,9 @@ async fn route(
         return response;
     }
     let mut store = store.lock().unwrap();
+    if let Some(response) = sort::dispatch(&method, &path, &body, &mut store) {
+        return response;
+    }
     let response = api::dispatch(&method, &path, &query, body, &mut store);
     if response.status().as_u16() == 404 && response.body().size_hint().exact() == Some(0) {
         not_found()

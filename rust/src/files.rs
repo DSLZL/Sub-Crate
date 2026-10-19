@@ -2,14 +2,49 @@ use crate::{
     api,
     body::Body,
     json as codec, script,
+    resources::{self, Error},
     state::{Store, truthy},
 };
 use hyper::Method;
 use serde_json::{Value, json};
-use std::{
-    sync::{Arc, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::sync::{Arc, Mutex};
+
+pub(crate) fn prepare_create(store: &Store, next: &mut Value, body: &Body) -> Result<Value, Error> {
+    let mut file = Value::Object(body.fields());
+    if api::cannot_coerce(&file["age-public-key"]) {
+        return Err(Error::plain("Cannot convert object to primitive value"));
+    }
+    normalize(&mut file).map_err(|message| Error::invalid("INVALID_AGE_PUBLIC_KEY", message))?;
+    if api::cannot_coerce(&file["name"]) {
+        return Err(Error::plain("Cannot convert object to primitive value"));
+    }
+    let name = if file["name"].is_null() {
+        resources::now().to_string()
+    } else {
+        codec::js_string(&file["name"])
+    };
+    file["name"] = json!(name);
+    let files = store.list("files").ok_or_else(|| Error::plain("e.find is not a function"))?;
+    if files.iter().any(|old| old["name"] == file["name"]) {
+        return Err(Error::invalid("DUPLICATE_KEY", if truthy(&Value::Object(body.fields())["name"]) {
+            format!("已存在 name 为 {name} 的文件")
+        } else {
+            "无法同时创建相同的文件 可稍后重试".to_owned()
+        }));
+    }
+    let top = next["settings"]["appearanceSetting"]["createItemPosition"] == "top";
+    let files = next["files"].as_array_mut().ok_or_else(|| Error::plain(if top {
+        "e.unshift is not a function"
+    } else {
+        "e.push is not a function"
+    }))?;
+    if top {
+        files.insert(0, file.clone());
+    } else {
+        files.push(file.clone());
+    }
+    Ok(file)
+}
 
 fn normalize(file: &mut Value) -> Result<(), &'static str> {
     if file["type"] == "mihomoProfile" {
@@ -303,42 +338,11 @@ fn manage(
         return api::success(Some(json!(metadata)), 200);
     }
     if path == "/api/files" && method == Method::POST {
-        let mut file = Value::Object(body.fields());
-        if let Err(message) = normalize(&mut file) {
-            return api::failure(
-                500,
-                "INVALID_AGE_PUBLIC_KEY",
-                "RequestInvalidError",
-                message,
-            );
-        }
-        let name = if file["name"].is_null() {
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis()
-                .to_string()
-        } else {
-            codec::js_string(&file["name"])
-        };
-        file["name"] = json!(name);
-        if files.iter().any(|old| old["name"] == file["name"]) {
-            let message = if truthy(&Value::Object(body.fields())["name"]) {
-                format!("已存在 name 为 {name} 的文件")
-            } else {
-                "无法同时创建相同的文件 可稍后重试".to_owned()
-            };
-            return api::failure(500, "DUPLICATE_KEY", "RequestInvalidError", &message);
-        }
         let mut next = store.data.clone();
-        let top = next["settings"]["appearanceSetting"]["createItemPosition"] == "top";
-        let files = next["files"].as_array_mut().unwrap();
-        if top {
-            files.insert(0, file.clone());
-        } else {
-            files.push(file.clone());
-        }
-        return api::persisted(store.commit(next), api::success(Some(file), 201));
+        return match prepare_create(store, &mut next, body) {
+            Ok(file) => api::persisted(store.commit(next), api::success(Some(file), 201)),
+            Err(error) => error.reply(500),
+        };
     }
     let whole = path.starts_with("/api/wholefile/");
     let name = path
@@ -349,28 +353,9 @@ fn manage(
         })
         .unwrap_or("");
     if method == Method::DELETE
-        && !query["mode"].is_null()
-        && query["mode"] != ""
-        && query["mode"] != "permanent"
+        && let Err(error) = resources::archive_mode(&query["mode"])
     {
-        return if query["mode"] == "archive" {
-            api::failure(
-                501,
-                "FEATURE_NOT_IMPLEMENTED",
-                "InternalServerError",
-                "Archive deletion is pending",
-            )
-        } else {
-            api::failure(
-                500,
-                "INVALID_DELETE_MODE",
-                "RequestInvalidError",
-                &format!(
-                    "Unsupported delete mode: {}",
-                    codec::js_string(&query["mode"])
-                ),
-            )
-        };
+        return error.reply(500);
     }
     let Some(index) = files.iter().position(|file| file["name"] == name) else {
         return if whole {
@@ -394,6 +379,11 @@ fn manage(
     }
     let mut next = store.data.clone();
     if method == Method::DELETE {
+        if query["mode"] == "archive"
+            && let Err(error) = crate::archives::insert(&mut next, "file", &files[index])
+        {
+            return error.reply(500);
+        }
         next["files"].as_array_mut().unwrap().remove(index);
         return api::persisted(store.commit(next), api::success(None, 200));
     }

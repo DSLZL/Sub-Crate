@@ -12,7 +12,10 @@
       "T04-token-expiration-inputs-and-order",
       "F01-file-crud-and-runtime"
     ],
-    "sharing-core": ["T02-merged-share-count-and-origin", "T06-share-subscription-and-collection"],
+    "sharing-core": ["T02-merged-share-count-and-origin", "T06-share-subscription-and-collection", "T03-share-datetime-archive"],
+    "archive-core": ["F01-file-crud-and-runtime", "A01-file-archive-restore-conflict",
+      "A05-subscription-collection-share-archive-lifecycle", "Y04-artifact-crud-and-archive-validation",
+      "O01-sort-resources", "A03-sort-delete-and-artifact-restore", "A04-archive-errors"],
     "conversion-local": [
       "PC-native-conversion-helper-contracts",
       "PC-native-typed-input-boundaries",
@@ -292,6 +295,8 @@
       "Y03-restore-without-token-stays-alive",
       "A03-sort-delete-and-artifact-restore",
       "A04-archive-errors",
+      "A05-subscription-collection-share-archive-lifecycle",
+      "Y04-artifact-crud-and-archive-validation",
       "G01-logs-filter-and-clear",
       "G02-logs-disabled",
       "E02-cors-default-and-preflight",
@@ -471,7 +476,7 @@
       "N05-node-info-missing-server-and-recovery"
     ]
   },
-  "coverage_state": "228 executable fixtures; full suite intentionally fails until the complete inventory is accepted",
+  "coverage_state": "230 executable fixtures; full suite intentionally fails until the complete inventory is accepted",
   "pending_domains": [
     "artifacts",
     "files",

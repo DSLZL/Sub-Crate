@@ -14,6 +14,15 @@ pub(crate) struct Error {
 }
 
 impl Error {
+    pub fn plain(message: impl Into<String>) -> Self {
+        Self {
+            code: String::new(),
+            kind: "Error",
+            message: message.into(),
+            details: None,
+        }
+    }
+
     pub fn invalid(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             code: code.into(),
@@ -52,6 +61,9 @@ impl Error {
     }
 
     pub fn reply(self, status: u16) -> api::Reply {
+        if self.kind == "Error" {
+            return api::caught_error(&self.message);
+        }
         api::failure_details(
             status,
             &self.code,

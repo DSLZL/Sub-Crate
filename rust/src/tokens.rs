@@ -10,7 +10,7 @@ use hyper::Method;
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
-fn same(a: &Value, b: &Value) -> bool {
+pub(crate) fn same(a: &Value, b: &Value) -> bool {
     if a.is_object() || a.is_array() || b.is_object() || b.is_array() {
         false
     } else if let (Some(a), Some(b)) = (a.as_f64(), b.as_f64()) {
@@ -21,7 +21,7 @@ fn same(a: &Value, b: &Value) -> bool {
 }
 
 fn sign_error(reason: impl std::fmt::Display) -> Error {
-    Error::internal("TOKEN_SIGN_FAILED", "Failed to sign token", reason)
+    Error::plain(reason.to_string())
 }
 
 fn validate(store: &Store, payload: &Value) -> Result<(), Error> {
@@ -76,26 +76,33 @@ fn validate(store: &Store, payload: &Value) -> Result<(), Error> {
     Ok(())
 }
 
-pub(crate) async fn create(
+pub(crate) async fn expiration(
     store: &Arc<Mutex<Store>>,
-    payload: Value,
+    payload: &Value,
     options: Value,
 ) -> Result<Value, Error> {
-    validate(&store.lock().unwrap(), &payload)?;
-    let expiration = match script::run(store.clone(), "token-options", options).await {
+    validate(&store.lock().unwrap(), payload)?;
+    match script::run(store.clone(), "token-options", options).await {
         Ok(value) if !value["error"].is_null() => {
             let error = &value["error"];
-            return Err(Error::invalid(
+            Err(Error::invalid(
                 error["code"].as_str().unwrap_or("INVALID_EXPIRATION_MODE"),
                 codec::js_string(&error["message"]),
-            ));
+            ))
         }
-        Ok(value) => value,
-        Err(crate::conversion::Error::Legacy(reason)) => return Err(sign_error(reason)),
-    };
-    let mut store = store.lock().unwrap();
+        Ok(value) => Ok(value),
+        Err(crate::conversion::Error::Legacy(reason)) => Err(sign_error(reason)),
+    }
+}
+
+pub(crate) fn prepare_create(
+    store: &Store,
+    next: &mut Value,
+    payload: Value,
+    expiration: Value,
+) -> Result<Value, Error> {
     // The expiration job yielded; recheck both uniqueness and resource existence.
-    validate(&store, &payload)?;
+    validate(store, &payload)?;
     let mut token = payload["token"].clone();
     if !truthy(&token) {
         const ALPHABET: &[u8] = b"_-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -146,8 +153,19 @@ pub(crate) async fn create(
     } else {
         items.push(item.clone());
     }
-    let mut next = store.data.clone();
     next["tokens"] = json!(items);
+    Ok(item)
+}
+
+pub(crate) async fn create(
+    store: &Arc<Mutex<Store>>,
+    payload: Value,
+    options: Value,
+) -> Result<Value, Error> {
+    let expiration = expiration(store, &payload, options).await?;
+    let mut store = store.lock().unwrap();
+    let mut next = store.data.clone();
+    let item = prepare_create(&store, &mut next, payload, expiration)?;
     store.commit(next).map_err(Error::state)?;
     Ok(item)
 }
@@ -157,6 +175,7 @@ pub(crate) fn delete(
     token: &Value,
     kind: &Value,
     name: &Value,
+    archive: bool,
 ) -> Result<(), Error> {
     let items = store.list("tokens").unwrap_or_default();
     let matching = |item: &Value| {
@@ -176,6 +195,9 @@ pub(crate) fn delete(
         .cloned()
         .collect::<Vec<_>>();
     let mut next = store.data.clone();
+    if archive {
+        crate::archives::insert(&mut next, "share", items.iter().find(|item| matching(item)).unwrap())?;
+    }
     next["tokens"] = json!(kept);
     store.commit(next).map_err(Error::state)
 }
@@ -281,6 +303,7 @@ pub(crate) async fn dispatch(
         return Some(
             match create(store, body["payload"].clone(), body["options"].clone()).await {
                 Ok(item) => api::success(Some(json!({"token":item["token"]})), 200),
+                Err(error) if error.kind == "Error" => Error::internal("TOKEN_SIGN_FAILED", "Failed to sign token", error.message).reply(500),
                 Err(error) => error.reply(500),
             },
         );
@@ -306,10 +329,8 @@ pub(crate) async fn dispatch(
             if !truthy(&query["type"]) || !truthy(&query["name"]) {
                 return Err(Error::invalid("INVALID_PAYLOAD", "Payload type and name are required. Please update your front-end(version >= 2.15.76)"));
             }
-            if resources::archive_mode(&query["mode"])? {
-                return Ok(api::failure(501, "FEATURE_NOT_IMPLEMENTED", "InternalServerError", "Share archiving is not implemented yet"));
-            }
-            delete(&mut store.lock().unwrap(), &json!(token), &query["type"], &query["name"])?;
+            let archive = resources::archive_mode(&query["mode"])?;
+            delete(&mut store.lock().unwrap(), &json!(token), &query["type"], &query["name"], archive)?;
             Ok(api::success(None, 200))
         })().unwrap_or_else(|error: Error| error.reply(500)));
     }
