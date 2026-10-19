@@ -24,19 +24,22 @@ from runner import BufferedHTTPConnection, check_json, load_cases, request, run_
 from upstream import ControlledUpstream
 
 
-def wall_time():
+def wall_time(latest=False):
     if os.name != "nt":
         return datetime.now(timezone.utc)
-    # Some Windows Python builds sample a coarse clock; export bounds need the precise OS clock.
+    # Node and Rust can sample different Windows clocks; bracket both readings.
     import ctypes
     from ctypes.wintypes import FILETIME
     stamp = FILETIME()
-    precise = ctypes.windll.kernel32.GetSystemTimePreciseAsFileTime
-    precise.argtypes = (ctypes.POINTER(FILETIME),)
-    precise.restype = None
-    precise(ctypes.byref(stamp))
-    ticks = (stamp.dwHighDateTime << 32) | stamp.dwLowDateTime
-    return datetime(1601, 1, 1, tzinfo=timezone.utc) + timedelta(microseconds=ticks // 10)
+    samples = []
+    for clock in (ctypes.windll.kernel32.GetSystemTimeAsFileTime,
+                  ctypes.windll.kernel32.GetSystemTimePreciseAsFileTime):
+        clock.argtypes = (ctypes.POINTER(FILETIME),)
+        clock.restype = None
+        clock(ctypes.byref(stamp))
+        ticks = (stamp.dwHighDateTime << 32) | stamp.dwLowDateTime
+        samples.append(datetime(1601, 1, 1, tzinfo=timezone.utc) + timedelta(microseconds=ticks // 10))
+    return (max if latest else min)(samples)
 
 
 @contextmanager
@@ -500,7 +503,7 @@ def backup_edges(url, state, output, name, offset=None):
         previous = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")} if status >= 400 else None
         before = wall_time()
         response = request(url, {"method": method, "path": path, **({"body": body} if body is not None else {})})
-        after = wall_time()
+        after = wall_time(latest=True)
         stored = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
         root = json.loads((state / "root.json").read_text(encoding="utf-8"))
         record = {"method": method, "path": path, "body": body, "response": response,
@@ -1085,7 +1088,7 @@ def api_entities(url, state, output, name, origin=None):
                    "request_body_base64": base64.b64encode(body or b"").decode("ascii"),
                    "status": response.status, "headers": {key.lower(): value for key, value in response.getheaders()},
                    "body_base64": base64.b64encode(content).decode("ascii"), "before": before.isoformat(),
-                   "after": wall_time().astimezone().isoformat(),
+                   "after": wall_time(latest=True).astimezone().isoformat(),
                    "state": json.loads((state / "sub-store.json").read_text(encoding="utf-8"))}
         finally:
             connection.close()
@@ -1506,7 +1509,7 @@ def standalone_resources(frontend_url, backend_url, mount, state, output, name):
                    "body_base64": base64.b64encode(content).decode("ascii")}
         finally:
             connection.close()
-        after_request = wall_time().astimezone()
+        after_request = wall_time(latest=True).astimezone()
         raw.update(before=before_request.isoformat(), after=after_request.isoformat())
         with (output / f"{name}.jsonl").open("a", encoding="utf-8") as evidence:
             evidence.write(json.dumps(raw, ensure_ascii=False) + "\n")
