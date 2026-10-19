@@ -2,7 +2,7 @@
 use crate::{js_language::Js, script, script_network as network};
 use rquickjs::{
     Ctx, Function, Object, Value,
-    prelude::{Async, Func, Opt},
+    prelude::{Async, Func, Rest},
 };
 
 #[derive(Clone)]
@@ -70,7 +70,10 @@ fn mask_url<'js>(js: &Js<'js>, value: Value<'js>) -> rquickjs::Result<String> {
     let value = js.method(value, "replace", vec![pattern, js.value("$1***")?])?;
     let pattern: Value = js.call(
         "regex",
-        (r"\bAGE-SECRET-KEY(?:-PQ)?-1[023456789ACDEFGHJKLMNPQRSTUVWXYZ]+\b", "g"),
+        (
+            r"\bAGE-SECRET-KEY(?:-PQ)?-1[023456789ACDEFGHJKLMNPQRSTUVWXYZ]+\b",
+            "g",
+        ),
     )?;
     let replace = Function::new(js.ctx.clone(), |value: String| {
         let prefix = if value.starts_with("AGE-SECRET-KEY-PQ-1") {
@@ -131,9 +134,7 @@ async fn finalize<'js>(
 ) -> rquickjs::Result<Finalized<'js>> {
     let utils: Value = js.ctx.globals().get("ProxyUtils")?;
     let mut result = if js.truthy(&secret)? {
-        let age = js.get(&utils, "age")?;
-        let value = js.method(age, "decryptArmorIfPresent", vec![body, secret])?;
-        script::settled(js, value).await?
+        crate::script_age::decrypt(js, body, secret).await?
     } else {
         body
     };
@@ -152,9 +153,7 @@ async fn finalize<'js>(
         }
         let parsed = js.method(utils, "parse", vec![result.clone()]);
         let cache = match parsed {
-            Ok(value) => value
-                .as_array()
-                .is_some_and(|proxies| !proxies.is_empty()),
+            Ok(value) => value.as_array().is_some_and(|proxies| !proxies.is_empty()),
             Err(error) => {
                 eprintln!(
                     "[sub-store:error] Downloaded resource cannot be parsed: {}",
@@ -206,8 +205,7 @@ async fn run<'js>(js: &Js<'js>, input: Download<'js>) -> rquickjs::Result<Value<
             optional(js, &arguments, "age-secret-key")?,
         ],
     )?;
-    let return_raw = options_object
-        && js.truthy(&optional(js, &input.options, "returnRaw")?)?;
+    let return_raw = options_object && js.truthy(&optional(js, &input.options, "returnRaw")?)?;
     let preprocess = js.truthy(&input.preprocess)?;
     let settings = network::settings(js)?;
     let proxy = network::prefer(
@@ -279,8 +277,7 @@ async fn run<'js>(js: &Js<'js>, input: Download<'js>) -> rquickjs::Result<Value<
     } else {
         None
     };
-    let bypass = js.truthy(&input.no_cache)?
-        || js.truthy(&optional(js, &arguments, "noCache")?)?;
+    let bypass = js.truthy(&input.no_cache)? || js.truthy(&optional(js, &arguments, "noCache")?)?;
     if let Some(key) = &custom_key
         && !js.truthy(&input.skip_custom)?
     {
@@ -329,7 +326,11 @@ async fn run<'js>(js: &Js<'js>, input: Download<'js>) -> rquickjs::Result<Value<
             let encoded = js.get(&matched, "2")?;
             let decode: Function = js.ctx.globals().get("decodeURIComponent")?;
             let name: Value = decode.call((encoded,))?;
-            let key = if type_name == "module" { "modules" } else { "files" };
+            let key = if type_name == "module" {
+                "modules"
+            } else {
+                "files"
+            };
             let values = js.method(network::host(js)?, "read", vec![js.value(key)?])?;
             let selected_name = name.clone();
             let scope = js.clone();
@@ -390,7 +391,10 @@ async fn run<'js>(js: &Js<'js>, input: Download<'js>) -> rquickjs::Result<Value<
             };
             options.set("headers", headers)?;
             options.set("proxy", proxy.clone())?;
-            options.set("insecure", js.truthy(&optional(js, &arguments, "insecure")?)?)?;
+            options.set(
+                "insecure",
+                js.truthy(&optional(js, &arguments, "insecure")?)?,
+            )?;
             let response = network::request(js, "get", options.into_value()).await?;
             let status = js.get(&response, "statusCode")?;
             if js.call::<bool, _>("lt", (status.clone(), 200))?
@@ -420,13 +424,11 @@ async fn run<'js>(js: &Js<'js>, input: Download<'js>) -> rquickjs::Result<Value<
                 return Err(js.error("Error: 远程资源内容为空"));
             }
             let finalized = finalize(js, body.clone(), secret.clone(), preprocess).await?;
-            let threshold = network::prefer(
-                js,
-                [js.get(&settings, "cacheThreshold")?, js.value(1024)?],
-            )?;
+            let threshold =
+                network::prefer(js, [js.get(&settings, "cacheThreshold")?, js.value(1024)?])?;
             let length: f64 = js.call("length", (body.clone(),))?;
-            let oversize = js.truthy(&threshold)?
-                && js.call::<bool, _>("gt", (length / 1024.0, threshold))?;
+            let oversize =
+                js.truthy(&threshold)? && js.call::<bool, _>("gt", (length / 1024.0, threshold))?;
             if finalized.cache && !oversize {
                 put(
                     js,
@@ -480,34 +482,27 @@ async fn run<'js>(js: &Js<'js>, input: Download<'js>) -> rquickjs::Result<Value<
     format(js, finalized.result, finalized.raw, return_raw)
 }
 
-#[allow(clippy::too_many_arguments)] // Keep the published nine-argument helper.
 async fn download<'js>(
     ctx: Ctx<'js>,
-    url: Opt<Value<'js>>,
-    ua: Opt<Value<'js>>,
-    timeout: Opt<Value<'js>>,
-    proxy: Opt<Value<'js>>,
-    skip_custom: Opt<Value<'js>>,
-    await_custom: Opt<Value<'js>>,
-    no_cache: Opt<Value<'js>>,
-    preprocess: Opt<Value<'js>>,
-    options: Opt<Value<'js>>,
+    arguments: Rest<Value<'js>>,
 ) -> rquickjs::Result<Value<'js>> {
     let js = Js::new(ctx);
+    // Rest retains all nine public arguments beyond the binding's tuple limit.
+    let mut arguments = arguments.0.into_iter();
     let input = Download {
-        url: url
-            .0
+        url: arguments
+            .next()
             .filter(|value| !value.is_undefined())
             .unwrap_or(js.value("")?),
-        ua: ua.0.unwrap_or_else(|| js.undefined()),
-        timeout: timeout.0.unwrap_or_else(|| js.undefined()),
-        proxy: proxy.0.unwrap_or_else(|| js.undefined()),
-        skip_custom: skip_custom.0.unwrap_or_else(|| js.undefined()),
-        await_custom: await_custom.0.unwrap_or_else(|| js.undefined()),
-        no_cache: no_cache.0.unwrap_or_else(|| js.undefined()),
-        preprocess: preprocess.0.unwrap_or_else(|| js.undefined()),
-        options: options
-            .0
+        ua: arguments.next().unwrap_or_else(|| js.undefined()),
+        timeout: arguments.next().unwrap_or_else(|| js.undefined()),
+        proxy: arguments.next().unwrap_or_else(|| js.undefined()),
+        skip_custom: arguments.next().unwrap_or_else(|| js.undefined()),
+        await_custom: arguments.next().unwrap_or_else(|| js.undefined()),
+        no_cache: arguments.next().unwrap_or_else(|| js.undefined()),
+        preprocess: arguments.next().unwrap_or_else(|| js.undefined()),
+        options: arguments
+            .next()
             .filter(|value| !value.is_undefined())
             .unwrap_or(Object::new(js.ctx.clone())?.into_value()),
     };
@@ -516,5 +511,8 @@ async fn download<'js>(
 
 pub(crate) fn initialize<'js>(ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs::Result<()> {
     utils.set("download", Func::from(Async(download)))?;
-    utils.set("downloadFile", Func::from(Async(crate::script_io::download_file)))
+    utils.set(
+        "downloadFile",
+        Func::from(Async(crate::script_io::download_file)),
+    )
 }

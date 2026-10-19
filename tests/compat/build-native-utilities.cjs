@@ -39,7 +39,7 @@ for (const input of Object.keys(build.metafile.inputs).sort()) {
     if (parent === directory) throw new Error('No package metadata for ' + input);
     directory = parent;
   }
-  if (pins.get(metadata.name) !== metadata.version || !input.includes('node_modules/')) {
+  if (![pins.get(metadata.name)].flat().includes(metadata.version) || !input.includes('node_modules/')) {
     throw new Error('Production utility bundle imported unapproved source: ' + input);
   }
   const key = metadata.name + '@' + metadata.version;
@@ -50,7 +50,7 @@ for (const input of Object.keys(build.metafile.inputs).sort()) {
   if (!license) throw new Error('Missing license text for ' + key);
   notices.set(key, fs.readFileSync(path.join(directory, license), 'utf8').replace(/\r\n/g, '\n').trim());
 }
-if (notices.size !== pins.size) throw new Error('Expected every locked utility package');
+if (notices.size !== [...pins.values()].flat().length) throw new Error('Expected every locked utility package');
 const bundle = build.outputFiles[0].text;
 const licenses = [...notices].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
   .map(([name, license]) => name + '\n' + license + '\n').join('\n');
@@ -90,3 +90,14 @@ snapshot(new Map([['@noble/hashes', '2.2.0']]),
   'import {bytesToHex} from ' + JSON.stringify(fromAge.resolve('@noble/hashes/utils.js')) + '; ' +
   'export const hexMd5 = bytes => bytesToHex(md5(bytes));',
   'SubStoreHashUtilities', ['hash-utilities.js', 'HASH-LICENSES.txt', 'hash-utilities.json']);
+const fromCompat = createRequire(path.join(__dirname, 'package.json'));
+snapshot(new Map([['@kayahr/text-encoding', '2.2.0'], ['web-streams-polyfill', '4.3.0']]),
+  'export {TextEncoder, TextDecoder} from ' + JSON.stringify(fromCompat.resolve('@kayahr/text-encoding/no-encodings')) + '; ' +
+  'export {ReadableStream, WritableStream, TransformStream} from ' + JSON.stringify(fromCompat.resolve('web-streams-polyfill')) + ';',
+  'SubStoreWebUtilities', ['web-utilities.js', 'WEB-LICENSES.txt', 'web-utilities.json']);
+snapshot(new Map([
+  ['age-encryption', '0.3.0'], ['@noble/ciphers', '2.2.0'],
+  ['@noble/curves', ['2.0.0', '2.2.0']], ['@noble/hashes', ['2.0.0', '2.2.0']],
+  ['@noble/post-quantum', '0.5.4'], ['@scure/base', '2.2.0'],
+]), "export {Encrypter, Decrypter, identityToRecipient, armor} from 'age-encryption';",
+  'SubStoreAgeUtilities', ['age-utilities.js', 'AGE-LICENSES.txt', 'age-utilities.json']);

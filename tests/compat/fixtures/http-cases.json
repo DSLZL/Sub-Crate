@@ -589,6 +589,124 @@
       }
     ]
   },
+  {
+    "id": "PC-native-age-public-and-download",
+    "source": "utils/age.js public wrappers and download.js auto-decrypt; immutable independent Node vectors from Actions39240258412",
+    "steps": [
+      {
+        "method": "POST",
+        "path": "/api/preview/sub",
+        "body": {
+          "name": "age-native",
+          "process": [
+            {
+              "args": {
+                "arguments": {
+                  "pairs": [
+                    {
+                      "type": "x25519",
+                      "secret": "AGE-SECRET-KEY-1DC4Q4VEECN5SWG6N2DSMN47TE64R634RTCW7SA99PLF8ACAGC6TSNEXPCX",
+                      "public": "age1tknrrax70y43sg9048c9tm4za8xupndc0nqkfktymydwk64pgg2qglg4cw",
+                      "items": [
+                        {
+                          "id": "empty",
+                          "armor": "-----BEGIN AGE ENCRYPTED FILE-----\nYWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBlUmVCK0w3cDV6SE5WRUpx\nci9VWFFyNmlGdzkzaUMxdm5WbjNFM205REFnCkNSQzFhSE56ellaN2ZKWUNueStL\nTzkzNjNjTVJaZmVYb2xrSk1zajdjVWMKLS0tIGVaVU1GalNDNmc5c0hUdkRjZm81\nWlk2dGV5NGtCZXR2V0dablNhbTREdGcK6xFG8IcHIFnYbmNtKH6fJpZbAKgpBf9H\n/a4Ny0VxgZI=\n-----END AGE ENCRYPTED FILE-----\n"
+                        },
+                        {
+                          "id": "unicode",
+                          "armor": "-----BEGIN AGE ENCRYPTED FILE-----\nYWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBiQkVHa09VSklKUUtzOTFI\nR0djNlRKK3lPZzV6eUlsQm9lYmJGWno0S2dRCkRrNnhwcU5nb213TU9hOTRXekdy\nVmx6bmMzZ0ZrcXROWm5yMkdmU3Rsd1UKLS0tIGNLQzF3aUZpUGhLUnBKQkhTSGtq\nTjVxOCs0ZEhtUStJSThDYWpxaHBmcUkKhIfjELhS2vDiMVOmoRZJ1ma6nXRemt4I\nDFJo4CNKdLOmqW7nQn3CpJG8YZ9Dj43zqQ==\n-----END AGE ENCRYPTED FILE-----\n"
+                        },
+                        {
+                          "id": "view",
+                          "armor": "-----BEGIN AGE ENCRYPTED FILE-----\nYWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAyV1htZFRHQnFRZkJOVzFF\nRDVqVmJ3YTZRS1AyRXp5V09IQzI2TGZncndRCnk2TjJJSm5FUTJEQ3NCZkFrOXd3\nVjVQcVE3WnFOU3o3NGg1QXdmNVN5VjgKLS0tIGJyQVBydGZzRWJTY25RT2VaeE0w\ndXg1OVUwVWpnZFhKSFBSb1ROaGUyZlUKTn7E5UXVdnXTAXgypT2BU6XPxQ8H/jJo\nZ2P3j58jh8KK4Ki2+WqRdnqpO7sw\n-----END AGE ENCRYPTED FILE-----\n"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "mlkem768-x25519",
+                      "secret": "AGE-SECRET-KEY-PQ-18HDKZERWTXJTPK90YPND3AAUJWCRWYHL7XYUVHR5T5XXEP5884QSGKNQZG",
+                      "public": "age1pq1lg3hm0v5hvnr322gadaplpdnh0nnyzu8jpeh9vhmjpy5yg69vn688elctzx0wwch9pqvk7gjzltjhwl2dn6kkf4fcu7suzf5vnur98fyce9mp9ve7an9dx6wnutp3428wqt0rphysc2crauakjyfl6uxv807fqql7nr40undsl9uwrce4v2sdgu5dd8ruptkwzmzyrzv9rguk6mc64r4uxg9g24m30r9dkq2sgar6jrmmevlyfgza3hgzvy0g9flfxprvx6tzh4hf7ys8crv9zhdqxrzwxx9lmtfkjer2yun4zhz6xc4sydcwsuj3nyyq7wkw8wxufpzduvrnzjgf6ayteqxdtwkkc9lcjsl5a5pflzpkq3wglm0pjfw0s3hfzv57xnf5mzs2k4rngr6myfftnemqjfhp2newz60vurgrry556ejmr09rjdu9sek423qpztcq63qpr3rjhh6cu6d63haj96armvsw0ut47laxj8tdjn0gdrnmv3cqjjjd54nv78v3fwgzfnkdkg6yt0qcnyped3v7q0qtzuu7tpqp3etsksdq33jfyvhxmzldax9600jtt2489cjp30fs6ejgvspr0djncent9v5ga69qdv54aqefmrgevdr2qrv62xv0wdddsy48acx4tep5tn4vpf64zvzt3use68nhy4fch0ncwu0l3v7naf2m44u8v3pgp0u5txkd2a238gj9trkxgp0yd56ver3l3zwz5t6gqxrn56k28p226ddxkwwq0xy6gur2rq6gexyqvymmkarj3d26wj495cf40l6sfhucgjvdt9hgtvfhlrksteg23csj6mrecdxxffxv66ew5n8fgdcuku5fa4exc83v9cdyhyz6xmmc5g2gea3atyc29x4fnj4szkgr5chk8ypg9sp2qcpd2ecn22gydt75lmmvnlths6fxn5swjx7av32hj6mz9hx8t0ujsmdnsu98wc7d2rqrshhy5lzdd0aqsg3p662ekehx3j3hk09pts7ddgsx39hxlrf5kjecxyjkwcf3yamsajrgm5ck4j8vxxurpulw395w7fk5dzzua4gvwr5sqsnqfpe5a2pxvvr8fknrq3zpj0w79687cgd5ue883pneqjt52f067jrywtet09jsapj4ke6g0g73s69ascnuhznwashneqms0zys5yn4966eprxgu58flvj2pjapq657h9um7qr2grfz5xvxm6e2p02l5jxvkcz0tkmq22s3jru25qzuwpmmv38kqdepl4ttqlmswyeuuqhcw7vdu3435ulxt8ewr9zdcuw7xusq69qg5e0sdkwx9xsgwfnlej2vmf34xq2vlacqan83x59dqunc7ceqxg0zzzj2f7atznge6yyy7l8dgfeeguw5elqck2vy3avruj348hxkh2htfmr5juq8cc8zjyy33lwsyvgc687m2507yqcug7sxa5ds7f3rzdmh4534fgea0vjvt6g54xx63g0lpq7g4cn6f4xkm57gp3ajunjykrw8wdpvtu5femsgmw9asmpjaat2hsz74yvywk0qryafxk2eyqnud6rt2vx8aghwyjv6qqwv8rdxqgf0s0x2vszcepxua5hk2jky06xqhgt22z4gsj2g4wxkcnrcj62zkyv360w5xc8qwz44vc2c5t4yrj2whkakjrv6up72yv5zsqmj79ejnk80jedq3pf4pv6p0j5wuj6yzt2yteek94nnf40k392spxerknyn3w9kffc68ztvnnjsyg9caryjps62hxdmu2umm2h0lxj3226j8r6nd9gq24rlt26vlgpzzep3y5lqudsxdcrxqyxfmmx5fxqjxl8sgydtnjt9zmp45tyl87txududdkhraeeuuc6t2msadtcrqvkq3j7hx67jrv2kuyr6axgx6fj9rr948vsvq7f5au4",
+                      "items": [
+                        {
+                          "id": "empty",
+                          "armor": "-----BEGIN AGE ENCRYPTED FILE-----\nYWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IG1sa2VtNzY4eDI1NTE5IDFneFRWVWZa\nN01BdWJVa1hZN0FEVHFRcFpld1dZaExKYkZleGlZUituYkZKazhsVG81WGVtRnlR\nZ1NlVzZoSlhRY1lGSDk2TlNucDF3dC9yVUE2NFdNTU5tbUNXVVVHeUpqMnAxdlRk\na1g3L2J1U1VsSkYvckFtTEV3ekhqVE1rWGlSN3VkUTViQlI4ZE9WcHFjQTlXak5u\nTVRscXZVMjR0dU5VMG03ODBacXFMcC9mbGlqVWhFdFBFY3hvVDhsYnNuUVZnRllQ\nWVRqMGY2WWdtbVNIY0V5aXRpNHNNTjV1UjJHWXNldzhObktXUHcrbGJRSGVrbFFK\nU2kxaHdrVGhsUlhiUWVWWXM3eDRaLzdseWI4bUtmQTVOcmRiRThtYUg2MjkxSFJ3\nNXBqb05CaUdYMHd2L2tTN2tvUEVGQ3NGcHNQeWd6b1ZrYk5oN1dBd3lCVGZyZVRW\nWkNTcWRSTHFyY3hQL1pOTnAxbmdBUEI3WVZLMTVYdU1ZSSsyQ2VrNlY0SFN4NW1p\nb1dGL1YwdmZTdmRmMk5UbWxVK1hZVGhLb3IvQXFEcldHNmZZc3djWkJVUUJWYktW\nY0R1ZVIrUGZJYVJVQmg4R0ZBamszRmFGVG9ZejY0NDVuMk9FOXlOMkRhQnZ5Nkht\neG1MS3BQcjU5bUJpTUZKdllqNDZWK21kbEhBcTQ0VDNKb3F0bXZyTmhMVlRTcktx\nUG5MYWhVb2tKVkN1WUdGVmtsQ0kxVEhuM2xPdnRXSk85NGtCYnM5eTR0amg3Y21T\nNDZlakNPYnB0eWNjOGFIa1V2bzFTYUhKMVpvVmRwalNaR0w0b21NZTRYV2ZqcTVG\nWFQzMW55aU4yNTRkQzRpZHhGRkN5NHQ2dHNuR2tITUsyZVlJMm9ENUJBRCthc1dH\nUlF2em00SitjRDRaL2QrRjJNZjRZUytYZ2RLT0lXZElQS3k1UTErZW5jYlZadnJ6\nQUhucjJ6cDFjV2o1QnpXQ1pURUJPeVZ0TVhXQU1pa0ZINmN2OGVVU3JzK2U4TENM\nVnNsMlpRbWVzZ2o3SWVFTFJ4NW5UWVhuU2x5VkRwelFQWjN3RGF3Ync5UDhHZGx2\nS3lEb2czN3BKNVF5SjJ3VituZFZ2OEdiVVVsOU11M3ZCNmFRdEdFOFhaSWxqY2FS\nUFA4dmpERGRnYUxBT3p6NGVhQjlPcW5Wd3lnVXZPcFFOWUNrNW11dzNSODJMZk5l\nakVsVkdGemFWQVAxaDBrRDhHNUo2aWxKcDZUTm9nYTAxVmlKdDhadE1aQTZZdW90\nWTJHY1psTURqK1BUeGpKdk03RG1ycEluZFl1RnFUOVFHWTZsQkducEgwc01QVDNu\nY1M4VUhaNjE0TEpneHIyTml5UlJjUHBtQjR4RUNGd1ZJNnVYZmVpa2xWT2VZRG9n\nMjkwbzVVNk81UjBTVDFRNlZjVEczNG9MbzBKa00wT3ZlV05RcHlUVTBpTzRJY1Ar\nNENZYTRpNTNyME5tQ1pTK3ErcTgxa0dwdGxEb3JYR2c0RUptaWUxeDZMdCt0dVBH\nVGw2eXp3YmZkYTk1aGZNSFJFMTVwZlZUaW8rNnJxNGdEZ01vMy83NVhmK09uWTFV\nV282QXdxQlY3TWY5ZHNoVzV6Y0UxL3VRL2N5M3FvRmRvMnMzb0lRb2xIbUYxb1pM\nbi9QaTFVamFCK1VvRTViR0hmL0UxTnZJd2kyWWhlSW1vZ2cwc3dkeDZiVzZVanho\nbGx3QXFJcDBtUXU2ZlFWY3dRRFhwV0o2bGduMHdKOUNsVEZuOU5wQXowQjRuckVx\nM29pYnM0VC9YTFlucG9iM2hZMDl2NE1PSCtWVEJpN2VsTnJuY0RoeW5EVUF5Vmt4\ncmFkbFNja0h2dVFBZVdyM1UvVHRLWHREUWsxSEt6Qys0cWMrZ3ZDZEFDdWRXeUhE\nODV0cWg5U2tLWHQyODhHMStyTXpPWHQrWmYra0Qxb3g0aHI4M21tMlFtU2tGQQp6\nRzBuaEo2cGwxUWFiYUQ3UTkwV2NNOUZpS0xwZzREVDFKVHQ1UnpWckZvCi0tLSB2\nZExYZGxSK0RaeEgzS3UxYVVBT3dUekR6b2dUQzIxc2VLV1NkUHFUemlBCooIXSL9\n8RQP8srrvqSvI0Uz+pR1bhnhzLFi76aqMhSE\n-----END AGE ENCRYPTED FILE-----\n"
+                        },
+                        {
+                          "id": "unicode",
+                          "armor": "-----BEGIN AGE ENCRYPTED FILE-----\nYWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IG1sa2VtNzY4eDI1NTE5IElqbS95cVNI\nc0FCZnBEZURRQ3JNNEw5NXVGREZQTkkwdEtWaFFGM0tUSXdjc2RISWZzMWVpT3cv\naHBtTXRZTGtiQ05Gb2NsQmhmYVJYdDc4azQ0T1FCam9wUm1PbmJBaG5CbkZ3NnA4\nT3VBNjBleWNXTkIxNUdFYmJhWExrT2tVV3JyaW9SSFV3UlRVTGx6dzZhMHlsQjNO\nd3ZBaGVpMW1WMmh6RWJjdVZ1R29UelIvbEdsWnlLMFAvbnZGSFBaampqdGRyK3gv\nNkZ6V3VLLzY5Y1dJblVSdml3aS9SaUN0RnR0cnMyT2V0UWJsci93RDhLYUx0RERL\nVm5LVngvbm5hQW94N3JMejNZc0JIVmVqYnRCQTB3SllJV3g3Y1VOZHNsSko4RWQv\nMWs0TGdWemVSTEIxa1FkNVhQM1FhSEIzOFBuZjBvYlRqUnFnaWZYZlpEYzliTU1q\nSkQvUGwrWnRlbkxyak85YlJoREFhSDlxMUVHdzZxdmdOcUpkNDlVcnFrTDVSUmNn\nbGNGSVgzZ2R3Y2VSdmdMTVBudUtJaW9kekNZdzdBOExKd1JmZ1E1S21LWWZvZTYy\nMDF4VVpUeDFBZHhna1hxRVdlaDdJdnkxMU12MXcwdWdTMVhKQnBZNFJoWG5ub2Yv\nWDBKVm1Kb2hiZEFyaFl4dFl0VUQ5UXNEdW56dktKQ0c1dmJnL05tSnd2WkJnZzk3\ndVM2elZvTUVNNWgzTGVBUjNEbTlNNS84SmZBdWtlVElpWVJ2dVViUFEwUnNRSkpE\nM3RycU1DbkR3My9OdW9sUVNyQWF0K2RaaHpHMm5xR01VdHRYSzR6UUtib0dEaXhu\nVy9UTlVVNiswRmdMWVlzYU02UDh3YlUzbzZuY0l4YldaQWgyVVd4UXZSeHgyQ3pn\nLzhFZEtEdW5IcDMrQU5KNitOQTAwdUM4aGJ0NEhFcWlFYlhQS1dneTNmRzVzcllx\nNHc4bU8xalB5bWp0MjFhQ0xlYzE2K0grdDJWZ3Mxd2txeVRVVUFVbDlZckZnRE9r\nS2xEVmxsTTF6bnViWUZiaXA3V2VJdlo4c3FMcFpOd2Nac0J0TnhaQTY5MFNOUjhS\namlQSXZsZno3aGd1NWE1a1gwdGp0aEZZZlFsNHdBSlVpcGRhaFU3TzY2U0Y3SUVj\nUmhUUjUremNkY0R2YWxXSlJ2TysrRmEyalBlSlRHY3FKN3RycFNtL04rMDJTMTMy\nQzlKOFVDWEt2UXQxOTFRZ3MraXpRMTBPRS81bDAzZHRWaS9CcFhvcW84WGd0OEdC\nZkE5aS91dTZBamtBVjhTdU9EYkxKWUZVZTNQdFFaTjRmb1dSN2tabm1tVk5PVTUz\nQ3VhTmxlR1BYdHJENERpaWZQVEtDMGg2RXZ3TkZtQkxlQU1IRjI4NGY4bmU0TmhI\nU296R0NNRGRhTGQ0OXVxK2xkeDBLblAxdDM3Y3l0TDJ1V1UvQlY4MENiZkl6ZzJh\nT0d2dm5EZHFPdXo2OWcvWENOY3hNMGdUMWhXR1d0UzZzQjBXc0VCRk9GdG8yQjkz\nanJQdzg3aXdRSkZiUVFwRVVudFhBVXRIL29FVSsrU3BrUHF3Mkd4NVZHTit3OUJs\nS2N1UDRCWlZKMXVzbjV0cFo2S1VTRzNwSklNTjRXbGd6eEMybEJQOU5zaEIzbUR1\nR1pENWdUMXJMVDRXZU9QY3NNME5jN1R1MWFWUi91UTZZV1I5T040N2dRWTdoOUhm\nYzlma24vSGd4QTJ1SlQwbUw1dEhHZG8yUUh4cHNvNTZmUWIrYnNHQnF1MGs2THdr\neDB1UDk0OFQ3Tmk2elExWWUzb2VTTVJ1RTl4NzFwdTVKS1JnK3g4WWdyeWJwSERQ\nbVZEOFJ0TFhLaWhvMFFrVnkwNkxOWUFsUWNkdlJVbE1XSXBwVTJ3NVl3VU9PNVdV\nUHFHTk5mVE9KN1BZOG05VlE1U1Y3ZjRxUDZhUi9ZbGxJUUdhWWx4NGJXR1VPUQow\nNDNvd1pjZGY4TG9nTksreVRkQkxQaTZGV3hXeU9FcWhIbDlqaGRvQjVRCi0tLSAv\nVEdrK0h6Rlg2cXBTMzhZY1h5M0xvRDVueDl0QzRBU04veGlOR2RpQ0x3CoKswiZt\nl34PdAZf6u72ovNqwBBOA7KP8hNRkzbn1QuAF5nSpLJHJjKb9v0lvi+Qqgs=\n-----END AGE ENCRYPTED FILE-----\n"
+                        },
+                        {
+                          "id": "view",
+                          "armor": "-----BEGIN AGE ENCRYPTED FILE-----\nYWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IG1sa2VtNzY4eDI1NTE5IGNWYzQ3UlNX\nRElReVRYbWRjZ1crZXhkOXRETVZVMGlsa3ltVUlmSXhBSFU0ZG1FVHdtaStPR0pV\naXBndnpxaFVobWEzb2t6UVdXNDVHSk9aOG96eVJkdndoeEdscXpVblVnNzFNRmpQ\nMEdOYURlcUJ4ZUpLREdLNGg4blp6L1pvaTdlTnU4aC92b1BzVzlQS3M2UW5CWG1q\nOVYvTEphYjY2c1B4OXRQT3lEVGZEdHFWeGxNcUdqZlNCN1gvZU5IVWI1Q0pPN1du\nbmJyL1g1RHRId3F1ZWkvNmhZdExhUDNINTRDYWd2NDlrV3Z0SFEzbllobXlCSmE0\nQmpVeTFLZEhJV01JcXhzOFgyeVdSSG9qY2dPN0trRHBjWGRTRGFvM09ONnB6ekFx\ncUdGRDRucXdXU2VhcC9MSkFvRGRydU1oOEU2ZkRJSWt5ZDdUaWNQV0VBc0NXeFM2\nVStwMU96b0FwMlBtTld2anVKcUJvUEVvQ2dJaTNXbTZMZ2NURUlSek85S2d1MkRo\nUk5UMHRLQ3JDdXFXd1NITmJidnZGUlpZNFRURVNweHFvVEtDYmxzR1JPdGtLSWVT\neXRTQXgvN2RRNEJTc0VhOGgvbk5CZ1BsS0RkTlBnNzk3UnZIUU00dDl4QTBscWZH\nZ215RThWZDhqRjhZWlFwU3NqcURZbEhuR1RudFlWSXFzcVJhazhUUmRiaksyeGIw\ncFFuRXY5NnlOSFFZVHFQLytBdDVxdS8rdjRhV2gvRktpRi9tQ0ZiN2hGaVNkUUpJ\nUkM0MWVyMHdXeER5Ujk1ZDdGVG1IZENLOG9jcXp2NVRYZ2Q3NlJwei9IeXdhZ0xt\nOEVLcWVrSkxtdk40dHdXNktEbEVwT0lNZ2Y5STlzS1lKekRYUDZlOG1LRVVpOVVB\nR3hYTHYwd3Q5WjJBLzZlRE9XVmJsL0FvNUc4V29kWm1PMXN5bGlYaGNRNnNRWGJs\nVk5zM2VTMnNJZEV2T1MyeEVXQm1tNHprejhsd1N0R25BL05IQ2JYc3VFdlhwbytt\nVlA3T0FrZkljUm01ZW44TktkakhpR1pOSDQyczVhOVFFZTFZeEpyNVZONncydVBX\ndEdJZ041QklRdit5TGY4UHI0a2ZENVUvQzdvc002V3dDTzRvN3ZodkFRdXRSTWlY\nbGNwWUF0VVhhMExDclBwVzR1VUg2c25ScHJocWVlZ3BRaGJ0SDl6d1AvWUFpRm5v\nb2ZmMXpuT2VtODNvQTJFQW5iWk5mSzhhb0libVJZUXFuYXhIVjBDaVNsV05wMDdy\nSHNDWWxoeWZKcGpEZVVPS05VTm4vODhRZmxiU0dIcVFBcG9TSEdDRWJ5a0ZNUGRK\nVExvWHdWQXc3Ymw5QzVmeTJNU1pSZ0VBWjB0ZTNiNnMzZGpTbHpmVEFyNVlnU3RU\ncmM4bWUxaGVGQ0lVU3F2QUcrQzAwbXg2dTNIcTNMYjZOSVJQZmJYVW9EaU9oU016\nenlVK29pc3pBM2Roek5sWE9lQi9EWE1xMXMvUFdoQXBKTWpXRUh6TGRFd3VNdXN2\nTis4UnJnNmxIMnF3bHRDMkZKc0xlZnprcjgxVWdMUHpLSFBUVzhFR1h3K0dIZUJH\nN05YMjg0UFlqTFo3QitrQ01JQ2h2V25waURyZVNySUFPR1lBaVU2WUFxUjdqMFhs\nN1BUNm5KWm42YTk2aFhZc0xkeDFBWGlLck9zaDFGWUxmZ3Y4YllHQitDR0FGUkg1\nZWducjF3VnpDbWxkendDM3BLZ0FlV1NMMlhyVHNka2hpTTdQbU1TZnJyRjRyRFNP\nczJZMWo5dEFmREtlS04rb3FITkU2bWs0MzQ1RW5QQ1Byc0YyMlE1WVdsTTBoZG9r\nUlU4Vyt3UWVvQ3ZhMkV1cmdmc3pXc0lEdG5iVXNia0hNZHg1V0gyUVozK3A0b21x\nWERReHBHNlYxK3EvL0t5V0Y0RkVGUzhXc21WajVubDMwWElsTG1TQVY5NjdGQQpH\nTmJXUVoyaDVlK0RBZWd4dVl1K0ZENGJEMWtLNFRMdXd3ejBIWWVidnZ3Ci0tLSBP\neEJ0WkRzaW5QMXduZGs0b1RsSlVQK2JjSXZhRUlIZERTalBPMk1VR3ZnCgkuGJpY\nVD8tKx2CYUQE867Lk4z1mgW8rvGNKu8K76HWHQyPNbZRS2PNm4xuZQ==\n-----END AGE ENCRYPTED FILE-----\n"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "content": "async function operator(proxies) {\n  const api=ProxyUtils.age, pairs=$arguments.pairs;\n  const passed=[], results={};\n  const assert=(value,message)=>{if(!value) throw new Error(message);};\n  const equal=(a,b,message)=>assert(JSON.stringify(a)===JSON.stringify(b),message);\n  const check=async(id,callback)=>{results[id]=await callback();passed.push(id);};\n  const reject=async(callback,predicate)=>{\n    try {await callback();} catch(error) {assert(predicate(error),'age error: '+error?.message);return;}\n    throw new Error('age operation did not reject');\n  };\n  const texts={empty:'',unicode:'订阅🙂\\r\\n\\0尾\\n',view:'视图🙂\\0\\r\\n'};\n  await check('AG-native-public-contract-and-normalized-keys',async()=>{\n    equal(Object.keys(api).sort(),['decrypt','derivePublicKey','encrypt'],'public API');\n    for(const pair of pairs) equal(await api.derivePublicKey(' \\n'+pair.secret+'\\r\\n'),pair.public,'normalized key');\n    return pairs.map(pair=>pair.type);\n  });\n  await check('AG-native-independent-node-ciphertexts',async()=>{\n    for(const pair of pairs) for(const item of pair.items) {\n      equal(await api.decrypt(item.armor,pair.secret),texts[item.id],'Node ciphertext');\n      const bytes=Buffer.from('x'+item.armor+'y');\n      equal(await api.decrypt(bytes.subarray(1,bytes.length-1),pair.secret),texts[item.id],'armored view');\n    }\n    return {types:2,payloads:6,offsetViews:6};\n  });\n  await check('AG-native-live-entropy-and-chunk-boundary',async()=>{\n    const large='a'.repeat(65535)+'🙂尾';\n    for(const pair of pairs) {\n      const one=await api.encrypt(texts.unicode,pair.public),two=await api.encrypt(texts.unicode,pair.public);\n      assert(one!==two,'encryption uses independent system entropy');\n      equal(await api.decrypt(one,pair.secret),texts.unicode,'fresh roundtrip');\n      equal(await api.decrypt(await api.encrypt(null,pair.public),pair.secret),'','null plaintext');\n      const bytes=Buffer.from('x'+texts.view+'y');\n      equal(await api.decrypt(await api.encrypt(bytes.subarray(1,bytes.length-1),pair.public),pair.secret),texts.view,'plaintext view');\n      equal(await api.decrypt(await api.encrypt(large,pair.public),pair.secret),large,'chunk boundary');\n    }\n    return {independentEntropy:true,chunkBoundary:65535,types:2};\n  });\n  await check('AG-native-pass-through-and-validation',async()=>{\n    for(const value of ['',false,0,'plain🙂',Buffer.from([255,0])]) {\n      // Non-string primitives follow TextDecoder's input validation.\n      if(typeof value==='boolean'||typeof value==='number') {\n        await reject(()=>api.decrypt(value,'invalid'),error=>error instanceof TypeError);\n      } else assert(await api.decrypt(value,'invalid')===value,'plain value retains identity');\n    }\n    equal(await api.decrypt(null,'invalid'),'','null pass-through');\n    for(const value of ['', 'age1invalid','age1tag1invalid','age1tagpq1invalid',null,0])\n      await reject(()=>api.encrypt('x',value),error=>error.code==='INVALID_AGE_PUBLIC_KEY'&&error.type==='RequestInvalidError');\n    for(const value of ['', 'AGE-SECRET-KEY-1INVALID','AGE-SECRET-KEY-PQ-1INVALID',null,0])\n      await reject(()=>api.derivePublicKey(value),error=>error.code==='INVALID_AGE_SECRET_KEY'&&error.type==='RequestInvalidError');\n    for(let i=0;i<pairs.length;i++) {\n      await reject(()=>api.decrypt(pairs[i].items[1].armor,pairs[1-i].secret),error=>error.message.startsWith('age 解密失败:'));\n      await reject(()=>api.decrypt('-----BEGIN AGE ENCRYPTED FILE-----\\nbad\\n',pairs[i].secret),error=>error.message.startsWith('age 解密失败:'));\n      equal(await api.decrypt(pairs[i].items[1].armor,pairs[i].secret),texts.unicode,'recovery');\n    }\n    return {identity:true,validation:true,recovery:true};\n  });\n  await check('AG-native-required-runtime-diagnostics',async()=>{\n    for(const name of ['TextEncoder','TextDecoder','ReadableStream','TransformStream','Response','Uint8Array','crypto']) {\n      const descriptor=Object.getOwnPropertyDescriptor(globalThis,name);\n      try {\n        Object.defineProperty(globalThis,name,{value:undefined,writable:true,configurable:true});\n        await reject(()=>api.encrypt('x',pairs[0].public),error=>error.message==='当前运行环境缺少 age 加解密所需 Web API: '+(name==='crypto'?'crypto.getRandomValues':name));\n        equal(await api.decrypt('plain','invalid'),'plain','plaintext does not require crypto runtime');\n      } finally { Object.defineProperty(globalThis,name,descriptor); }\n    }\n    return {missingBeforeCrypto:true,plainPassThrough:true};\n  });\n  const OriginalDate=Date;\n  globalThis.Date=class extends OriginalDate {\n    constructor(...args){super(...(args.length?args:[3100000000000]));}\n    static now(){return 3100000000000;}\n  };\n  try {\n    await check('AG-native-download-auto-decrypt-and-original-cache',async()=>{\n      for(const pair of pairs) {\n        const url='$UPSTREAM/host/download/age/'+pair.type;\n        const value=await ProxyUtils.download(url,undefined,undefined,undefined,undefined,undefined,undefined,false,{ageSecretKey:pair.secret,returnRaw:true});\n        equal(value,{result:texts.unicode,raw:texts.unicode},'download decrypt');\n        const cache=JSON.parse($substore.read('#sub-store-cached-resource'));\n        equal(cache[ProxyUtils.hex_md5('clash.meta/v1.19.23'+url)].data,pair.items[1].armor,'cache retains ciphertext');\n        equal(await ProxyUtils.download(url+'#age-secret-key='+encodeURIComponent(pair.secret)),texts.unicode,'fragment decrypts cache');\n      }\n      const url='$UPSTREAM/host/download/age/wrong-key';\n      await reject(()=>ProxyUtils.download(url+'#age-secret-key='+pairs[1].secret),error=>error.message.includes('age 解密失败:')&&!error.message.includes(pairs[1].secret));\n      equal(await ProxyUtils.download(url,undefined,undefined,undefined,undefined,undefined,undefined,false,{'age-secret-key':pairs[0].secret}),texts.unicode,'download recovery');\n      return {types:2,cacheContainsCiphertext:true,secretRedacted:true,recovered:true};\n    });\n  } finally {globalThis.Date=OriginalDate;}\n  proxies[0].ageVerified=passed;proxies[0].ageResults=results;\n  return proxies;\n}\n"
+              },
+              "type": "Script Operator"
+            }
+          ],
+          "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#age",
+          "source": "local"
+        },
+        "upstream": [
+          {
+            "method": "GET",
+            "path": "/host/download/age/x25519",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/age/mlkem768-x25519",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/age/wrong-key",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          },
+          {
+            "method": "GET",
+            "path": "/host/download/age/wrong-key",
+            "headers": {
+              "user-agent": "clash.meta/v1.19.23"
+            },
+            "body": ""
+          }
+        ],
+        "expect": {
+          "status": 200,
+          "json_contains": {
+            "data": {
+              "processed": [
+                {
+                  "ageVerified": [
+                    "AG-native-public-contract-and-normalized-keys",
+                    "AG-native-independent-node-ciphertexts",
+                    "AG-native-live-entropy-and-chunk-boundary",
+                    "AG-native-pass-through-and-validation",
+                    "AG-native-required-runtime-diagnostics",
+                    "AG-native-download-auto-decrypt-and-original-cache"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
 {
   "id": "PC-native-local-filters",
   "source": "backend/src/core/proxy-utils/processors/index.js:1366-1485",

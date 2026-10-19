@@ -302,7 +302,10 @@ struct Scope<'js> {
     context: JsValue<'js>,
 }
 
-pub(crate) async fn settled<'js>(js: &Js<'js>, value: JsValue<'js>) -> rquickjs::Result<JsValue<'js>> {
+pub(crate) async fn settled<'js>(
+    js: &Js<'js>,
+    value: JsValue<'js>,
+) -> rquickjs::Result<JsValue<'js>> {
     let promise: Promise = js.call("resolve", (value,))?;
     promise.into_future().await
 }
@@ -668,6 +671,7 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     crate::script_helpers::initialize(ctx, &utils)?;
     crate::script_flow::initialize(ctx)?;
     crate::script_download::initialize(ctx, &utils)?;
+    crate::script_age::initialize(ctx, &utils)?;
     globals.set("ProxyUtils", utils)?;
     Ok(())
 }
@@ -694,9 +698,9 @@ pub async fn local(
                     }
                     let proxies = conversion::local(&plain, content.as_ref())?;
                     let (cache, root) = {
-                        let store = store
-                            .lock()
-                            .map_err(|_| conversion::Error::Legacy("State lock poisoned".to_owned()))?;
+                        let store = store.lock().map_err(|_| {
+                            conversion::Error::Legacy("State lock poisoned".to_owned())
+                        })?;
                         (
                             store.data.clone(),
                             store
@@ -735,7 +739,11 @@ pub async fn local(
                                         next_index.set(next_index.get() + 1);
                                     }
                                     tag_scope.set(&proxy, "_subName", name_tag.clone())?;
-                                    tag_scope.set(&proxy, "_subDisplayName", display_name.clone())?;
+                                    tag_scope.set(
+                                        &proxy,
+                                        "_subDisplayName",
+                                        display_name.clone(),
+                                    )?;
                                     Ok(())
                                 })?;
                                 let items = sub
@@ -749,11 +757,12 @@ pub async fn local(
                                 let context = Object::new(ctx.clone())?.into_value();
                                 if let Some(raw) = content.as_ref().or_else(|| sub.get("content")) {
                                     let raw = ctx.json_parse(codec::stringify(raw))?;
-                                    let raw = if raw.is_array() || (!raw.is_null() && raw.is_object()) {
-                                        raw
-                                    } else {
-                                        js.array([raw])?
-                                    };
+                                    let raw =
+                                        if raw.is_array() || (!raw.is_null() && raw.is_object()) {
+                                            raw
+                                        } else {
+                                            js.array([raw])?
+                                        };
                                     js.set(&context, "raw", raw)?;
                                 }
                                 let scope = Scope {
@@ -762,7 +771,8 @@ pub async fn local(
                                     options: js.undefined(),
                                     context,
                                 };
-                                let processed = process(&js, original.clone(), items, scope).await?;
+                                let processed =
+                                    process(&js, original.clone(), items, scope).await?;
                                 let result = Object::new(ctx.clone())?;
                                 if preview {
                                     result.set("original", original)?;

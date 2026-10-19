@@ -6,6 +6,7 @@ from artifact_fixtures import response as artifact_response
 from dns_fixtures import response_bytes
 from gist_fixtures import GistFixture
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 import json
 import threading
 import time
@@ -131,6 +132,10 @@ class ControlledUpstream:
         if path.startswith('/host/download/'):
             mode = path.removeprefix('/host/download/')
             content = "下载🙂\r\n\0尾\n".encode('utf-8')
+            if mode.startswith('age/'):
+                vectors = json.loads((Path(__file__).parent / 'fixtures/age-native-vectors.json').read_text(encoding='utf-8'))
+                pair = next((item for item in vectors if item['type'] == mode[4:]), vectors[0])
+                return 200, pair['items'][1]['armor'].encode('ascii'), []
             if mode == 'text/background':
                 self.background_started.set()
                 self.background_release.wait(timeout=5)
