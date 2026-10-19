@@ -1,5 +1,53 @@
 [
   {
+    "id":"Z01-age-rest-key-generation-and-validation",
+    "source":"backend/src/restful/age.js:15,28; backend/src/utils/age.js:293,312,336",
+    "steps":[
+      {"method":"POST","path":"/api/utils/age/public-key","body":{"age-secret-key":"AGE-SECRET-KEY-1DC4Q4VEECN5SWG6N2DSMN47TE64R634RTCW7SA99PLF8ACAGC6TSNEXPCX"},"expect":{"status":200,"json":{"status":"success","data":{"age-public-key":"age1tknrrax70y43sg9048c9tm4za8xupndc0nqkfktymydwk64pgg2qglg4cw"}}}},
+      {"method":"POST","path":"/api/utils/age/public-key","body":{"age-secret-key":"invalid"},"expect":{"status":500,"json":{"status":"failed","error":{"code":"INVALID_AGE_SECRET_KEY","type":"RequestInvalidError","message":"age-secret-key 仅支持 X25519(AGE-SECRET-KEY-1...) 或 MLKEM768-X25519(AGE-SECRET-KEY-PQ-1...) 私钥"}}}},
+      {"method":"POST","path":"/api/utils/age/key-pair","body":{"type":"unsupported"},"expect":{"status":500,"json":{"status":"failed","error":{"message":"不支持的 age key 类型: unsupported. 支持: x25519, mlkem768-x25519"}}}},
+      {"method":"POST","path":"/api/utils/age/key-pair","body":{},"capture":{"AGE_REST_X_SECRET":{"pointer":"/data/age-secret-key","type":"string","pattern":"AGE-SECRET-KEY-1[0-9A-Z]+"},"AGE_REST_X_PUBLIC":{"pointer":"/data/age-public-key","type":"string","pattern":"age1[a-z0-9]+"}},"expect":{"status":200,"json":{"status":"success","data":{"type":"x25519","age-secret-key":"{{AGE_REST_X_SECRET}}","age-public-key":"{{AGE_REST_X_PUBLIC}}"}}}},
+      {"method":"POST","path":"/api/utils/age/public-key","body":{"age-secret-key":"{{AGE_REST_X_SECRET}}"},"expect":{"status":200,"json":{"status":"success","data":{"age-public-key":"{{AGE_REST_X_PUBLIC}}"}}}},
+      {"method":"POST","path":"/api/utils/age/key-pair","body":{"type":"mlkem768-x25519"},"capture":{"AGE_REST_PQ_SECRET":{"pointer":"/data/age-secret-key","type":"string","pattern":"AGE-SECRET-KEY-PQ-1[0-9A-Z]+"},"AGE_REST_PQ_PUBLIC":{"pointer":"/data/age-public-key","type":"string","pattern":"age1pq1[a-z0-9]+"}},"expect":{"status":200,"json":{"status":"success","data":{"type":"mlkem768-x25519","age-secret-key":"{{AGE_REST_PQ_SECRET}}","age-public-key":"{{AGE_REST_PQ_PUBLIC}}"}}}},
+      {"method":"POST","path":"/api/utils/age/public-key","body":{"age-secret-key":"{{AGE_REST_PQ_SECRET}}"},"expect":{"status":200,"json":{"status":"success","data":{"age-public-key":"{{AGE_REST_PQ_PUBLIC}}"}}}}
+    ]
+  },
+  {
+    "id":"S02-gist-age-settings-validation-order",
+    "source":"backend/src/restful/settings.js:35,43,101,173,177,187; fixed disposable key from retained native age fixture",
+    "steps":[
+      {"method":"POST","path":"/api/storage","body":{"content":"{\"schemaVersion\":\"2.0\",\"settings\":{\"logsMaxCount\":0},\"subs\":[],\"collections\":[],\"files\":[],\"artifacts\":[],\"tokens\":[],\"modules\":[],\"archives\":[]}"},"expect":{"status":200}},
+      {"method":"PATCH","path":"/api/settings","body":{"gistUpload":"age"},"expect":{"status":500,"json":{"status":"failed","error":{"code":"INVALID_GIST_AGE_KEYS","type":"RequestInvalidError","message":"age 加密模式需要配置 age-secret-key"}}},"state":{"settings":{"logsMaxCount":0}}},
+      {"method":"PATCH","path":"/api/settings","body":{"gistUpload":"age","age-secret-key":"invalid","gistDownloadTokenStrategy":"invalid"},"expect":{"status":500,"json":{"status":"failed","error":{"code":"INVALID_AGE_SECRET_KEY","type":"RequestInvalidError","message":"age-secret-key 仅支持 X25519(AGE-SECRET-KEY-1...) 或 MLKEM768-X25519(AGE-SECRET-KEY-PQ-1...) 私钥"}}}},
+      {"method":"PATCH","path":"/api/settings","body":{"gistUpload":"age","age-secret-key":" \nAGE-SECRET-KEY-1DC4Q4VEECN5SWG6N2DSMN47TE64R634RTCW7SA99PLF8ACAGC6TSNEXPCX\t","unknown":{"nil":null,"flag":false}},"expect":{"status":200,"json":{"status":"success","data":{"logsMaxCount":0,"gistUpload":"age","age-secret-key":"AGE-SECRET-KEY-1DC4Q4VEECN5SWG6N2DSMN47TE64R634RTCW7SA99PLF8ACAGC6TSNEXPCX","unknown":{"nil":null,"flag":false}}}}},
+      {"method":"PATCH","path":"/api/settings","body":{"age-secret-key":""},"expect":{"status":500,"json":{"status":"failed","error":{"code":"INVALID_GIST_AGE_KEYS","type":"RequestInvalidError","message":"age 加密模式需要配置 age-secret-key"}}}},
+      {"method":"PATCH","path":"/api/settings","body":{"gistDownloadTokenStrategy":"ask"},"expect":{"status":200,"json_contains":{"data":{"gistUpload":"age","gistDownloadTokenStrategy":"ask"}}}},
+      {"method":"PATCH","path":"/api/settings","body":{"gistUpload":"base64","age-secret-key":" unvalidated "},"expect":{"status":200,"json":{"status":"success","data":{"logsMaxCount":0,"gistUpload":"base64","age-secret-key":" unvalidated ","unknown":{"nil":null,"flag":false},"gistDownloadTokenStrategy":"ask"}}}},
+      {"method":"PATCH","path":"/api/settings","body":{"gistDownloadTokenStrategy":"invalid"},"expect":{"status":500,"json":{"status":"failed","error":{"code":"INVALID_GIST_DOWNLOAD_TOKEN_STRATEGY","type":"RequestInvalidError","message":"Token 处理方式仅支持 ask、overwrite 或 keep"}}}},
+      {"path":"/api/settings","expect":{"status":200,"json":{"status":"success","data":{"logsMaxCount":0,"gistUpload":"base64","age-secret-key":" unvalidated ","unknown":{"nil":null,"flag":false},"gistDownloadTokenStrategy":"ask"}}}}
+    ]
+  },
+  {
+    "id":"Y06-native-batch-partial-and-local-sync",
+    "source":"backend/src/restful/sync.js:1143,1234,1266,1279,1282; single and batch native production callers",
+    "steps":[
+      {"method":"PUT","path":"/api/artifacts","body":[],"expect":{"status":200}},
+      {"method":"POST","path":"/api/files","body":{"name":"batch-local","source":"local","content":"batch🙂\n"},"expect":{"status":201}},
+      {"method":"POST","path":"/api/artifacts","body":{"name":"local-only","type":"file","source":"batch-local","sync":true,"upload":false,"updated":1,"url":"https://stale.invalid/old","unknown":{"nil":null,"zero":0,"flag":false}},"expect":{"status":201}},
+      {"method":"POST","path":"/api/artifacts","body":{"name":"broken-output","type":"file","source":"missing-source","sync":true,"upload":false},"expect":{"status":201}},
+      {"path":"/api/sync/artifacts","expect":{"status":500,"json":{"status":"failed","error":{"code":"FAILED_TO_SYNC_ARTIFACTS","type":"InternalServerError","message":"Failed to sync all artifacts","details":"Reason: 同步配置成功 1 个, 失败 1 个, 详情请查看日志"}}}},
+      {"path":"/api/artifacts","capture":{"BATCH_LOCAL_UPDATED":{"pointer":"/data/0/updated","type":"integer"}},"expect":{"status":200,"json":{"status":"success","data":[{"name":"local-only","type":"file","source":"batch-local","sync":true,"upload":false,"updated":"{{BATCH_LOCAL_UPDATED}}","unknown":{"nil":null,"zero":0,"flag":false}},{"name":"broken-output","type":"file","source":"missing-source","sync":true,"upload":false}]}}},
+      {"path":"/api/sync/artifact/broken-output","expect":{"status":500,"json":{"status":"failed","error":{"code":"FAILED_TO_SYNC_ARTIFACT","type":"InternalServerError","message":"Failed to sync artifact broken-output","details":"Reason: Error: 找不到文件 missing-source"}}}},
+      {"method":"PATCH","path":"/api/artifact/broken-output","body":{"sync":false},"expect":{"status":200}},
+      {"path":"/api/sync/artifacts","expect":{"status":200,"json":{"status":"success"}}},
+      {"method":"PUT","path":"/api/artifacts","body":[{"name":"broken-only","type":"file","source":"missing-source","sync":true,"upload":false}],"expect":{"status":200}},
+      {"path":"/api/sync/artifacts","expect":{"status":500,"json":{"status":"failed","error":{"code":"FAILED_TO_SYNC_ARTIFACTS","type":"InternalServerError","message":"Failed to sync all artifacts","details":"Reason: 同步配置 broken-only 生成失败 详情请查看日志"}}},"state":{"artifacts":[{"name":"broken-only","type":"file","source":"missing-source","sync":true,"upload":false}]}},
+      {"method":"PUT","path":"/api/artifacts","body":[],"expect":{"status":200}},
+      {"path":"/api/sync/artifacts","expect":{"status":200,"json":{"status":"success"}}},
+      {"method":"DELETE","path":"/api/file/batch-local?mode=permanent","expect":{"status":200}}
+    ]
+  },
+  {
     "id": "PC-native-conversion-helper-contracts",
     "source": "PC89-PC104 retained conversion helper contracts bound to the actual Rust service",
     "steps": [

@@ -148,6 +148,9 @@ pub fn options(path: &str) -> Reply {
         _ if path.starts_with("/api/archives/") && path.ends_with("/restore") => "POST,GET,HEAD",
         _ if path.starts_with("/api/archives/") => "GET,DELETE,HEAD",
         "/api/proxy/parse"
+        | "/api/utils/node-info"
+        | "/api/utils/age/key-pair"
+        | "/api/utils/age/public-key"
         | "/api/rule/parse"
         | "/api/preview/sub"
         | "/api/preview/collection"
@@ -630,15 +633,6 @@ fn invalid(code: &str, message: &str) -> Reply {
     failure(500, code, "RequestInvalidError", message)
 }
 
-fn pending(message: &str) -> Reply {
-    failure(
-        501,
-        "FEATURE_NOT_IMPLEMENTED",
-        "InternalServerError",
-        message,
-    )
-}
-
 fn invalid_backup() -> Reply {
     send(
         500,
@@ -812,25 +806,12 @@ pub(crate) fn cannot_coerce(value: &Value) -> bool {
     }
 }
 
-fn settings(store: &mut Store, body: Body) -> Reply {
+pub(crate) fn normalized_settings(
+    store: &Store,
+    body: &Body,
+) -> Result<Value, crate::resources::Error> {
     let patch = body.fields();
-    if patch
-        .get("gistDownloadTokenStrategy")
-        .is_some_and(|v| ![json!("ask"), json!("overwrite"), json!("keep")].contains(v))
-    {
-        return invalid(
-            "INVALID_GIST_DOWNLOAD_TOKEN_STRATEGY",
-            "Token 处理方式仅支持 ask、overwrite 或 keep",
-        );
-    }
-    if patch
-        .keys()
-        .any(|key| ["gistToken", "gistUpload", "age-secret-key"].contains(&key.as_str()))
-    {
-        return pending("Gist and age settings integration is pending");
-    }
-    let mut next = store.data.clone();
-    let mut settings = Body::Json(next["settings"].clone()).fields();
+    let mut settings = Body::Json(store.data["settings"].clone()).fields();
     let previous_appearance = settings
         .get("appearanceSetting")
         .and_then(Value::as_object)
@@ -856,15 +837,11 @@ fn settings(store: &mut Store, body: Body) -> Reply {
     ] {
         if let Some(raw) = settings.get(key) {
             if cannot_coerce(raw) {
-                return send(
-                    500,
-                    "text/plain; charset=utf-8",
-                    codec::stringify(&json!({"status":"failed", "error":{
-                        "code":"FAILED_TO_UPDATE_SETTINGS", "type":"InternalServerError",
-                        "message":"Failed to update settings",
-                        "details":format!("Reason: {PRIMITIVE_ERROR}")
-                    }})),
-                );
+                return Err(crate::resources::Error::internal(
+                    "FAILED_TO_UPDATE_SETTINGS",
+                    "Failed to update settings",
+                    PRIMITIVE_ERROR,
+                ));
             }
             let value = number(raw);
             let valid = match key {
@@ -882,9 +859,7 @@ fn settings(store: &mut Store, body: Body) -> Reply {
             }
         }
     }
-    let value = Value::Object(settings);
-    next["settings"] = value.clone();
-    publish(store, next, success(Some(value), 200))
+    Ok(Value::Object(settings))
 }
 
 fn reference_name_matches(value: &Value, name: &str, subscription: bool) -> bool {
@@ -1043,12 +1018,6 @@ pub fn dispatch(
     body: Body,
     store: &mut Store,
 ) -> Reply {
-    if path == "/api/utils/refresh" && method == Method::GET {
-        if truthy(&store.data["settings"]["gistToken"]) {
-            return pending("Gist refresh is not implemented yet");
-        }
-        return persisted(store.clear_resource_cache(), success(None, 200));
-    }
     if path == "/api/storage" {
         if method == Method::GET {
             return download(&store.data, "sub-store_data");
@@ -1066,19 +1035,6 @@ pub fn dispatch(
                 return invalid_backup();
             }
             return persisted(store.restore(next, original), success(None, 200));
-        }
-    }
-    if path == "/api/settings" {
-        if method == Method::GET {
-            if !truthy(&store.data["settings"]) {
-                let mut next = store.data.clone();
-                next["settings"] = json!({});
-                return publish(store, next, success(Some(json!({})), 200));
-            }
-            return success(Some(store.data["settings"].clone()), 200);
-        }
-        if method == Method::PATCH {
-            return settings(store, body);
         }
     }
     if method == Method::GET {

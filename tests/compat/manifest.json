@@ -13,9 +13,17 @@
       "F01-file-crud-and-runtime"
     ],
     "sharing-core": ["T02-merged-share-count-and-origin", "T06-share-subscription-and-collection", "T03-share-datetime-archive"],
+    "utilities-core": ["Z01-age-rest-key-generation-and-validation", "N01-node-info-uri-and-generation-error",
+      "N02-node-info-ipv6-normalization", "N03-node-info-provider-rejection",
+      "N04-node-info-http-status-body-precedence", "N05-node-info-missing-server-and-recovery"],
     "archive-core": ["F01-file-crud-and-runtime", "A01-file-archive-restore-conflict",
       "A05-subscription-collection-share-archive-lifecycle", "Y04-artifact-crud-and-archive-validation",
       "O01-sort-resources", "A03-sort-delete-and-artifact-restore", "A04-archive-errors"],
+    "sync-core": ["Y01-artifact-crud-and-sync", "Y02-artifact-errors",
+      "Y03-gist-artifact-create-update-delete", "Y06-native-batch-partial-and-local-sync",
+      "Y04-gist-restore-and-refresh", "Y05-gist-provider-errors", "D09-gist-download-token-strategies",
+      "D10-gist-plaintext-upload", "D11-gist-base64-upload", "D12-gist-backup-validation", "D13-gist-base64-download",
+      "S02-gist-age-settings-validation-order"],
     "conversion-local": [
       "PC-native-conversion-helper-contracts",
       "PC-native-typed-input-boundaries",
@@ -159,6 +167,9 @@
       "T03-share-datetime-archive"
     ],
     "full": [
+      "Z01-age-rest-key-generation-and-validation",
+      "S02-gist-age-settings-validation-order",
+      "Y06-native-batch-partial-and-local-sync",
       "M02-module-names-order-and-missing-delete",
       "M03-module-content-methods-and-encoded-name",
       "F02-file-normalization-and-order",
@@ -476,7 +487,7 @@
       "N05-node-info-missing-server-and-recovery"
     ]
   },
-  "coverage_state": "230 executable fixtures; full suite intentionally fails until the complete inventory is accepted",
+  "coverage_state": "233 executable fixtures; full suite intentionally fails until the complete inventory is accepted",
   "pending_domains": [
     "artifacts",
     "files",

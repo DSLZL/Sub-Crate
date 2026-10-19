@@ -3,6 +3,52 @@ use crate::{js_language::Js, script, script_network as network, script_pipeline 
 use pipeline::{find, object, optional, read, utility};
 use rquickjs::Value;
 
+pub(crate) async fn node_info<'js>(js: &Js<'js>, input: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    let proxy = js.get(&input, "body")?;
+    let projected = crate::js_values::project(&js.ctx, proxy.clone())?;
+    let share = crate::conversion::uri(&projected);
+    let result = async {
+        let server = js.text(js.get(&proxy, "server")?)?;
+        let server = crate::json::trim(&server).strip_prefix('[').unwrap_or(crate::json::trim(&server));
+        let server = server.strip_suffix(']').unwrap_or(server);
+        let encoder: rquickjs::Function = js.ctx.globals().get("encodeURIComponent")?;
+        let server: String = encoder.call((server,))?;
+        let query = js.get(&input, "query")?;
+        let lang = network::prefer(js, [js.get(&query, "lang")?, js.value("zh-CN")?])?;
+        let request = object(js)?;
+        js.set(&request, "url", js.value(format!("http://ip-api.com/json/{server}?lang={}", js.text(lang)?))?)?;
+        let headers = object(js)?;
+        js.set(&headers, "User-Agent", js.value("Mozilla/5.0 (Macintosh; Intel Mac OS X 12_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.4 Safari/605.1.15")?)?;
+        js.set(&request, "headers", headers)?;
+        let response = network::request(js, "get", request).await?;
+        let info: Value = js.call("jsonParse", (js.get(&response, "body")?,))?;
+        if !js.equal(&js.get(&info, "status")?, &js.value("success")?)? {
+            let message = js.get(&info, "message")?;
+            return Err(js.error(&if message.is_undefined() { String::new() } else { js.text(message)? }));
+        }
+        js.call::<(), _>("remove", (info.clone(), "status"))?;
+        let data = object(js)?;
+        if let Some(share) = share { js.set(&data, "shareUrl", js.value(share)?)?; }
+        js.set(&data, "info", info)?;
+        Ok(data)
+    }.await;
+    let wrapped = object(js)?;
+    match result {
+        Ok(data) => js.set(&wrapped, "data", data)?,
+        Err(error) => {
+            let error = crate::script_sync::reason(js, error);
+            let reason = script::message(&js.ctx, error);
+            let failure = object(js)?;
+            js.set(&failure, "code", js.value("FAILED_TO_GET_NODE_INFO")?)?;
+            js.set(&failure, "type", js.value("NetworkError")?)?;
+            js.set(&failure, "message", js.value("Failed to get node info")?)?;
+            js.set(&failure, "details", js.value(format!("Reason: {reason}"))?)?;
+            js.set(&wrapped, "error", failure)?;
+        }
+    }
+    Ok(wrapped)
+}
+
 async fn flow_call<'js>(js: &Js<'js>, args: Vec<Value<'js>>) -> rquickjs::Result<Value<'js>> {
     let flow: Value = js.ctx.globals().get("flowUtils")?;
     script::settled(js, js.method(flow, "getFlowHeaders", args)?).await

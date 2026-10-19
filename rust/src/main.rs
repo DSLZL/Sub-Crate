@@ -1,6 +1,7 @@
 mod api;
 mod archives;
 mod artifacts;
+mod backup;
 mod body;
 mod clash;
 mod clash_output;
@@ -19,6 +20,7 @@ mod resources;
 mod rules;
 mod script;
 mod script_age;
+mod script_backup;
 mod script_conversion;
 mod script_dns;
 mod script_download;
@@ -31,14 +33,18 @@ mod script_loading;
 mod script_mmdb;
 mod script_network;
 mod script_pipeline;
+mod script_sync;
 mod script_tokens;
+mod settings;
 mod singbox_output;
 mod sort;
 mod state;
 mod surge;
 mod surge_output;
+mod sync;
 mod text_output;
 mod tokens;
+mod utilities;
 mod xhttp;
 
 use hyper::body::{Body, Incoming};
@@ -824,11 +830,33 @@ fn api_path(raw: &str) -> Result<Option<String>, ()> {
                     json::encode(&percent_decode_str(name).decode_utf8().map_err(|_| ())?)
                 )),
                 "utils" => Some(format!("/api/utils/{}", name.to_ascii_lowercase())),
+                "sync" | "artifacts" => {
+                    Some(format!("/api/{resource}/{}", name.to_ascii_lowercase()))
+                }
                 "proxy" | "rule" | "preview" | "sort" => {
                     Some(format!("/api/{resource}/{}", name.to_ascii_lowercase()))
                 }
                 _ => None,
             }
+        }
+        ["", api, utils, age, operation]
+            if api.eq_ignore_ascii_case("api")
+                && utils.eq_ignore_ascii_case("utils")
+                && age.eq_ignore_ascii_case("age")
+                && !operation.is_empty() =>
+        {
+            Some(format!("/api/utils/age/{}", operation.to_ascii_lowercase()))
+        }
+        ["", api, sync, artifact, name]
+            if api.eq_ignore_ascii_case("api")
+                && sync.eq_ignore_ascii_case("sync")
+                && artifact.eq_ignore_ascii_case("artifact")
+                && !name.is_empty() =>
+        {
+            Some(format!(
+                "/api/sync/artifact/{}",
+                json::encode(&percent_decode_str(name).decode_utf8().map_err(|_| ())?)
+            ))
         }
         ["", api, archives, id, restore]
             if api.eq_ignore_ascii_case("api")
@@ -1049,6 +1077,18 @@ async fn route(
         "responseHeaders":base.headers().iter().map(|(key,value)|(key.as_str().to_owned(),json!(value.to_str().unwrap_or("")))).collect::<serde_json::Map<String,Value>>()
     });
     if let Some(response) = archives::dispatch(&method, &path, &body, store).await {
+        return response;
+    }
+    if let Some(response) = sync::dispatch(&method, &path, store).await {
+        return response;
+    }
+    if let Some(response) = settings::dispatch(&method, &path, &body, store).await {
+        return response;
+    }
+    if let Some(response) = backup::dispatch(&method, &path, &query, store).await {
+        return response;
+    }
+    if let Some(response) = utilities::dispatch(&method, &path, &query, &body, store).await {
         return response;
     }
     if let Some(response) = artifacts::dispatch(&method, &path, &query, &body, store).await {
