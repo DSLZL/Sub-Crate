@@ -4,7 +4,10 @@ import copy
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
+import time
 import unittest
 
 import benchmark as b
@@ -67,7 +70,7 @@ class Contracts(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp)
             cache = {"http-meta:health-inc:v1:key": {"data": {"records": {"a": {"lastProbe": 1, "lastOk": 1}, "b": {"lastProbe": 1, "lastOk": 1}}}},
-                     "health-snapshot:v1:key": {"data": {"version": 1, "count": 1, "proxies": [{"name": "x"}]}}}
+                     "health-snapshot:v1:key": {"data": {"version": 1, "count": 1, "generatedAt": int(time.time() * 1000), "proxies": [{"name": "x"}]}}}
             (state / "root.json").write_text(json.dumps({"sub-store-cached-script-resource": json.dumps(cache)}))
             suite = object.__new__(b.Suite)
             counts = {"starts": 1, "stops": 1, "selected": 2, "unique_probes": 2, "probes": 2}
@@ -79,6 +82,23 @@ class Contracts(unittest.TestCase):
                 suite.audit(state, [], True, counts)
             with self.assertRaises(b.Failure):
                 suite.audit(state, [{"name": "x"}], False, counts)
+
+    def test_resource_units_refer_to_the_owned_server_pid(self):
+        script = "import sys,time\nsys.stdin.buffer.read(1)\nend=time.monotonic()+.25\nwhile time.monotonic()<end: pass\nprint('done',flush=True)\nsys.stdin.buffer.read(1)"
+        with subprocess.Popen([sys.executable, "-c", script], stdin=subprocess.PIPE, stdout=subprocess.PIPE) as child:
+            try:
+                with b.Meter(child, None) as meter:
+                    child.stdin.write(b"x")
+                    child.stdin.flush()
+                    self.assertEqual(child.stdout.readline(), b"done\n")
+                result = meter.result(1)
+                self.assertGreater(result["cpu_s"], .1)
+                self.assertGreater(result["rss_peak_bytes"], 1024 * 1024)
+                self.assertGreaterEqual(result["os_lifetime_peak_bytes"], result["rss_peak_bytes"])
+                self.assertGreater(len(result["rss_trace"]), 1)
+            finally:
+                child.stdin.write(b"x")
+                child.stdin.flush()
 
 
 class DetectorContract(unittest.IsolatedAsyncioTestCase):

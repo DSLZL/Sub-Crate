@@ -48,6 +48,10 @@ jobs:
           pnpm --dir .performance/frontend install --frozen-lockfile
           python3.12 -m venv "$RUNNER_TEMP/performance-venv"
           "$RUNNER_TEMP/performance-venv/bin/pip" install --require-hashes --only-binary=:all: -r tests/performance/requirements.txt
+      - name: Check benchmark invariants and source
+        run: |
+          "$RUNNER_TEMP/performance-venv/bin/python" -m py_compile tests/performance/benchmark.py tests/performance/test_benchmark.py
+          "$RUNNER_TEMP/performance-venv/bin/python" -m unittest discover -s tests/performance -p test_benchmark.py
       - name: Build exact original, Rust and unchanged frontend
         run: |
           (cd .performance/original/backend && node bundle-esbuild.js)
@@ -61,10 +65,6 @@ jobs:
         run: |
           agent-browser skills get core
           agent-browser install --with-deps
-      - name: Check benchmark invariants and source
-        run: |
-          "$RUNNER_TEMP/performance-venv/bin/python" -m py_compile tests/performance/benchmark.py tests/performance/test_benchmark.py
-          "$RUNNER_TEMP/performance-venv/bin/python" -m unittest discover -s tests/performance -p test_benchmark.py
       - name: Import original file and compare full workloads
         env:
           BENCHMARK_SUBSCRIPTION_B64: ${{ secrets.BENCHMARK_SUBSCRIPTION_B64 }}

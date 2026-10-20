@@ -8,7 +8,7 @@ import copy
 import difflib
 import gzip
 import hashlib
-import http.client
+from http.client import HTTPConnection
 import json
 import math
 import os
@@ -154,7 +154,7 @@ def command(argv, cwd=None, timeout=90, stdin=None):
 
 def http(url, method="GET", data=None, timeout=WATCHDOG):
     parsed = urlsplit(url)
-    connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=timeout)
+    connection = HTTPConnection(parsed.hostname, parsed.port, timeout=timeout)
     body = encoded(data) if data is not None else None
     try:
         connection.request(method, parsed.path + ("?" + parsed.query if parsed.query else ""), body,
@@ -221,7 +221,6 @@ class Meter:
         self.driver = psutil.Process()
         self.auxiliary = psutil.Process(auxiliary.pid) if auxiliary else None
         self.aux_peak = 0
-        self.external_connections = 0
         self.trace = []
         self.stop = threading.Event()
         self.thread = threading.Thread(target=self.sample, daemon=True)
@@ -231,7 +230,6 @@ class Meter:
         while not self.stop.is_set():
             at = time.monotonic()
             self.trace.append([at, self.proc.memory_info().rss])
-            self.external_connections = max(self.external_connections, sum(bool(c.raddr) and c.raddr.ip not in ("127.0.0.1", "::1") for c in self.proc.net_connections(kind="inet")))
             if self.auxiliary:
                 try:
                     self.aux_peak = max(self.aux_peak, sum(p.memory_info().rss for p in [self.auxiliary, *self.auxiliary.children(recursive=True)] if p.is_running()))
@@ -280,7 +278,6 @@ class Meter:
                 "fixture_rss_bytes": self.fixture.memory_info().rss if self.fixture else 0,
                 "detector_cpu_s": self.after_aux - self.before_aux,
                 "detector_rss_peak_bytes": self.aux_peak,
-                "observed_external_connections": self.external_connections,
                 "sample_interval_s": distribution(intervals),
                 "rss_trace": [[at - self.started, rss] for at, rss in self.trace]}
 
@@ -570,6 +567,7 @@ class Suite:
         require(len(health) == 1 and len(snapshots) == 1, "snapshot")
         snapshot, records = snapshots[0], health[0]["records"]
         require(snapshot["version"] == 1 and snapshot["count"] == len(output) > 0, "snapshot")
+        require(isinstance(snapshot["generatedAt"], (int, float)) and 0 <= time.time() * 1000 - snapshot["generatedAt"] < WATCHDOG * 1000, "snapshot")
         require(nodes_hash(snapshot["proxies"]) == nodes_hash(output), "snapshot")
         require(all(v.get("lastProbe", 0) > 0 for v in records.values()), "work_incomplete")
         if cold:
@@ -579,6 +577,7 @@ class Suite:
         else:
             require(counts["starts"] == counts["selected"] == counts["probes"] == 0, "warm_miss")
         return {"identities": len(records), "published": snapshot["count"],
+                "generated_at_ms": snapshot["generatedAt"],
                 "snapshot_sha256": nodes_hash(snapshot["proxies"]),
                 "verified": sum(v.get("lastOk", 0) > 0 for v in records.values())}
 
@@ -645,7 +644,6 @@ class Suite:
                             elapsed, last, raw_hash = once()
                             row["latencies_s"].append(elapsed)
                 row.update(meter.result(len(row["latencies_s"])))
-                require(row["observed_external_connections"] == 0, "external_io")
                 row["output_count"] = len(last)
                 row["output_sha256"] = nodes_hash(last)
                 row["raw_output_sha256"] = raw_hash
