@@ -1,0 +1,7 @@
+{
+  "source": "https://github.com/DelSkayn/rquickjs/blob/v0.14.0/LICENSE",
+  "applies_to": ["rquickjs-core@0.14.0", "rquickjs-sys@0.14.0"],
+  "license": "MIT",
+  "sha256": "976ad3d07927343ab99b31510625acba89eac8e0e517c712925620ddeda91b70",
+  "reason": "The published subcrates omit the common workspace license. Preserve the upstream text alongside any packaged QuickJS notices."
+}

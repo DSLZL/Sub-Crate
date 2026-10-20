@@ -16,7 +16,7 @@ import runner
 
 class RunnerTests(unittest.TestCase):
     def test_delivered_archives_reject_modified_missing_extra_files_and_manifest(self):
-        from distribution import make_archive, unpack_archive, verify_payload, write_manifest
+        from distribution import package_payload, verify_payload
         for target in ("linux-x64", "windows-x64"):
             with self.subTest(target=target), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
@@ -24,10 +24,10 @@ class RunnerTests(unittest.TestCase):
                 payload.mkdir()
                 (payload / "sub-store-rust").write_bytes(b"verified executable bytes\x00")
                 (payload / "LICENSE").write_text("license text", encoding="utf-8")
-                manifest = write_manifest(payload, {"source_commit": "f" * 40, "target": target})
-                archive = make_archive(payload, root, target)
-                unpack_archive(archive, root / "extracted")
-                extracted = root / "extracted" / payload.name
+                extracted, delivery = package_payload(payload, target, {"source_commit": "f" * 40,
+                    "repository": "example/sub-store", "target": target})
+                manifest = delivery["manifest"]
+                self.assertTrue(delivery["extracted_payload_verified"])
                 verify_payload(extracted, manifest)
                 original = (extracted / "sub-store-rust").read_bytes()
                 (extracted / "sub-store-rust").write_bytes(original + b"tampered")
@@ -100,6 +100,35 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(collect_notices(metadata, second_payload, root / "toolchain"), 2)
             notices = json.loads((second_payload / "third-party.json").read_text(encoding="utf-8"))
             self.assertEqual({item["name"] for item in notices["crates"]}, {"dependency", "transitive"})
+
+    def test_native_notices_use_only_the_pinned_rquickjs_workspace_license(self):
+        from distribution import collect_notices
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "LICENSE").write_text("application license", encoding="utf-8")
+            vendor = root / "rust/vendor"
+            vendor.mkdir(parents=True)
+            (vendor / "LICENSES.txt").write_text("utility license", encoding="utf-8")
+            toolchain = root / "toolchain/share/doc/rust"
+            toolchain.mkdir(parents=True)
+            (toolchain / "LICENSE-MIT").write_text("toolchain license", encoding="utf-8")
+            package = {"id": "rquickjs-core", "name": "rquickjs-core", "version": "0.14.0", "license": "MIT",
+                       "repository": "https://github.com/DelSkayn/rquickjs.git", "manifest_path": str(root / "core/Cargo.toml")}
+            metadata = {"packages": [{"id": "app"}, package], "resolve": {"root": "app", "nodes": [
+                {"id": "app", "dependencies": [package["id"]]}, {"id": package["id"], "dependencies": []}]}}
+            for version in ("0.14.0", "0.14.1"):
+                package["version"] = version
+                payload = root / version
+                payload.mkdir()
+                with patch("distribution.ROOT", root):
+                    if version == "0.14.1":
+                        with self.assertRaisesRegex(AssertionError, "Missing dependency notices"):
+                            collect_notices(metadata, payload, root / "toolchain")
+                    else:
+                        self.assertEqual(collect_notices(metadata, payload, root / "toolchain"), 1)
+                        copied = payload / "licenses/crates/rquickjs-core-0.14.0/workspace-LICENSE"
+                        self.assertEqual(hashlib.sha256(copied.read_bytes()).hexdigest(),
+                                         "976ad3d07927343ab99b31510625acba89eac8e0e517c712925620ddeda91b70")
 
     def test_early_http_rejection_receives_one_complete_json_request_without_retry(self):
         from http.client import HTTPConnection

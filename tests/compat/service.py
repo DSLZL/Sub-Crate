@@ -2426,6 +2426,8 @@ def main():
             expected = {"x86_64": "amd64", "aarch64": "arm64"}[platform.machine()]
             assert architecture.returncode == 0 and architecture.stdout.strip() == expected, "Container did not build natively"
             report["docker_architecture"] = expected
+            from distribution import docker_delivery
+            report["distribution"] = docker_delivery(image, environment)
         else:
             args.binary = args.binary.resolve(strict=True)
             report["binary_sha256"] = hashlib.sha256(args.binary.read_bytes()).hexdigest()

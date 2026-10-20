@@ -78,6 +78,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--node", required=True, type=Path)
     parser.add_argument("--frontend", required=True, type=Path, help="Unchanged pinned checkout with completed dist build")
+    parser.add_argument("--assets", type=Path, help="Extracted delivery dist; require exact identity with the unchanged build")
     parser.add_argument("--browser", required=True, type=Path, help="Installed native agent-browser executable")
     parser.add_argument("--rust-binary", type=Path, help="Run the CRUD, conversion preview, settings and export slice against this Rust service")
     parser.add_argument("--standalone", action="store_true", help="Use the separate Rust frontend port and API mount")
@@ -86,6 +87,7 @@ def main():
         parser.error("--standalone requires --rust-binary")
     node = args.node.resolve(strict=True)
     frontend = args.frontend.resolve(strict=True)
+    assets_root = args.assets.resolve(strict=True) if args.assets else frontend / "dist"
     browser = args.browser.resolve(strict=True)
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     output = HERE / "evidence" / f"frontend-{run_id}"
@@ -96,7 +98,7 @@ def main():
     environment["PATH"] = str(node.parent) + os.pathsep + environment.get("PATH", "")
     environment.update(SUB_STORE_DATA_BASE_PATH=str(state), SUB_STORE_BACKEND_API_HOST="127.0.0.1",
                        SUB_STORE_FRONTEND_BACKEND_PATH="/backend", SUB_STORE_BACKEND_MERGE="true",
-                       SUB_STORE_FRONTEND_PATH=str(frontend / "dist"), AGENT_BROWSER_DEFAULT_TIMEOUT="15000")
+                       SUB_STORE_FRONTEND_PATH=str(assets_root), AGENT_BROWSER_DEFAULT_TIMEOUT="15000")
     if args.standalone:
         with socket.socket() as reserved:
             reserved.bind(("127.0.0.1", 0))
@@ -417,6 +419,10 @@ def main():
         assert (frontend / "dist/index.html").is_file(), "Build the pinned frontend first"
         assets = {str(path.relative_to(frontend / "dist")): hashlib.sha256(path.read_bytes()).hexdigest()
                   for path in sorted((frontend / "dist").rglob("*")) if path.is_file()}
+        delivered_assets = {str(path.relative_to(assets_root)): hashlib.sha256(path.read_bytes()).hexdigest()
+                            for path in sorted(assets_root.rglob("*")) if path.is_file()}
+        assert delivered_assets == assets, "Served frontend differs from the unchanged build"
+        report["served_asset_root"] = str(assets_root)
         artifact = json.dumps(assets, sort_keys=True).encode("utf-8")
         report["frontend_artifact_sha256"] = hashlib.sha256(artifact).hexdigest()
         (output / "frontend-assets.json").write_bytes(artifact)
