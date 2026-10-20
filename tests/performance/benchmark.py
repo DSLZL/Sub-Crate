@@ -776,13 +776,19 @@ def cgroup_limit(name):
     return None if text == "max" else int(text)
 
 
+def cpu_quota(path=Path("/sys/fs/cgroup/cpu.max")):
+    if not path.exists():
+        return {"cpu_quota_us": None, "cpu_period_us": None}
+    quota, period = path.read_text().split()
+    return {"cpu_quota_us": None if quota == "max" else int(quota), "cpu_period_us": int(period)}
+
+
 def provenance(args):
     for path, revision in ((args.original, ORIGINAL), (args.rust, RUST), (args.frontend, FRONTEND)):
         require(command(["git", "rev-parse", "HEAD"], cwd=path).decode().strip() == revision, "source")
         command(["git", "diff", "--exit-code"], cwd=path)
     require(command(["node", "--version"]).decode().strip() == "v24.16.0", "source")
     require(psutil.__version__ == "7.2.2", "source")
-    quota = Path("/sys/fs/cgroup/cpu.max").read_text().split()
     cpu_model = next(line.split(":", 1)[1].strip() for line in Path("/proc/cpuinfo").read_text().splitlines() if line.startswith("model name"))
     PUBLIC_STRINGS.add(cpu_model)
     return {"original": ORIGINAL, "rust": RUST, "frontend": FRONTEND,
@@ -795,7 +801,7 @@ def provenance(args):
             "browser_driver_version": "0.27.3", "psutil_version": psutil.__version__,
             "runner": {"target": "linux_x64", "cpu_model": cpu_model,
                        "logical_cpus": psutil.cpu_count(), "affinity_cpus": len(psutil.Process().cpu_affinity()),
-                       "cpu_quota_us": None if quota[0] == "max" else int(quota[0]), "cpu_period_us": int(quota[1]),
+                       **cpu_quota(),
                        "memory_bytes": psutil.virtual_memory().total, "memory_limit_bytes": cgroup_limit("memory.max"),
                        "load_before": list(os.getloadavg())}}
 

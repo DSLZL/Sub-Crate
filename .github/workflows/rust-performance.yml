@@ -52,6 +52,15 @@ jobs:
         run: |
           "$RUNNER_TEMP/performance-venv/bin/python" -m py_compile tests/performance/benchmark.py tests/performance/test_benchmark.py
           "$RUNNER_TEMP/performance-venv/bin/python" -m unittest discover -s tests/performance -p test_benchmark.py
+      - name: Restore fixed Rust build cache (no runtime data)
+        id: rust-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .performance/rust/rust/target
+          key: subscription-performance-linux-x64-rust-1.98.0-948c665be09a19ba5502694b5fca49fab27ce6a4
       - name: Build exact original, Rust and unchanged frontend
         run: |
           (cd .performance/original/backend && node bundle-esbuild.js)
@@ -61,6 +70,15 @@ jobs:
           git -C .performance/original diff --exit-code
           git -C .performance/rust diff --exit-code
           git -C .performance/frontend diff --exit-code
+      - name: Save public build inputs before private measurements
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .performance/rust/rust/target
+          key: subscription-performance-linux-x64-rust-1.98.0-948c665be09a19ba5502694b5fca49fab27ce6a4
       - name: Load installed browser workflow and install headless Chromium
         run: |
           agent-browser skills get core

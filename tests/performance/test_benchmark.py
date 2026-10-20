@@ -66,6 +66,15 @@ class Contracts(unittest.TestCase):
         self.assertNotIn("p95", b.distribution([.01, .02]))
         self.assertEqual(b.distribution(list(range(1, 101)))["p95"], 95)
 
+    def test_missing_host_cgroup_quota_is_unavailable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cpu.max"
+            self.assertEqual(b.cpu_quota(path), {"cpu_quota_us": None, "cpu_period_us": None})
+            path.write_text("max 100000\n")
+            self.assertEqual(b.cpu_quota(path), {"cpu_quota_us": None, "cpu_period_us": 100000})
+            path.write_text("200000 100000\n")
+            self.assertEqual(b.cpu_quota(path), {"cpu_quota_us": 200000, "cpu_period_us": 100000})
+
     def test_partial_work_and_empty_snapshot_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp)
