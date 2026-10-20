@@ -322,8 +322,10 @@ mod tests {
                     .is_undefined());
             }
             let frozen: Value = ctx.eval("Object.freeze({value:1})").unwrap();
-            js.set(&frozen, "value", js.value(2).unwrap()).unwrap();
-            js.call::<(), _>("remove", (frozen.clone(), "value")).unwrap();
+            assert!(js.set(&frozen, "value", js.value(2).unwrap()).is_err());
+            ctx.catch();
+            assert!(js.call::<(), _>("remove", (frozen.clone(), "value")).is_err());
+            ctx.catch();
             assert_eq!(js.get(&frozen, "value").unwrap().as_int(), Some(1));
         });
     }

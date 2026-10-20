@@ -680,7 +680,7 @@ pub fn produce(
 
 pub(crate) fn finish(list: Vec<Value>, kind: &str, opts: &Value) -> Result<Value, Error> {
     if kind == "internal" {
-        return Ok(json!(list));
+        return Ok(Value::Array(list));
     }
     if opts.is_null() {
         return Err(Error::Legacy(
