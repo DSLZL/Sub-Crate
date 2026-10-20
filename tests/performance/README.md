@@ -19,13 +19,17 @@ is injected only into the measurement step. It is removed from the environment
 before application processes start. Private files stay in `$RUNNER_TEMP` and
 are never uploaded, cached, or included in console logs.
 
-The workflow freezes original `9cc6b5fa`, Rust `948c665b`, and unchanged frontend
+The workflow freezes original `9cc6b5fa`, Rust `9faaa86d`, and unchanged frontend
 `4bd7b0ac`, with full revisions in the harness and report. It builds the original
 without compatibility-reference patches. The actual subscription file input on
 `/subs` imports the original file five times per backend into fresh storage.
 Browser POST data, frontend timestamp suffixes, every submitted field, all seven
 processors, reload/editor observations and restart persistence are checked.
 All repeated states originate from these real UI imports.
+
+The retained full baseline at Actions `39402271707` and initial short diagnostic
+at `39408480379` use Rust `948c665b`. Their sources and reports are immutable;
+later diagnostics identify the candidate above and must not overwrite them.
 
 Only after import acceptance does the ordinary PATCH API apply derived workload
 settings. Original names are restored and all 22 source locations are mirrored

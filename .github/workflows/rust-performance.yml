@@ -33,7 +33,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: 948c665be09a19ba5502694b5fca49fab27ce6a4
+          ref: 9faaa86de06857819da07d478e96a291030ad04f
           path: .performance/rust
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -65,7 +65,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-948c665be09a19ba5502694b5fca49fab27ce6a4
+          key: subscription-performance-linux-x64-rust-1.98.0-9faaa86de06857819da07d478e96a291030ad04f
+          restore-keys: subscription-performance-linux-x64-rust-1.98.0-
       - name: Build exact original, Rust and unchanged frontend
         run: |
           (cd .performance/original/backend && node bundle-esbuild.js)
@@ -83,7 +84,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-948c665be09a19ba5502694b5fca49fab27ce6a4
+          key: subscription-performance-linux-x64-rust-1.98.0-9faaa86de06857819da07d478e96a291030ad04f
       - name: Load installed browser workflow and install headless Chromium
         run: |
           agent-browser skills get core
