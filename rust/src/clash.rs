@@ -330,32 +330,35 @@ mod tests {
 
     #[test]
     fn strict_json_and_fallbacks_retain_ecmascript_values() {
-        let parser = Parser::new().unwrap();
+        let parser = Parser::new().ok().unwrap();
         for raw in [
             r#"{"type":"ss","extra":{"n":9007199254740993,"zero":-0,"overflow":1e400,"key":null,"2":"two","1":"one","false":false,"empty":[]},"password":0}"#,
             r#"{"type":"ss","name":"\ud800\ue000\udc00","extra":{"__proto__":{"safe":true},"constructor":0,"literal":"😀"}}"#,
             r#"{type:'ss',port:0x1bb,extra:{nan:NaN,positive:Infinity,negative:-Infinity,zero:-0,},}"#,
             "{type: ss, name: yaml, extra: &loop {self: *loop}}",
         ] {
-            assert_eq!(parser.line(raw).unwrap().unwrap(), legacy_line(&parser, raw));
+            assert_eq!(
+                parser.line(raw).ok().unwrap().unwrap(),
+                legacy_line(&parser, raw)
+            );
         }
         for raw in ["not a node", "{", r#"{"type":"unknown"}"#, "null"] {
-            assert!(parser.line(raw).unwrap().is_none());
+            assert!(parser.line(raw).ok().unwrap().is_none());
         }
         assert_eq!(
-            parser.line(r#"{"type":"ss"}"#).unwrap(),
+            parser.line(r#"{"type":"ss"}"#).ok().unwrap(),
             Some(json!({"type":"ss"}))
         );
     }
 
     #[test]
     fn yaml_preprocess_keeps_short_ids_aliases_and_unknown_fields() {
-        let parser = Parser::new().unwrap();
+        let parser = Parser::new().ok().unwrap();
         let raw = "proxies:\n  - {type: vless, name: yaml, server: 127.0.0.1, reality-opts: {short-id: 00123}, extra: &meta {enabled: false}}\n  - {type: ss, name: alias, extra: *meta}\n";
         let lines = parser.preprocess(raw).unwrap();
         let proxies: Vec<_> = lines
             .lines()
-            .map(|line| parser.line(line).unwrap().unwrap())
+            .map(|line| parser.line(line).ok().unwrap().unwrap())
             .collect();
         assert_eq!(proxies[0]["reality-opts"]["short-id"], "00123");
         assert_eq!(proxies[0]["extra"], json!({"enabled":false}));
@@ -370,10 +373,10 @@ mod tests {
         let raw = r#"{"type":"ss","name":"profile","server":"127.0.0.1","port":443,"cipher":"aes-128-gcm","password":"public-fixture","udp":true,"extra":{"false":false,"nil":null}}"#;
         let began = Instant::now();
         for _ in 0..23 {
-            black_box(Parser::new().unwrap());
+            black_box(Parser::new().ok().unwrap());
         }
         let setup = began.elapsed().as_secs_f64();
-        let parser = Parser::new().unwrap();
+        let parser = Parser::new().ok().unwrap();
         let expected = legacy_line(&parser, raw);
         let began = Instant::now();
         for _ in 0..5524 {
@@ -382,13 +385,15 @@ mod tests {
         let json5 = began.elapsed().as_secs_f64();
         let began = Instant::now();
         for _ in 0..5524 {
-            assert_eq!(black_box(parser.line(raw).unwrap().unwrap()), expected);
+            assert_eq!(black_box(parser.line(raw).ok().unwrap().unwrap()), expected);
         }
         let strict = began.elapsed().as_secs_f64();
         let yaml = format!("proxies:\n{}", format!("  - {raw}\n").repeat(5524));
         let began = Instant::now();
         assert_eq!(parser.preprocess(&yaml).unwrap().lines().count(), 5524);
         let yaml = began.elapsed().as_secs_f64();
-        println!("parse profile: setup_23_s={setup:.6}, json5_5524_s={json5:.6}, strict_5524_s={strict:.6}, yaml_5524_s={yaml:.6}");
+        println!(
+            "parse profile: setup_23_s={setup:.6}, json5_5524_s={json5:.6}, strict_5524_s={strict:.6}, yaml_5524_s={yaml:.6}"
+        );
     }
 }
