@@ -71,8 +71,14 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: 9bab7346e34c0970e9efe836b4fdfa8357da6500
+          ref: 36a8f46f36b4dfda21a801c9184ba5f599bbb75c
           path: .performance/rust
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: inputs.diagnose_health
+        with:
+          ref: 5b68cbb95dc8b2816aaaf9234041048432a604ca
+          path: .performance/rust-baseline
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -103,7 +109,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-9bab7346e34c0970e9efe836b4fdfa8357da6500
+          key: subscription-performance-linux-x64-rust-1.98.0-36a8f46f36b4dfda21a801c9184ba5f599bbb75c
           restore-keys: subscription-performance-linux-x64-rust-1.98.0-
       - name: Build exact original, Rust and unchanged frontend
         run: |
@@ -114,6 +120,13 @@ jobs:
           git -C .performance/original diff --exit-code
           git -C .performance/rust diff --exit-code
           git -C .performance/frontend diff --exit-code
+      - name: Compare node conversion components before and after the optimization
+        if: inputs.diagnose_health
+        run: |
+          cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust script_conversion::tests::profile_node_production -- --ignored --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/conversion-profile-candidate-first.log"
+          cargo +1.98.0 test --manifest-path .performance/rust-baseline/rust/Cargo.toml --target-dir "$GITHUB_WORKSPACE/.performance/rust/rust/target" --locked --release --bin sub-store-rust script_conversion::tests::profile_node_production -- --ignored --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/conversion-profile-baseline.log"
+          cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust script_conversion::tests::profile_node_production -- --ignored --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/conversion-profile-candidate-repeat.log"
+          git -C .performance/rust-baseline diff --exit-code
       - name: Save public build inputs before private measurements
         if: steps.rust-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
@@ -122,7 +135,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-9bab7346e34c0970e9efe836b4fdfa8357da6500
+          key: subscription-performance-linux-x64-rust-1.98.0-36a8f46f36b4dfda21a801c9184ba5f599bbb75c
       - name: Load installed browser workflow and install headless Chromium
         run: |
           agent-browser skills get core
