@@ -38,6 +38,21 @@ struct Record {
     network: Option<String>,
 }
 
+fn parse_ip(raw: &str) -> Option<IpAddr> {
+    if let Ok(ip) = raw.parse() {
+        return Some(ip);
+    }
+    let (address, zone) = raw.split_once('%')?;
+    if zone.is_empty()
+        || !zone
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'.' | b':'))
+    {
+        return None;
+    }
+    address.parse().ok().filter(IpAddr::is_ipv6)
+}
+
 fn lookup<'js>(
     ctx: &Ctx<'js>,
     reader: &Reader<Vec<u8>>,
@@ -47,8 +62,8 @@ fn lookup<'js>(
     let valid_type = value.is_string();
     let array_type = value.is_array();
     let raw = Coerced::<String>::from_js(ctx, value)?.0;
-    let ip = match raw.parse::<IpAddr>() {
-        Ok(ip) => ip,
+    let ip = match parse_ip(&raw) {
+        Some(ip) => ip,
         _ => return reject(ctx, "ValueError", &format!("{raw} is invalid")),
     };
     if let Some(kind) = kind {
@@ -78,6 +93,13 @@ fn lookup<'js>(
             "Invalid argument: Addr or parsable string expected",
         ),
         data => {
+            if data.is_some()
+                && kind.is_none()
+                && raw.contains('.')
+                && matches!(ip, IpAddr::V6(address) if address.to_ipv4_mapped().is_none())
+            {
+                return reject(ctx, "Error", "invalid dotted-quad notation");
+            }
             let network = if data.is_some() && kind.is_none() {
                 Some(
                     result
@@ -120,7 +142,7 @@ pub fn open<'js>(ctx: Ctx<'js>, path: String, kind: String) -> rquickjs::Result<
 
 fn validate<'js>(ctx: Ctx<'js>, value: Value<'js>) -> rquickjs::Result<bool> {
     let raw = Coerced::<String>::from_js(&ctx, value)?.0;
-    Ok(raw.parse::<IpAddr>().is_ok())
+    Ok(parse_ip(&raw).is_some())
 }
 
 fn native_reader<'js>(
@@ -139,4 +161,25 @@ fn native_reader<'js>(
         })?,
     )?;
     Ok(object)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_ip;
+
+    #[test]
+    fn mmdb_accepts_native_ipv6_zone_ids_without_accepting_invalid_ip_text() {
+        for address in ["fe80::1%eth0", "fe80::1%12", "fe80::1%eth-0.1:2"] {
+            assert_eq!(parse_ip(address), parse_ip("fe80::1"));
+        }
+        for address in [
+            "fe80::1%",
+            "fe80::1%eth0%tail",
+            "192.0.2.1%eth0",
+            "fe80::1%é",
+            "fe80::1%eth/0",
+        ] {
+            assert!(parse_ip(address).is_none(), "{address}");
+        }
+    }
 }

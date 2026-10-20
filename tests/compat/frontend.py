@@ -403,8 +403,7 @@ def main():
             assert {item["url"] for item in secondary["host"]["apis"]} == {report["server_url"], secondary_url}, "Saved backend profiles changed"
             assert "rust" not in secondary["cache"]["data"]["data"]["data"]["meta"], "Environment cache retained Rust metadata on Node"
             command("open", report["server_origin"] + "/settings/api")
-            primary_row = '.api-list-item:has(h2:has-text(' + json.dumps(original["host"]["current"]) + '))'
-            click_in_view(primary_row)
+            click_name(original["host"]["current"], "heading")
             command("wait", "--fn", "JSON.parse(localStorage.getItem('hostAPI')).current === " + json.dumps(original["host"]["current"]))
             command("wait", "--fn", "JSON.parse(localStorage.getItem('envCache') || 'null')?.expiry > " + str(secondary["cache"]["expiry"]) + " && JSON.parse(localStorage.getItem('envCache')).data.data.data.meta.node.env.SUB_STORE_BACKEND_CUSTOM_NAME !== 'm5-secondary-oracle'")
             command("wait", "--fn", "performance.getEntriesByType('resource').some(entry => entry.name === " + json.dumps(report["server_url"] + "/api/utils/refresh") + " && entry.responseEnd > 0)")

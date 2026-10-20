@@ -96,7 +96,7 @@ def package_payload(payload, target, metadata):
 
 def delivery_source(environment, evidence):
     source = source_provenance(environment, evidence)
-    result = execute(["git", "ls-files", "--", "LICENSE", "rust", "tests/compat",
+    result = execute(["git", "ls-files", "--", "LICENSE", ".dockerignore", "rust", "tests/compat",
                       ".github/workflows/rust-compat-native.yml"], ROOT, environment, evidence, "distribution-inputs")
     assert result.returncode == 0, "Could not identify delivery build inputs"
     return {**source, "source_commit": source["backend_commit"], "repository": environment["GITHUB_REPOSITORY"],
