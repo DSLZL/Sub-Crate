@@ -49,7 +49,7 @@ ERRORS = {
 PUBLIC_STRINGS = set(KINDS + CASES) | ERRORS | {
     "passed", "failed", "running", "fixture", "real_network", "empty_or_failed",
     "nonempty", "linux_x64", "not_run", "warming", "unpaired", "partial_sources",
-    "parse_diagnostic",
+    "parse_diagnostic", "health_diagnostic",
 }
 NODE_FIELDS = {"name", "type", "server", "port", "ports", "password", "uuid", "sni", "tls",
                "_subName", "_subDisplayName", "_latency", "_resolved", "resolved", "id",
@@ -166,6 +166,37 @@ def stress_script(source):
         require(source.count(old) == 1, "script_anchor")
         source = source.replace(old, new)
     return source
+
+
+def profile_health_script(source):
+    """Diagnostic-only wrappers retain calls/results and never alter the full-run script."""
+    return source + r"""
+const benchmarkOperator = operator;
+operator = async function (...args) {
+  const profile = {}, restore = [], began = Date.now();
+  function measure(owner, key, name) {
+    const original = owner[key], calls = name + '_calls', elapsed = name + '_ms';
+    profile[calls] = profile[elapsed] = 0;
+    owner[key] = function (...values) {
+      const start = Date.now();
+      profile[calls]++;
+      try { return Reflect.apply(original, this, values); }
+      finally { profile[elapsed] += Date.now() - start; }
+    };
+    restore.push(() => { owner[key] = original; });
+  }
+  measure(ProxyUtils, 'hex_md5', 'md5');
+  measure(ProxyUtils, 'produce', 'produce');
+  measure(scriptResourceCache, 'get', 'cache_get');
+  measure(scriptResourceCache, 'set', 'cache_set');
+  try { return await Reflect.apply(benchmarkOperator, this, args); }
+  finally {
+    profile.total_ms = Date.now() - began;
+    for (const reset of restore) reset();
+    $substore.write(profile, '#benchmark-health-profile');
+  }
+};
+"""
 
 
 def distribution(values):
@@ -779,6 +810,10 @@ class Suite:
                 row["output_sha256"] = nodes_hash(last, hopping=case == "parse")
                 row["raw_output_sha256"] = raw_hash
                 row["counts"] = self.counts()
+                if getattr(self.args, "diagnose_health", False) and case != "pre_health":
+                    root = json.loads((state / "root.json").read_bytes())
+                    row["health_profile"] = root["benchmark-health-profile"]
+                    print(f"Health profile {kind}/{case}: " + json.dumps(row["health_profile"], sort_keys=True), flush=True)
                 if case not in ("parse", "pre_health", "no_publisher"):
                     row["work"] = self.audit(state, last, not warm, row["counts"], origin, case == "real", cross_compare=False)
                 if case == "warm" and block == 0:
@@ -978,7 +1013,9 @@ def main():
     parser.add_argument("--fixture-port", type=int)
     parser.add_argument("--meta-port", type=int)
     parser.add_argument("--diagnose-parse", action="store_true")
+    parser.add_argument("--diagnose-health", action="store_true")
     args = parser.parse_args()
+    require(not (args.diagnose_parse and args.diagnose_health), "input")
     soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
     resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
     if args.fixture_port:
@@ -990,6 +1027,8 @@ def main():
     report = {"status": "running", "input_sha256": INPUT_HASH, "imports": [], "samples": []}
     if args.diagnose_parse:
         report["diagnostic"] = "parse_diagnostic"
+    elif args.diagnose_health:
+        report["diagnostic"] = "health_diagnostic"
     suite = Suite(args, report)
     try:
         report["provenance"] = provenance(args)
@@ -1003,10 +1042,15 @@ def main():
         mirrors.mkdir()
         source = get_script()
         variant = stress_script(source)
-        (mirrors / "stress.js").write_text(variant, encoding="utf-8")
         (args.publish / "stress.patch").write_text("".join(difflib.unified_diff(source.splitlines(True), variant.splitlines(True), "pinned.js", "stress.js")), encoding="utf-8")
         report["script"] = {"blob": SCRIPT_BLOB, "original_sha256": SCRIPT_HASH,
                             "stress_sha256": digest(variant.encode()), "changed_sites": 5}
+        if args.diagnose_health:
+            instrumented = profile_health_script(variant)
+            (args.publish / "health-profile.patch").write_text("".join(difflib.unified_diff(variant.splitlines(True), instrumented.splitlines(True), "stress.js", "profile.js")), encoding="utf-8")
+            variant = instrumented
+            report["script"]["profile_sha256"] = digest(variant.encode())
+        (mirrors / "stress.js").write_text(variant, encoding="utf-8")
         suite.publish()
         print("Importing the unchanged file on both backends (five paired observations).", flush=True)
         suite.imports(original, input_file)
@@ -1028,16 +1072,16 @@ def main():
             suite.replay(original)
             if args.diagnose_parse:
                 suite.diagnose_sources()
-            matrix = (("parse", 1), ("pre_health", 1)) if args.diagnose_parse else (("parse", 3), ("pre_health", 1), ("cold", 10), ("warm", 5), ("pressure", 3), ("no_publisher", 3))
+            matrix = (("pre_health", 1), ("cold", 1), ("warm", 1), ("no_publisher", 1)) if args.diagnose_health else (("parse", 1), ("pre_health", 1)) if args.diagnose_parse else (("parse", 3), ("pre_health", 1), ("cold", 10), ("warm", 5), ("pressure", 3), ("no_publisher", 3))
             for case, blocks in matrix:
                 for concurrency in ((1, 2, 4, 8) if case == "pressure" else (1,)):
                     for block in range(blocks):
                         for kind in (KINDS if block % 2 == 0 else KINDS[::-1]):
                             print(f"Measuring {case} / {kind}, block {block + 1}, clients {concurrency}.", flush=True)
                             suite.run_case(kind, case, block, original, concurrency,
-                                           repeats=3 if args.diagnose_parse else None)
-            if args.diagnose_parse:
-                report["status"] = "passed" if all(r["status"] == "passed" for r in report["samples"] + report["direct_sources"]) else "failed"
+                                           repeats=3 if (args.diagnose_parse or args.diagnose_health) and case != "cold" else None)
+            if args.diagnose_parse or args.diagnose_health:
+                report["status"] = "passed" if all(r["status"] == "passed" for r in report["samples"] + report.get("direct_sources", [])) else "failed"
                 print("Short diagnostic status: " + report["status"], flush=True)
                 raise SystemExit(0 if report["status"] == "passed" else 1)
             print("Running the separately reported real HTTP-META/Mihomo pair.", flush=True)

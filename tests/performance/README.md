@@ -4,6 +4,16 @@ Run **Supplied subscription performance** (`rust-performance.yml`) manually on
 `codex/rust-server-parity`. All builds, self-checks, browsers, services and
 measurements run in GitHub Actions; the harness refuses local execution.
 
+Set `inspect_run` to an earlier run ID to print bounded, already sanitized
+field/work diagnostics in Actions without building or downloading bundles locally.
+Set `diagnose_health` for a separate short full-input diagnosis: pre-health,
+one cold full scan, then three warm/no-publisher requests per backend. It retains
+all sources and strict comparisons. Identical diagnostic wrappers count/time
+MD5, producer and cache calls with millisecond clock resolution; their extra
+write/measurement overhead means these are attribution observations, not the
+unmodified full-run performance result. `health-profile.patch` records the
+instrumentation separately from the unchanged five-site `stress.patch`.
+
 Select the manual `diagnose_parse` input for a separate short diagnosis. It keeps
 the same actual file imports and full captured inputs, measures all 22 sources
 individually through local-content preview (no source HTTP), then three complete

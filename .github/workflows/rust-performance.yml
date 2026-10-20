@@ -11,12 +11,16 @@ on:
         description: Only diagnose individual sources and three parse/pre-health requests
         type: boolean
         default: false
+      diagnose_health:
+        description: Profile the full-input health script and three warm requests without the long matrix
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ inputs.inspect_run && 'subscription-report-inspection' || inputs.diagnose_parse && 'subscription-parse-diagnostic' || 'supplied-subscription-performance' }}
+  group: ${{ inputs.inspect_run && 'subscription-report-inspection' || inputs.diagnose_health && 'subscription-health-diagnostic' || inputs.diagnose_parse && 'subscription-parse-diagnostic' || 'supplied-subscription-performance' }}
   cancel-in-progress: false
 
 jobs:
@@ -131,6 +135,9 @@ jobs:
           diagnostic_args=()
           if [[ '${{ inputs.diagnose_parse }}' == 'true' ]]; then
             diagnostic_args=(--diagnose-parse)
+          fi
+          if [[ '${{ inputs.diagnose_health }}' == 'true' ]]; then
+            diagnostic_args+=(--diagnose-health)
           fi
           "$RUNNER_TEMP/performance-venv/bin/python" tests/performance/benchmark.py \
             --original "$GITHUB_WORKSPACE/.performance/original" \
