@@ -46,6 +46,16 @@ class RunnerTests(unittest.TestCase):
         content = case["steps"][0]["body"]["process"][0]["args"]["content"]
         self.assertEqual(content, (fixtures / "script-dns-mmdb-native.js").read_text(encoding="utf-8"))
 
+    def test_service_hash_and_conversion_embed_current_contract_sources(self):
+        fixtures = Path(__file__).parent / "fixtures"
+        cases = json.loads((fixtures / "http-cases.json").read_text(encoding="utf-8"))
+        helpers = next(case for case in cases if case["id"] == "PC-native-script-pure-helpers")
+        content = helpers["steps"][0]["body"]["process"][0]["args"]["content"]
+        self.assertIn((fixtures / "script-helper-contracts.js").read_text(encoding="utf-8").strip(), content)
+        conversion = next(case for case in cases if case["id"] == "PC-native-conversion-helper-contracts")
+        tests = conversion["steps"][0]["body"]["process"][0]["args"]["arguments"]["tests"]
+        self.assertEqual(tests.strip(), (fixtures / "script-conversion-contracts.js").read_text(encoding="utf-8").strip())
+
     def test_delivered_archives_reject_modified_missing_extra_files_and_manifest(self):
         from distribution import package_payload, verify_payload
         for target in ("linux-x64", "windows-x64"):
