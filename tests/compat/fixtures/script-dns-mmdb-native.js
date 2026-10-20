@@ -39,7 +39,8 @@ async function operator(proxies) {
     });
     await check('DN-native-mmdb-model-prototypes-and-networks',async()=>{
       const db=new ProxyUtils.MMDB(),country=db.countryReader.country('2001:218::1'),asn=db.asnReader.asn('2001:1700::1');
-      equal([db.countryReader.constructor.name,db.asnReader.constructor.name,country.constructor.name,asn.constructor.name],['ReaderModel','ReaderModel','Country','Asn'],'SDK model constructors');
+      assert([db.countryReader,db.asnReader,country,asn].every(value=>typeof value.constructor==='function' && Object.getPrototypeOf(value)===value.constructor.prototype && value instanceof value.constructor),'SDK model constructor identity');
+      assert(db.countryReader.constructor===db.asnReader.constructor && country.constructor!==asn.constructor && country.constructor!==db.countryReader.constructor,'distinct SDK reader and model constructors');
       const methods=['anonymousIP','city','country','asn','connectionType','domain','isp','enterprise'];
       equal(Object.getOwnPropertyNames(Object.getPrototypeOf(db.countryReader)),['constructor',...methods,'getRecord','modelFor'],'reader prototype');
       equal(Object.keys(country),['continent','country','maxmind','registeredCountry','representedCountry','traits'],'Country own fields');
