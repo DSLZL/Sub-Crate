@@ -187,7 +187,7 @@ def main():
             }
             return r.width > 0 && r.height > 0 && r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth
                 && el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2))
-                && !el.matches(':disabled, [aria-disabled="true"], .nut-button--loading')
+                && !el.matches(':disabled, [aria-disabled="true"], .nut-button--loading, .nut-button--disabled')
                 && document.fonts.status === 'loaded' && animationsStopped
                 && ['x', 'y', 'width', 'height'].every(key => Math.abs(r[key] - settled[key]) < 0.25);
         })()""")
@@ -382,9 +382,15 @@ def main():
             assert response["status"] == 201, "Secondary backend fixture failed"
             secondary_document = json.loads((secondary_state / "sub-store.json").read_text(encoding="utf-8"))
             command("open", report["server_origin"] + "/settings/api")
+            command("wait", "--load", "networkidle")
             command("wait", ".add-api-wrapper input")
-            command("fill", ".add-api-wrapper input >> nth=0", "m5-secondary")
-            command("fill", ".add-api-wrapper input >> nth=1", secondary_url)
+            name_input = ".add-form-wrapper .input:nth-child(1) input"
+            url_input = ".add-form-wrapper .input:nth-child(2) input"
+            command("fill", name_input, "m5-secondary")
+            expect_value(name_input, "m5-secondary", "Backend name input did not retain its value")
+            command("fill", url_input, secondary_url)
+            expect_value(url_input, secondary_url, "Backend URL input did not retain its value")
+            command("wait", "--fn", "document.querySelector('.preview-full')?.innerText === " + json.dumps(secondary_url))
             click_in_view(".add-api-wrapper .save-btn")
             command("wait", "--fn", "JSON.parse(localStorage.getItem('hostAPI')).current === 'm5-secondary'")
             command("wait", "--fn", "JSON.parse(localStorage.getItem('envCache') || 'null')?.data?.data?.data?.meta?.node?.env?.SUB_STORE_BACKEND_CUSTOM_NAME === 'm5-secondary-oracle'")

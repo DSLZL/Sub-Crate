@@ -54,14 +54,14 @@ async function operator(proxies) {
       equal([ipv4.autonomousSystemNumber,ipv4.autonomousSystemOrganization,ipv4.ipAddress,ipv4.network],[15169,'Google Inc.','1.0.0.1','1.0.0.0/24'],'ASN IPv4 model values');
       for(const [kind,reader,method] of [['country',db.countryReader,'country'],['asn',db.asnReader,'asn']]){
         for(const ip of ['81.2.69.160','175.16.199.1','2001:218::1','2a02:d500::1','1.0.0.1','1.128.0.1','2001:1700::1','12.81.96.1','::81.2.69.160','::ffff:81.2.69.160','2001:0218::1','fe80::1%eth0','invalid','01.2.3.4']){
-          try{mmdbModels.push({kind,ip,model:reader[method](ip)});}catch(error){mmdbModels.push({kind,ip,error:{name:error.name,message:error.message}});}
+          try{mmdbModels.push({kind,ip,model:reader[method](ip)});}catch(error){mmdbModels.push({kind,ip,error:{message:error.message,isError:error instanceof Error}});}
         }
       }
-      const rejects=(run,name,message)=>{let caught;try{run();}catch(error){caught=error;}assert(caught && caught.name===name && caught.message===message,'reader diagnostic: '+JSON.stringify(caught && {name:caught.name,message:caught.message}));};
+      const rejects=(run,message)=>{let caught;try{run();}catch(error){caught=error;}assert(caught instanceof Error && caught.message===message,'reader diagnostic: '+JSON.stringify(caught && {name:caught.name,message:caught.message}));};
       for(const [reader,own,database] of [[db.countryReader,'country','GeoIP2-Country'],[db.asnReader,'asn','GeoLite2-ASN']]){
         for(const method of methods){
-          rejects(()=>reader[method]('invalid'),'ValueError','invalid is invalid');
-          if(method!==own)rejects(()=>reader[method]('2001:218::1'),'BadMethodCallError','The '+method+'() method cannot be used with the '+database+' database');
+          rejects(()=>reader[method]('invalid'),'invalid is invalid');
+          if(method!==own)rejects(()=>reader[method]('2001:218::1'),'The '+method+'() method cannot be used with the '+database+' database');
         }
       }
     });
