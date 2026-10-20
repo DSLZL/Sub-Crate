@@ -347,6 +347,7 @@ mod tests {
                 let input = ctx.json_parse(format!("[{raw}]")).unwrap();
                 let node: Value = input.as_array().unwrap().get(0).unwrap();
                 let target = js.value("ClashMeta").unwrap();
+                let json = js.value("JSON").unwrap();
                 let kind = js.value("internal").unwrap();
                 let options = ctx.json_parse("{}").unwrap();
                 let full = || {
@@ -388,6 +389,23 @@ mod tests {
                     assert_eq!(crate::js_values::project(&ctx, full()).unwrap(), output);
                     println!(
                         "node conversion profile: fixture={label}, block={block}, calls=3096, project_ms={project:.3}, native_with_input_clone_ms={native:.3}, decode_ms={decode:.3}, complete_ms={complete:.3}"
+                    );
+                }
+                // Keep the before/after component sequence identical to the baseline.
+                // These fixtures take the same common-preparation branches for JSON.
+                for block in 1..=3 {
+                    let live_json = elapsed(|| {
+                        produce(
+                            ctx.clone(),
+                            input.clone(),
+                            json.clone(),
+                            Opt(Some(kind.clone())),
+                            Opt(Some(options.clone())),
+                        )
+                        .unwrap()
+                    });
+                    println!(
+                        "live JSON preparation profile: fixture={label}, block={block}, calls=3096, elapsed_ms={live_json:.3}"
                     );
                 }
             });
