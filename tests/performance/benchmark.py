@@ -31,7 +31,7 @@ from urllib.request import urlopen
 import psutil
 
 ORIGINAL = "9cc6b5fac966993364ae33da8797f446bbf7f571"
-RUST = "312cd23096923a4b7b0bb353165958340ac76811"
+RUST = "8019ebcf636850e7a894e1a0c44ba55e812ac753"
 FRONTEND = "4bd7b0acbe65466b933ccea14fc61dbebe036ead"
 INPUT_HASH = "a6e6bb9cbe0587f33de0cf130ec391ecffd3483009888fed0ea59d39492ae890"
 INPUT_NAME = "sub-store_subscription_大杂烩-cron-new_2026-10-20_14-11-50.json"
