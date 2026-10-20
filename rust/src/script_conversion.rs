@@ -1,5 +1,5 @@
 //! Common producer preparation retains caller objects and ECMAScript values.
-use crate::{conversion, js_language::Js, script_pipeline::optional};
+use crate::{clash_output, conversion, js_language::Js, script_pipeline::optional};
 use rquickjs::{Ctx, Value, prelude::Opt};
 
 fn nonblank<'js>(js: &Js<'js>, value: Value<'js>) -> rquickjs::Result<bool> {
@@ -225,18 +225,68 @@ pub(crate) fn produce<'js>(
         }
         return crate::js_values::stringify(&js.ctx, input, 2);
     }
-    let values = input
+    let live = input
         .as_array()
         .ok_or_else(|| js.error("Invalid producer input"))?
         .iter::<Value>()
-        .map(|value| crate::js_values::project(&js.ctx, value?))
+        .collect::<rquickjs::Result<Vec<_>>>()?;
+    let mut values = live
+        .iter()
+        .cloned()
+        .map(|value| crate::js_values::project(&js.ctx, value))
         .collect::<rquickjs::Result<Vec<_>>>()?;
     let options = crate::js_values::project(&js.ctx, options)?;
-    let output =
-        conversion::produce(values, &target, &js.text(kind)?, &options).map_err(|error| {
-            js.error(&match error {
-                conversion::Error::Legacy(message) => message,
-            })
-        })?;
+    let kind = js.text(kind)?;
+    if let Some(family) = clash_output::Family::for_target(&target) {
+        for (proxy, caller) in values.iter_mut().zip(live) {
+            if proxy["network"] != "ws"
+                || (!crate::state::truthy(&options["include-unsupported-proxy"])
+                    && !clash_output::supported(proxy, family))
+            {
+                continue;
+            }
+            let before = proxy
+                .get("ws-opts")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
+            let mut normalized = if crate::state::truthy(&before) {
+                before.clone()
+            } else {
+                serde_json::json!({})
+            };
+            clash_output::websocket(&mut normalized);
+            if clash_output::strip_metadata(family, &kind, &options)
+                && let Some(fields) = normalized.as_object_mut()
+            {
+                fields.shift_remove("_v2ray-http-upgrade-ed");
+            }
+            let mut shared = js.get(&caller, "ws-opts")?;
+            if !js.truthy(&shared)? {
+                shared = rquickjs::Object::new(js.ctx.clone())?.into_value();
+                js.set(&caller, "ws-opts", shared.clone())?;
+            }
+            // A shallow user copy still shares transport options with its source.
+            if let Some(fields) = normalized.as_object() {
+                for (key, value) in fields {
+                    if before.get(key) != Some(value) {
+                        js.set(&shared, key, crate::js_values::decode(&js.ctx, value)?)?;
+                    }
+                }
+            }
+            if let Some(fields) = before.as_object() {
+                for key in fields.keys() {
+                    if normalized.get(key).is_none() {
+                        js.call::<(), _>("remove", (shared.clone(), key.as_str()))?;
+                    }
+                }
+            }
+            proxy["ws-opts"] = normalized;
+        }
+    }
+    let output = conversion::produce(values, &target, &kind, &options).map_err(|error| {
+        js.error(&match error {
+            conversion::Error::Legacy(message) => message,
+        })
+    })?;
     crate::js_values::decode(&js.ctx, &output)
 }

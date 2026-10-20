@@ -1,5 +1,6 @@
 //! Public script helpers backed by native algorithms and existing language utilities.
 use crate::js_language::{self, Js};
+use md5::{Digest, Md5};
 use rquickjs::{
     Array, Ctx, Function, Object, Value,
     prelude::{Func, Opt, This},
@@ -75,18 +76,7 @@ pub(crate) fn md5<'js>(ctx: Ctx<'js>, input: Opt<Value<'js>>) -> rquickjs::Resul
             }
         }
     }
-    let array = Array::new(js.ctx.clone())?;
-    for (index, byte) in bytes.into_iter().enumerate() {
-        array.set(index, byte)?;
-    }
-    let bytes = js.method(
-        js.ctx.globals().get("Uint8Array")?,
-        "from",
-        vec![array.into_value()],
-    )?;
-    let utility: Object = js.ctx.globals().get("SubStoreHashUtilities")?;
-    let hash: Function = utility.get("hexMd5")?;
-    hash.call((bytes,))
+    Ok(format!("{:x}", Md5::digest(&bytes)))
 }
 
 fn yaml_parse<'js>(

@@ -997,6 +997,7 @@ async fn process_response<'js>(
 }
 
 fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
+    crate::js_values::initialize(ctx)?;
     let (cache, root) = job.baseline.borrow().clone();
     ctx.store_userdata(job)
         .map_err(|_| Exception::throw_message(ctx, "Script job already borrowed"))?;

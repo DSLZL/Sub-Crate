@@ -123,7 +123,36 @@ globalThis.runConversionContracts = async function(check, host, operator, assert
     assert(proxy._resolved === false, 'resolved boolean retained');
     const object = JSON.parse(utils.produce(result, 'json'));
     equal(object, result, 'external exact JSON');
-    return {result, external: utils.produce(result, 'JSON')};
+    const websocket = {};
+    for (const target of ['Clash', ...aliases[5], 'Stash', ...aliases[10]]) {
+      const shared = {path: '/socket?token=keep&ed=2048', headers: {Host: 'cdn.example'}, extra: {keep: true}};
+      const source = {type: 'vmess', name: 'shared', server: 'ws.example', port: 443, uuid, network: 'ws', 'ws-opts': shared};
+      const before = copy(shared);
+      utils.produce([{...source}], 'JSON', 'internal');
+      equal(shared, before, 'JSON does not apply a platform transport mutation');
+      const caller = {...source}, headers = shared.headers, extra = shared.extra;
+      const produced = utils.produce([caller], target, 'internal');
+      assert(caller['ws-opts'] === shared && shared.headers === headers && shared.extra === extra, 'shared transport identity ' + target);
+      equal(shared.path, '/socket?token=keep', 'shared early data path ' + target);
+      equal(shared['max-early-data'], 2048, 'shared early data amount ' + target);
+      equal(shared['early-data-header-name'], 'Sec-WebSocket-Protocol', 'shared early data header ' + target);
+      equal(produced.length, 1, 'shared producer output ' + target);
+      websocket[target] = copy(shared);
+    }
+    const filtered = {type: 'h2-connect', name: 'filtered', server: 'ws.example', port: 443, network: 'ws', 'ws-opts': {path: '/ws?ed=1024'}};
+    equal(utils.produce([{...filtered}], 'ClashMeta', 'internal'), [], 'target-specific filter precedes transport effects');
+    equal(filtered['ws-opts'], {path: '/ws?ed=1024'}, 'filtered transport is untouched');
+    const upgrade = {type: 'vmess', name: 'upgrade', server: 'ws.example', port: 443, uuid, network: 'ws', 'ws-opts': {
+      path: '/ws?ed=4096', 'v2ray-http-upgrade': true, 'early-data-header-name': 'old', 'max-early-data': 1}};
+    utils.produce([{...upgrade}], 'ClashMeta', 'internal');
+    equal(upgrade['ws-opts'], {path: '/ws', 'v2ray-http-upgrade': true, 'v2ray-http-upgrade-fast-open': true, '_v2ray-http-upgrade-ed': '4096'}, 'shared upgrade migration and deletions');
+    const retainedUpgrade = copy(upgrade['ws-opts']);
+    utils.produce([{...upgrade}], 'ClashMeta', 'external');
+    assert(!Object.hasOwn(upgrade['ws-opts'], '_v2ray-http-upgrade-ed'), 'external producer deletes shared private metadata');
+    const empty = {type: 'vmess', name: 'empty', server: 'ws.example', port: 443, uuid, network: 'ws', 'ws-opts': {path: '', 'max-early-data': 0}};
+    utils.produce([{...empty}], 'ClashMeta', 'internal');
+    equal(empty['ws-opts'], {path: '/', 'max-early-data': 0}, 'falsy path defaults while explicit early data remains');
+    return {result, external: utils.produce(result, 'JSON'), websocket, upgrade: retainedUpgrade};
   });
   await check('PC98-conversion-platform-filtering-and-overrides', () => {
     const supported = {...copy(ss), supported: {ClashMeta: false}};

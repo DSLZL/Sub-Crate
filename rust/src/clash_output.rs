@@ -11,6 +11,20 @@ pub enum Family {
     Shadowrocket,
 }
 
+impl Family {
+    pub(crate) fn for_target(target: &str) -> Option<Self> {
+        match target {
+            "Clash" => Some(Self::Clash),
+            "meta" | "clashmeta" | "clash.meta" | "Clash.Meta" | "ClashMeta" | "mihomo" | "Mihomo" => {
+                Some(Self::Meta)
+            }
+            "stash" | "Stash" => Some(Self::Stash),
+            "shadowrocket" | "Shadowrocket" | "ShadowRocket" => Some(Self::Shadowrocket),
+            _ => None,
+        }
+    }
+}
+
 fn number(value: &Value, key: &str) -> f64 {
     value.get(key).map(codec::to_number).unwrap_or(f64::NAN)
 }
@@ -62,7 +76,7 @@ fn snell_conflict(proxy: &Value) -> bool {
             .any(|key| !proxy["obfs-opts"][*key].is_null())
 }
 
-fn supported(proxy: &Value, family: Family) -> bool {
+pub(crate) fn supported(proxy: &Value, family: Family) -> bool {
     let kind = text(proxy, "type");
     let network = text(proxy, "network");
     let mode = &proxy["plugin-opts"]["mode"];
@@ -325,34 +339,41 @@ fn transport(proxy: &mut Value, kind: &str, network: &str) {
         if !truthy(&proxy["ws-opts"]) {
             proxy["ws-opts"] = json!({});
         }
-        let options = &mut proxy["ws-opts"];
-        if !truthy(&options["path"]) {
-            options["path"] = json!("/");
-        }
-        let raw = text(options, "path");
-        if let (path, Some(ed)) = path_ed(&raw) {
-            options["path"] = json!(path);
-            if truthy(&options["v2ray-http-upgrade"]) {
-                options["v2ray-http-upgrade-fast-open"] = json!(true);
-                if options["_v2ray-http-upgrade-ed"].is_null()
-                    || text(options, "_v2ray-http-upgrade-ed").is_empty()
-                {
-                    options["_v2ray-http-upgrade-ed"] = json!(ed);
-                }
-            } else {
-                if options["early-data-header-name"].is_null() {
-                    options["early-data-header-name"] = json!("Sec-WebSocket-Protocol");
-                }
-                if options["max-early-data"].is_null() {
-                    options["max-early-data"] = json!(ed.parse::<u64>().unwrap());
-                }
+        websocket(&mut proxy["ws-opts"]);
+    }
+}
+
+pub(crate) fn websocket(options: &mut Value) {
+    if !truthy(&options["path"]) {
+        options["path"] = json!("/");
+    }
+    let raw = text(options, "path");
+    if let (path, Some(ed)) = path_ed(&raw) {
+        options["path"] = json!(path);
+        if truthy(&options["v2ray-http-upgrade"]) {
+            options["v2ray-http-upgrade-fast-open"] = json!(true);
+            if options["_v2ray-http-upgrade-ed"].is_null()
+                || text(options, "_v2ray-http-upgrade-ed").is_empty()
+            {
+                options["_v2ray-http-upgrade-ed"] = json!(ed);
+            }
+        } else {
+            if options["early-data-header-name"].is_null() {
+                options["early-data-header-name"] = json!("Sec-WebSocket-Protocol");
+            }
+            if options["max-early-data"].is_null() {
+                options["max-early-data"] = json!(ed.parse::<u64>().unwrap());
             }
         }
-        if truthy(&options["v2ray-http-upgrade"]) {
-            remove(options, "early-data-header-name");
-            remove(options, "max-early-data");
-        }
     }
+    if truthy(&options["v2ray-http-upgrade"]) {
+        remove(options, "early-data-header-name");
+        remove(options, "max-early-data");
+    }
+}
+
+pub(crate) fn strip_metadata(family: Family, kind: &str, opts: &Value) -> bool {
+    kind != "internal" || (family == Family::Meta && truthy(&opts["delete-underscore-fields"]))
 }
 
 fn wireguard(proxy: &mut Value, cidr: bool) {
@@ -610,7 +631,7 @@ fn normalize(proxy: &mut Value, family: Family, kind: &str, opts: &Value) {
     ] {
         remove(proxy, key);
     }
-    if kind != "internal" || (family == Family::Meta && truthy(&opts["delete-underscore-fields"])) {
+    if strip_metadata(family, kind, opts) {
         proxy
             .as_object_mut()
             .unwrap()
