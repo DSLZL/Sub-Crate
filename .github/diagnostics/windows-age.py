@@ -4,13 +4,14 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/compat"))
 from distribution import unpack_archive, verify_payload
-from runner import run_cases
-from service import listener
+from runner import request, run_cases
+from service import isolate_age_requests, listener
 from upstream import ControlledUpstream
 
 if os.environ.get("GITHUB_ACTIONS") != "true" or os.name != "nt":
@@ -35,24 +36,41 @@ report = {"kind": "diagnostic-only", "historical_source": manifest["source_commi
           "binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(), "observations": []}
 environment = {key: value for key, value in os.environ.items() if not key.startswith("SUB_STORE_")}
 environment["SUB_STORE_BACKEND_API_HOST"] = "127.0.0.1"
-for instrumented in (False, True):
-    for iteration in range(8):
-        label = f"{'stages' if instrumented else 'original'}-{iteration}"
+for mode in ("original", "stages", "contended-original", "contended-isolated"):
+    for iteration in range(2 if mode.startswith("contended") else 4):
+        label = f"{mode}-{iteration}"
         state = output / label
         state.mkdir()
         case = copy.deepcopy(original)
-        if instrumented:
+        if mode == "contended-isolated":
+            isolate_age_requests([case])
+        if mode in ("stages", "contended-original"):
             args = case["steps"][0]["body"]["process"][0]["args"]
-            before = "const check=async(id,callback)=>{results[id]=await callback();passed.push(id);};"
+            before = "const check=async(id,callback)=>{if($arguments.check && id!==$arguments.check)return;results[id]=await callback();passed.push(id);};"
             after = "const clock=Date.now.bind(Date); const check=async(id,callback)=>{const start=clock();console.log('AGE_STAGE',id,'start');try{results[id]=await callback();passed.push(id);}finally{console.log('AGE_STAGE',id,'milliseconds',clock()-start);}};"
             assert args["content"].count(before) == 1
             args["content"] = args["content"].replace(before, after)
         env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}
         with ControlledUpstream() as upstream, listener(binary, env, output, report, label) as url:
-            start = time.monotonic()
-            results = run_cases(url, state, [case], upstream)
-            observed = {"label": label, "seconds": time.monotonic() - start,
-                        "status": results[0]["status"], "error": results[0].get("error")}
+            workers = []
+            try:
+                if mode.startswith("contended"):
+                    for _ in range(os.cpu_count() or 1):
+                        workers.append(subprocess.Popen([sys.executable, "-c",
+                            "import time; end=time.monotonic()+30\nwhile time.monotonic()<end: pass"]))
+                    time.sleep(0.5)
+                start = time.monotonic()
+                results = run_cases(url, state, [case], upstream)
+                observed = {"label": label, "seconds": time.monotonic() - start,
+                            "status": results[0]["status"], "error": results[0].get("error"),
+                            "http_steps": len(results[0]["steps"]), "load_workers": len(workers)}
+                observed["health_after"] = request(url, {"path": "/api/utils/env"})["status"]
+                if observed["status"] == "failed":
+                    time.sleep(5)  # Keep the original request alive long enough to observe completion.
+            finally:
+                for worker in workers:
+                    worker.terminate()
+                    worker.wait(timeout=5)
             print(json.dumps(observed), flush=True)
             report["observations"].append(observed)
             (state / "case.json").write_text(json.dumps(results, ensure_ascii=False), encoding="utf-8")
@@ -60,3 +78,9 @@ for instrumented in (False, True):
             if "AGE_STAGE" in line:
                 print(label, line, flush=True)
         (output / "summary.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+
+assert any(item["status"] == "failed" and item["error"] == "TimeoutError: timed out"
+           and item["health_after"] == 200 for item in report["observations"]
+           if item["label"].startswith("contended-original")), "CPU contention did not reproduce the timeout"
+assert all(item["status"] == "passed" and item["http_steps"] == 6
+           for item in report["observations"] if item["label"].startswith("contended-isolated")), "Isolated requests still fail under contention"

@@ -26,6 +26,13 @@ existing fallback policies. Raw input starting `<!DOCTYPE html>` is discarded
 before parsing. Node builtins, require/npm loading and native addons are excluded;
 stored Node-only scripts remain intact.
 
+Choose a script's general JavaScript variant when it offers both JS and Node
+versions. Injected `Buffer`, timers, lodash, YAML and `ProxyUtils` remain available.
+`require('node:fs')`, `process.env`, `$substore.node`, npm packages and `.node`
+addons are unavailable; scripts using them fail under the existing script error
+policy. There is no Node fallback or automatic Node-to-JS translation. This
+script boundary does not remove the server's native file, network or DNS features.
+
 Scripts can use the native storage/cache, HTTP, DNS, MMDB, Gist, age, download,
 flow and conversion helpers. Explicit script writes retain their original timing
 across failures and restart. The development feasibility example remains separate.

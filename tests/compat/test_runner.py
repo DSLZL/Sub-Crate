@@ -15,6 +15,30 @@ import runner
 
 
 class RunnerTests(unittest.TestCase):
+    def test_age_requests_keep_every_crypto_group_and_upstream_assertion(self):
+        from service import isolate_age_requests
+        fixtures = Path(__file__).parent / "fixtures"
+        cases = json.loads((fixtures / "http-cases.json").read_text(encoding="utf-8"))
+        original = next(case for case in cases if case["id"] == "PC-native-age-public-and-download")
+        before = copy.deepcopy(original["steps"][0])
+        content = before["body"]["process"][0]["args"]["content"]
+        self.assertEqual(content, (fixtures / "script-age-native.js").read_text(encoding="utf-8"))
+        expected = before["expect"]["json_contains"]["data"]["processed"][0]["ageVerified"]
+        isolate_age_requests(cases)
+        self.assertEqual(len(original["steps"]), len(expected))
+        observed = []
+        outgoing = []
+        for check, step in zip(expected, original["steps"], strict=True):
+            self.assertEqual(step["body"]["process"][0]["args"]["arguments"].pop("check"), check)
+            observed.extend(step["expect"]["json_contains"]["data"]["processed"][0]["ageVerified"])
+            outgoing.extend(step["upstream"])
+            restored = copy.deepcopy(step)
+            restored["expect"] = before["expect"]
+            restored["upstream"] = before["upstream"]
+            self.assertEqual(restored, before)
+        self.assertEqual(observed, expected)
+        self.assertEqual(outgoing, before["upstream"])
+
     def test_service_mmdb_script_matches_its_reviewable_source(self):
         fixtures = Path(__file__).parent / "fixtures"
         cases = json.loads((fixtures / "http-cases.json").read_text(encoding="utf-8"))

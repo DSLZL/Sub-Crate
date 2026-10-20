@@ -9,6 +9,13 @@ Accept only an exact source revision with all six successful jobs and its final
 source-to-result review. The runner's individual suites and contained probe are
 bounded checks, not independent whole-product acceptance.
 
+Keep only checked-in test sources, locks and fixed fixtures in local checkouts.
+Install dependencies, generate helpers, build products and execute tests on
+GitHub Actions runners. `evidence/`, `.generated/`, `node_modules/` and
+`__pycache__/` are disposable runner outputs, not a local evidence archive.
+Review Actions summaries/logs remotely and fetch only a specific small report
+when needed; do not download and expand whole runs into this directory.
+
 The sections below preserve the original discovery and contained-proof history;
 their milestone/pending statements describe those earlier stages. The final
 production boundary is the acceptance document above.

@@ -3,7 +3,7 @@ async function operator(proxies) {
   const passed=[], results={};
   const assert=(value,message)=>{if(!value) throw new Error(message);};
   const equal=(a,b,message)=>assert(JSON.stringify(a)===JSON.stringify(b),message);
-  const check=async(id,callback)=>{results[id]=await callback();passed.push(id);};
+  const check=async(id,callback)=>{if($arguments.check && id!==$arguments.check)return;results[id]=await callback();passed.push(id);};
   const reject=async(callback,predicate)=>{
     try {await callback();} catch(error) {assert(predicate(error),'age error: '+error?.message);return;}
     throw new Error('age operation did not reject');

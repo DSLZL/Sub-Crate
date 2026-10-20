@@ -62,6 +62,9 @@ not a public release, registry publication or production cutover.
 - Node builtins/globals, CommonJS `require`, npm loading, native addons,
   `$substore.node` and proxy-app-only hosts are excluded. Such stored scripts
   survive import/export/restart and receive execution errors when invoked.
+  Use a script's general JS variant; injected Buffer, timers and the documented
+  Sub-Store helpers remain supported. The frontend's `Node` discriminator does
+  not advertise a Node script runtime. No Node fallback or translation is provided.
 - RF01 fixes native Windows paths. RF02 returns a missing-token artifact-restore
   interface error and keeps the process alive. Their original failures and the
   narrowly approved reference patch are retained.
