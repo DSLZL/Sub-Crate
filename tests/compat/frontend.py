@@ -41,10 +41,18 @@ def check_network(entries, cases, backend_url):
         "FE20-restore-manual-backup": [("POST", "/api/storage", 200), ("GET", "/api/utils/refresh", 200),
                                         ("DELETE", "/api/sub/ui-restored-sub", 200),
                                         ("DELETE", "/api/collection/ui-restored-col", 200)],
+        "FE21-configured-backend-switch-and-refresh": [],
     }
     observed = [(entry["request"]["method"], urlsplit(entry["request"]["url"])._replace(query="", fragment="").geturl(), entry["response"]["status"])
                 for entry in entries]
     for case in cases:
+        if case["id"] == "FE21-configured-backend-switch-and-refresh":
+            started = datetime.fromisoformat(case["started_at"])
+            switched = {(entry["request"]["method"], urlsplit(entry["request"]["url"])._replace(query="", fragment="").geturl(), entry["response"]["status"])
+                        for entry in entries if datetime.fromisoformat(entry["startedDateTime"]) >= started}
+            for base in (backend_url, case["secondary_backend_url"]):
+                for path in ("/api/utils/env", "/api/subs", "/api/utils/refresh"):
+                    assert ("GET", base.rstrip("/") + path, 200) in switched, f"Backend switching did not refresh {base}{path}"
         for method, path, status in required[case["id"]]:
             path = path.format(**case)
             parsed = urlsplit(backend_url)
@@ -65,7 +73,8 @@ def check_network(entries, cases, backend_url):
                            for entry in entries), "Permanent UI deletion missing from HAR"
         case.update(status="passed", network_verified=True)
     origin = urlsplit(backend_url)._replace(path="", query="", fragment="").geturl()
-    return [{"method": method, "url": url, "status": status} for method, url, status in observed if url.startswith((backend_url.rstrip("/") + "/", origin + "/share/"))]
+    prefixes = (backend_url.rstrip("/") + "/", origin + "/share/", *(case["secondary_backend_url"].rstrip("/") + "/" for case in cases if "secondary_backend_url" in case))
+    return [{"method": method, "url": url, "status": status} for method, url, status in observed if url.startswith(prefixes)]
 
 
 class StateSliceComplete(Exception):
@@ -120,7 +129,8 @@ def main():
                                     "FE07-preview-file", "FE08-create-count-share", "FE09-open-public-share",
                                     "FE10-reopen-update-count-share", "FE11-create-collection", "FE12-reopen-rename-collection",
                                     "FE13-preview-collection", "FE14-archive-file", "FE15-restore-file-archive", "FE16-save-log-settings",
-                                    "FE17-read-filter-logs", "FE18-clear-logs", "FE19-download-manual-backup", "FE20-restore-manual-backup"]
+                                    "FE17-read-filter-logs", "FE18-clear-logs", "FE19-download-manual-backup", "FE20-restore-manual-backup",
+                                    "FE21-configured-backend-switch-and-refresh"]
     command_index = 0
 
     def command(*arguments):
@@ -355,6 +365,56 @@ def main():
         command("wait", "--text", "ui-restored-col")
         report["cases"].append({"id": "FE20-restore-manual-backup", "source": "src/views/My.vue:1253,1262; src/utils/initApp.ts:36,76", "status": "browser_passed"})
 
+    def switch_backend():
+        started = datetime.now(timezone.utc).isoformat()
+        profile_script = "({host:JSON.parse(localStorage.getItem('hostAPI')),cache:JSON.parse(localStorage.getItem('envCache'))})"
+        original = evaluate(profile_script)
+        primary = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+        secondary_state = output / "switch-backend-state"
+        secondary_state.mkdir()
+        secondary_environment = {key: value for key, value in environment.items() if not key.startswith("SUB_STORE_")}
+        secondary_environment.update(SUB_STORE_DATA_BASE_PATH=str(secondary_state), SUB_STORE_BACKEND_API_HOST="127.0.0.1",
+                                     SUB_STORE_BACKEND_CUSTOM_NAME="m5-secondary-oracle", SUB_STORE_CORS_ALLOWED_ORIGINS=report["server_origin"])
+        secondary_report = report["switch_backend"] = {}
+        with oracle(node, secondary_environment, output, secondary_report, "switch-backend") as secondary_url:
+            response = request(secondary_url, {"method": "POST", "path": "/api/subs", "body": {
+                "name": "m5-secondary-only", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#secondary"}})
+            assert response["status"] == 201, "Secondary backend fixture failed"
+            secondary_document = json.loads((secondary_state / "sub-store.json").read_text(encoding="utf-8"))
+            command("open", report["server_origin"] + "/settings/api")
+            command("wait", ".add-api-wrapper input")
+            command("fill", ".add-api-wrapper input >> nth=0", "m5-secondary")
+            command("fill", ".add-api-wrapper input >> nth=1", secondary_url)
+            click_in_view(".add-api-wrapper .save-btn")
+            command("wait", "--fn", "JSON.parse(localStorage.getItem('hostAPI')).current === 'm5-secondary'")
+            command("wait", "--fn", "JSON.parse(localStorage.getItem('envCache') || 'null')?.data?.data?.data?.meta?.node?.env?.SUB_STORE_BACKEND_CUSTOM_NAME === 'm5-secondary-oracle'")
+            command("wait", "--fn", "performance.getEntriesByType('resource').some(entry => entry.name === " + json.dumps(secondary_url + "/api/utils/refresh") + " && entry.responseEnd > 0)")
+            command("open", report["server_origin"] + "/subs")
+            command("wait", '.sub-item-title[title="m5-secondary-only"]')
+            assert evaluate("document.querySelector('.sub-item-title[title=\"ui-restored-sub\"]') === null"), "Primary data leaked into secondary UI"
+            secondary = evaluate(profile_script)
+            assert secondary["host"]["current"] == "m5-secondary", "Configured secondary backend did not survive reload"
+            assert {item["url"] for item in secondary["host"]["apis"]} == {report["server_url"], secondary_url}, "Saved backend profiles changed"
+            assert "rust" not in secondary["cache"]["data"]["data"]["data"]["meta"], "Environment cache retained Rust metadata on Node"
+            command("open", report["server_origin"] + "/settings/api")
+            primary_row = '.api-list-item:has(h2:has-text(' + json.dumps(original["host"]["current"]) + '))'
+            click_in_view(primary_row)
+            command("wait", "--fn", "JSON.parse(localStorage.getItem('hostAPI')).current === " + json.dumps(original["host"]["current"]))
+            command("wait", "--fn", "JSON.parse(localStorage.getItem('envCache') || 'null')?.expiry > " + str(secondary["cache"]["expiry"]) + " && JSON.parse(localStorage.getItem('envCache')).data.data.data.meta.node.env.SUB_STORE_BACKEND_CUSTOM_NAME !== 'm5-secondary-oracle'")
+            command("wait", "--fn", "performance.getEntriesByType('resource').some(entry => entry.name === " + json.dumps(report["server_url"] + "/api/utils/refresh") + " && entry.responseEnd > 0)")
+            command("open", report["server_origin"] + "/subs")
+            command("wait", '.sub-item-title[title="ui-restored-sub"]')
+            assert evaluate("document.querySelector('.sub-item-title[title=\"m5-secondary-only\"]') === null"), "Secondary data remained after switching back"
+            restored = evaluate(profile_script)
+            assert restored["host"] == {**original["host"], "apis": secondary["host"]["apis"]}, "Configured primary backend did not survive reload"
+            check_json(restored["cache"]["data"]["data"]["data"], original["cache"]["data"]["data"]["data"])
+            assert restored["cache"]["expiry"] > original["cache"]["expiry"], "Primary environment cache was not refreshed"
+            check_json(json.loads((state / "sub-store.json").read_text(encoding="utf-8")), primary)
+            check_json(json.loads((secondary_state / "sub-store.json").read_text(encoding="utf-8")), secondary_document)
+            (output / "frontend-configured-profiles.json").write_text(json.dumps({"original": original, "secondary": secondary, "restored": restored}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            report["cases"].append({"id": "FE21-configured-backend-switch-and-refresh", "source": "src/views/settings/APISetting.vue:413,513; src/hooks/useHostAPI.ts:86; src/utils/initApp.ts:35",
+                                    "started_at": started, "secondary_backend_url": secondary_url, "status": "browser_passed"})
+
     def restart_and_delete():
         original_url, original_origin = report["server_url"], report["server_origin"]
         direct_url = report.get("direct_backend_url", original_url)
@@ -426,12 +486,12 @@ def main():
         artifact = json.dumps(assets, sort_keys=True).encode("utf-8")
         report["frontend_artifact_sha256"] = hashlib.sha256(artifact).hexdigest()
         (output / "frontend-assets.json").write_bytes(artifact)
+        bundle = execute([node, "bundle-esbuild.js"], BACKEND, environment, output, "backend-bundle")
+        assert bundle.returncode == 0, "Backend oracle bundle failed"
         if args.rust_binary:
             from service import listener
             server = listener(args.rust_binary.resolve(strict=True), environment, output, report)
         else:
-            bundle = execute([node, "bundle-esbuild.js"], BACKEND, environment, output, "backend-bundle")
-            assert bundle.returncode == 0, "Backend bundle failed"
             server = oracle(node, environment, output, report)
         with ControlledUpstream() as upstream, server as backend_url:
             if args.standalone:
@@ -598,6 +658,7 @@ def main():
             report["cases"].append({"id": "FE18-clear-logs", "source": "src/components/LogsPanel.vue:639,652", "status": "browser_passed"})
             download_backup()
             restore_backup()
+            switch_backend()
             report["upstream_requests"] = upstream.requests
             command("screenshot", output / "frontend-page.png")
             report["page_errors"] = command("errors")

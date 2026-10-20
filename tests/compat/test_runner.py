@@ -666,6 +666,28 @@ class RunnerTests(unittest.TestCase):
             with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
                 check_network(entries, cases, "http://127.0.0.1:1/backend")
 
+    def test_backend_switch_requires_both_origins_after_switch_started(self):
+        from frontend import check_network
+        primary, secondary = "http://127.0.0.1:1/backend", "http://127.0.0.1:2"
+        case = {"id": "FE21-configured-backend-switch-and-refresh", "secondary_backend_url": secondary,
+                "started_at": "2026-10-20T00:00:01+00:00"}
+        entries = [{"request": {"method": "GET", "url": base + path}, "response": {"status": 200},
+                    "startedDateTime": "2026-10-20T00:00:02.000Z"}
+                   for base in (primary, secondary) for path in ("/api/utils/env", "/api/subs", "/api/utils/refresh")]
+        self.assertEqual(len(check_network(entries, [case], primary)), 6)
+        for mutation in ("missing", "old", "failed", "wrong-origin"):
+            changed = copy.deepcopy(entries)
+            if mutation == "missing":
+                changed.pop()
+            elif mutation == "old":
+                changed[-1]["startedDateTime"] = "2026-10-20T00:00:00.000Z"
+            elif mutation == "failed":
+                changed[-1]["response"]["status"] = 500
+            else:
+                changed[-1]["request"]["url"] = primary + "/api/utils/refresh"
+            with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
+                check_network(changed, [case], primary)
+
     def test_command_evidence_with_and_without_rtk(self):
         import reference
         import subprocess
