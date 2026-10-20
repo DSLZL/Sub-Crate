@@ -59,7 +59,7 @@ class RunnerTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "Wrong ELF architecture"):
                 binary_imports(binary, "linux-x64")
 
-    def test_native_distribution_rejects_a_crate_without_license_notices(self):
+    def test_native_distribution_checks_transitive_notices_and_excludes_other_targets(self):
         from distribution import collect_notices
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -73,12 +73,33 @@ class RunnerTests(unittest.TestCase):
             dependency = root / "dependency"
             dependency.mkdir()
             (dependency / "Cargo.toml").write_text("", encoding="utf-8")
+            (dependency / "LICENSE").write_text("dependency license", encoding="utf-8")
+            transitive = root / "transitive"
+            transitive.mkdir()
             payload = root / "payload"
             payload.mkdir()
-            metadata = {"packages": [{"name": "unlicensed", "version": "1.0.0",
-                        "manifest_path": str(dependency / "Cargo.toml"), "license": "MIT"}]}
+            metadata = {"packages": [
+                {"id": "root", "manifest_path": str(root / "rust/Cargo.toml")},
+                {"id": "dependency", "name": "dependency", "version": "1.0.0",
+                 "manifest_path": str(dependency / "Cargo.toml"), "license": "MIT"},
+                {"id": "transitive", "name": "transitive", "version": "1.0.0",
+                 "manifest_path": str(transitive / "Cargo.toml"), "license": "MIT"},
+                {"id": "android-only", "name": "android-only", "version": "1.0.0",
+                 "manifest_path": str(root / "not-downloaded/Cargo.toml"), "license": "MIT"}],
+                "resolve": {"root": "root", "nodes": [
+                    {"id": "root", "dependencies": ["dependency"]},
+                    {"id": "dependency", "dependencies": ["transitive"]},
+                    {"id": "transitive", "dependencies": []},
+                    {"id": "android-only", "dependencies": []}]}}
             with patch("distribution.ROOT", root), self.assertRaisesRegex(AssertionError, "Missing dependency notices"):
                 collect_notices(metadata, payload, root / "toolchain")
+            (transitive / "LICENSE").write_text("transitive license", encoding="utf-8")
+            second_payload = root / "licensed-payload"
+            second_payload.mkdir()
+            with patch("distribution.ROOT", root):
+                self.assertEqual(collect_notices(metadata, second_payload, root / "toolchain"), 2)
+            notices = json.loads((second_payload / "third-party.json").read_text(encoding="utf-8"))
+            self.assertEqual({item["name"] for item in notices["crates"]}, {"dependency", "transitive"})
 
     def test_early_http_rejection_receives_one_complete_json_request_without_retry(self):
         from http.client import HTTPConnection

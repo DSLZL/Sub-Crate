@@ -124,9 +124,17 @@ def collect_notices(metadata, directory, sysroot):
         destination = notices / "rust-toolchain" / path.relative_to(toolchain)
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, destination)
+    graph = {node["id"]: node["dependencies"] for node in metadata["resolve"]["nodes"]}
+    reachable, pending = set(), [metadata["resolve"]["root"]]
+    while pending:
+        package_id = pending.pop()
+        if package_id not in reachable:
+            reachable.add(package_id)
+            pending.extend(graph[package_id])
+    assert reachable <= {package["id"] for package in metadata["packages"]}, "Incomplete Cargo package metadata"
     crates = []
     for package in metadata["packages"]:
-        if Path(package["manifest_path"]).resolve() == (ROOT / "rust/Cargo.toml").resolve():
+        if package["id"] not in reachable or package["id"] == metadata["resolve"]["root"]:
             continue
         base = Path(package["manifest_path"]).parent
         paths = {path for path in base.rglob("*") if path.is_file()
@@ -145,7 +153,7 @@ def collect_notices(metadata, directory, sysroot):
         crates.append({"name": package["name"], "version": package["version"],
                        "license": package.get("license"), "source": package.get("source"), "notices": copied})
     (directory / "third-party.json").write_text(json.dumps({
-        "scope": "All locked Cargo metadata packages, including target-specific dependencies", "crates": crates,
+        "scope": "Reachable locked dependencies in Cargo's target-filtered resolve graph", "crates": crates,
         "embedded_notices": [path.name for path in utility_files]}, indent=2) + "\n", encoding="utf-8")
     return len(crates)
 
@@ -165,7 +173,8 @@ def native(args, environment, evidence, report):
     head = command(["git", "rev-parse", "HEAD"], "distribution-head")
     toolchain = command(["rustc", "-vV"], "rustc-version")
     assert f"host: {triple}" in toolchain, "Wrong compiler host"
-    metadata = json.loads(command(["cargo", "metadata", "--manifest-path", "rust/Cargo.toml", "--locked", "--format-version", "1"], "cargo-metadata"))
+    metadata = json.loads(command(["cargo", "metadata", "--manifest-path", "rust/Cargo.toml", "--locked",
+                                   "--format-version", "1", "--filter-platform", triple], "cargo-metadata"))
     package = next(item for item in metadata["packages"] if item["id"] == metadata["resolve"]["root"])
     payload = args.output / (f"sub-store-rust-{package['version']}-{args.target}")
     payload.mkdir()
