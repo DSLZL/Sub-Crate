@@ -15,6 +15,13 @@ import runner
 
 
 class RunnerTests(unittest.TestCase):
+    def test_service_mmdb_script_matches_its_reviewable_source(self):
+        fixtures = Path(__file__).parent / "fixtures"
+        cases = json.loads((fixtures / "http-cases.json").read_text(encoding="utf-8"))
+        case = next(item for item in cases if item["id"] == "PC-native-dns-mmdb-and-resolve")
+        content = case["steps"][0]["body"]["process"][0]["args"]["content"]
+        self.assertEqual(content, (fixtures / "script-dns-mmdb-native.js").read_text(encoding="utf-8"))
+
     def test_delivered_archives_reject_modified_missing_extra_files_and_manifest(self):
         from distribution import package_payload, verify_payload
         for target in ("linux-x64", "windows-x64"):

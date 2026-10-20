@@ -6,7 +6,7 @@ const {createRequire} = require('node:module');
 if (process.env.GITHUB_ACTIONS !== 'true') throw new Error('Build native utilities in GitHub Actions only');
 const root = path.resolve(__dirname, '../..');
 const fromBackend = createRequire(path.join(root, 'backend/package.json'));
-function snapshot(pins, contents, globalName, filenames, provenance = {}) {
+function snapshot(pins, contents, globalName, filenames, provenance = {}, keepNames = false) {
 const build = fromBackend('esbuild').buildSync({
   absWorkingDir: root,
   stdin: {
@@ -21,6 +21,7 @@ const build = fromBackend('esbuild').buildSync({
   globalName,
   target: 'es2020',
   minify: true,
+  keepNames,
   legalComments: 'none',
 });
 const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
@@ -124,3 +125,12 @@ snapshot(new Map([['shoutrrr-ts', '0.2.0']]),
   'export {send} from ' + JSON.stringify(nativeEntry) + ';',
   'SubStoreNotificationUtilities', ['notification-utilities.js', 'NOTIFICATION-LICENSES.txt', 'notification-utilities.json'],
   {...notification.provenance, adapter_sha256: crypto.createHash('sha256').update(fs.readFileSync(adapterPath).toString('utf8').replace(/\r\n/g, '\n')).digest('hex')});
+const mmdbEntry = path.join(root, 'backend/node_modules/@maxmind/geoip2-node/dist/src/readerModel.js');
+const mmdbAdapterPath = path.join(__dirname, 'mmdb-adapter.cjs');
+const mmdb = require(mmdbAdapterPath)(fs.readFileSync(mmdbEntry));
+const nativeMmdbEntry = path.join(path.dirname(mmdbEntry), 'readerModel-native.js');
+fs.writeFileSync(nativeMmdbEntry, mmdb.source);
+snapshot(new Map([['@maxmind/geoip2-node', '5.0.0']]),
+  'export {default as ReaderModel} from ' + JSON.stringify(nativeMmdbEntry) + ';',
+  'SubStoreMmdbUtilities', ['mmdb-utilities.js', 'MMDB-LICENSES.txt', 'mmdb-utilities.json'],
+  {...mmdb.provenance, adapter_sha256: crypto.createHash('sha256').update(fs.readFileSync(mmdbAdapterPath).toString('utf8').replace(/\r\n/g, '\n')).digest('hex')}, true);
