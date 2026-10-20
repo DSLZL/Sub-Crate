@@ -1,0 +1,92 @@
+name: Supplied subscription performance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supplied-subscription-performance
+  cancel-in-progress: false
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: 9cc6b5fac966993364ae33da8797f446bbf7f571
+          path: .performance/original
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: 948c665be09a19ba5502694b5fca49fab27ce6a4
+          path: .performance/rust
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: sub-store-org/Sub-Store-Front-End
+          ref: 4bd7b0acbe65466b933ccea14fc61dbebe036ead
+          path: .performance/frontend
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24.16.0
+          package-manager-cache: false
+      - name: Install fixed tooling and locked application dependencies
+        run: |
+          npm install --global pnpm@11.0.9 agent-browser@0.27.3
+          pnpm --dir .performance/original/backend install --frozen-lockfile
+          pnpm --dir .performance/frontend install --frozen-lockfile
+          python3.12 -m venv "$RUNNER_TEMP/performance-venv"
+          "$RUNNER_TEMP/performance-venv/bin/pip" install --require-hashes --only-binary=:all: -r tests/performance/requirements.txt
+      - name: Build exact original, Rust and unchanged frontend
+        run: |
+          (cd .performance/original/backend && node bundle-esbuild.js)
+          pnpm --dir .performance/frontend build
+          rustup toolchain install 1.98.0 --profile minimal
+          cargo +1.98.0 build --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust
+          git -C .performance/original diff --exit-code
+          git -C .performance/rust diff --exit-code
+          git -C .performance/frontend diff --exit-code
+      - name: Load installed browser workflow and install headless Chromium
+        run: |
+          agent-browser skills get core
+          agent-browser install --with-deps
+      - name: Check benchmark invariants and source
+        run: |
+          "$RUNNER_TEMP/performance-venv/bin/python" -m py_compile tests/performance/benchmark.py tests/performance/test_benchmark.py
+          "$RUNNER_TEMP/performance-venv/bin/python" -m unittest discover -s tests/performance -p test_benchmark.py
+      - name: Import original file and compare full workloads
+        env:
+          BENCHMARK_SUBSCRIPTION_B64: ${{ secrets.BENCHMARK_SUBSCRIPTION_B64 }}
+        run: |
+          umask 077
+          "$RUNNER_TEMP/performance-venv/bin/python" tests/performance/benchmark.py \
+            --original "$GITHUB_WORKSPACE/.performance/original" \
+            --rust "$GITHUB_WORKSPACE/.performance/rust" \
+            --frontend "$GITHUB_WORKSPACE/.performance/frontend" \
+            --scratch "$RUNNER_TEMP/subscription-performance-private" \
+            --publish "$RUNNER_TEMP/subscription-performance-public"
+      - name: Show sanitized report
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/subscription-performance-public/summary.md"; then
+            cat "$RUNNER_TEMP/subscription-performance-public/summary.md"
+          fi
+      - name: Preserve sanitized metrics, including failures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: subscription-performance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/subscription-performance-public/
+          if-no-files-found: warn
+          retention-days: 30
