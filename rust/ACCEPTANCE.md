@@ -8,7 +8,7 @@ resources, storage, scheduling and host I/O have native Rust owners.
 
 ## Accepting a revision
 
-Use a successful **Rust compatibility native baseline** workflow for the exact
+Use a successful **Rust service and compatibility** workflow for the exact
 source commit. All six jobs are mandatory: Linux x64/arm64 and Windows x64
 native execution, Linux x64/arm64 native Docker execution, and the unchanged
 frontend in headless Chrome. A partial job, older successful revision or probe

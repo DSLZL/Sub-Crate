@@ -45,7 +45,7 @@ Application conversion, processing and generation policies remain native Rust.
 The utility-only build in Actions records package input hashes and license
 notices in `vendor/`; the development application-helper bundle is separate.
 
-All builds and tests run in the **Rust compatibility native baseline** GitHub Actions
+All builds and tests run in the **Rust service and compatibility** GitHub Actions
 workflow. Native Linux x64/arm64 and Windows x64 jobs produce release binaries;
 Linux x64/arm64 Docker jobs build and run `rust/Dockerfile`. The browser job uses
 the pinned unchanged frontend: twenty-one workflows each against Node, merged Rust
@@ -195,7 +195,7 @@ Stored excluded Node scripts remain intact.
 
 ## Downloadable delivery
 
-Use the artifacts of the accepted **Rust compatibility native baseline** run.
+Use the artifacts of the accepted **Rust service and compatibility** run.
 Each `m5-distribution-<target>-<run>-<attempt>` artifact contains a versioned
 archive, `SHA256SUMS` and an external `manifest.json`. Unpack the GitHub artifact
 first, verify the versioned archive against `SHA256SUMS`, then extract it.
