@@ -15,6 +15,71 @@ import runner
 
 
 class RunnerTests(unittest.TestCase):
+    def test_delivered_archives_reject_modified_missing_extra_files_and_manifest(self):
+        from distribution import make_archive, unpack_archive, verify_payload, write_manifest
+        for target in ("linux-x64", "windows-x64"):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                payload = root / "sub-store-rust"
+                payload.mkdir()
+                (payload / "sub-store-rust").write_bytes(b"verified executable bytes\x00")
+                (payload / "LICENSE").write_text("license text", encoding="utf-8")
+                manifest = write_manifest(payload, {"source_commit": "f" * 40, "target": target})
+                archive = make_archive(payload, root, target)
+                unpack_archive(archive, root / "extracted")
+                extracted = root / "extracted" / payload.name
+                verify_payload(extracted, manifest)
+                original = (extracted / "sub-store-rust").read_bytes()
+                (extracted / "sub-store-rust").write_bytes(original + b"tampered")
+                with self.assertRaises(AssertionError):
+                    verify_payload(extracted, manifest)
+                (extracted / "sub-store-rust").unlink()
+                with self.assertRaises(AssertionError):
+                    verify_payload(extracted, manifest)
+                (extracted / "sub-store-rust").write_bytes(original)
+                (extracted / "unexpected").write_bytes(b"extra")
+                with self.assertRaises(AssertionError):
+                    verify_payload(extracted, manifest)
+                (extracted / "unexpected").unlink()
+                changed = copy.deepcopy(manifest)
+                changed["source_commit"] = "0" * 40
+                (extracted / "manifest.json").write_text(json.dumps(changed), encoding="utf-8")
+                with self.assertRaises(AssertionError):
+                    verify_payload(extracted, manifest)
+
+    def test_native_distribution_rejects_the_other_elf_architecture(self):
+        import struct
+        from distribution import binary_imports
+        with tempfile.TemporaryDirectory() as temporary:
+            binary = Path(temporary) / "service"
+            content = bytearray(64)
+            content[:6] = b"\x7fELF\x02\x01"
+            struct.pack_into("<H", content, 18, 183)
+            binary.write_bytes(content)
+            with self.assertRaisesRegex(AssertionError, "Wrong ELF architecture"):
+                binary_imports(binary, "linux-x64")
+
+    def test_native_distribution_rejects_a_crate_without_license_notices(self):
+        from distribution import collect_notices
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "LICENSE").write_text("application license", encoding="utf-8")
+            vendor = root / "rust/vendor"
+            vendor.mkdir(parents=True)
+            (vendor / "LICENSES.txt").write_text("embedded utility license", encoding="utf-8")
+            toolchain = root / "toolchain/share/doc/rust"
+            toolchain.mkdir(parents=True)
+            (toolchain / "LICENSE-MIT").write_text("toolchain license", encoding="utf-8")
+            dependency = root / "dependency"
+            dependency.mkdir()
+            (dependency / "Cargo.toml").write_text("", encoding="utf-8")
+            payload = root / "payload"
+            payload.mkdir()
+            metadata = {"packages": [{"name": "unlicensed", "version": "1.0.0",
+                        "manifest_path": str(dependency / "Cargo.toml"), "license": "MIT"}]}
+            with patch("distribution.ROOT", root), self.assertRaisesRegex(AssertionError, "Missing dependency notices"):
+                collect_notices(metadata, payload, root / "toolchain")
+
     def test_early_http_rejection_receives_one_complete_json_request_without_retry(self):
         from http.client import HTTPConnection
         import time
