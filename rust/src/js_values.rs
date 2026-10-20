@@ -1,12 +1,10 @@
 //! ECMAScript values at the native conversion/script boundary.
 use crate::json as codec;
-use rquickjs::{Array, Ctx, Function, Value};
+use rquickjs::{Array, Ctx, Function, Object, Value};
 
-pub(crate) fn project<'js>(
-    ctx: &Ctx<'js>,
-    value: Value<'js>,
-) -> rquickjs::Result<serde_json::Value> {
-    let stringify: Function = ctx.eval(r#"value => {
+pub(crate) fn initialize(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
+    let functions: Object = ctx.eval(r#"({
+      project: value => {
       const paths = [], parents = new WeakMap(); let root = true;
       const text = JSON.stringify(value, function(key, field) {
         const path = root ? [] : [...parents.get(this), key]; root = false;
@@ -21,7 +19,28 @@ pub(crate) fn project<'js>(
         return field;
       });
       return [text, JSON.stringify(paths)];
-    }"#)?;
+      },
+      stringify: (value,space) => JSON.stringify(value,null,space),
+      assign: (root,path,value,depth) => {
+        if(depth){value=root;for(const key of path.slice(0,path.length-depth))value=value[key];}
+        let target=root;
+        for(let i=0;i<path.length-1;i++) target=target[path[i]];
+        target[path[path.length-1]]=value;
+      }
+    })"#)?;
+    ctx.globals().set("__nativeValues", functions)
+}
+
+fn function<'js>(ctx: &Ctx<'js>, name: &str) -> rquickjs::Result<Function<'js>> {
+    let functions: Object = ctx.globals().get("__nativeValues")?;
+    functions.get(name)
+}
+
+pub(crate) fn project<'js>(
+    ctx: &Ctx<'js>,
+    value: Value<'js>,
+) -> rquickjs::Result<serde_json::Value> {
+    let stringify = function(ctx, "project")?;
     let result: Array = stringify.call((value,))?;
     let text: String = result.get(0)?;
     let paths: String = result.get(1)?;
@@ -136,7 +155,7 @@ pub(crate) fn stringify<'js>(
     value: Value<'js>,
     space: u8,
 ) -> rquickjs::Result<Value<'js>> {
-    let stringify: Function = ctx.eval("(value,space) => JSON.stringify(value,null,space)")?;
+    let stringify = function(ctx, "stringify")?;
     match stringify.call((value.clone(), space)) {
         Ok(text) => Ok(text),
         Err(_) => {
@@ -185,7 +204,7 @@ pub(crate) fn decode<'js>(
         }
     }
     let result = ctx.json_parse(codec::stringify(&wire(value)))?;
-    let assign:Function=ctx.eval("(root,path,value,depth) => { if(depth){value=root;for(const key of path.slice(0,path.length-depth))value=value[key];} let target=root; for(let i=0;i<path.length-1;i++) target=target[path[i]]; target[path[path.length-1]]=value; }")?;
+    let assign = function(ctx, "assign")?;
     fn visit<'js>(
         ctx: &Ctx<'js>,
         assign: &Function<'js>,
@@ -238,6 +257,7 @@ mod tests {
         let runtime = rquickjs::Runtime::new().unwrap();
         let context = rquickjs::Context::full(&runtime).unwrap();
         context.with(|ctx| {
+            initialize(&ctx).unwrap();
             let value:Value=ctx.eval("(() => {const value={extra:{},number:NaN,zero:-0,literal:{'\\ue000cycle':1}};value.extra.self=value.extra;return value;})() ").unwrap();
             let projected=project(&ctx,value).unwrap();
             assert_eq!(circular_error(&projected).as_deref(),Some("Converting circular structure to JSON\n    --> starting at object with constructor 'Object'\n    --- property 'self' closes the circle"));
@@ -248,5 +268,39 @@ mod tests {
             let error=ctx.catch();
             assert_eq!(error.as_object().unwrap().get::<_,String>("message").unwrap(),circular_error(&projected).unwrap());
         });
+    }
+
+    #[test]
+    fn repeated_projection_keeps_to_json_effects_and_context_isolation() {
+        let runtime = rquickjs::Runtime::new().unwrap();
+        for label in ["first", "second"] {
+            let context = rquickjs::Context::full(&runtime).unwrap();
+            context.with(|ctx| {
+                initialize(&ctx).unwrap();
+                ctx.globals().set("label", label).unwrap();
+                let value: Value = ctx.eval("({calls:0,toJSON(){return {label,calls:++this.calls,zero:-0,number:Infinity};}})").unwrap();
+                for calls in 1..=3 {
+                    let projected = project(&ctx, value.clone()).unwrap();
+                    assert_eq!(projected["label"], label);
+                    assert_eq!(projected["calls"], calls);
+                    assert!(codec::to_number(&projected["zero"]).is_sign_negative());
+                    assert_eq!(
+                        codec::nonfinite(&projected["number"]),
+                        Some(f64::INFINITY)
+                    );
+                    let restored = decode(&ctx, &projected).unwrap();
+                    let text = stringify(&ctx, restored, 0)
+                        .unwrap()
+                        .as_string()
+                        .unwrap()
+                        .to_string()
+                        .unwrap();
+                    assert_eq!(
+                        codec::parse(&text).unwrap(),
+                        serde_json::json!({"label":label,"calls":calls,"zero":0,"number":null})
+                    );
+                }
+            });
+        }
     }
 }

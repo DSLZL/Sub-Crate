@@ -3708,15 +3708,7 @@ pub fn produce(
     opts: &Value,
 ) -> Result<Value, Error> {
     use crate::clash_output::Family;
-    let family = match target {
-        "Clash" => Some(Family::Clash),
-        "meta" | "clashmeta" | "clash.meta" | "Clash.Meta" | "ClashMeta" | "mihomo" | "Mihomo" => {
-            Some(Family::Meta)
-        }
-        "stash" | "Stash" => Some(Family::Stash),
-        "shadowrocket" | "Shadowrocket" | "ShadowRocket" => Some(Family::Shadowrocket),
-        _ => None,
-    };
+    let family = Family::for_target(target);
     if !ALIASES.contains(&target) {
         return Err(Error::Legacy(format!(
             "Target platform: {target} is not supported!"

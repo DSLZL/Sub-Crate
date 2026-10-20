@@ -21,6 +21,34 @@ if os.environ.get("GITHUB_ACTIONS") != "true":
 
 
 class Contracts(unittest.TestCase):
+    def test_health_profile_preserves_results_errors_and_restores_helpers(self):
+        source = """async function operator(value) {
+          if (ProxyUtils.produce(value) !== value) throw Error('identity');
+          ProxyUtils.hex_md5('public');
+          scriptResourceCache.get('public'); scriptResourceCache.set('public', 1);
+          if (value.fail) throw Error('original failure');
+          return value;
+        }"""
+        fixture = """const assert = require('node:assert/strict');
+        let profile;
+        const ProxyUtils = {produce(value) { assert.equal(this, ProxyUtils); return value; }, hex_md5() { return 'x'; }};
+        const scriptResourceCache = {get() {}, set() {}};
+        const original = {...ProxyUtils};
+        const $substore = {write(value, key) { assert.equal(key, '#benchmark-health-profile'); profile = value; }};
+        """
+        checks = """(async () => {
+          const value = {}; assert.equal(await operator(value), value);
+          assert.deepEqual(ProxyUtils, original);
+          assert.equal(profile.md5_calls, 1); assert.equal(profile.produce_calls, 1);
+          assert.equal(profile.cache_get_calls, 1); assert.equal(profile.cache_set_calls, 1);
+          await assert.rejects(operator({fail: true}), /original failure/);
+          assert.deepEqual(ProxyUtils, original);
+          assert(Object.values(profile).every(v => typeof v === 'number' && Number.isFinite(v)));
+          process.stdout.write(JSON.stringify(profile));
+        })().catch(error => { console.error(error); process.exitCode = 1; });"""
+        profile = json.loads(b.command(["node", "-e", fixture + b.profile_health_script(source) + checks]))
+        b.public({"health_profile": profile})
+
     def test_direct_sources_preserve_all_inputs_and_private_mismatch_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
             scratch = Path(directory)

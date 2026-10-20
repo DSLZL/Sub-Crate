@@ -1,5 +1,6 @@
 //! Public script helpers backed by native algorithms and existing language utilities.
 use crate::js_language::{self, Js};
+use md5::{Digest, Md5};
 use rquickjs::{
     Array, Ctx, Function, Object, Value,
     prelude::{Func, Opt, This},
@@ -55,8 +56,21 @@ fn get_iso<'js>(ctx: Ctx<'js>, name: Opt<Value<'js>>) -> rquickjs::Result<Value<
 }
 
 pub(crate) fn md5<'js>(ctx: Ctx<'js>, input: Opt<Value<'js>>) -> rquickjs::Result<String> {
+    let digest = |bytes: &[u8]| {
+        Md5::digest(bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    };
     let js = Js::new(ctx);
     let input = input.0.unwrap_or_else(|| js.undefined());
+    if let Some(string) = input.as_string() {
+        match string.to_string() {
+            Ok(text) => return Ok(digest(text.as_bytes())),
+            Err(rquickjs::Error::Utf8(_)) => {}
+            Err(error) => return Err(error),
+        }
+    }
     let units: Vec<u16> = js.call("units", (input,))?;
     let mut bytes = Vec::new();
     for character in char::decode_utf16(units) {
@@ -75,18 +89,7 @@ pub(crate) fn md5<'js>(ctx: Ctx<'js>, input: Opt<Value<'js>>) -> rquickjs::Resul
             }
         }
     }
-    let array = Array::new(js.ctx.clone())?;
-    for (index, byte) in bytes.into_iter().enumerate() {
-        array.set(index, byte)?;
-    }
-    let bytes = js.method(
-        js.ctx.globals().get("Uint8Array")?,
-        "from",
-        vec![array.into_value()],
-    )?;
-    let utility: Object = js.ctx.globals().get("SubStoreHashUtilities")?;
-    let hash: Function = utility.get("hexMd5")?;
-    hash.call((bytes,))
+    Ok(digest(&bytes))
 }
 
 fn yaml_parse<'js>(

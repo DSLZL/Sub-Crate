@@ -3,8 +3,16 @@ name: Supplied subscription performance
 on:
   workflow_dispatch:
     inputs:
+      inspect_run:
+        description: Inspect bounded sanitized diagnostics from an existing run without rebuilding
+        type: string
+        default: ''
       diagnose_parse:
         description: Only diagnose individual sources and three parse/pre-health requests
+        type: boolean
+        default: false
+      diagnose_health:
+        description: Profile the full-input health script and three warm requests without the long matrix
         type: boolean
         default: false
 
@@ -12,11 +20,41 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ inputs.diagnose_parse && 'subscription-parse-diagnostic' || 'supplied-subscription-performance' }}
+  group: ${{ inputs.inspect_run && 'subscription-report-inspection' || inputs.diagnose_health && 'subscription-health-diagnostic' || inputs.diagnose_parse && 'subscription-parse-diagnostic' || 'supplied-subscription-performance' }}
   cancel-in-progress: false
 
 jobs:
+  inspect:
+    if: inputs.inspect_run != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    steps:
+      - name: Read existing sanitized field and work diagnostics
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INSPECT_RUN: ${{ inputs.inspect_run }}
+        shell: bash
+        run: |
+          [[ "$INSPECT_RUN" =~ ^[0-9]+$ ]]
+          gh run download "$INSPECT_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name "subscription-performance-$INSPECT_RUN-1" --dir "$RUNNER_TEMP/performance-inspect"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          report = json.loads((Path(os.environ['RUNNER_TEMP']) / 'performance-inspect/metrics.json').read_bytes())
+          for row in report['samples']:
+              if row['block'] != 0 or row['concurrency'] != 1:
+                  continue
+              keys = ('kind', 'case', 'status', 'failure', 'failure_observations', 'counts',
+                      'warmup_counts', 'output_count', 'health_records', 'health_verified', 'work')
+              selected = {key: row[key] for key in keys if key in row}
+              selected['health_counts'] = row.get('health_counts', [])[:2]
+              print(json.dumps(selected, sort_keys=True))
+          PY
   compare:
+    if: inputs.inspect_run == ''
     runs-on: ubuntu-24.04
     timeout-minutes: 300
     defaults:
@@ -33,7 +71,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: e5890c2a29212cc725ecc1e9886bbe260babbdd3
+          ref: 9bab7346e34c0970e9efe836b4fdfa8357da6500
           path: .performance/rust
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -65,7 +103,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-e5890c2a29212cc725ecc1e9886bbe260babbdd3
+          key: subscription-performance-linux-x64-rust-1.98.0-9bab7346e34c0970e9efe836b4fdfa8357da6500
           restore-keys: subscription-performance-linux-x64-rust-1.98.0-
       - name: Build exact original, Rust and unchanged frontend
         run: |
@@ -84,7 +122,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-e5890c2a29212cc725ecc1e9886bbe260babbdd3
+          key: subscription-performance-linux-x64-rust-1.98.0-9bab7346e34c0970e9efe836b4fdfa8357da6500
       - name: Load installed browser workflow and install headless Chromium
         run: |
           agent-browser skills get core
@@ -97,6 +135,9 @@ jobs:
           diagnostic_args=()
           if [[ '${{ inputs.diagnose_parse }}' == 'true' ]]; then
             diagnostic_args=(--diagnose-parse)
+          fi
+          if [[ '${{ inputs.diagnose_health }}' == 'true' ]]; then
+            diagnostic_args+=(--diagnose-health)
           fi
           "$RUNNER_TEMP/performance-venv/bin/python" tests/performance/benchmark.py \
             --original "$GITHUB_WORKSPACE/.performance/original" \

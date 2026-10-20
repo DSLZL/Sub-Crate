@@ -114,7 +114,11 @@ globalThis.runHelperContracts = async function(check, host, operator, assert, eq
       ['message digest','f96b697d7cb7938d525a2f31aaf161d0'], ['订阅🙂\r\n','0cb5f141a0427155bace27275da7b434']];
     const result = vectors.map(([input, expected]) => { const actual = utils.hex_md5(input); assert(actual === expected, 'fixed MD5 vector'); return actual; });
     assert(errorName(() => utils.hex_md5(null)) === 'TypeError', 'non-string MD5 rejects');
-    return result;
+    const legacy = ['\ud800', '\udc00', '\ud800x\udc00', '\0', 'a'.repeat(10000)].map(value => utils.hex_md5(value));
+    assert(legacy.every(hash => /^[0-9a-f]{32}$/.test(hash)), 'legacy UTF16 and long MD5 hashes');
+    assert(legacy[0] !== utils.hex_md5('\ufffd') && legacy[0] !== legacy[1], 'unpaired surrogates keep their original bytes');
+    assert(errorName(() => utils.hex_md5()) === 'TypeError', 'missing MD5 input rejects');
+    return result.concat(legacy);
   });
 
   await check('PC27-flow-header-casing-encoding-and-numbers', () => {
