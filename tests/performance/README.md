@@ -19,13 +19,17 @@ is injected only into the measurement step. It is removed from the environment
 before application processes start. Private files stay in `$RUNNER_TEMP` and
 are never uploaded, cached, or included in console logs.
 
-The workflow freezes original `9cc6b5fa`, Rust `948c665b`, and unchanged frontend
+The workflow freezes original `9cc6b5fa`, Rust `e5890c2a`, and unchanged frontend
 `4bd7b0ac`, with full revisions in the harness and report. It builds the original
 without compatibility-reference patches. The actual subscription file input on
 `/subs` imports the original file five times per backend into fresh storage.
 Browser POST data, frontend timestamp suffixes, every submitted field, all seven
 processors, reload/editor observations and restart persistence are checked.
 All repeated states originate from these real UI imports.
+
+The retained full baseline at Actions `39402271707` and initial short diagnostic
+at `39408480379` use Rust `948c665b`. Their sources and reports are immutable;
+later diagnostics identify the candidate above and must not overwrite them.
 
 Only after import acceptance does the ordinary PATCH API apply derived workload
 settings. Original names are restored and all 22 source locations are mirrored
@@ -90,3 +94,42 @@ confidence for three-block cells. No P99, cross-platform ranking or production
 capacity claim follows from this hosted Linux x64 runner. Replay excludes
 provider transport/decryption; real network availability can differ between
 rounds and is not a backend speed ratio.
+
+The retained short baseline [39408480379](https://github.com/DSLZL/Sub-Store/actions/runs/39408480379)
+matched all individual sources, but Rust's first multi-source request returned
+4,811 nodes against 5,785, then recovered. Its parse requests took about 29s.
+The shared parser repeatedly used interpreted JSON5 and YAML, including a
+second unchanged YAML parse. The final bounded release fixture measured 5,524
+JSON5 parses/projections at 1.075s versus 0.182s using built-in JSON. One generic
+YAML pass took 3.507s versus 0.023s for the canonical download representation.
+Context creation for 23 parsers took 0.249s. These are component measurements,
+not whole-request speedup factors.
+
+Candidate `e5890c2a` uses built-in JSON before the existing fallbacks, reuses
+unchanged YAML results, and recognizes canonical JSON entries already serialized
+by the downloader. It validates exact parse/stringify equality and retains the
+generic YAML path for duplicate/noncanonical keys, Unicode escape/separator
+semantics and short-id rewriting. No download timeout or input limit changed.
+
+Short diagnostic [39411714863](https://github.com/DSLZL/Sub-Store/actions/runs/39411714863)
+passed 14 driver checks, ten actual frontend imports/restarts, all 22 direct
+source comparisons, and three requests per backend/case. Capture obtained 20/22
+nonempty sources; both backends used the same 5,654 nodes in every parse request.
+
+| Diagnostic | Node median | Rust median | Node CPU/request | Rust CPU/request |
+|---|---:|---:|---:|---:|
+| Parse/produce | 1.556s | 1.153s | 2.137s | 1.390s |
+| Four processors before health | 1.613s | 1.363s | 2.203s | 1.603s |
+
+Peak sampled parse RSS was 403.5MiB for Node and 61.7MiB for Rust. The first
+request was approximately 1.90s for both; this small sample does not establish
+tail latency or full-scan/concurrent capacity. Different capture hashes and
+runner CPU models prevent a controlled cross-run old/new speedup claim. The
+complete stress matrix and real detector must still be measured for this
+candidate; short diagnostics are not the full comparison.
+
+[Native acceptance 39411699444](https://github.com/DSLZL/Sub-Store/actions/runs/39411699444)
+passed all six jobs: Linux x64/arm64, Docker x64/arm64, Windows x64 and the
+unchanged frontend. Its `aef3863e` checkout has the identical Rust production
+tree to the diagnostic's pinned `e5890c2a` candidate. All product checks ran in
+GitHub Actions.
