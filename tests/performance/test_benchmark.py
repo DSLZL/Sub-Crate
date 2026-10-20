@@ -1,6 +1,7 @@
 """Meaningful workload, process measurement and publication invariants; CI only."""
 import asyncio
 import copy
+from contextlib import nullcontext
 import json
 import os
 from pathlib import Path
@@ -20,6 +21,33 @@ if os.environ.get("GITHUB_ACTIONS") != "true":
 
 
 class Contracts(unittest.TestCase):
+    def test_direct_sources_preserve_all_inputs_and_private_mismatch_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            scratch = Path(directory)
+            (scratch / "mirrors").mkdir()
+            for index in range(22):
+                (scratch / "mirrors" / f"{index}.txt").write_bytes(f"private-source-{index}".encode())
+            suite = object.__new__(b.Suite)
+            suite.args, suite.report = SimpleNamespace(scratch=scratch), {}
+            suite.directory = lambda _: scratch
+            suite.publish = lambda: b.public(suite.report)
+            child = SimpleNamespace(pid=os.getpid())
+            observed = []
+            def preview(origin, path, method, data):
+                self.assertEqual((path, method, data["source"], data["process"]), ("preview/sub", "POST", "local", []))
+                observed.append(data["content"])
+                changed = origin == "rust" and data["content"] == "private-source-3"
+                return {"processed": [{"password": "private-changed" if changed else "private-original"}]}
+            servers = [nullcontext((kind, child, None, None)) for kind in b.KINDS]
+            with patch.object(suite, "server", side_effect=servers), patch.object(b, "api", side_effect=preview), patch.object(b, "cpu", return_value=0), patch("builtins.print"):
+                suite.diagnose_sources()
+            self.assertEqual(observed, [f"private-source-{i}" for i in range(22)] * 2)
+            rows = suite.report["direct_sources"]
+            self.assertEqual(len(rows), 44)
+            self.assertEqual([(r["kind"], r["source_index"]) for r in rows if r["status"] == "failed"], [("rust", 3)])
+            self.assertIn("failure_observations", rows[25])
+            self.assertNotIn("private-", json.dumps(suite.report))
+
     def test_real_pinned_script_removes_only_five_maintenance_sites(self):
         source = b.get_script()
         variant = b.stress_script(source)

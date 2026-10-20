@@ -4,6 +4,13 @@ Run **Supplied subscription performance** (`rust-performance.yml`) manually on
 `codex/rust-server-parity`. All builds, self-checks, browsers, services and
 measurements run in GitHub Actions; the harness refuses local execution.
 
+Select the manual `diagnose_parse` input for a separate short diagnosis. It keeps
+the same actual file imports and full captured inputs, measures all 22 sources
+individually through local-content preview (no source HTTP), then three complete
+download requests each for parse/pre-health. This is labelled diagnostic and
+never marks the complete matrix finished. Per-source CPU/count/hash/mismatch
+observations are sanitized; it can run alongside the unchanged full baseline.
+
 Set repository Actions Secret `BENCHMARK_SUBSCRIPTION_B64` to base64 of the
 original exported file bytes. The required SHA256 is
 `a6e6bb9cbe0587f33de0cf130ec391ecffd3483009888fed0ea59d39492ae890`.

@@ -49,6 +49,7 @@ ERRORS = {
 PUBLIC_STRINGS = set(KINDS + CASES) | ERRORS | {
     "passed", "failed", "running", "fixture", "real_network", "empty_or_failed",
     "nonempty", "linux_x64", "not_run", "warming", "unpaired", "partial_sources",
+    "parse_diagnostic",
 }
 NODE_FIELDS = {"name", "type", "server", "port", "ports", "password", "uuid", "sni", "tls",
                "_subName", "_subDisplayName", "_latency", "_resolved", "resolved", "id",
@@ -676,7 +677,35 @@ class Suite:
             compare_nodes(self.expected_outputs[key], output, hopping=key == "parse")
         return output
 
-    def run_case(self, kind, case, block, original, concurrency=1):
+    def diagnose_sources(self):
+        expected = []
+        self.report["direct_sources"] = []
+        for kind in KINDS:
+            with self.server(kind, self.directory("direct-" + kind)) as (origin, child, _, _):
+                for index in range(22):
+                    source = (self.args.scratch / "mirrors" / f"{index}.txt").read_bytes().decode()
+                    before, began = cpu(psutil.Process(child.pid)), time.monotonic()
+                    result = api(origin, "preview/sub", "POST", {
+                        "name": "parse-diagnostic", "source": "local", "content": source, "process": []})
+                    elapsed, used = time.monotonic() - began, cpu(psutil.Process(child.pid)) - before
+                    output = result["processed"]
+                    require(isinstance(output, list), "http")
+                    row = {"kind": kind, "source_index": index, "input_bytes": len(source.encode()),
+                           "elapsed_s": elapsed, "cpu_s": used, "output_count": len(output),
+                           "output_sha256": nodes_hash(output), "status": "passed"}
+                    self.report["direct_sources"].append(row)
+                    if kind == "node":
+                        expected.append(output)
+                    else:
+                        try:
+                            compare_nodes(expected[index], output)
+                        except Failure as error:
+                            row.update(status="failed", failure=error.code,
+                                       failure_observations=error.observations)
+                    print(f"Direct parse {kind} source={index}: {elapsed:.3f}s, CPU={used:.3f}s, nodes={len(output)}, {row['status']}.", flush=True)
+                    self.publish()
+
+    def run_case(self, kind, case, block, original, concurrency=1, repeats=None):
         directory = self.directory(case + "-" + kind)
         self.counts(reset=True, real=case == "real")
         row = {"kind": kind, "case": case, "block": block, "concurrency": concurrency,
@@ -741,7 +770,7 @@ class Suite:
                                     row["latencies_s"].append(elapsed)
                                     last = output
                     else:
-                        repeats = 20 if case in ("warm", "parse", "pre_health", "no_publisher") else 1
+                        repeats = repeats or (20 if case in ("warm", "parse", "pre_health", "no_publisher") else 1)
                         for _ in range(repeats):
                             elapsed, last, raw_hash = once()
                             row["latencies_s"].append(elapsed)
@@ -836,6 +865,12 @@ class Suite:
             lines += ["", f"Capture: {capture['nonempty']}/22 nonempty source bodies; {capture['empty_or_failed']} empty/failed. Capture wall time {capture['elapsed_s']:.2f}s. These are decoded parser inputs, not original HTTP/TLS envelopes."]
         for row in self.report.get("replay", []):
             lines.append(f"- Raw replay {row['kind']}: equal={row['equal']}, matching sources={row['matching_sources']}/{row['source_count']}.")
+        if self.report.get("diagnostic"):
+            lines += ["", "Short parse diagnostic only; the complete stress matrix was not run.", "",
+                      "| Source | Backend | Input bytes | Nodes | Wall s | CPU s | Status |",
+                      "|---:|---|---:|---:|---:|---:|---|"]
+            for row in self.report.get("direct_sources", []):
+                lines.append(f"| {row['source_index']} | {row['kind']} | {row['input_bytes']} | {row['output_count']} | {row['elapsed_s']:.3f} | {row['cpu_s']:.3f} | {row['status']} |")
         for row in rows:
             if row["status"] == "failed":
                 lines.append(f"- FAILED {row['case']} {row['kind']} block={row['block']} clients={row['concurrency']}: {row['failure']}, output count={row.get('output_count', 'unavailable')}. Field-path/type/hash diagnostics are in metrics.json.")
@@ -942,6 +977,7 @@ def main():
     parser.add_argument("--publish", type=Path)
     parser.add_argument("--fixture-port", type=int)
     parser.add_argument("--meta-port", type=int)
+    parser.add_argument("--diagnose-parse", action="store_true")
     args = parser.parse_args()
     soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
     resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
@@ -952,6 +988,8 @@ def main():
     args.scratch.mkdir(mode=0o700)
     args.publish.mkdir(mode=0o700)
     report = {"status": "running", "input_sha256": INPUT_HASH, "imports": [], "samples": []}
+    if args.diagnose_parse:
+        report["diagnostic"] = "parse_diagnostic"
     suite = Suite(args, report)
     try:
         report["provenance"] = provenance(args)
@@ -988,12 +1026,20 @@ def main():
                                              "driver_cpu_s": cpu(psutil.Process()) - driver_before,
                                              "fixture_cpu_s": cpu(psutil.Process(fixture.pid)) - fixture_before}
             suite.replay(original)
-            for case, blocks in (("parse", 3), ("pre_health", 1), ("cold", 10), ("warm", 5), ("pressure", 3), ("no_publisher", 3)):
+            if args.diagnose_parse:
+                suite.diagnose_sources()
+            matrix = (("parse", 1), ("pre_health", 1)) if args.diagnose_parse else (("parse", 3), ("pre_health", 1), ("cold", 10), ("warm", 5), ("pressure", 3), ("no_publisher", 3))
+            for case, blocks in matrix:
                 for concurrency in ((1, 2, 4, 8) if case == "pressure" else (1,)):
                     for block in range(blocks):
                         for kind in (KINDS if block % 2 == 0 else KINDS[::-1]):
                             print(f"Measuring {case} / {kind}, block {block + 1}, clients {concurrency}.", flush=True)
-                            suite.run_case(kind, case, block, original, concurrency)
+                            suite.run_case(kind, case, block, original, concurrency,
+                                           repeats=3 if args.diagnose_parse else None)
+            if args.diagnose_parse:
+                report["status"] = "passed" if all(r["status"] == "passed" for r in report["samples"] + report["direct_sources"]) else "failed"
+                print("Short diagnostic status: " + report["status"], flush=True)
+                raise SystemExit(0 if report["status"] == "passed" else 1)
             print("Running the separately reported real HTTP-META/Mihomo pair.", flush=True)
             meta_dir = args.scratch / "http-meta"
             (meta_dir / "meta").mkdir(parents=True)

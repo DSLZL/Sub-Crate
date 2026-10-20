@@ -2,12 +2,17 @@ name: Supplied subscription performance
 
 on:
   workflow_dispatch:
+    inputs:
+      diagnose_parse:
+        description: Only diagnose individual sources and three parse/pre-health requests
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: supplied-subscription-performance
+  group: ${{ inputs.diagnose_parse && 'subscription-parse-diagnostic' || 'supplied-subscription-performance' }}
   cancel-in-progress: false
 
 jobs:
@@ -88,12 +93,16 @@ jobs:
           BENCHMARK_SUBSCRIPTION_B64: ${{ secrets.BENCHMARK_SUBSCRIPTION_B64 }}
         run: |
           umask 077
+          diagnostic_args=()
+          if [[ '${{ inputs.diagnose_parse }}' == 'true' ]]; then
+            diagnostic_args=(--diagnose-parse)
+          fi
           "$RUNNER_TEMP/performance-venv/bin/python" tests/performance/benchmark.py \
             --original "$GITHUB_WORKSPACE/.performance/original" \
             --rust "$GITHUB_WORKSPACE/.performance/rust" \
             --frontend "$GITHUB_WORKSPACE/.performance/frontend" \
             --scratch "$RUNNER_TEMP/subscription-performance-private" \
-            --publish "$RUNNER_TEMP/subscription-performance-public"
+            --publish "$RUNNER_TEMP/subscription-performance-public" "${diagnostic_args[@]}"
       - name: Show sanitized report
         if: always()
         run: |
