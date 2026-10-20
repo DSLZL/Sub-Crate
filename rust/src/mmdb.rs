@@ -123,7 +123,10 @@ fn validate<'js>(ctx: Ctx<'js>, value: Value<'js>) -> rquickjs::Result<bool> {
     Ok(raw.parse::<IpAddr>().is_ok())
 }
 
-fn native_reader<'js>(ctx: Ctx<'js>, reader: Arc<Reader<Vec<u8>>>) -> rquickjs::Result<Object<'js>> {
+fn native_reader<'js>(
+    ctx: Ctx<'js>,
+    reader: Arc<Reader<Vec<u8>>>,
+) -> rquickjs::Result<Object<'js>> {
     let object = Object::new(ctx.clone())?;
     let metadata = serde_json::json!({"databaseType": reader.metadata().database_type});
     object.set("metadata", ctx.json_parse(metadata.to_string())?)?;

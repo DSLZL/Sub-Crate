@@ -44,6 +44,12 @@ for (const input of Object.keys(build.metafile.inputs).sort()) {
     throw new Error('Production utility bundle imported unapproved source: ' + input);
   }
   const key = metadata.name + '@' + metadata.version;
+  const parentDirectory = path.dirname(directory);
+  const parentManifest = path.join(parentDirectory, 'package.json');
+  if (fs.existsSync(parentManifest)) {
+    const parent = JSON.parse(fs.readFileSync(parentManifest, 'utf8'));
+    if (parent.name === metadata.name && parent.version === metadata.version) directory = parentDirectory;
+  }
   const relative = path.relative(directory, source).split(path.sep).join('/');
   inputs[key + '/' + relative] = sha256(fs.readFileSync(source));
   if (notices.has(key)) continue;

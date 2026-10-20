@@ -11,7 +11,9 @@ use rquickjs::{
 fn open<'js>(js: &Js<'js>, path: Value<'js>, kind: &str) -> rquickjs::Result<Value<'js>> {
     let read = crate::mmdb::open(js.ctx.clone(), js.text(path)?, kind.to_owned())?;
     let reader: Object = read.get("reader")?;
-    let create: Function = js.ctx.eval("reader => new SubStoreMmdbUtilities.ReaderModel(reader)")?;
+    let create: Function = js
+        .ctx
+        .eval("reader => new SubStoreMmdbUtilities.ReaderModel(reader)")?;
     create.call((reader,))
 }
 
