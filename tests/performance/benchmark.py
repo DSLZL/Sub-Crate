@@ -161,7 +161,15 @@ def http(url, method="GET", data=None, timeout=WATCHDOG):
                            {"Content-Type": "application/json", "Connection": "close"} if body is not None else {"Connection": "close"})
         response = connection.getresponse()
         raw = response.read()
-        require(200 <= response.status < 300, "http")
+        if not 200 <= response.status < 300:
+            error = Failure("http")
+            text = raw.decode("utf-8", errors="replace")
+            error.observations = {"http_status": response.status, "response_sha256": digest(raw),
+                                  "empty_nodes": "不含有效节点" in text,
+                                  "detector_start_failed": "HTTP-META /start failed" in text,
+                                  "cache_unavailable": "scriptResourceCache unavailable" in text,
+                                  "snapshot_error": "HealthSnapshot" in text or "Snapshot" in text}
+            raise error
         return raw
     except (TimeoutError, socket.timeout):
         raise Failure("timeout") from None
@@ -665,6 +673,17 @@ class Suite:
                 row["status"] = "passed"
         except Exception as error:
             row.update(status="failed", failure=error.code if isinstance(error, Failure) else "unexpected", errors=1)
+            if hasattr(error, "observations"):
+                row["failure_observations"] = error.observations
+            row["counts"] = self.counts()
+            log = (directory / "server.log").read_text(encoding="utf-8", errors="replace")
+            matches = re.findall(r"input=(\d+) supported=(\d+) identities=(\d+)\s+probe_coalesced=(\d+) cache=(?:hit|empty)\s+probed=(\d+)/(\d+) ok=(\d+) failed=(\d+)\s+guarded=(\d+) budget_skipped=(\d+)\s+output=(\d+)", log)
+            row["health_counts"] = [list(map(int, match)) for match in matches]
+            root = json.loads((directory / "state/root.json").read_bytes())
+            cache = json.loads(root.get("sub-store-cached-script-resource", "{}"))
+            health = [v["data"] for k, v in cache.items() if k.startswith("http-meta:health-inc:v1:")]
+            row["health_records"] = sum(len(v["records"]) for v in health)
+            row["health_verified"] = sum(bool(r.get("lastOk")) for v in health for r in v["records"].values())
             raise
         finally:
             self.publish()

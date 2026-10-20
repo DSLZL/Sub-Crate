@@ -124,6 +124,10 @@ class DetectorContract(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(fixture.counts["unique_probes"], 3)
             self.assertEqual(fixture.counts["probes"], 4)
             self.assertFalse(fixture.batches)
+            with self.assertRaises(b.Failure) as failure:
+                await asyncio.to_thread(b.http, origin + "/missing")
+            self.assertEqual(failure.exception.observations["http_status"], 404)
+            b.public(failure.exception.observations)
         finally:
             server.close()
             await server.wait_closed()
