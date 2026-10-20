@@ -166,6 +166,47 @@ impl Parser {
         }
         self.0.with(|ctx| {
             let result = (|| -> rquickjs::Result<Option<String>> {
+                // Downloads serialize YAML entries as canonical JSON; retain YAML for other syntax.
+                if let Some(entries) = raw.strip_prefix("proxies:\n") {
+                    let mut output = String::new();
+                    let mut canonical = true;
+                    for line in entries.split_terminator('\n') {
+                        let Some(line) = line.strip_prefix("  - ") else {
+                            canonical = false;
+                            break;
+                        };
+                        // YAML handles Unicode escapes and line separators differently.
+                        if line.contains("\\u")
+                            || line.chars().any(|c| {
+                                matches!(c, '\u{7f}'..='\u{9f}' | '\u{2028}' | '\u{2029}' | '\u{fffe}' | '\u{ffff}')
+                            })
+                        {
+                            canonical = false;
+                            break;
+                        }
+                        let value = match ctx.json_parse(line) {
+                            Ok(value) => value,
+                            Err(_) => {
+                                ctx.catch();
+                                canonical = false;
+                                break;
+                            }
+                        };
+                        let text = ctx
+                            .json_stringify(value)?
+                            .map(|text| text.to_string())
+                            .transpose()?;
+                        if text.as_deref() != Some(line) {
+                            canonical = false;
+                            break;
+                        }
+                        output.push_str(line);
+                        output.push('\n');
+                    }
+                    if canonical && !output.is_empty() {
+                        return Ok(Some(output));
+                    }
+                }
                 let value = yaml(&ctx, raw)?;
                 let Some(root) = value.as_object() else {
                     return Ok(None);
@@ -367,6 +408,33 @@ mod tests {
     }
 
     #[test]
+    fn canonical_download_entries_match_yaml_and_reject_duplicate_keys() {
+        let parser = Parser::new().ok().unwrap();
+        for line in [
+            r#"{"type":"ss","name":"json","port":443,"extra":{"__proto__":{"safe":true},"constructor":0,"<<":{"a":1},"flags":[false,null,0]}}"#.to_owned(),
+            r#"{"type":"ss","name":"\ud800\ue000\udc00","extra":{"n":1e400,"zero":-0}}"#.to_owned(),
+            r#"{"type":"ss","name":"first","name":"last"}"#.to_owned(),
+            r#"{type: ss, name: yaml, extra: &meta {enabled: false}}"#.to_owned(),
+            json!({"type":"ss","name":"unicode","extra":"\u{7f}\u{80}\u{85}\u{2028}\u{2029}\u{fffe}\u{ffff}😀"}).to_string(),
+            json!({"type":"ss","extra":{"1":"one","2":"two","large":9007199254740993_u64}}).to_string(),
+        ] {
+            let raw = format!("proxies:\n  - {line}\n");
+            let expected = parser.0.with(|ctx| match yaml(&ctx, &raw) {
+                Ok(value) => ctx.json_stringify(value).unwrap().unwrap().to_string().ok(),
+                Err(_) => {
+                    ctx.catch();
+                    None
+                }
+            });
+            let actual = parser.preprocess(&raw).map(|lines| {
+                format!("{{\"proxies\":[{}]}}", lines.lines().collect::<Vec<_>>().join(","))
+            });
+            assert_eq!(actual, expected);
+        }
+        assert!(parser.preprocess("proxies:\n").is_none());
+    }
+
+    #[test]
     #[ignore = "release profile in GitHub Actions"]
     fn profile_structured_subscription() {
         use std::{hint::black_box, time::Instant};
@@ -390,10 +458,17 @@ mod tests {
         let strict = began.elapsed().as_secs_f64();
         let yaml = format!("proxies:\n{}", format!("  - {raw}\n").repeat(5524));
         let began = Instant::now();
+        parser.0.with(|ctx| {
+            let value = super::yaml(&ctx, &yaml).unwrap();
+            let proxies: Array = value.as_object().unwrap().get("proxies").unwrap();
+            assert_eq!(proxies.len(), 5524);
+        });
+        let generic_yaml = began.elapsed().as_secs_f64();
+        let began = Instant::now();
         assert_eq!(parser.preprocess(&yaml).unwrap().lines().count(), 5524);
         let yaml = began.elapsed().as_secs_f64();
         println!(
-            "parse profile: setup_23_s={setup:.6}, json5_5524_s={json5:.6}, strict_5524_s={strict:.6}, yaml_5524_s={yaml:.6}"
+            "parse profile: setup_23_s={setup:.6}, json5_5524_s={json5:.6}, strict_5524_s={strict:.6}, generic_yaml_5524_s={generic_yaml:.6}, yaml_5524_s={yaml:.6}"
         );
     }
 }
