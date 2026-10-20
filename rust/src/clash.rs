@@ -181,7 +181,15 @@ impl Parser {
                         // YAML handles Unicode escapes and line separators differently.
                         if line.contains("\\u")
                             || line.chars().any(|c| {
-                                matches!(c, '\u{7f}'..='\u{9f}' | '\u{2028}' | '\u{2029}' | '\u{fffe}' | '\u{ffff}')
+                                matches!(
+                                    c,
+                                    '\u{7f}'
+                                        ..='\u{9f}'
+                                            | '\u{2028}'
+                                            | '\u{2029}'
+                                            | '\u{fffe}'
+                                            | '\u{ffff}'
+                                )
                             })
                         {
                             canonical = false;
@@ -408,11 +416,8 @@ mod tests {
         assert_eq!(proxies[0]["extra"], json!({"enabled":false}));
         assert_eq!(proxies[1]["extra"], proxies[0]["extra"]);
         assert!(parser.preprocess("proxies: not-an-array").is_none());
-        assert!(
-            parser
-                .preprocess("proxies:\n  - {\"type\":\"ss\",\"extra\":\"short-id: raw\"}\n")
-                .is_none()
-        );
+        let literal = "proxies:\n  - {\"type\":\"ss\",\"extra\":\"short-id: raw\"}\n";
+        assert!(parser.preprocess(literal).is_none());
     }
 
     #[test]
