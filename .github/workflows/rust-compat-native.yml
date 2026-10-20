@@ -80,6 +80,9 @@ jobs:
           cargo clippy --manifest-path rust/Cargo.toml --locked --all-targets ${{ matrix.cargo_args }} -- -D warnings 2>&1 | tee tests/compat/evidence/service-build/clippy.log
           cargo test --manifest-path rust/Cargo.toml --locked --all-targets ${{ matrix.cargo_args }} 2>&1 | tee tests/compat/evidence/service-build/tests.log
           cargo build --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust ${{ matrix.cargo_args }} 2>&1 | tee tests/compat/evidence/service-build/release.log
+      - name: Attribute structured parsing CPU in release mode
+        if: ${{ !cancelled() && steps.service-build.outcome == 'success' && matrix.target == 'linux-x64' }}
+        run: cargo test --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust clash::tests::profile_structured_subscription -- --ignored --exact --nocapture 2>&1 | tee tests/compat/evidence/service-build/parse-profile.log
       - name: Package and verify the native delivery
         id: service-package
         if: ${{ !cancelled() && steps.service-build.outcome == 'success' }}

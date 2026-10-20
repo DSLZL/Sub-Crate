@@ -175,15 +175,14 @@ impl Parser {
                 if !proxies.is_array() && !groups.is_array() {
                     return Ok(None);
                 }
-                let fixed = if raw.contains("proxies:")
+                let value = if raw.contains("proxies:")
                     && raw.contains("short-id:")
                     && proxies.as_array().is_some_and(|array| !array.is_empty())
                 {
-                    short_ids(raw)
+                    yaml(&ctx, &short_ids(raw))?
                 } else {
-                    raw.to_owned()
+                    value
                 };
-                let value = yaml(&ctx, &fixed)?;
                 let Some(root) = value.as_object() else {
                     return Ok(None);
                 };
@@ -215,14 +214,20 @@ impl Parser {
     pub fn line(&self, raw: &str) -> Result<Option<Value>, Error> {
         self.0.with(|ctx| {
             let result = (|| -> rquickjs::Result<Option<Value>> {
-                let utilities: Object = ctx.globals().get("SubStoreUtilities")?;
-                let json5: Object = utilities.get("JSON5")?;
-                let parse: Function = json5.get("parse")?;
-                let value: JsValue = match parse.call((raw,)) {
+                let value: JsValue = match ctx.json_parse(raw) {
                     Ok(value) => value,
                     Err(_) => {
                         ctx.catch();
-                        yaml(&ctx, raw)?
+                        let utilities: Object = ctx.globals().get("SubStoreUtilities")?;
+                        let json5: Object = utilities.get("JSON5")?;
+                        let parse: Function = json5.get("parse")?;
+                        match parse.call((raw,)) {
+                            Ok(value) => value,
+                            Err(_) => {
+                                ctx.catch();
+                                yaml(&ctx, raw)?
+                            }
+                        }
                     }
                 };
                 let Some(object) = value.as_object() else {
@@ -299,5 +304,91 @@ impl Parser {
             }
             Ok(Some(proxy))
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn legacy_line(parser: &Parser, raw: &str) -> Value {
+        parser.0.with(|ctx| {
+            let utilities: Object = ctx.globals().get("SubStoreUtilities").unwrap();
+            let json5: Object = utilities.get("JSON5").unwrap();
+            let parse: Function = json5.get("parse").unwrap();
+            let value: JsValue = match parse.call((raw,)) {
+                Ok(value) => value,
+                Err(_) => {
+                    ctx.catch();
+                    yaml(&ctx, raw).unwrap()
+                }
+            };
+            crate::js_values::project(&ctx, value).unwrap()
+        })
+    }
+
+    #[test]
+    fn strict_json_and_fallbacks_retain_ecmascript_values() {
+        let parser = Parser::new().unwrap();
+        for raw in [
+            r#"{"type":"ss","extra":{"n":9007199254740993,"zero":-0,"overflow":1e400,"key":null,"2":"two","1":"one","false":false,"empty":[]},"password":0}"#,
+            r#"{"type":"ss","name":"\ud800\ue000\udc00","extra":{"__proto__":{"safe":true},"constructor":0,"literal":"😀"}}"#,
+            r#"{type:'ss',port:0x1bb,extra:{nan:NaN,positive:Infinity,negative:-Infinity,zero:-0,},}"#,
+            "{type: ss, name: yaml, extra: &loop {self: *loop}}",
+        ] {
+            assert_eq!(parser.line(raw).unwrap().unwrap(), legacy_line(&parser, raw));
+        }
+        for raw in ["not a node", "{", r#"{"type":"unknown"}"#, "null"] {
+            assert!(parser.line(raw).unwrap().is_none());
+        }
+        assert_eq!(
+            parser.line(r#"{"type":"ss"}"#).unwrap(),
+            Some(json!({"type":"ss"}))
+        );
+    }
+
+    #[test]
+    fn yaml_preprocess_keeps_short_ids_aliases_and_unknown_fields() {
+        let parser = Parser::new().unwrap();
+        let raw = "proxies:\n  - {type: vless, name: yaml, server: 127.0.0.1, reality-opts: {short-id: 00123}, extra: &meta {enabled: false}}\n  - {type: ss, name: alias, extra: *meta}\n";
+        let lines = parser.preprocess(raw).unwrap();
+        let proxies: Vec<_> = lines
+            .lines()
+            .map(|line| parser.line(line).unwrap().unwrap())
+            .collect();
+        assert_eq!(proxies[0]["reality-opts"]["short-id"], "00123");
+        assert_eq!(proxies[0]["extra"], json!({"enabled":false}));
+        assert_eq!(proxies[1]["extra"], proxies[0]["extra"]);
+        assert!(parser.preprocess("proxies: not-an-array").is_none());
+    }
+
+    #[test]
+    #[ignore = "release profile in GitHub Actions"]
+    fn profile_structured_subscription() {
+        use std::{hint::black_box, time::Instant};
+        let raw = r#"{"type":"ss","name":"profile","server":"127.0.0.1","port":443,"cipher":"aes-128-gcm","password":"public-fixture","udp":true,"extra":{"false":false,"nil":null}}"#;
+        let began = Instant::now();
+        for _ in 0..23 {
+            black_box(Parser::new().unwrap());
+        }
+        let setup = began.elapsed().as_secs_f64();
+        let parser = Parser::new().unwrap();
+        let expected = legacy_line(&parser, raw);
+        let began = Instant::now();
+        for _ in 0..5524 {
+            assert_eq!(black_box(legacy_line(&parser, raw)), expected);
+        }
+        let json5 = began.elapsed().as_secs_f64();
+        let began = Instant::now();
+        for _ in 0..5524 {
+            assert_eq!(black_box(parser.line(raw).unwrap().unwrap()), expected);
+        }
+        let strict = began.elapsed().as_secs_f64();
+        let yaml = format!("proxies:\n{}", format!("  - {raw}\n").repeat(5524));
+        let began = Instant::now();
+        assert_eq!(parser.preprocess(&yaml).unwrap().lines().count(), 5524);
+        let yaml = began.elapsed().as_secs_f64();
+        println!("parse profile: setup_23_s={setup:.6}, json5_5524_s={json5:.6}, strict_5524_s={strict:.6}, yaml_5524_s={yaml:.6}");
     }
 }
