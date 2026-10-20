@@ -3,6 +3,10 @@ name: Supplied subscription performance
 on:
   workflow_dispatch:
     inputs:
+      inspect_run:
+        description: Inspect bounded sanitized diagnostics from an existing run without rebuilding
+        type: string
+        default: ''
       diagnose_parse:
         description: Only diagnose individual sources and three parse/pre-health requests
         type: boolean
@@ -12,11 +16,41 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ inputs.diagnose_parse && 'subscription-parse-diagnostic' || 'supplied-subscription-performance' }}
+  group: ${{ inputs.inspect_run && 'subscription-report-inspection' || inputs.diagnose_parse && 'subscription-parse-diagnostic' || 'supplied-subscription-performance' }}
   cancel-in-progress: false
 
 jobs:
+  inspect:
+    if: inputs.inspect_run != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    steps:
+      - name: Read existing sanitized field and work diagnostics
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INSPECT_RUN: ${{ inputs.inspect_run }}
+        shell: bash
+        run: |
+          [[ "$INSPECT_RUN" =~ ^[0-9]+$ ]]
+          gh run download "$INSPECT_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name "subscription-performance-$INSPECT_RUN-1" --dir "$RUNNER_TEMP/performance-inspect"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          report = json.loads((Path(os.environ['RUNNER_TEMP']) / 'performance-inspect/metrics.json').read_bytes())
+          for row in report['samples']:
+              if row['block'] != 0 or row['concurrency'] != 1:
+                  continue
+              keys = ('kind', 'case', 'status', 'failure', 'failure_observations', 'counts',
+                      'warmup_counts', 'output_count', 'health_records', 'health_verified', 'work')
+              selected = {key: row[key] for key in keys if key in row}
+              selected['health_counts'] = row.get('health_counts', [])[:2]
+              print(json.dumps(selected, sort_keys=True))
+          PY
   compare:
+    if: inputs.inspect_run == ''
     runs-on: ubuntu-24.04
     timeout-minutes: 300
     defaults:
