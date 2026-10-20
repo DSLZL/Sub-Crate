@@ -239,10 +239,21 @@ pub(crate) fn produce<'js>(
     let kind = js.text(kind)?;
     if let Some(family) = clash_output::Family::for_target(&target) {
         for (proxy, caller) in values.iter_mut().zip(live) {
-            if proxy["network"] != "ws"
-                || (!crate::state::truthy(&options["include-unsupported-proxy"])
-                    && !clash_output::supported(proxy, family))
+            if !matches!(proxy["network"].as_str(), Some("ws" | "grpc")) {
+                continue;
+            }
+            if !crate::state::truthy(&options["include-unsupported-proxy"])
+                && !clash_output::supported(proxy, family)
             {
+                continue;
+            }
+            if proxy["network"] == "grpc" && crate::state::truthy(&proxy["grpc-opts"]) {
+                let shared = js.get(&caller, "grpc-opts")?;
+                for key in clash_output::GRPC_METADATA {
+                    js.call::<(), _>("remove", (shared.clone(), key))?;
+                }
+            }
+            if proxy["network"] != "ws" {
                 continue;
             }
             let before = proxy

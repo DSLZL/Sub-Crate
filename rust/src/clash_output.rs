@@ -3,6 +3,8 @@ use crate::json as codec;
 use crate::state::truthy;
 use serde_json::{Value, json};
 
+pub(crate) const GRPC_METADATA: [&str; 2] = ["_grpc-type", "_grpc-authority"];
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum Family {
     Clash,
@@ -642,8 +644,9 @@ fn normalize(proxy: &mut Value, family: Family, kind: &str, opts: &Value) {
     if network == "grpc"
         && let Some(options) = proxy.get_mut("grpc-opts")
     {
-        remove(options, "_grpc-type");
-        remove(options, "_grpc-authority");
+        for key in GRPC_METADATA {
+            remove(options, key);
+        }
     }
     if family == Family::Meta && truthy(&proxy["ip-version"]) {
         let version = match proxy["ip-version"].as_str() {
