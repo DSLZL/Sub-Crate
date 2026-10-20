@@ -40,6 +40,9 @@ responses through distinct proxy ports and checks unique completed work. Five
 paired warm blocks provide 100 requests per backend. Client concurrency 1/2/4/8
 uses three alternating paired 20-second windows. Warm paths still execute all
 seven processors and publish snapshots; counters must prove no active probes.
+Two unmeasured full warm-up requests precede each warm block; their output/work
+counts are retained, including any first-request output loss. Measured requests
+retain the original refresh settings and must perform zero new probes.
 Parse/produce-only and six-stage no-publisher diagnostics are separate cases.
 An additional ClashMeta export is parsed using the original's locked YAML
 utility and compared across backends. Real pinned HTTP-META 1.3.0/Mihomo 1.19.32
@@ -49,8 +52,12 @@ This separate test service's Node runtime is not a production Rust dependency.
 `summary.md` and `metrics.json` contain allowlisted observations only: source and
 output hashes, import proof, work counters, timings, paired block estimates,
 server CPU deltas, sampled RSS/actual intervals, Linux VmHWM, I/O, and separate
-driver/fixture/detector resource observations. Top-level node `_latency` is the
-only node fingerprint exclusion. Snapshot `generatedAt` is not an equivalence
+driver/fixture/detector resource observations. Top-level node `_latency` is
+excluded from fingerprints. Only parse-only diagnostics also canonicalize a
+numeric selected port inside the unchanged declared hopping ranges, because
+the original exporter chooses it randomly. Missing ports, ports outside the
+range, changed ranges and other fields still differ; raw hashes are retained.
+Snapshot `generatedAt` is not an equivalence
 key. Snapshots are compared independently across runtimes. The real JSON producer
 is invoked through the public preview API, outside timing, to check that the
 pre-producer snapshot corresponds to final output (including legitimate SNI/port
@@ -58,12 +65,16 @@ normalization). No broad field removal or copied producer implementation is used
 Output must be nonempty, and cold selected / completed identities must match.
 Repeated probe requests are counted separately: the original retry policy remains
 active, while unique completed identities must still cover the entire batch.
-Raw replay is also checked on both backends. Parse and pre-health cases run first
+Raw replay text is also checked on both backends as a diagnostic: preprocessing
+can change its representation, so measured output semantics determine correctness.
+Parse and pre-health cases run first
 to locate processing differences. A product mismatch marks that cell failed but
 allows independent cells to run; observed metrics and differing counts remain in
 the report, while failed/non-equivalent pairs never enter speedup estimates.
 Timeout, crash or incomplete work is a failed
 sample; the harness never trims nodes or re-enables maintenance caps to pass.
+The Actions deadline is 300 minutes: the retained 90-minute attempt completed
+only 33/70 cells, so the full matrix needs a longer execution budget.
 
 RSS is sampled at 50ms; VmHWM is the OS lifetime peak of each fresh process.
 CPU seconds use cumulative user+system counters, which have clock granularity.

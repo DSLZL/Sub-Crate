@@ -76,6 +76,18 @@ class Contracts(unittest.TestCase):
                 b.public(value)
         b.public({"status": "passed", "sha256": "a" * 64, "bytes": 123, "cpu_s": .25})
 
+    def test_random_hopping_port_is_semantic_only_in_parse_diagnostics(self):
+        left = [{"name": "x", "ports": "100-102,200", "port": 101}]
+        right = [{**left[0], "port": 200}]
+        self.assertNotEqual(b.nodes_hash(left), b.nodes_hash(right))
+        b.compare_nodes(left, right, hopping=True)
+        for changed in ({"port": 99}, {"port": "101"}, {"ports": "100-103,200"}, {"password": "different"}):
+            with self.assertRaises(b.Failure):
+                b.compare_nodes(left, [{**right[0], **changed}], hopping=True)
+        with self.assertRaises(b.Failure):
+            b.compare_nodes(left, [{"name": "x", "ports": "100-102,200"}], hopping=True)
+        self.assertEqual(left[0]["port"], 101)
+
     def test_mismatch_diagnostics_keep_paths_but_never_values_or_custom_keys(self):
         with self.assertRaises(b.Failure) as failure:
             b.compare_nodes([{"password": "secret-a", "private-token-key": ["private-value"], "_latency": 1}],
@@ -132,6 +144,7 @@ class Contracts(unittest.TestCase):
             with patch.object(b, "api", return_value={"processed": [{"name": "x"}]}):
                 self.assertEqual(suite.audit(state, [{"name": "x"}], True, counts, "http://127.0.0.1:1")["identities"], 2)
                 self.assertEqual(suite.audit(state, [{"name": "x"}], True, {**counts, "probes": 3}, "http://127.0.0.1:1")["identities"], 2)
+                self.assertEqual(suite.audit(state, [{"name": "x"}], None, {**counts, "starts": 2}, "http://127.0.0.1:1")["identities"], 2)
                 for key in ("selected", "unique_probes", "probes"):
                     with self.assertRaises(b.Failure):
                         suite.audit(state, [{"name": "x"}], True, {**counts, key: 1}, "http://127.0.0.1:1")
