@@ -171,10 +171,43 @@ capture from the full run. In one measured warm invocation:
 | Entire health operator | 1 | 92ms | 1,866ms |
 
 These coarse wrapper totals identify MD5 and per-node conversion as dominant
-warm health costs, not a measured native-replacement speedup. Current MD5 still
-builds JS byte arrays and calls the generic JS hash utility. Conversion projects
-owned values and recompiles its projection function repeatedly; its compilation
-and serialization costs have not yet been split. New cold observations also
-lose verified nodes on Rust; transport initialization/scheduling and exact retry
+warm health costs, not a measured native-replacement speedup. At that revision,
+MD5 built JS byte arrays and called the generic JS hash utility. Conversion
+projected owned values and recompiled its projection function repeatedly; its
+compilation and serialization costs had not been split. Cold observations also
+lost verified nodes on Rust; transport initialization/scheduling and exact retry
 causes remain unresolved. No production optimization is included in these
 diagnostic commits, and no local product execution or artifact expansion occurs.
+
+The subsequent production repair at `9bab7346` replaces the JS MD5 implementation
+with pinned RustCrypto md-5 0.11.0, retaining exact UTF-8/isolated UTF-16 hashes and
+cache keys. Projection/stringify/restore functions compile once per JS context,
+and the shared native Clash-family WebSocket normalizer now updates the caller's
+existing nested options, including early-data fields and metadata deletion.
+Filtering, aliases, JSON behavior, timeouts and probe work remain unchanged.
+
+Health diagnostic [39431798705](https://github.com/DSLZL/Sub-Store/actions/runs/39431798705)
+passes driver checks, builds, actual imports/restarts and pre-health equivalence.
+Both backends receive the same 3,096 pre-health nodes. One measured warm operator
+records the following helper totals:
+
+| Instrumented health helper | Calls on each backend | Node total | Rust total |
+|---|---:|---:|---:|
+| MD5 | 3,098 | 38ms | 17ms |
+| Single-node produce | 3,096 | 13ms | 254ms |
+| Entire health operator | 1 | 87ms | 428ms |
+
+This establishes the paired helper observations, not a whole-pipeline speedup.
+The capture differs from the earlier 2,978-node profile. Cold Rust still verifies
+only 3,012/3,096 nodes and makes 4,827 probes, versus Node's complete 3,096 probes.
+Warm cases inherit partial health caches and remain failed; exact cold retry
+causes and the remaining conversion overhead require further attribution.
+The complete accepted performance comparison is still unfinished.
+
+[Native compatibility acceptance 39436003557](https://github.com/DSLZL/Sub-Store/actions/runs/39436003557)
+passes all six jobs: Linux x64/arm64, Windows x64, Docker x64/arm64 and the
+unchanged frontend. Its `18877689` checkout has the identical Rust production
+tree to the diagnostic's pinned `9bab7346`. Extended MD5 and shared WebSocket
+assertions run in both the actual delivered service and the JS probe; a runner
+check prevents their embedded service scripts from drifting from the source
+fixtures. All builds, test execution, browsers and containers run in Actions.
