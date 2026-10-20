@@ -505,10 +505,22 @@ mod tests {
         let invalid = CertificateDer::from(vec![0]);
         let name = ServerName::try_from("fixture.invalid").unwrap();
         let now = UnixTime::since_unix_epoch(Duration::from_secs(1_700_000_000));
-        assert!(verifier.verify_server_cert(&invalid, &[], &name, &[], now).is_err());
+        assert!(
+            verifier
+                .verify_server_cert(&invalid, &[], &name, &[], now)
+                .is_err()
+        );
         let insecure = SkipCertificateChain(verifier.clone());
-        assert!(insecure.verify_server_cert(&invalid, &[], &name, &[], now).is_ok());
-        assert!(verifier.verify_server_cert(&invalid, &[], &name, &[], now).is_err());
+        assert!(
+            insecure
+                .verify_server_cert(&invalid, &[], &name, &[], now)
+                .is_ok()
+        );
+        assert!(
+            verifier
+                .verify_server_cert(&invalid, &[], &name, &[], now)
+                .is_err()
+        );
     }
 
     #[test]
