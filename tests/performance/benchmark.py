@@ -50,6 +50,11 @@ PUBLIC_STRINGS = set(KINDS + CASES) | ERRORS | {
     "passed", "failed", "running", "fixture", "real_network", "empty_or_failed",
     "nonempty", "linux_x64", "not_run", "warming", "unpaired", "partial_sources",
 }
+NODE_FIELDS = {"name", "type", "server", "port", "ports", "password", "uuid", "sni", "tls",
+               "_subName", "_subDisplayName", "_latency", "_resolved", "resolved", "id",
+               "network", "cipher", "udp", "tfo", "skip-cert-verify", "client-fingerprint",
+               "ws-opts", "reality-opts", "grpc-opts", "http-opts", "alpn", "servername"}
+PUBLIC_STRINGS.update(NODE_FIELDS | {"missing", "object", "array", "string", "number", "boolean", "null"})
 
 
 class Failure(Exception):
@@ -98,6 +103,32 @@ def public(value):
 def nodes_hash(nodes):
     # Only the health script's top-level measured latency is volatile.
     return digest([{k: v for k, v in item.items() if k != "_latency"} for item in nodes])
+
+
+def compare_nodes(expected, actual, code="output_mismatch"):
+    if nodes_hash(expected) == nodes_hash(actual):
+        return
+    missing, differences = object(), []
+    def kind(value):
+        return "missing" if value is missing else "null" if value is None else "boolean" if isinstance(value, bool) else "object" if isinstance(value, dict) else "array" if isinstance(value, list) else "string" if isinstance(value, str) else "number"
+    def visit(left, right, path):
+        if len(differences) >= 20 or left == right:
+            return
+        if isinstance(left, dict) and isinstance(right, dict):
+            for key in sorted(left.keys() | right.keys()):
+                if not (len(path) == 1 and key == "_latency"):
+                    visit(left.get(key, missing), right.get(key, missing), path + [key if key in NODE_FIELDS else digest(key.encode())])
+        elif isinstance(left, list) and isinstance(right, list):
+            for index in range(max(len(left), len(right))):
+                visit(left[index] if index < len(left) else missing, right[index] if index < len(right) else missing, path + [index])
+        else:
+            differences.append({"path": path, "expected_type": kind(left), "actual_type": kind(right),
+                                "expected_sha256": digest(left) if left is not missing else None,
+                                "actual_sha256": digest(right) if right is not missing else None})
+    visit(expected, actual, [])
+    error = Failure(code)
+    error.observations = {"expected_count": len(expected), "actual_count": len(actual), "differences": differences}
+    raise error
 
 
 def import_transform(original, payload):
@@ -417,7 +448,9 @@ class Suite:
         self.fixture_origin = None
         self.pristine = {}
         self.expected_hashes = {}
+        self.expected_outputs = {}
         self.expected_snapshot_hash = None
+        self.expected_snapshot = None
         self.clash_hash = None
         self.ordinal = 0
         self.meta = None
@@ -583,7 +616,8 @@ class Suite:
         if not real:
             if self.expected_snapshot_hash is None:
                 self.expected_snapshot_hash = snapshot_hash
-            require(snapshot_hash == self.expected_snapshot_hash, "output_mismatch")
+                self.expected_snapshot = snapshot["proxies"]
+            compare_nodes(self.expected_snapshot, snapshot["proxies"])
         # Publication precedes the final producer (SNI/ports/etc.); validate using that actual producer.
         projected = api(origin, "preview/sub", "POST", {
             "name": "benchmark-snapshot-validation", "source": "local",
@@ -610,7 +644,8 @@ class Suite:
         fingerprint = nodes_hash(output)
         if compare:
             self.expected_hashes.setdefault(key, fingerprint)
-            require(fingerprint == self.expected_hashes[key], "output_mismatch")
+            self.expected_outputs.setdefault(key, output)
+            compare_nodes(self.expected_outputs[key], output)
         return output
 
     def run_case(self, kind, case, block, original, concurrency=1):

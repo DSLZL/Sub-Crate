@@ -75,6 +75,18 @@ class Contracts(unittest.TestCase):
                 b.public(value)
         b.public({"status": "passed", "sha256": "a" * 64, "bytes": 123, "cpu_s": .25})
 
+    def test_mismatch_diagnostics_keep_paths_but_never_values_or_custom_keys(self):
+        with self.assertRaises(b.Failure) as failure:
+            b.compare_nodes([{"password": "secret-a", "private-token-key": ["private-value"], "_latency": 1}],
+                            [{"password": "secret-b", "private-token-key": ["changed"], "_latency": 2}])
+        observations = failure.exception.observations
+        b.public(observations)
+        text = json.dumps(observations)
+        self.assertIn("password", text)
+        for private in ("secret-a", "secret-b", "private-token-key", "private-value", "changed", "_latency"):
+            self.assertNotIn(private, text)
+        b.compare_nodes([{"name": "same", "_latency": 1}], [{"name": "same", "_latency": 2}])
+
     def test_paired_statistics_use_blocks_and_units(self):
         result = b.paired_interval([(2, 1), (4, 2), (8, 4)])
         self.assertAlmostEqual(result["node_over_rust"], 2)
