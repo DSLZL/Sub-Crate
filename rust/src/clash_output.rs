@@ -15,9 +15,8 @@ impl Family {
     pub(crate) fn for_target(target: &str) -> Option<Self> {
         match target {
             "Clash" => Some(Self::Clash),
-            "meta" | "clashmeta" | "clash.meta" | "Clash.Meta" | "ClashMeta" | "mihomo" | "Mihomo" => {
-                Some(Self::Meta)
-            }
+            "meta" | "clashmeta" | "clash.meta" | "Clash.Meta" | "ClashMeta" | "mihomo"
+            | "Mihomo" => Some(Self::Meta),
             "stash" | "Stash" => Some(Self::Stash),
             "shadowrocket" | "Shadowrocket" | "ShadowRocket" => Some(Self::Shadowrocket),
             _ => None,
