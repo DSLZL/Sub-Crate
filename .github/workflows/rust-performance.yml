@@ -3,6 +3,10 @@ name: Supplied subscription performance
 on:
   workflow_dispatch:
     inputs:
+      prepare_md5:
+        description: Resolve the native MD5 lockfile in Actions without running the benchmark
+        type: boolean
+        default: false
       inspect_run:
         description: Inspect bounded sanitized diagnostics from an existing run without rebuilding
         type: string
@@ -24,8 +28,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prepare-md5:
+    if: inputs.prepare_md5
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Resolve native MD5 and print only the public source patch
+        shell: bash
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal
+          cargo +1.98.0 add --manifest-path rust/Cargo.toml md-5@=0.11.0
+          echo SOURCE_PATCH_BEGIN
+          git diff --binary -- rust/Cargo.toml rust/Cargo.lock | base64 -w0
+          echo
+          echo SOURCE_PATCH_END
   inspect:
-    if: inputs.inspect_run != ''
+    if: inputs.inspect_run != '' && !inputs.prepare_md5
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -54,7 +75,7 @@ jobs:
               print(json.dumps(selected, sort_keys=True))
           PY
   compare:
-    if: inputs.inspect_run == ''
+    if: inputs.inspect_run == '' && !inputs.prepare_md5
     runs-on: ubuntu-24.04
     timeout-minutes: 300
     defaults:
