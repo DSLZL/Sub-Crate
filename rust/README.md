@@ -36,6 +36,9 @@ script boundary does not remove the server's native file, network or DNS feature
 Scripts can use the native storage/cache, HTTP, DNS, MMDB, Gist, age, download,
 flow and conversion helpers. Explicit script writes retain their original timing
 across failures and restart. The development feasibility example remains separate.
+HTTP clients share the platform certificate verifier while retaining their own
+TLS configuration and strict/insecure policy. On Linux, system trust roots are
+loaded once per process; restart the service after changing the trust store.
 Native file/module/artifact management, token sharing, archives and manual/batch
 synchronization use those same helpers. Gist/GitLab providers, plaintext/Base64/age
 backups, cache refresh, logs and configured notifications retain the existing

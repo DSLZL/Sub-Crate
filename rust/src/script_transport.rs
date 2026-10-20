@@ -18,7 +18,7 @@ use std::{
     future::Future,
     io,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, Mutex},
     task::{Context, Poll},
     time::Duration,
 };
@@ -123,10 +123,29 @@ impl ServerCertVerifier for SkipCertificateChain {
     }
 }
 
-fn tls_config(insecure: bool) -> Result<rustls::ClientConfig, Failure> {
-    let verifier: Arc<dyn ServerCertVerifier> = Arc::new(rustls_platform_verifier::Verifier::new(
+fn new_platform_verifier() -> Result<Arc<dyn ServerCertVerifier>, Failure> {
+    Ok(Arc::new(rustls_platform_verifier::Verifier::new(
         Arc::new(rustls::crypto::aws_lc_rs::default_provider()),
-    )?);
+    )?))
+}
+
+fn platform_verifier() -> Result<Arc<dyn ServerCertVerifier>, Failure> {
+    static VERIFIER: Mutex<Option<Arc<dyn ServerCertVerifier>>> = Mutex::new(None);
+    let mut cached = VERIFIER
+        .lock()
+        .map_err(|_| "TLS verifier initialization lock poisoned")?;
+    if let Some(verifier) = cached.as_ref() {
+        return Ok(verifier.clone());
+    }
+    // Linux loads/parses the system roots here. Retain successful initialization;
+    // each request still owns its TLS config/session state and verification policy.
+    let verifier = new_platform_verifier()?;
+    *cached = Some(verifier.clone());
+    Ok(verifier)
+}
+
+fn tls_config(insecure: bool) -> Result<rustls::ClientConfig, Failure> {
+    let verifier = platform_verifier()?;
     let verifier = if insecure {
         Arc::new(SkipCertificateChain(verifier)) as Arc<dyn ServerCertVerifier>
     } else {
@@ -459,7 +478,7 @@ async fn socks(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_header_size;
+    use super::*;
 
     #[test]
     fn header_limit_uses_positive_decimal_prefix_and_default() {
@@ -469,6 +488,53 @@ mod tests {
         assert_eq!(parse_header_size("1e3"), 1);
         for value in ["", "0", "-1", "invalid", "Infinity", "\u{85}65536"] {
             assert_eq!(parse_header_size(value), 32768);
+        }
+    }
+
+    #[test]
+    fn concurrent_clients_reuse_roots_without_weakening_certificate_verification() {
+        let threads: Vec<_> = (0..8)
+            .map(|_| std::thread::spawn(platform_verifier))
+            .collect();
+        let verifiers: Vec<_> = threads
+            .into_iter()
+            .map(|thread| thread.join().unwrap().unwrap())
+            .collect();
+        let verifier = &verifiers[0];
+        assert!(verifiers.iter().all(|other| Arc::ptr_eq(verifier, other)));
+        let invalid = CertificateDer::from(vec![0]);
+        let name = ServerName::try_from("fixture.invalid").unwrap();
+        let now = UnixTime::since_unix_epoch(Duration::from_secs(1_700_000_000));
+        assert!(verifier.verify_server_cert(&invalid, &[], &name, &[], now).is_err());
+        let insecure = SkipCertificateChain(verifier.clone());
+        assert!(insecure.verify_server_cert(&invalid, &[], &name, &[], now).is_ok());
+        assert!(verifier.verify_server_cert(&invalid, &[], &name, &[], now).is_err());
+    }
+
+    #[test]
+    #[ignore = "Release CPU profile; execute only in GitHub Actions"]
+    fn profile_verifier_initialization() {
+        use std::{hint::black_box, time::Instant};
+        let first = Instant::now();
+        black_box(platform_verifier().unwrap());
+        println!(
+            "platform verifier profile: first_ms={:.3}",
+            first.elapsed().as_secs_f64() * 1000.0
+        );
+        for block in 1..=3 {
+            let fresh = Instant::now();
+            for _ in 0..100 {
+                black_box(new_platform_verifier().unwrap());
+            }
+            let fresh = fresh.elapsed().as_secs_f64() * 1000.0;
+            let shared = Instant::now();
+            for _ in 0..100 {
+                black_box(platform_verifier().unwrap());
+            }
+            let shared = shared.elapsed().as_secs_f64() * 1000.0;
+            println!(
+                "platform verifier profile: block={block}, calls=100, fresh_ms={fresh:.3}, shared_ms={shared:.3}"
+            );
         }
     }
 }
