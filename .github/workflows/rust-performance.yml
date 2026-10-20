@@ -120,11 +120,13 @@ jobs:
           git -C .performance/original diff --exit-code
           git -C .performance/rust diff --exit-code
           git -C .performance/frontend diff --exit-code
-      - name: Compare node conversion components before and after the optimization
+      - name: Profile HTTP initialization and compare node conversion components
         if: inputs.diagnose_health
         run: |
-          cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust script_transport::tests
-          cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust script_transport::tests::profile_verifier_initialization -- --ignored --exact --nocapture
+          cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust script_io::transport::tests 2>&1 | tee "$RUNNER_TEMP/verifier-tests.log"
+          grep -F 'test result: ok. 2 passed; 0 failed; 1 ignored;' "$RUNNER_TEMP/verifier-tests.log"
+          cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust script_io::transport::tests::profile_verifier_initialization -- --ignored --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/verifier-profile.log"
+          grep -F 'test result: ok. 1 passed;' "$RUNNER_TEMP/verifier-profile.log"
           cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust script_conversion::tests::profile_node_production -- --ignored --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/conversion-profile-candidate-first.log"
           # Cargo fingerprints can reuse same-named crates across checkout roots.
           # Keep the frozen baseline's test executable separate from the candidate.
