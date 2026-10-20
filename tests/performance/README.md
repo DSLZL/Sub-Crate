@@ -143,3 +143,38 @@ passed all six jobs: Linux x64/arm64, Docker x64/arm64, Windows x64 and the
 unchanged frontend. Its `aef3863e` checkout has the identical Rust production
 tree to the diagnostic's pinned `e5890c2a` candidate. All product checks ran in
 GitHub Actions.
+
+The complete fixed-candidate run [39417720368](https://github.com/DSLZL/Sub-Store/actions/runs/39417720368)
+finished all 70 cells. Imports and parse/pre-health pass, with median Node/Rust
+latencies of 1.620/1.202s and 1.617/1.460s respectively. Thirty Rust full-pipeline
+cells fail output equivalence. Warm observed latency is 1.838/2.662s, but those
+failed pairs do not establish equivalent-work speed ratios. Cold Rust probes
+retry more (3,663 requests for 2,901 identities in the first pair, versus 2,901
+Node requests); measured warm requests perform no new probes.
+
+Remote inspection [39426039773](https://github.com/DSLZL/Sub-Store/actions/runs/39426039773)
+locates differences in ws-opts path/early-data fields. Frozen Node ClashMeta
+production mutates the shared nested object when the script passes a shallow
+proxy copy; Rust normalizes an independent projected object instead. Preserve
+this producer-side contract rather than normalizing unrelated parse inputs.
+
+Health attribution [39426859222](https://github.com/DSLZL/Sub-Store/actions/runs/39426859222)
+passes all 15 harness checks and exact builds, but retains product correctness
+failures. Its capture has 2,978 pre-health nodes on both backends, a different
+capture from the full run. In one measured warm invocation:
+
+| Instrumented health helper | Calls on each backend | Node total | Rust total |
+|---|---:|---:|---:|
+| MD5 | 2,980 | 43ms | 1,057ms |
+| Single-node produce | 2,978 | 17ms | 623ms |
+| Cache get / set | 1 / 0 | 0ms / 0ms | 0ms / 0ms |
+| Entire health operator | 1 | 92ms | 1,866ms |
+
+These coarse wrapper totals identify MD5 and per-node conversion as dominant
+warm health costs, not a measured native-replacement speedup. Current MD5 still
+builds JS byte arrays and calls the generic JS hash utility. Conversion projects
+owned values and recompiles its projection function repeatedly; its compilation
+and serialization costs have not yet been split. New cold observations also
+lose verified nodes on Rust; transport initialization/scheduling and exact retry
+causes remain unresolved. No production optimization is included in these
+diagnostic commits, and no local product execution or artifact expansion occurs.
