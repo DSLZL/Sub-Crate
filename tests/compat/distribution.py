@@ -230,6 +230,7 @@ def native(args, environment, evidence, report):
     binary = payload / ("sub-store-rust.exe" if expected_os == "Windows" else "sub-store-rust")
     shutil.copy2(args.binary, binary)
     shutil.copyfile(ROOT / "rust/README.md", payload / "README.md")
+    shutil.copyfile(ROOT / "rust/ACCEPTANCE.md", payload / "ACCEPTANCE.md")
     shutil.copyfile(ROOT / "rust/Cargo.lock", payload / "Cargo.lock")
     linkage = binary_imports(binary, args.target)
     if expected_os == "Windows":
@@ -280,6 +281,7 @@ def docker_delivery(image, environment):
         payload.mkdir()
         shutil.copyfile(ROOT / "LICENSE", payload / "LICENSE")
         shutil.copyfile(ROOT / "rust/README.md", payload / "README.md")
+        shutil.copyfile(ROOT / "rust/ACCEPTANCE.md", payload / "ACCEPTANCE.md")
         shutil.copyfile(ROOT / "rust/Cargo.lock", payload / "Cargo.lock")
         container = command(["docker", "create", image], "notice-container")
         try:
@@ -328,6 +330,7 @@ def frontend_delivery(args, environment, evidence, report):
     for name in ("LICENSE", "package.json", "pnpm-lock.yaml"):
         shutil.copyfile(frontend / name, payload / name)
     shutil.copyfile(ROOT / "rust/README.md", payload / "README.md")
+    shutil.copyfile(ROOT / "rust/ACCEPTANCE.md", payload / "ACCEPTANCE.md")
     licenses = execute(["pnpm", "licenses", "list", "--json"], frontend, environment, evidence, "frontend-dependency-licenses", timeout=120)
     assert licenses.returncode == 0, "Could not collect frontend dependency licenses"
     dependencies = json.loads(licenses.stdout)

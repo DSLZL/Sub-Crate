@@ -34,8 +34,10 @@ synchronization use those same helpers. Gist/GitLab providers, plaintext/Base64/
 backups, cache refresh, logs and configured notifications retain the existing
 business contracts. Artifact and environment jobs use native scheduling and the
 same generation, backup and MMDB owners as HTTP requests.
-Final source-inventory and integration/release qualification remains part of the
-parent rewrite; this is not a complete replacement release.
+This is the M5 implementation candidate for the standalone replacement defined
+in [ACCEPTANCE.md](ACCEPTANCE.md). Accept a source revision only after its complete
+six-job workflow and source/evidence review pass; artifact delivery does not
+publish a release or switch production data.
 
 The engine embeds locked generic utility packages for formats, hashes, IP/bytes,
 cryptography, DNS packets and the Web primitives required by those helpers.
@@ -46,14 +48,17 @@ notices in `vendor/`; the development application-helper bundle is separate.
 All builds and tests run in the **Rust compatibility native baseline** GitHub Actions
 workflow. Native Linux x64/arm64 and Windows x64 jobs produce release binaries;
 Linux x64/arm64 Docker jobs build and run `rust/Dockerfile`. The browser job uses
-the pinned unchanged frontend: twenty workflows each against Node, merged Rust
+the pinned unchanged frontend: twenty-one workflows each against Node, merged Rust
 and standalone Rust, including resource editing, previews, shares, archives, logs,
-permanent deletion and restored/deleted-state restarts. No local build, test or
+permanent deletion, configured backend switching/cache refresh and
+restored/deleted-state restarts. No local build, test or
 Docker setup is required.
 
-M4 business-feature acceptance passed at `04357fb8` in
-[Actions 39323623553](https://github.com/DSLZL/Sub-Store/actions/runs/39323623553).
-The M1 final inventory and M5 integration/release gates remain open.
+The complete gate includes all earlier service/state, conversion/script and
+business-feature contracts, then verifies the actual distributed binaries,
+reloaded Docker images and extracted official frontend assets. The final
+acceptance boundary and runtime qualifications are recorded in
+[ACCEPTANCE.md](ACCEPTANCE.md).
 
 Downloaded service binaries use the existing environment variables:
 
@@ -93,8 +98,8 @@ backend against a writable data directory.
 
 The HTTP environment keeps the frontend's `Node` discriminator and protocol
 version `2.42.4`, which the unchanged frontend uses to select supported features.
-Rust metadata identifies crate version `0.1.0`, milestone M4 and the incomplete
-parent rewrite. Archive operations and Gist/age settings use their native owners.
+Rust metadata identifies crate version `0.1.0`, milestone M5 and completion within
+the declared standalone scope. Archive operations and Gist/age settings use their native owners.
 Subscription/collection public recipients are validated and normalized natively
 for both X25519 and MLKEM768-X25519, including checksum and padding. Settings
 retain the submitted JSON types after legacy numeric validation, and old object

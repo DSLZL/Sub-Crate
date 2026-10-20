@@ -501,8 +501,8 @@ def utilities_contracts(binary, node, environment, baseline, root, output, repor
         assert actual_case["id"] == reference_case["id"]
         for actual, reference in zip(actual_case["steps"], reference_case["steps"], strict=True):
             if actual["path"] == "/api/utils/env":
-                assert json.loads(actual["response"]["body"])["data"]["meta"]["rust"]["complete"] is False
-                continue  # Retain the accepted M2 runtime metadata qualification.
+                assert json.loads(actual["response"]["body"])["data"]["meta"]["rust"] == {"version": "0.1.0", "milestone": "M5", "complete": True}
+                continue  # Frontend protocol identity and actual Rust metadata are separate.
             compare_step(actual, reference, actual_case["id"])
     check_json(cache_values["rust"], cache_values["node"])
     check_json(final["rust"], final["node"])

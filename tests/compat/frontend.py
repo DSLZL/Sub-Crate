@@ -523,7 +523,7 @@ def main():
             assert any(item["url"] == backend_url and item["name"] == metadata["host"]["current"] for item in metadata["host"]["apis"]), "UI backend setup failed"
             assert metadata["env"]["backend"] == "Node" and metadata["env"]["version"] == "2.42.4", "Metadata mismatch"
             if args.rust_binary:
-                assert metadata["env"]["meta"]["rust"]["complete"] is False, "Partial Rust service must not claim final parity"
+                assert metadata["env"]["meta"]["rust"] == {"version": "0.1.0", "milestone": "M5", "complete": True}, "Final Rust metadata missing"
             assert metadata["env"]["meta"]["node"]["env"]["SUB_STORE_FRONTEND_BACKEND_PATH"] == "/backend", "Legacy config metadata missing"
             # CI's browser language differs from the Windows baseline; use the real language control.
             command("open", report["server_origin"] + "/my")
