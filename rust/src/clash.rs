@@ -167,7 +167,10 @@ impl Parser {
         self.0.with(|ctx| {
             let result = (|| -> rquickjs::Result<Option<String>> {
                 // Downloads serialize YAML entries as canonical JSON; retain YAML for other syntax.
-                if let Some(entries) = raw.strip_prefix("proxies:\n") {
+                if let Some(entries) = raw
+                    .strip_prefix("proxies:\n")
+                    .filter(|entries| !entries.contains("short-id:"))
+                {
                     let mut output = String::new();
                     let mut canonical = true;
                     for line in entries.split_terminator('\n') {
@@ -405,6 +408,11 @@ mod tests {
         assert_eq!(proxies[0]["extra"], json!({"enabled":false}));
         assert_eq!(proxies[1]["extra"], proxies[0]["extra"]);
         assert!(parser.preprocess("proxies: not-an-array").is_none());
+        assert!(
+            parser
+                .preprocess("proxies:\n  - {\"type\":\"ss\",\"extra\":\"short-id: raw\"}\n")
+                .is_none()
+        );
     }
 
     #[test]
