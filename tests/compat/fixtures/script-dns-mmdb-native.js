@@ -3,7 +3,7 @@ async function operator(proxies) {
   const equal=(actual,expected,message)=>assert(JSON.stringify(actual)===JSON.stringify(expected),message+': '+JSON.stringify({actual,expected}));
   const DateBefore=Date,random=Math.random;
   globalThis.Date=class extends DateBefore {constructor(...args){super(...(args.length?args:[3600000000000]));}static now(){return 3600000000000;}};
-  const passed=[],check=async(id,run)=>{await run();passed.push(id);};
+  const passed=[],mmdbModels=[],check=async(id,run)=>{await run();passed.push(id);};
   const url='$UPSTREAM/host/dns/';
   try {
     await check('DN-native-packet-edns-and-doh',async()=>{
@@ -37,7 +37,35 @@ async function operator(proxies) {
       assert(db.geoip('x')===undefined && db.ipasn('x')===undefined,'optional readers');
       let rejected=false;try{new ProxyUtils.MMDB(null);}catch(error){rejected=error.name==='TypeError';}assert(rejected,'invalid options');
     });
-    $substore.write({passed},'m3-native-dns-mmdb');
+    await check('DN-native-mmdb-model-prototypes-and-networks',async()=>{
+      const db=new ProxyUtils.MMDB(),country=db.countryReader.country('2001:218::1'),asn=db.asnReader.asn('2001:1700::1');
+      assert([db.countryReader,db.asnReader,country,asn].every(value=>typeof value.constructor==='function' && Object.getPrototypeOf(value)===value.constructor.prototype && value instanceof value.constructor),'SDK model constructor identity');
+      assert(db.countryReader.constructor===db.asnReader.constructor && country.constructor!==asn.constructor && country.constructor!==db.countryReader.constructor,'distinct SDK reader and model constructors');
+      const methods=['anonymousIP','city','country','asn','connectionType','domain','isp','enterprise'];
+      equal(Object.getOwnPropertyNames(Object.getPrototypeOf(db.countryReader)),['constructor',...methods,'getRecord','modelFor'],'reader prototype');
+      equal(Object.keys(country),['continent','country','maxmind','registeredCountry','representedCountry','traits'],'Country own fields');
+      equal(Object.getOwnPropertyNames(Object.getPrototypeOf(country)),['constructor','setBooleanTraits','setBooleanRegisteredCountry'],'Country prototype');
+      equal([country.country.isoCode,country.registeredCountry.isoCode,country.registeredCountry.isInEuropeanUnion,country.traits.ipAddress,country.traits.network],['JP','JP',false,'2001:218::1','2001:218::/32'],'country model values');
+      const traits=['isAnonymous','isAnonymousProxy','isAnonymousVpn','isAnycast','isHostingProvider','isLegitimateProxy','isPublicProxy','isResidentialProxy','isSatelliteProvider','isTorExitNode'];
+      equal(traits.map(key=>country.traits[key]),Array(10).fill(false),'Country default booleans');
+      equal(Object.keys(asn),['autonomousSystemNumber','autonomousSystemOrganization','ipAddress','network'],'ASN own fields');
+      equal([asn.autonomousSystemNumber,asn.autonomousSystemOrganization,asn.ipAddress,asn.network],[6730,'Sunrise Communications AG','2001:1700::1','2001:1700::/27'],'ASN IPv6 model values');
+      const ipv4=db.asnReader.asn('1.0.0.1');
+      equal([ipv4.autonomousSystemNumber,ipv4.autonomousSystemOrganization,ipv4.ipAddress,ipv4.network],[15169,'Google Inc.','1.0.0.1','1.0.0.0/24'],'ASN IPv4 model values');
+      for(const [kind,reader,method] of [['country',db.countryReader,'country'],['asn',db.asnReader,'asn']]){
+        for(const ip of ['81.2.69.160','175.16.199.1','2001:218::1','2a02:d500::1','1.0.0.1','1.128.0.1','2001:1700::1','12.81.96.1','::81.2.69.160','::ffff:81.2.69.160','2001:0218::1','fe80::1%eth0','invalid','01.2.3.4']){
+          try{mmdbModels.push({kind,ip,model:reader[method](ip)});}catch(error){mmdbModels.push({kind,ip,error:{message:error.message,isError:error instanceof Error}});}
+        }
+      }
+      const rejects=(run,message)=>{let caught;try{run();}catch(error){caught=error;}assert(caught instanceof Error && caught.message===message,'reader diagnostic: '+JSON.stringify(caught && {name:caught.name,message:caught.message}));};
+      for(const [reader,own,database] of [[db.countryReader,'country','GeoIP2-Country'],[db.asnReader,'asn','GeoLite2-ASN']]){
+        for(const method of methods){
+          rejects(()=>reader[method]('invalid'),'invalid is invalid');
+          if(method!==own)rejects(()=>reader[method]('2001:218::1'),'The '+method+'() method cannot be used with the '+database+' database');
+        }
+      }
+    });
+    $substore.write({passed,mmdbModels},'m3-native-dns-mmdb');
     return proxies.map(proxy=>({...proxy,dnsMmdbVerified:passed.length}));
   } catch(error) {
     return proxies.map(proxy=>({...proxy,dnsMmdbError:String(error),dnsMmdbPassed:passed}));

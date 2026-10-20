@@ -127,6 +127,8 @@ class ControlledUpstream:
         return (503 if mode == 'status' else 200), response_bytes(packet, mode), [('Content-Type', 'application/dns-message')]
 
     def host_response(self, method, path, body, headers):
+        if path.startswith('/host/header-size/'):
+            return 200, b'header-fixture', [('X-Padding', 'x' * int(path.rsplit('/', 1)[1]))]
         if path in self.runtime_files:
             status, content = self.runtime_files[path]
             return status, content, [('Content-Type', 'application/octet-stream')]

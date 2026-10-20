@@ -26,6 +26,13 @@ existing fallback policies. Raw input starting `<!DOCTYPE html>` is discarded
 before parsing. Node builtins, require/npm loading and native addons are excluded;
 stored Node-only scripts remain intact.
 
+Choose a script's general JavaScript variant when it offers both JS and Node
+versions. Injected `Buffer`, timers, lodash, YAML and `ProxyUtils` remain available.
+`require('node:fs')`, `process.env`, `$substore.node`, npm packages and `.node`
+addons are unavailable; scripts using them fail under the existing script error
+policy. There is no Node fallback or automatic Node-to-JS translation. This
+script boundary does not remove the server's native file, network or DNS features.
+
 Scripts can use the native storage/cache, HTTP, DNS, MMDB, Gist, age, download,
 flow and conversion helpers. Explicit script writes retain their original timing
 across failures and restart. The development feasibility example remains separate.
@@ -34,8 +41,10 @@ synchronization use those same helpers. Gist/GitLab providers, plaintext/Base64/
 backups, cache refresh, logs and configured notifications retain the existing
 business contracts. Artifact and environment jobs use native scheduling and the
 same generation, backup and MMDB owners as HTTP requests.
-Final source-inventory and integration/release qualification remains part of the
-parent rewrite; this is not a complete replacement release.
+This is the M5 implementation candidate for the standalone replacement defined
+in [ACCEPTANCE.md](ACCEPTANCE.md). Accept a source revision only after its complete
+six-job workflow and source/evidence review pass; artifact delivery does not
+publish a release or switch production data.
 
 The engine embeds locked generic utility packages for formats, hashes, IP/bytes,
 cryptography, DNS packets and the Web primitives required by those helpers.
@@ -43,17 +52,20 @@ Application conversion, processing and generation policies remain native Rust.
 The utility-only build in Actions records package input hashes and license
 notices in `vendor/`; the development application-helper bundle is separate.
 
-All builds and tests run in the **Rust compatibility native baseline** GitHub Actions
+All builds and tests run in the **Rust service and compatibility** GitHub Actions
 workflow. Native Linux x64/arm64 and Windows x64 jobs produce release binaries;
 Linux x64/arm64 Docker jobs build and run `rust/Dockerfile`. The browser job uses
-the pinned unchanged frontend: twenty workflows each against Node, merged Rust
+the pinned unchanged frontend: twenty-one workflows each against Node, merged Rust
 and standalone Rust, including resource editing, previews, shares, archives, logs,
-permanent deletion and restored/deleted-state restarts. No local build, test or
+permanent deletion, configured backend switching/cache refresh and
+restored/deleted-state restarts. No local build, test or
 Docker setup is required.
 
-M4 business-feature acceptance passed at `04357fb8` in
-[Actions 39323623553](https://github.com/DSLZL/Sub-Store/actions/runs/39323623553).
-The M1 final inventory and M5 integration/release gates remain open.
+The complete gate includes all earlier service/state, conversion/script and
+business-feature contracts, then verifies the actual distributed binaries,
+reloaded Docker images and extracted official frontend assets. The final
+acceptance boundary and runtime qualifications are recorded in
+[ACCEPTANCE.md](ACCEPTANCE.md).
 
 Downloaded service binaries use the existing environment variables:
 
@@ -93,8 +105,8 @@ backend against a writable data directory.
 
 The HTTP environment keeps the frontend's `Node` discriminator and protocol
 version `2.42.4`, which the unchanged frontend uses to select supported features.
-Rust metadata identifies crate version `0.1.0`, milestone M4 and the incomplete
-parent rewrite. Archive operations and Gist/age settings use their native owners.
+Rust metadata identifies crate version `0.1.0`, milestone M5 and completion within
+the declared standalone scope. Archive operations and Gist/age settings use their native owners.
 Subscription/collection public recipients are validated and normalized natively
 for both X25519 and MLKEM768-X25519, including checksum and padding. Settings
 retain the submitted JSON types after legacy numeric validation, and old object
@@ -187,6 +199,142 @@ Object-to-primitive failures retain their endpoint-specific errors and preserve
 state. JSON numbers and name coercion use the legacy double-precision values and
 decimal/exponent boundaries, including negative zero.
 Stored excluded Node scripts remain intact.
+
+## Downloadable delivery
+
+Use the artifacts of the accepted **Rust service and compatibility** run.
+Each `m5-distribution-<target>-<run>-<attempt>` artifact contains a versioned
+archive, `SHA256SUMS` and an external `manifest.json`. Unpack the GitHub artifact
+first, verify the versioned archive against `SHA256SUMS`, then extract it.
+The extracted directory contains the executable (or Docker `image.tar`), this
+README, `Cargo.lock`, licenses, `SOURCE.md` and its own file manifest. Keep those
+files together. Manifests record the exact commit, target, compiler, dependency
+notices and file hashes; the GitHub artifact digest identifies the outer ZIP.
+
+Linux archives are `sub-store-rust-0.1.0-linux-x64.tar.gz` and
+`sub-store-rust-0.1.0-linux-arm64.tar.gz`. Their native runners use Ubuntu 24.04;
+the current binaries require glibc 2.38 or newer and the shared libraries listed
+in `manifest.json.linkage.dynamic_libraries`. These are GNU/Linux binaries.
+Use the Docker delivery on hosts whose native library versions do not match.
+The Windows x64 ZIP contains `sub-store-rust.exe`; its MSVC runtime is linked
+statically. The package gate checks PE architecture and imported DLLs, including
+the absence of a separate Visual C++ runtime dependency. Windows system DLLs
+are still required; acceptance runs on the workflow's recorded Windows runner.
+
+For example, after unpacking the outer GitHub artifact on Linux:
+
+```sh
+sha256sum -c SHA256SUMS
+tar -xzf sub-store-rust-0.1.0-linux-x64.tar.gz
+cd sub-store-rust-0.1.0-linux-x64
+mkdir -p data
+SUB_STORE_DATA_BASE_PATH="$PWD/data" SUB_STORE_BACKEND_API_HOST=127.0.0.1 ./sub-store-rust
+```
+
+On Windows, compare `(Get-FileHash .\sub-store-rust-0.1.0-windows-x64.zip
+-Algorithm SHA256).Hash` with `SHA256SUMS`, then use PowerShell:
+
+```powershell
+Expand-Archive .\sub-store-rust-0.1.0-windows-x64.zip .\delivery
+Set-Location .\delivery\sub-store-rust-0.1.0-windows-x64
+New-Item -ItemType Directory -Force data | Out-Null
+$env:SUB_STORE_DATA_BASE_PATH = (Join-Path $PWD data)
+$env:SUB_STORE_BACKEND_API_HOST = '127.0.0.1'
+.\sub-store-rust.exe
+```
+
+Both examples listen at `http://127.0.0.1:3000`; `/api/utils/env` returns the
+legacy protocol metadata together with the Rust implementation metadata.
+Only the selected data directory is mutable. No Node, npm or JS package
+installation is needed to run the backend.
+
+## Unchanged frontend assets
+
+The `m5-frontend-<run>-<attempt>` artifact contains
+`sub-store-frontend-4bd7b0acbe65.tar.gz`. It is the official pinned build without
+source changes. Its extracted `dist` directory is the directory to serve.
+The archive also includes the frontend license, package/lock files, available
+dependency notices and source/build/asset hashes. Its frontend dependency report
+describes the installed package set; the `licenses` folder contains available
+installed notices, without claiming a new license audit of every frontend asset.
+
+To serve that directory in the backend listener, add these variables to the
+native startup above (PowerShell uses `$env:NAME = 'value'`):
+
+```sh
+export SUB_STORE_FRONTEND_PATH=/absolute/path/to/sub-store-frontend-4bd7b0acbe65/dist
+export SUB_STORE_BACKEND_MERGE=true
+export SUB_STORE_FRONTEND_BACKEND_PATH=/backend
+```
+
+Open `http://127.0.0.1:3000/subs?api=http%3A%2F%2F127.0.0.1%3A3000%2Fbackend`.
+For the separate frontend listener, unset `SUB_STORE_BACKEND_MERGE`, retain
+`SUB_STORE_FRONTEND_PATH` and the `/backend` mount, set
+`SUB_STORE_BACKEND_PREFIX=true`, `SUB_STORE_FRONTEND_HOST=127.0.0.1`,
+`SUB_STORE_FRONTEND_PORT=3001` and
+`SUB_STORE_CORS_ALLOWED_ORIGINS=http://127.0.0.1:3001`. Open
+`http://127.0.0.1:3001/subs?api=http%3A%2F%2F127.0.0.1%3A3001%2Fbackend`.
+The frontend's own backend settings page can save/switch these URLs. Bind and
+allowed-origin values must match the actual addresses used by the browser.
+
+## Docker image archive
+
+Extract the matching `sub-store-rust-0.1.0-docker-linux-x64.tar.gz` or
+`sub-store-rust-0.1.0-docker-linux-arm64.tar.gz`. Its `manifest.json` records the
+image tag, immutable image ID and platform. Load its `image.tar` and run the
+tag printed by `docker load` (shown as `sub-store-m2:<run>` below):
+
+```sh
+docker load --input image.tar
+mkdir -p data
+docker run --rm --read-only --tmpfs /tmp --user "$(id -u):$(id -g)" \
+  -p 127.0.0.1:3000:3000 -v "$PWD/data:/data" sub-store-m2:<run>
+```
+
+The mounted folder must be writable by that user. The runtime includes system
+CA certificates and IANA timezone data on Debian bookworm; it contains no Node,
+npm or Python. Add `-e TZ=Asia/Taipei` to select a timezone. To use merged
+frontend hosting, mount the extracted `dist` directory read-only at `/frontend`
+and add `-e SUB_STORE_FRONTEND_PATH=/frontend -e SUB_STORE_BACKEND_MERGE=true
+-e SUB_STORE_FRONTEND_BACKEND_PATH=/backend`. Configuration and data behavior
+match native startup. Both architecture gates save/remove/load the delivered
+image and run the full service suite against that reloaded image identity.
+
+## Existing data, backup and rollback
+
+Stop the old backend, make a copy of its entire data folder, and start Rust
+against the copy. Retain both `sub-store.json` and `root.json`, plus any files or
+databases referenced by configured paths. Initial Rust snapshots supplement
+that copy; they do not replace the offline original. Do not let two backends
+write the same folder. Existing resource fields and stored script text remain
+data, including excluded Node-specific scripts; those scripts need a general
+JavaScript version to execute on Rust.
+
+The unchanged frontend's manual backup and restore controls export/import the
+existing storage format. Configured Gist backup/restore retains plaintext,
+Base64 and age encryption; retain the encryption identity separately. Use the
+same current configuration and keys when moving between backends. Corrupt data
+or a failed restore must not replace the last valid state. The integrated gates
+exercise exact unknown-field/script preservation, denied/corrupt writes,
+restore, restart and Node-to-Rust-to-Node backup interoperability.
+
+To return to the old backend, stop Rust and start the original version against
+a separate copy of the latest valid data folder, or restore the retained
+pre-migration backup if abandoning intervening changes. Keep the originals
+until the chosen copy is verified through the frontend. Public release/tag,
+registry publication and production cutover are separate actions; workflow
+artifacts are reviewable deliveries and have the run's configured retention.
+
+## Rebuild provenance
+
+`SOURCE.md` links the exact backend source commit. The checked-in workflow pins
+Rust 1.98.0, Node 24.16.0 and pnpm 11.0.9 and builds with the Cargo/pnpm lockfiles.
+Node is build/reference tooling only. Generic utility source snapshots and
+their input/package/license hashes live in `rust/vendor`; application policies
+remain Rust. Push the exact source to a branch covered by that workflow in a
+GitHub fork to rerun native builds, package extraction, full service acceptance,
+both image load/run gates and unchanged frontend checks. Product execution for
+this migration is performed exclusively in GitHub Actions.
 
 Subscription rename and permanent deletion retain the legacy errors for invalid
 collection references, including live versus stored raw buffers. Rejected Rust

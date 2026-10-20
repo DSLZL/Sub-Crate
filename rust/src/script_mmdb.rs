@@ -10,42 +10,11 @@ use rquickjs::{
 
 fn open<'js>(js: &Js<'js>, path: Value<'js>, kind: &str) -> rquickjs::Result<Value<'js>> {
     let read = crate::mmdb::open(js.ctx.clone(), js.text(path)?, kind.to_owned())?;
-    let reader = Object::new(js.ctx.clone())?;
-    reader.set(
-        if kind == "Country" { "country" } else { "asn" },
-        Function::new(js.ctx.clone(), move |ctx: Ctx<'js>, ip: Value<'js>| {
-            let raw: String = read.call((ip,))?;
-            let value: serde_json::Value = serde_json::from_str(&raw)
-                .map_err(|error| rquickjs::Exception::throw_message(&ctx, &error.to_string()))?;
-            fn camel(value: serde_json::Value) -> serde_json::Value {
-                match value {
-                    serde_json::Value::Object(fields) => serde_json::Value::Object(
-                        fields
-                            .into_iter()
-                            .map(|(key, value)| {
-                                let mut words = key.split('_');
-                                let mut key = words.next().unwrap_or_default().to_owned();
-                                for word in words {
-                                    let mut chars = word.chars();
-                                    if let Some(first) = chars.next() {
-                                        key.extend(first.to_uppercase());
-                                        key.extend(chars);
-                                    }
-                                }
-                                (key, camel(value))
-                            })
-                            .collect(),
-                    ),
-                    serde_json::Value::Array(values) => {
-                        serde_json::Value::Array(values.into_iter().map(camel).collect())
-                    }
-                    value => value,
-                }
-            }
-            ctx.json_parse(crate::json::stringify(&camel(value)))
-        })?,
-    )?;
-    Ok(reader.into_value())
+    let reader: Object = read.get("reader")?;
+    let create: Function = js
+        .ctx
+        .eval("reader => new SubStoreMmdbUtilities.ReaderModel(reader)")?;
+    create.call((reader,))
 }
 
 fn initialize_reader<'js>(
@@ -88,6 +57,7 @@ fn initialize_reader<'js>(
 }
 
 pub(crate) fn initialize<'js>(ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs::Result<()> {
+    ctx.eval::<(), _>(include_str!("../vendor/mmdb-utilities.js"))?;
     ctx.globals()
         .set("__initMMDB", Func::from(initialize_reader))?;
     let constructor: Function =

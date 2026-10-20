@@ -1,0 +1,28 @@
+{
+  "adapted_from": "@maxmind/geoip2-node@5.0.0/dist/src/readerModel.js",
+  "original_sha256": "1135a1227bc055fc96104316ad917e4f4da03df2b78a5ab8686c4a41296fe3b5",
+  "native_seam": "validate and getWithNetwork",
+  "keep_names": true,
+  "adapter_sha256": "afe03000da6034e428f1d9e218c3ea05ed9acdf27cd7b6e6e828e065dce23660",
+  "packages": {
+    "@maxmind/geoip2-node": "5.0.0"
+  },
+  "esbuild": "0.19.8",
+  "bundle_sha256": "6a3ec6c1d6a443e51f84ddad503d0e1211b9a5bfbc0e668f1ca456745fdcc5af",
+  "licenses_sha256": "f923d62dc78851a208222f4baf162f19d6f59d6043456020a4cb1ebdac8cf903",
+  "inputs": {
+    "@maxmind/geoip2-node@5.0.0/dist/src/errors.js": "d79d33995323f538e3e4bf2093b19852545cceaa9a46f106bbec9f26f2eb333f",
+    "@maxmind/geoip2-node@5.0.0/dist/src/models/AnonymousIP.js": "d590da76d57fb6a22a46a36dc63329a3ede8acfaf1fecf10a8d38d13dd7ca85b",
+    "@maxmind/geoip2-node@5.0.0/dist/src/models/Asn.js": "e39980d9e07a36d67e39576f00a80fa997a005637ebf0b89bf830c28ea305ad3",
+    "@maxmind/geoip2-node@5.0.0/dist/src/models/City.js": "1acbff3ddaf9b4900b0828f435d9863250d3c01121a0252798e2e1f9ab0610f3",
+    "@maxmind/geoip2-node@5.0.0/dist/src/models/ConnectionType.js": "f54fd498801ecff1f1ac53d46215ecbce2183f9e7df7898c0a9f1fd2acd2485b",
+    "@maxmind/geoip2-node@5.0.0/dist/src/models/Country.js": "db1aa3ff3f976c496d42d98bfe80ef2ad2020928bfc5ac583074f13dba8411e0",
+    "@maxmind/geoip2-node@5.0.0/dist/src/models/Domain.js": "5f1652faae53520a96e6413d88b603139a86b3995bc95f5fe66af439e9e7c9da",
+    "@maxmind/geoip2-node@5.0.0/dist/src/models/Enterprise.js": "0dce1ee256506eaa465cef7adfc94910af74e376ef6353201ad9dcc8b7b1f215",
+    "@maxmind/geoip2-node@5.0.0/dist/src/models/Insights.js": "13d3f53c121f9e3fc3ee7c6456e2d6cfaa45e46449134d20ff228f088d6d7278",
+    "@maxmind/geoip2-node@5.0.0/dist/src/models/Isp.js": "2de344557ffa1b89469edc7bb99f4984304d2472182c6844cc399edccd2efc49",
+    "@maxmind/geoip2-node@5.0.0/dist/src/models/index.js": "c2c07dbe64504ef635102850fceb0fcb504c4fe75fcb07411f950cda18608bf2",
+    "@maxmind/geoip2-node@5.0.0/dist/src/readerModel-native.js": "00545acec1d36d26f78fb756605d57244b973c3dd7fa3ab50e07f030b7cfca6f",
+    "@maxmind/geoip2-node@5.0.0/dist/src/utils.js": "f2e64e9af2426134f343ee94ffc9442095727eda8fe19ab3af5d4aa8d39d6a43"
+  }
+}

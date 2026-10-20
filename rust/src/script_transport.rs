@@ -27,6 +27,22 @@ use tokio_rustls::{TlsConnector, rustls};
 use tower_service::Service;
 
 type Failure = Box<dyn Error + Send + Sync>;
+
+pub(super) fn max_header_size() -> usize {
+    parse_header_size(&std::env::var("SUB_STORE_MAX_HEADER_SIZE").unwrap_or_default())
+}
+
+fn parse_header_size(value: &str) -> usize {
+    let value = value.trim_matches(|c: char| c == '\u{feff}' || c != '\u{85}' && c.is_whitespace());
+    let value = value.strip_prefix('+').unwrap_or(value);
+    let digits = value.bytes().take_while(u8::is_ascii_digit).count();
+    value[..digits]
+        .parse::<usize>()
+        .ok()
+        .filter(|value| *value > 0)
+        .unwrap_or(32 * 1024)
+}
+
 trait Socket: AsyncRead + AsyncWrite + Send + Unpin {}
 impl<T: AsyncRead + AsyncWrite + Send + Unpin> Socket for T {}
 
@@ -355,11 +371,7 @@ async fn tunnel(
     }
     request.push_str("\r\n");
     socket.write_all(request.as_bytes()).await?;
-    let maximum = std::env::var("SUB_STORE_MAX_HEADER_SIZE")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(32 * 1024);
+    let maximum = max_header_size();
     let mut headers = Vec::new();
     while !headers.ends_with(b"\r\n\r\n") {
         if headers.len() >= maximum {
@@ -443,4 +455,20 @@ async fn socks(
     };
     socket.read_exact(&mut vec![0; length + 2]).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_header_size;
+
+    #[test]
+    fn header_limit_uses_positive_decimal_prefix_and_default() {
+        for value in ["65536", " +65536junk", "\u{feff}65536\u{feff}"] {
+            assert_eq!(parse_header_size(value), 65536);
+        }
+        assert_eq!(parse_header_size("1e3"), 1);
+        for value in ["", "0", "-1", "invalid", "Infinity", "\u{85}65536"] {
+            assert_eq!(parse_header_size(value), 32768);
+        }
+    }
 }

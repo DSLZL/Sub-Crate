@@ -119,8 +119,11 @@ async fn open_response(
     // Hyper permits genuinely absent Accept; reqwest always inserts its default.
     let transport = transport::Transport::new(options)?;
     let connector = transport.connector();
+    let maximum = transport::max_header_size();
     let client = Client::builder(TokioExecutor::new())
         .pool_max_idle_per_host(0)
+        // Undici limits field/value bytes; the wire buffer also contains delimiters.
+        .http1_max_buf_size(maximum.saturating_mul(4).max(8192))
         .build(connector);
     let mut method = method.to_owned();
     let mut url = reqwest::Url::parse(url)?;
@@ -145,7 +148,27 @@ async fn open_response(
         }
         let response = client
             .request(request.body(Full::new(Bytes::copy_from_slice(&body)))?)
-            .await?;
+            .await
+            .map_err(|error| -> Failure {
+                if error
+                    .source()
+                    .and_then(|cause| cause.downcast_ref::<hyper::Error>())
+                    .is_some_and(hyper::Error::is_parse_too_large)
+                {
+                    "Headers Overflow Error".into()
+                } else {
+                    Box::new(error)
+                }
+            })?;
+        if response
+            .headers()
+            .iter()
+            .map(|(key, value)| key.as_str().len() + value.as_bytes().len())
+            .sum::<usize>()
+            >= maximum
+        {
+            return Err("Headers Overflow Error".into());
+        }
         // Pinned Undici rejects the third followed response, including a final 200.
         if followed == 3 {
             return Err("max redirects".into());

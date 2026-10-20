@@ -41,10 +41,22 @@ def check_network(entries, cases, backend_url):
         "FE20-restore-manual-backup": [("POST", "/api/storage", 200), ("GET", "/api/utils/refresh", 200),
                                         ("DELETE", "/api/sub/ui-restored-sub", 200),
                                         ("DELETE", "/api/collection/ui-restored-col", 200)],
+        "FE21-configured-backend-switch-and-refresh": [],
     }
     observed = [(entry["request"]["method"], urlsplit(entry["request"]["url"])._replace(query="", fragment="").geturl(), entry["response"]["status"])
                 for entry in entries]
     for case in cases:
+        if case["id"] == "FE21-configured-backend-switch-and-refresh":
+            started = datetime.fromisoformat(case["started_at"])
+            switched = {(entry["request"]["method"], urlsplit(entry["request"]["url"])._replace(query="", fragment="").geturl(), entry["response"]["status"])
+                        for entry in entries if datetime.fromisoformat(entry["startedDateTime"]) >= started}
+            for base in (backend_url, case["secondary_backend_url"]):
+                for path in ("/api/utils/env", "/api/subs", "/api/utils/refresh"):
+                    assert ("GET", base.rstrip("/") + path, 200) in switched, f"Backend switching did not refresh {base}{path}"
+            assert any(entry["request"]["method"] == "PATCH" and entry["request"]["url"] == case["secondary_backend_url"] + "/api/settings"
+                       and entry["response"]["status"] == 200 and datetime.fromisoformat(entry["startedDateTime"]) >= started
+                       and json.loads(entry["request"].get("postData", {}).get("text", "null")) == {"appearanceSetting": case["appearance_setting"]}
+                       for entry in entries), "Secondary appearance migration did not match the UI request"
         for method, path, status in required[case["id"]]:
             path = path.format(**case)
             parsed = urlsplit(backend_url)
@@ -65,7 +77,8 @@ def check_network(entries, cases, backend_url):
                            for entry in entries), "Permanent UI deletion missing from HAR"
         case.update(status="passed", network_verified=True)
     origin = urlsplit(backend_url)._replace(path="", query="", fragment="").geturl()
-    return [{"method": method, "url": url, "status": status} for method, url, status in observed if url.startswith((backend_url.rstrip("/") + "/", origin + "/share/"))]
+    prefixes = (backend_url.rstrip("/") + "/", origin + "/share/", *(case["secondary_backend_url"].rstrip("/") + "/" for case in cases if "secondary_backend_url" in case))
+    return [{"method": method, "url": url, "status": status} for method, url, status in observed if url.startswith(prefixes)]
 
 
 class StateSliceComplete(Exception):
@@ -78,6 +91,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--node", required=True, type=Path)
     parser.add_argument("--frontend", required=True, type=Path, help="Unchanged pinned checkout with completed dist build")
+    parser.add_argument("--assets", type=Path, help="Extracted delivery dist; require exact identity with the unchanged build")
     parser.add_argument("--browser", required=True, type=Path, help="Installed native agent-browser executable")
     parser.add_argument("--rust-binary", type=Path, help="Run the CRUD, conversion preview, settings and export slice against this Rust service")
     parser.add_argument("--standalone", action="store_true", help="Use the separate Rust frontend port and API mount")
@@ -86,6 +100,7 @@ def main():
         parser.error("--standalone requires --rust-binary")
     node = args.node.resolve(strict=True)
     frontend = args.frontend.resolve(strict=True)
+    assets_root = args.assets.resolve(strict=True) if args.assets else frontend / "dist"
     browser = args.browser.resolve(strict=True)
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     output = HERE / "evidence" / f"frontend-{run_id}"
@@ -96,7 +111,7 @@ def main():
     environment["PATH"] = str(node.parent) + os.pathsep + environment.get("PATH", "")
     environment.update(SUB_STORE_DATA_BASE_PATH=str(state), SUB_STORE_BACKEND_API_HOST="127.0.0.1",
                        SUB_STORE_FRONTEND_BACKEND_PATH="/backend", SUB_STORE_BACKEND_MERGE="true",
-                       SUB_STORE_FRONTEND_PATH=str(frontend / "dist"), AGENT_BROWSER_DEFAULT_TIMEOUT="15000")
+                       SUB_STORE_FRONTEND_PATH=str(assets_root), AGENT_BROWSER_DEFAULT_TIMEOUT="15000")
     if args.standalone:
         with socket.socket() as reserved:
             reserved.bind(("127.0.0.1", 0))
@@ -118,7 +133,8 @@ def main():
                                     "FE07-preview-file", "FE08-create-count-share", "FE09-open-public-share",
                                     "FE10-reopen-update-count-share", "FE11-create-collection", "FE12-reopen-rename-collection",
                                     "FE13-preview-collection", "FE14-archive-file", "FE15-restore-file-archive", "FE16-save-log-settings",
-                                    "FE17-read-filter-logs", "FE18-clear-logs", "FE19-download-manual-backup", "FE20-restore-manual-backup"]
+                                    "FE17-read-filter-logs", "FE18-clear-logs", "FE19-download-manual-backup", "FE20-restore-manual-backup",
+                                    "FE21-configured-backend-switch-and-refresh"]
     command_index = 0
 
     def command(*arguments):
@@ -175,7 +191,7 @@ def main():
             }
             return r.width > 0 && r.height > 0 && r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth
                 && el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2))
-                && !el.matches(':disabled, [aria-disabled="true"], .nut-button--loading')
+                && !el.matches(':disabled, [aria-disabled="true"], .nut-button--loading, .nut-button--disabled')
                 && document.fonts.status === 'loaded' && animationsStopped
                 && ['x', 'y', 'width', 'height'].every(key => Math.abs(r[key] - settled[key]) < 0.25);
         })()""")
@@ -353,6 +369,65 @@ def main():
         command("wait", "--text", "ui-restored-col")
         report["cases"].append({"id": "FE20-restore-manual-backup", "source": "src/views/My.vue:1253,1262; src/utils/initApp.ts:36,76", "status": "browser_passed"})
 
+    def switch_backend():
+        started = datetime.now(timezone.utc).isoformat()
+        profile_script = "({host:JSON.parse(localStorage.getItem('hostAPI')),cache:JSON.parse(localStorage.getItem('envCache'))})"
+        original = evaluate(profile_script)
+        primary = json.loads((state / "sub-store.json").read_text(encoding="utf-8"))
+        secondary_state = output / "switch-backend-state"
+        secondary_state.mkdir()
+        secondary_environment = {key: value for key, value in environment.items() if not key.startswith("SUB_STORE_")}
+        secondary_environment.update(SUB_STORE_DATA_BASE_PATH=str(secondary_state), SUB_STORE_BACKEND_API_HOST="127.0.0.1",
+                                     SUB_STORE_BACKEND_CUSTOM_NAME="m5-secondary-oracle", SUB_STORE_CORS_ALLOWED_ORIGINS=report["server_origin"])
+        secondary_report = report["switch_backend"] = {}
+        with oracle(node, secondary_environment, output, secondary_report, "switch-backend") as secondary_url:
+            response = request(secondary_url, {"method": "POST", "path": "/api/subs", "body": {
+                "name": "m5-secondary-only", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#secondary"}})
+            assert response["status"] == 201, "Secondary backend fixture failed"
+            secondary_document = json.loads((secondary_state / "sub-store.json").read_text(encoding="utf-8"))
+            # The frozen frontend migrates its local appearance flags on a fresh backend.
+            appearance = {key: False for key in ("isLeftRight", "isIconColor", "isDefaultIcon", "isSimpleReicon",
+                                                 "showFloatingRefreshButton", "istabBar", "istabBar2")}
+            secondary_document["settings"]["appearanceSetting"] = appearance
+            command("open", report["server_origin"] + "/settings/api")
+            command("wait", "--load", "networkidle")
+            command("wait", ".add-api-wrapper input")
+            name_input = ".add-form-wrapper .input:nth-child(1) input"
+            url_input = ".add-form-wrapper .input:nth-child(2) input"
+            command("fill", name_input, "m5-secondary")
+            expect_value(name_input, "m5-secondary", "Backend name input did not retain its value")
+            command("fill", url_input, secondary_url)
+            expect_value(url_input, secondary_url, "Backend URL input did not retain its value")
+            command("wait", "--fn", "document.querySelector('.preview-full')?.innerText === " + json.dumps(secondary_url))
+            click_in_view(".add-api-wrapper .save-btn")
+            command("wait", "--fn", "JSON.parse(localStorage.getItem('hostAPI')).current === 'm5-secondary'")
+            command("wait", "--fn", "JSON.parse(localStorage.getItem('envCache') || 'null')?.data?.data?.data?.meta?.node?.env?.SUB_STORE_BACKEND_CUSTOM_NAME === 'm5-secondary-oracle'")
+            command("wait", "--fn", "performance.getEntriesByType('resource').some(entry => entry.name === " + json.dumps(secondary_url + "/api/utils/refresh") + " && entry.responseEnd > 0)")
+            command("open", report["server_origin"] + "/subs")
+            command("wait", '.sub-item-title[title="m5-secondary-only"]')
+            assert evaluate("document.querySelector('.sub-item-title[title=\"ui-restored-sub\"]') === null"), "Primary data leaked into secondary UI"
+            secondary = evaluate(profile_script)
+            assert secondary["host"]["current"] == "m5-secondary", "Configured secondary backend did not survive reload"
+            assert {item["url"] for item in secondary["host"]["apis"]} == {report["server_url"], secondary_url}, "Saved backend profiles changed"
+            assert "rust" not in secondary["cache"]["data"]["data"]["data"]["meta"], "Environment cache retained Rust metadata on Node"
+            command("open", report["server_origin"] + "/settings/api")
+            click_name(original["host"]["current"], "heading")
+            command("wait", "--fn", "JSON.parse(localStorage.getItem('hostAPI')).current === " + json.dumps(original["host"]["current"]))
+            command("wait", "--fn", "JSON.parse(localStorage.getItem('envCache') || 'null')?.expiry > " + str(secondary["cache"]["expiry"]) + " && JSON.parse(localStorage.getItem('envCache')).data.data.data.meta.node.env.SUB_STORE_BACKEND_CUSTOM_NAME !== 'm5-secondary-oracle'")
+            command("wait", "--fn", "performance.getEntriesByType('resource').some(entry => entry.name === " + json.dumps(report["server_url"] + "/api/utils/refresh") + " && entry.responseEnd > 0)")
+            command("open", report["server_origin"] + "/subs")
+            command("wait", '.sub-item-title[title="ui-restored-sub"]')
+            assert evaluate("document.querySelector('.sub-item-title[title=\"m5-secondary-only\"]') === null"), "Secondary data remained after switching back"
+            restored = evaluate(profile_script)
+            assert restored["host"] == {**original["host"], "apis": secondary["host"]["apis"]}, "Configured primary backend did not survive reload"
+            check_json(restored["cache"]["data"]["data"]["data"], original["cache"]["data"]["data"]["data"])
+            assert restored["cache"]["expiry"] > original["cache"]["expiry"], "Primary environment cache was not refreshed"
+            check_json(json.loads((state / "sub-store.json").read_text(encoding="utf-8")), primary)
+            check_json(json.loads((secondary_state / "sub-store.json").read_text(encoding="utf-8")), secondary_document)
+            (output / "frontend-configured-profiles.json").write_text(json.dumps({"original": original, "secondary": secondary, "restored": restored}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            report["cases"].append({"id": "FE21-configured-backend-switch-and-refresh", "source": "src/views/settings/APISetting.vue:413,513; src/hooks/useHostAPI.ts:86; src/utils/initApp.ts:35",
+                                    "started_at": started, "secondary_backend_url": secondary_url, "appearance_setting": appearance, "status": "browser_passed"})
+
     def restart_and_delete():
         original_url, original_origin = report["server_url"], report["server_origin"]
         direct_url = report.get("direct_backend_url", original_url)
@@ -417,15 +492,19 @@ def main():
         assert (frontend / "dist/index.html").is_file(), "Build the pinned frontend first"
         assets = {str(path.relative_to(frontend / "dist")): hashlib.sha256(path.read_bytes()).hexdigest()
                   for path in sorted((frontend / "dist").rglob("*")) if path.is_file()}
+        delivered_assets = {str(path.relative_to(assets_root)): hashlib.sha256(path.read_bytes()).hexdigest()
+                            for path in sorted(assets_root.rglob("*")) if path.is_file()}
+        assert delivered_assets == assets, "Served frontend differs from the unchanged build"
+        report["served_asset_root"] = str(assets_root)
         artifact = json.dumps(assets, sort_keys=True).encode("utf-8")
         report["frontend_artifact_sha256"] = hashlib.sha256(artifact).hexdigest()
         (output / "frontend-assets.json").write_bytes(artifact)
+        bundle = execute([node, "bundle-esbuild.js"], BACKEND, environment, output, "backend-bundle")
+        assert bundle.returncode == 0, "Backend oracle bundle failed"
         if args.rust_binary:
             from service import listener
             server = listener(args.rust_binary.resolve(strict=True), environment, output, report)
         else:
-            bundle = execute([node, "bundle-esbuild.js"], BACKEND, environment, output, "backend-bundle")
-            assert bundle.returncode == 0, "Backend bundle failed"
             server = oracle(node, environment, output, report)
         with ControlledUpstream() as upstream, server as backend_url:
             if args.standalone:
@@ -444,7 +523,7 @@ def main():
             assert any(item["url"] == backend_url and item["name"] == metadata["host"]["current"] for item in metadata["host"]["apis"]), "UI backend setup failed"
             assert metadata["env"]["backend"] == "Node" and metadata["env"]["version"] == "2.42.4", "Metadata mismatch"
             if args.rust_binary:
-                assert metadata["env"]["meta"]["rust"]["complete"] is False, "Partial Rust service must not claim final parity"
+                assert metadata["env"]["meta"]["rust"] == {"version": "0.1.0", "milestone": "M5", "complete": True}, "Final Rust metadata missing"
             assert metadata["env"]["meta"]["node"]["env"]["SUB_STORE_FRONTEND_BACKEND_PATH"] == "/backend", "Legacy config metadata missing"
             # CI's browser language differs from the Windows baseline; use the real language control.
             command("open", report["server_origin"] + "/my")
@@ -592,6 +671,7 @@ def main():
             report["cases"].append({"id": "FE18-clear-logs", "source": "src/components/LogsPanel.vue:639,652", "status": "browser_passed"})
             download_backup()
             restore_backup()
+            switch_backend()
             report["upstream_requests"] = upstream.requests
             command("screenshot", output / "frontend-page.png")
             report["page_errors"] = command("errors")

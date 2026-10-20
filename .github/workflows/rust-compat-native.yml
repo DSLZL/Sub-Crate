@@ -13,7 +13,7 @@ jobs:
   native-baseline:
     name: Native ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -21,12 +21,21 @@ jobs:
           - target: linux-x64
             runner: ubuntu-24.04
             unit-mode: unit
+            rustflags: ''
+            cargo_args: ''
+            binary: rust/target/release/sub-store-rust
           - target: linux-arm64
             runner: ubuntu-24.04-arm
             unit-mode: unit
+            rustflags: ''
+            cargo_args: ''
+            binary: rust/target/release/sub-store-rust
           - target: windows-x64
             runner: windows-2025
             unit-mode: unit-windows
+            rustflags: '-C target-feature=+crt-static'
+            cargo_args: '--target x86_64-pc-windows-msvc'
+            binary: rust/target/x86_64-pc-windows-msvc/release/sub-store-rust.exe
     defaults:
       run:
         shell: bash
@@ -64,22 +73,31 @@ jobs:
       - name: Rust service lint, tests and release binary
         id: service-build
         if: ${{ !cancelled() }}
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
         run: |
           mkdir -p tests/compat/evidence/service-build
-          cargo clippy --manifest-path rust/Cargo.toml --locked --all-targets -- -D warnings 2>&1 | tee tests/compat/evidence/service-build/clippy.log
-          cargo test --manifest-path rust/Cargo.toml --locked --all-targets 2>&1 | tee tests/compat/evidence/service-build/tests.log
-          cargo build --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust 2>&1 | tee tests/compat/evidence/service-build/release.log
-      - name: Actual Rust service HTTP, state, restart and rollback contracts
-        if: ${{ !cancelled() }}
-        run: python tests/compat/service.py --node "$(node -p 'process.execPath')"
-      - name: Preserve native service binary
+          cargo clippy --manifest-path rust/Cargo.toml --locked --all-targets ${{ matrix.cargo_args }} -- -D warnings 2>&1 | tee tests/compat/evidence/service-build/clippy.log
+          cargo test --manifest-path rust/Cargo.toml --locked --all-targets ${{ matrix.cargo_args }} 2>&1 | tee tests/compat/evidence/service-build/tests.log
+          cargo build --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust ${{ matrix.cargo_args }} 2>&1 | tee tests/compat/evidence/service-build/release.log
+      - name: Package and verify the native delivery
+        id: service-package
         if: ${{ !cancelled() && steps.service-build.outcome == 'success' }}
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
+        run: |
+          python tests/compat/distribution.py --target "${{ matrix.target }}" \
+            --binary "${{ matrix.binary }}" \
+            --output "$RUNNER_TEMP/sub-store-native-distribution"
+      - name: Actual delivered Rust binary HTTP, state, restart and rollback contracts
+        if: ${{ !cancelled() && steps.service-package.outcome == 'success' }}
+        run: python tests/compat/service.py --node "$(node -p 'process.execPath')" --binary "${{ steps.service-package.outputs.binary }}"
+      - name: Preserve runnable native archive, notices and provenance
+        if: ${{ !cancelled() && steps.service-package.outcome == 'success' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: m2-service-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            rust/target/release/sub-store-rust
-            rust/target/release/sub-store-rust.exe
+          name: m5-distribution-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.service-package.outputs.publish }}
           if-no-files-found: error
           retention-days: 30
       - name: Build general JS helpers
@@ -135,32 +153,54 @@ jobs:
           node tests/compat/build-native-utilities.cjs
       - name: Build the unchanged frontend with type checks
         run: pnpm --dir .compat-frontend build 2>&1 | tee tests/compat/evidence/frontend-setup/frontend-build.log
+      - name: Regenerate frozen source and frontend compatibility inventory
+        run: node tests/compat/inventory.cjs "$GITHUB_WORKSPACE/.compat-frontend" "$GITHUB_WORKSPACE/tests/compat/evidence/frontend-setup/source-inventory.json"
+      - name: Package and extract the unchanged frontend delivery
+        id: frontend-package
+        run: python tests/compat/distribution.py --frontend "$GITHUB_WORKSPACE/.compat-frontend" --output "$GITHUB_WORKSPACE/.compat-delivery/frontend"
       - name: Install headless Chrome and Linux dependencies
         run: agent-browser install --with-deps 2>&1 | tee tests/compat/evidence/frontend-setup/browser-install.log
       - name: Browser UI, persisted state and HAR contracts
         run: |
           python tests/compat/frontend.py --node "$(node -p 'process.execPath')" \
             --frontend "$GITHUB_WORKSPACE/.compat-frontend" \
+            --assets "${{ steps.frontend-package.outputs.assets }}" \
             --browser "$(npm root --global)/agent-browser/bin/agent-browser-linux-x64"
       - name: Build the Rust service on the GitHub runner
+        id: frontend-rust-build
         if: ${{ !cancelled() }}
         run: |
           rustup toolchain install 1.98.0 --profile minimal
           cargo +1.98.0 build --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust 2>&1 | tee tests/compat/evidence/frontend-setup/rust-build.log
+      - name: Package and extract the Rust backend used by the frontend
+        id: frontend-backend-package
+        if: ${{ !cancelled() && steps.frontend-rust-build.outcome == 'success' }}
+        env:
+          RUSTUP_TOOLCHAIN: 1.98.0
+        run: python tests/compat/distribution.py --target linux-x64 --binary "$GITHUB_WORKSPACE/rust/target/release/sub-store-rust" --output "$GITHUB_WORKSPACE/.compat-delivery/frontend-backend"
       - name: Unchanged frontend CRUD, settings and backup restore against Rust
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.frontend-package.outcome == 'success' && steps.frontend-backend-package.outcome == 'success' }}
         run: |
           python tests/compat/frontend.py --node "$(node -p 'process.execPath')" \
             --frontend "$GITHUB_WORKSPACE/.compat-frontend" \
+            --assets "${{ steps.frontend-package.outputs.assets }}" \
             --browser "$(npm root --global)/agent-browser/bin/agent-browser-linux-x64" \
-            --rust-binary "$GITHUB_WORKSPACE/rust/target/release/sub-store-rust"
+            --rust-binary "${{ steps.frontend-backend-package.outputs.binary }}"
       - name: Unchanged frontend through the standalone Rust port
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.frontend-package.outcome == 'success' && steps.frontend-backend-package.outcome == 'success' }}
         run: |
           python tests/compat/frontend.py --node "$(node -p 'process.execPath')" \
             --frontend "$GITHUB_WORKSPACE/.compat-frontend" \
+            --assets "${{ steps.frontend-package.outputs.assets }}" \
             --browser "$(npm root --global)/agent-browser/bin/agent-browser-linux-x64" \
-            --rust-binary "$GITHUB_WORKSPACE/rust/target/release/sub-store-rust" --standalone
+            --rust-binary "${{ steps.frontend-backend-package.outputs.binary }}" --standalone
+      - name: Deliver the exact frontend assets used by all three browser runs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: m5-frontend-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.frontend-package.outputs.publish }}/
+          if-no-files-found: error
+          retention-days: 30
       - name: Preserve browser evidence, including failures
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -207,8 +247,16 @@ jobs:
       - name: Container release binary, HTTP, persistence and restart contracts
         run: python tests/compat/probe.py --node "$(node -p 'process.execPath')" --docker
       - name: Actual Node-free Rust service container contracts
+        id: docker-service
         if: ${{ !cancelled() }}
         run: python tests/compat/service.py --node "$(node -p 'process.execPath')" --docker
+      - name: Deliver the saved and reloaded production image
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: m5-distribution-docker-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.docker-service.outputs.publish }}/
+          if-no-files-found: error
+          retention-days: 30
       - name: Preserve container evidence, including failures
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

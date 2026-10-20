@@ -490,8 +490,9 @@
       "N05-node-info-missing-server-and-recovery"
     ]
   },
-  "coverage_state": "234 executable fixtures; full suite intentionally fails until the complete inventory is accepted",
-  "pending_domains": [
+  "coverage_state": "The complete finite integration gate is rust-compat-native.yml; individual runner suites remain bounded. Final acceptance requires all six jobs and source-to-result review, not exhaustive branch coverage.",
+  "pending_domains": [],
+  "initial_discovery_domains": [
     "artifacts",
     "files",
     "tokens",

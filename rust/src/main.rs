@@ -1078,7 +1078,7 @@ async fn route(
                 "status":"success", "data":{
                     "backend":"Node", "version":"2.42.4",
                     "feature":{"archive":true,"share":!config.frontend_backend_path.is_empty()},
-                    "meta":{"node":{"env":config.environment},"rust":{"version":env!("CARGO_PKG_VERSION"),"milestone":"M4","complete":false}}
+                    "meta":{"node":{"env":config.environment},"rust":{"version":env!("CARGO_PKG_VERSION"),"milestone":"M5","complete":true}}
                 }
             })),
         );

@@ -15,6 +15,152 @@ import runner
 
 
 class RunnerTests(unittest.TestCase):
+    def test_age_requests_keep_every_crypto_group_and_upstream_assertion(self):
+        from service import isolate_age_requests
+        fixtures = Path(__file__).parent / "fixtures"
+        cases = json.loads((fixtures / "http-cases.json").read_text(encoding="utf-8"))
+        original = next(case for case in cases if case["id"] == "PC-native-age-public-and-download")
+        before = copy.deepcopy(original["steps"][0])
+        content = before["body"]["process"][0]["args"]["content"]
+        self.assertEqual(content, (fixtures / "script-age-native.js").read_text(encoding="utf-8"))
+        expected = before["expect"]["json_contains"]["data"]["processed"][0]["ageVerified"]
+        isolate_age_requests(cases)
+        self.assertEqual(len(original["steps"]), len(expected))
+        observed = []
+        outgoing = []
+        for check, step in zip(expected, original["steps"], strict=True):
+            self.assertEqual(step["body"]["process"][0]["args"]["arguments"].pop("check"), check)
+            observed.extend(step["expect"]["json_contains"]["data"]["processed"][0]["ageVerified"])
+            outgoing.extend(step["upstream"])
+            restored = copy.deepcopy(step)
+            restored["expect"] = before["expect"]
+            restored["upstream"] = before["upstream"]
+            self.assertEqual(restored, before)
+        self.assertEqual(observed, expected)
+        self.assertEqual(outgoing, before["upstream"])
+
+    def test_service_mmdb_script_matches_its_reviewable_source(self):
+        fixtures = Path(__file__).parent / "fixtures"
+        cases = json.loads((fixtures / "http-cases.json").read_text(encoding="utf-8"))
+        case = next(item for item in cases if item["id"] == "PC-native-dns-mmdb-and-resolve")
+        content = case["steps"][0]["body"]["process"][0]["args"]["content"]
+        self.assertEqual(content, (fixtures / "script-dns-mmdb-native.js").read_text(encoding="utf-8"))
+
+    def test_delivered_archives_reject_modified_missing_extra_files_and_manifest(self):
+        from distribution import package_payload, verify_payload
+        for target in ("linux-x64", "windows-x64"):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                payload = root / "sub-store-rust"
+                payload.mkdir()
+                (payload / "sub-store-rust").write_bytes(b"verified executable bytes\x00")
+                (payload / "LICENSE").write_text("license text", encoding="utf-8")
+                extracted, delivery = package_payload(payload, target, {"source_commit": "f" * 40,
+                    "repository": "example/sub-store", "target": target})
+                manifest = delivery["manifest"]
+                self.assertTrue(delivery["extracted_payload_verified"])
+                verify_payload(extracted, manifest)
+                original = (extracted / "sub-store-rust").read_bytes()
+                (extracted / "sub-store-rust").write_bytes(original + b"tampered")
+                with self.assertRaises(AssertionError):
+                    verify_payload(extracted, manifest)
+                (extracted / "sub-store-rust").unlink()
+                with self.assertRaises(AssertionError):
+                    verify_payload(extracted, manifest)
+                (extracted / "sub-store-rust").write_bytes(original)
+                (extracted / "unexpected").write_bytes(b"extra")
+                with self.assertRaises(AssertionError):
+                    verify_payload(extracted, manifest)
+                (extracted / "unexpected").unlink()
+                changed = copy.deepcopy(manifest)
+                changed["source_commit"] = "0" * 40
+                (extracted / "manifest.json").write_text(json.dumps(changed), encoding="utf-8")
+                with self.assertRaises(AssertionError):
+                    verify_payload(extracted, manifest)
+
+    def test_native_distribution_rejects_the_other_elf_architecture(self):
+        import struct
+        from distribution import binary_imports
+        with tempfile.TemporaryDirectory() as temporary:
+            binary = Path(temporary) / "service"
+            content = bytearray(64)
+            content[:6] = b"\x7fELF\x02\x01"
+            struct.pack_into("<H", content, 18, 183)
+            binary.write_bytes(content)
+            with self.assertRaisesRegex(AssertionError, "Wrong ELF architecture"):
+                binary_imports(binary, "linux-x64")
+
+    def test_native_distribution_checks_transitive_notices_and_excludes_other_targets(self):
+        from distribution import collect_notices
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "LICENSE").write_text("application license", encoding="utf-8")
+            vendor = root / "rust/vendor"
+            vendor.mkdir(parents=True)
+            (vendor / "LICENSES.txt").write_text("embedded utility license", encoding="utf-8")
+            toolchain = root / "toolchain/share/doc/rust"
+            toolchain.mkdir(parents=True)
+            (toolchain / "LICENSE-MIT").write_text("toolchain license", encoding="utf-8")
+            dependency = root / "dependency"
+            dependency.mkdir()
+            (dependency / "Cargo.toml").write_text("", encoding="utf-8")
+            (dependency / "LICENSE").write_text("dependency license", encoding="utf-8")
+            transitive = root / "transitive"
+            transitive.mkdir()
+            payload = root / "payload"
+            payload.mkdir()
+            metadata = {"packages": [
+                {"id": "root", "manifest_path": str(root / "rust/Cargo.toml")},
+                {"id": "dependency", "name": "dependency", "version": "1.0.0",
+                 "manifest_path": str(dependency / "Cargo.toml"), "license": "MIT"},
+                {"id": "transitive", "name": "transitive", "version": "1.0.0",
+                 "manifest_path": str(transitive / "Cargo.toml"), "license": "MIT"},
+                {"id": "android-only", "name": "android-only", "version": "1.0.0",
+                 "manifest_path": str(root / "not-downloaded/Cargo.toml"), "license": "MIT"}],
+                "resolve": {"root": "root", "nodes": [
+                    {"id": "root", "dependencies": ["dependency"]},
+                    {"id": "dependency", "dependencies": ["transitive"]},
+                    {"id": "transitive", "dependencies": []},
+                    {"id": "android-only", "dependencies": []}]}}
+            with patch("distribution.ROOT", root), self.assertRaisesRegex(AssertionError, "Missing dependency notices"):
+                collect_notices(metadata, payload, root / "toolchain")
+            (transitive / "LICENSE").write_text("transitive license", encoding="utf-8")
+            second_payload = root / "licensed-payload"
+            second_payload.mkdir()
+            with patch("distribution.ROOT", root):
+                self.assertEqual(collect_notices(metadata, second_payload, root / "toolchain"), 2)
+            notices = json.loads((second_payload / "third-party.json").read_text(encoding="utf-8"))
+            self.assertEqual({item["name"] for item in notices["crates"]}, {"dependency", "transitive"})
+
+    def test_native_notices_use_only_the_pinned_rquickjs_workspace_license(self):
+        from distribution import collect_notices
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "LICENSE").write_text("application license", encoding="utf-8")
+            vendor = root / "rust/vendor"
+            vendor.mkdir(parents=True)
+            (vendor / "LICENSES.txt").write_text("utility license", encoding="utf-8")
+            toolchain = root / "toolchain/share/doc/rust"
+            toolchain.mkdir(parents=True)
+            (toolchain / "LICENSE-MIT").write_text("toolchain license", encoding="utf-8")
+            package = {"id": "rquickjs-core", "name": "rquickjs-core", "version": "0.14.0", "license": "MIT",
+                       "repository": "https://github.com/DelSkayn/rquickjs.git", "manifest_path": str(root / "core/Cargo.toml")}
+            metadata = {"packages": [{"id": "app"}, package], "resolve": {"root": "app", "nodes": [
+                {"id": "app", "dependencies": [package["id"]]}, {"id": package["id"], "dependencies": []}]}}
+            for version in ("0.14.0", "0.14.1"):
+                package["version"] = version
+                payload = root / version
+                payload.mkdir()
+                with patch("distribution.ROOT", root):
+                    if version == "0.14.1":
+                        with self.assertRaisesRegex(AssertionError, "Missing dependency notices"):
+                            collect_notices(metadata, payload, root / "toolchain")
+                    else:
+                        self.assertEqual(collect_notices(metadata, payload, root / "toolchain"), 1)
+                        copied = payload / "licenses/crates/rquickjs-core-0.14.0/workspace-LICENSE"
+                        self.assertEqual(hashlib.sha256(copied.read_bytes()).hexdigest(),
+                                         "976ad3d07927343ab99b31510625acba89eac8e0e517c712925620ddeda91b70")
+
     def test_early_http_rejection_receives_one_complete_json_request_without_retry(self):
         from http.client import HTTPConnection
         import time
@@ -543,6 +689,35 @@ class RunnerTests(unittest.TestCase):
                 entries[0]["request"]["method"] = "POST"
             with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
                 check_network(entries, cases, "http://127.0.0.1:1/backend")
+
+    def test_backend_switch_requires_both_origins_after_switch_started(self):
+        from frontend import check_network
+        primary, secondary = "http://127.0.0.1:1/backend", "http://127.0.0.1:2"
+        case = {"id": "FE21-configured-backend-switch-and-refresh", "secondary_backend_url": secondary,
+                "started_at": "2026-10-20T00:00:01+00:00", "appearance_setting": {"istabBar": False}}
+        entries = [{"request": {"method": "GET", "url": base + path}, "response": {"status": 200},
+                    "startedDateTime": "2026-10-20T00:00:02.000Z"}
+                   for base in (primary, secondary) for path in ("/api/utils/env", "/api/subs", "/api/utils/refresh")]
+        entries.append({"request": {"method": "PATCH", "url": secondary + "/api/settings",
+                                    "postData": {"text": json.dumps({"appearanceSetting": case["appearance_setting"]})}},
+                        "response": {"status": 200}, "startedDateTime": "2026-10-20T00:00:02.000Z"})
+        self.assertEqual(len(check_network(entries, [case], primary)), 7)
+        for mutation in ("missing", "old", "failed", "wrong-origin", "missing-appearance", "wrong-appearance"):
+            changed = copy.deepcopy(entries)
+            if mutation == "missing":
+                changed.pop(5)
+            elif mutation == "old":
+                changed[5]["startedDateTime"] = "2026-10-20T00:00:00.000Z"
+            elif mutation == "failed":
+                changed[5]["response"]["status"] = 500
+            elif mutation == "wrong-origin":
+                changed[5]["request"]["url"] = primary + "/api/utils/refresh"
+            elif mutation == "missing-appearance":
+                changed.pop()
+            else:
+                changed[-1]["request"]["postData"]["text"] = '{"appearanceSetting":{"istabBar":true}}'
+            with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
+                check_network(changed, [case], primary)
 
     def test_command_evidence_with_and_without_rtk(self):
         import reference
