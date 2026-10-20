@@ -19,7 +19,7 @@ is injected only into the measurement step. It is removed from the environment
 before application processes start. Private files stay in `$RUNNER_TEMP` and
 are never uploaded, cached, or included in console logs.
 
-The workflow freezes original `9cc6b5fa`, Rust `fa0513e2`, and unchanged frontend
+The workflow freezes original `9cc6b5fa`, Rust `e5890c2a`, and unchanged frontend
 `4bd7b0ac`, with full revisions in the harness and report. It builds the original
 without compatibility-reference patches. The actual subscription file input on
 `/subs` imports the original file five times per backend into fresh storage.
