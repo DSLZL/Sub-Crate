@@ -56,6 +56,12 @@ is invoked through the public preview API, outside timing, to check that the
 pre-producer snapshot corresponds to final output (including legitimate SNI/port
 normalization). No broad field removal or copied producer implementation is used.
 Output must be nonempty, and cold selected / completed identities must match.
+Repeated probe requests are counted separately: the original retry policy remains
+active, while unique completed identities must still cover the entire batch.
+Raw replay is also checked on both backends. Parse and pre-health cases run first
+to locate processing differences. A product mismatch marks that cell failed but
+allows independent cells to run; observed metrics and differing counts remain in
+the report, while failed/non-equivalent pairs never enter speedup estimates.
 Timeout, crash or incomplete work is a failed
 sample; the harness never trims nodes or re-enables maintenance caps to pass.
 

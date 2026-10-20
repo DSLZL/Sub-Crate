@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from urllib.parse import unquote, urlsplit
@@ -94,6 +95,22 @@ class Contracts(unittest.TestCase):
         self.assertNotIn("p95", b.distribution([.01, .02]))
         self.assertEqual(b.distribution(list(range(1, 101)))["p95"], 95)
 
+    def test_failed_correctness_cells_keep_metrics_without_speedup_estimates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            row = {"case": "parse", "block": 0, "concurrency": 1, "latencies_s": [.1],
+                   "elapsed_s": .1, "cpu_s": .05, "rps": 10, "rss_peak_bytes": 1000,
+                   "os_lifetime_peak_bytes": 2000, "output_count": 1, "output_sha256": "a" * 64}
+            report = {"status": "failed", "imports": [], "samples": [
+                {**row, "kind": "node", "status": "passed"},
+                {**row, "kind": "rust", "status": "failed", "failure": "output_mismatch"}]}
+            suite = object.__new__(b.Suite)
+            suite.args, suite.report = SimpleNamespace(publish=Path(tmp)), report
+            suite.publish()
+            self.assertEqual(json.loads((Path(tmp) / "metrics.json").read_bytes())["estimates"], [])
+            summary = (Path(tmp) / "summary.md").read_text()
+            self.assertIn("| parse | 1 | rust | 0/1 |", summary)
+            self.assertIn("FAILED parse rust", summary)
+
     def test_missing_host_cgroup_quota_is_unavailable(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "cpu.max"
@@ -114,6 +131,7 @@ class Contracts(unittest.TestCase):
             counts = {"starts": 1, "stops": 1, "selected": 2, "unique_probes": 2, "probes": 2}
             with patch.object(b, "api", return_value={"processed": [{"name": "x"}]}):
                 self.assertEqual(suite.audit(state, [{"name": "x"}], True, counts, "http://127.0.0.1:1")["identities"], 2)
+                self.assertEqual(suite.audit(state, [{"name": "x"}], True, {**counts, "probes": 3}, "http://127.0.0.1:1")["identities"], 2)
                 for key in ("selected", "unique_probes", "probes"):
                     with self.assertRaises(b.Failure):
                         suite.audit(state, [{"name": "x"}], True, {**counts, key: 1}, "http://127.0.0.1:1")

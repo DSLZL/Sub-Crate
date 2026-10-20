@@ -599,11 +599,24 @@ class Suite:
                 (self.args.scratch / "mirrors" / f"{i}.txt").write_bytes(source.encode())
         self.publish()
 
+    def replay(self, original):
+        expected = [(self.args.scratch / "mirrors" / f"{i}.txt").read_bytes().decode() for i in range(22)] + [original["content"]]
+        self.report["replay"] = []
+        for kind in KINDS:
+            with self.server(kind, self.directory("replay-" + kind)) as (origin, _, _, _):
+                config = self.configure(origin, original)
+                actual = json.loads(self.download(origin, config["name"], raw=True))
+                self.report["replay"].append({"kind": kind, "expected_sha256": digest(expected),
+                                              "actual_sha256": digest(actual), "equal": actual == expected,
+                                              "source_count": len(actual),
+                                              "matching_sources": sum(a == b for a, b in zip(expected, actual))})
+        self.publish()
+
     def counts(self, reset=False, real=False):
         return json.loads(http(self.fixture_origin + ("/reset" if reset else "/counts"),
                                "POST" if reset else "GET", {"real": real} if reset else None))
 
-    def audit(self, state, output, cold, counts, origin, real=False):
+    def audit(self, state, output, cold, counts, origin, real=False, cross_compare=True):
         root = json.loads((state / "root.json").read_bytes())
         cache = json.loads(root["sub-store-cached-script-resource"])
         health = [v["data"] for k, v in cache.items() if k.startswith("http-meta:health-inc:v1:")]
@@ -617,7 +630,8 @@ class Suite:
             if self.expected_snapshot_hash is None:
                 self.expected_snapshot_hash = snapshot_hash
                 self.expected_snapshot = snapshot["proxies"]
-            compare_nodes(self.expected_snapshot, snapshot["proxies"])
+            if cross_compare:
+                compare_nodes(self.expected_snapshot, snapshot["proxies"])
         # Publication precedes the final producer (SNI/ports/etc.); validate using that actual producer.
         projected = api(origin, "preview/sub", "POST", {
             "name": "benchmark-snapshot-validation", "source": "local",
@@ -630,7 +644,8 @@ class Suite:
         if cold:
             require(counts["starts"] == counts["stops"] == 1 and counts["selected"] == len(records) > 0, "work_incomplete")
             if not real:
-                require(counts["unique_probes"] == counts["probes"] == len(records), "work_incomplete")
+                # The original retry policy remains active; all identities must still be reached.
+                require(counts["unique_probes"] == len(records) <= counts["probes"], "work_incomplete")
         else:
             require(counts["starts"] == counts["selected"] == counts["probes"] == 0, "warm_miss")
         return {"identities": len(records), "published": snapshot["count"],
@@ -663,14 +678,18 @@ class Suite:
                 warm = case in ("warm", "pressure", "no_publisher")
                 if warm:
                     warm_raw = self.download(origin, config["name"])
-                    warm_output = self.check_output(warm_raw)
+                    warm_output = self.check_output(warm_raw, compare=False)
                     warm_raw_hash = digest(warm_raw)
                     if case != "no_publisher":
-                        self.audit(state, warm_output, True, self.counts(), origin)
+                        self.audit(state, warm_output, True, self.counts(), origin, cross_compare=False)
                     self.counts(reset=True)
                 last = None
+                mismatch = None
+                if case == "pressure" and nodes_hash(warm_output) != self.expected_hashes["full"]:
+                    mismatch = warm_output
 
                 def once():
+                    nonlocal mismatch
                     began = time.monotonic()
                     raw = self.download(origin, config["name"])
                     elapsed = time.monotonic() - began
@@ -680,7 +699,13 @@ class Suite:
                         require(fingerprint == warm_raw_hash, "output_mismatch")
                         output = warm_output
                     else:
-                        output = self.check_output(raw, compare=case != "real", key=case if case in ("parse", "pre_health") else "full")
+                        output = self.check_output(raw, compare=False)
+                    if case not in ("real", "pressure"):
+                        key = case if case in ("parse", "pre_health") else "full"
+                        expected = self.expected_outputs.setdefault(key, output)
+                        self.expected_hashes.setdefault(key, nodes_hash(expected))
+                        if nodes_hash(output) != self.expected_hashes[key] and mismatch is None:
+                            mismatch = output
                     return elapsed, output, fingerprint
 
                 with Meter(child, self.fixture, self.meta if case == "real" else None) as meter:
@@ -707,7 +732,12 @@ class Suite:
                 row["raw_output_sha256"] = raw_hash
                 row["counts"] = self.counts()
                 if case not in ("parse", "pre_health", "no_publisher"):
-                    row["work"] = self.audit(state, last, not warm, row["counts"], origin, case == "real")
+                    row["work"] = self.audit(state, last, not warm, row["counts"], origin, case == "real", cross_compare=False)
+                if mismatch is not None:
+                    key = case if case in ("parse", "pre_health") else "full"
+                    compare_nodes(self.expected_outputs[key], mismatch)
+                if case != "real" and "work" in row:
+                    require(row["work"]["snapshot_sha256"] == self.expected_snapshot_hash, "output_mismatch")
                 if case == "cold" and block == 0:
                     clash = self.download(origin, config["name"], target="ClashMeta")
                     # Parse via the original's existing locked YAML utility, outside timing.
@@ -734,24 +764,26 @@ class Suite:
             health = [v["data"] for k, v in cache.items() if k.startswith("http-meta:health-inc:v1:")]
             row["health_records"] = sum(len(v["records"]) for v in health)
             row["health_verified"] = sum(bool(r.get("lastOk")) for v in health for r in v["records"].values())
-            raise
+            # Product incompatibility remains a failed sample; collect independent cells too.
+            if not isinstance(error, Failure) or error.code not in {"output_mismatch", "snapshot", "work_incomplete", "warm_miss", "clash", "empty_output", "http", "timeout"}:
+                raise
         finally:
             self.publish()
 
     def publish(self):
         public(self.report)
         self.args.publish.mkdir(exist_ok=True)
-        write_json(self.args.publish / "metrics.json", self.report)
         rows = self.report["samples"]
         lines = ["# Supplied subscription: original / Rust", "", f"Status: **{self.report['status']}**. Linux x64 GitHub-hosted runner only.", "",
                  "Original: `" + ORIGINAL + "`; Rust: `" + RUST + "`.", "",
                  "Original frontend file picker imports the unchanged secret file; 22 captured sources are replayed identically.",
                  "The shared five-site script variant removes maintenance caps. Filters/dedup, probe retries/timeouts and snapshot publication remain active.", "",
-                 "| Case | Clients | Backend | Requests | Median ms | P95 ms | RPS | CPU s/request | Peak RSS MiB | OS lifetime peak MiB |", "|---|---:|---|---:|---:|---:|---:|---:|---:|---:|"]
+                 "Observed timings include failed correctness cells. Different output/work counts invalidate speedup comparisons; only verified equivalent pairs enter estimates.", "",
+                 "| Case | Clients | Backend | Passed/measured blocks | Requests | Median ms | P95 ms | RPS | CPU s/request | Peak RSS MiB | OS lifetime peak MiB |", "|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
         for case in CASES:
             for concurrency in (1, 2, 4, 8):
                 for kind in KINDS:
-                    group = [r for r in rows if r["case"] == case and r["kind"] == kind and r["concurrency"] == concurrency and r["status"] == "passed"]
+                    group = [r for r in rows if r["case"] == case and r["kind"] == kind and r["concurrency"] == concurrency and "elapsed_s" in r]
                     if not group:
                         continue
                     timings = [v for row in group for v in row["latencies_s"]]
@@ -759,7 +791,7 @@ class Suite:
                     elapsed = sum(r["elapsed_s"] for r in group)
                     cpu_s = sum(r["cpu_s"] for r in group)
                     p95 = f"{dist['p95'] * 1000:.2f}" if "p95" in dist else "insufficient n"
-                    lines.append(f"| {case} | {concurrency} | {kind} | {len(timings)} | {dist['median']*1000:.2f} | {p95} | {len(timings)/elapsed:.2f} | {cpu_s/len(timings):.5f} | {max(r['rss_peak_bytes'] for r in group)/2**20:.1f} | {max(r['os_lifetime_peak_bytes'] or 0 for r in group)/2**20:.1f} |")
+                    lines.append(f"| {case} | {concurrency} | {kind} | {sum(r['status']=='passed' for r in group)}/{len(group)} | {len(timings)} | {dist['median']*1000:.2f} | {p95} | {len(timings)/elapsed:.2f} | {cpu_s/len(timings):.5f} | {max(r['rss_peak_bytes'] for r in group)/2**20:.1f} | {max(r['os_lifetime_peak_bytes'] or 0 for r in group)/2**20:.1f} |")
         lines += ["", "File import (five fresh states per backend; browser driver wall time and actual HAR API time are separate):"]
         for kind in KINDS:
             imports = [r for r in self.report["imports"] if r["kind"] == kind]
@@ -782,12 +814,17 @@ class Suite:
         capture = self.report.get("capture", {})
         if capture:
             lines += ["", f"Capture: {capture['nonempty']}/22 nonempty source bodies; {capture['empty_or_failed']} empty/failed. Capture wall time {capture['elapsed_s']:.2f}s. These are decoded parser inputs, not original HTTP/TLS envelopes."]
+        for row in self.report.get("replay", []):
+            lines.append(f"- Raw replay {row['kind']}: equal={row['equal']}, matching sources={row['matching_sources']}/{row['source_count']}.")
+        for row in rows:
+            if row["status"] == "failed":
+                lines.append(f"- FAILED {row['case']} {row['kind']} block={row['block']} clients={row['concurrency']}: {row['failure']}, output count={row.get('output_count', 'unavailable')}. Field-path/type/hash diagnostics are in metrics.json.")
         for row in rows:
             if row["case"] in ("cold", "real") and "work" in row:
-                lines.append(f"- {row['case']} {row['kind']} block={row['block']}: selected={row['counts']['selected']}, identities={row['work']['identities']}, verified={row['work']['verified']}, output/snapshot={row['output_count']}/{row['work']['published']}.")
+                lines.append(f"- {row['case']} {row['kind']} block={row['block']}: selected={row['counts']['selected']}, identities={row['work']['identities']}, verified={row['work']['verified']}, requests/unique={row['counts']['probes']}/{row['counts']['unique_probes']}, output/snapshot={row['output_count']}/{row['work']['published']}.")
         lines += ["", "Attribution and measurement headroom:"]
         for kind in KINDS:
-            group = [r for r in rows if r["kind"] == kind and r["status"] == "passed"]
+            group = [r for r in rows if r["kind"] == kind and "elapsed_s" in r]
             for case in ("pressure", "real"):
                 matches = [r for r in group if r["case"] == case]
                 if matches:
@@ -930,7 +967,8 @@ def main():
             report["fixture_calibration"] = {"requests": 160, "elapsed_s": time.monotonic() - began,
                                              "driver_cpu_s": cpu(psutil.Process()) - driver_before,
                                              "fixture_cpu_s": cpu(psutil.Process(fixture.pid)) - fixture_before}
-            for case, blocks in (("cold", 10), ("warm", 5), ("pressure", 3), ("parse", 3), ("pre_health", 1), ("no_publisher", 3)):
+            suite.replay(original)
+            for case, blocks in (("parse", 3), ("pre_health", 1), ("cold", 10), ("warm", 5), ("pressure", 3), ("no_publisher", 3)):
                 for concurrency in ((1, 2, 4, 8) if case == "pressure" else (1,)):
                     for block in range(blocks):
                         for kind in (KINDS if block % 2 == 0 else KINDS[::-1]):
@@ -967,7 +1005,8 @@ def main():
                 for kind in KINDS:
                     suite.run_case(kind, "real", 0, original)
         require(len(report["imports"]) == 10 and all(r["restart"] for r in report["imports"]), "persistence")
-        report["status"] = "passed"
+        report["matrix_complete"] = True
+        report["status"] = "passed" if all(r["status"] == "passed" for r in report["samples"]) and all(r["equal"] for r in report["replay"]) else "failed"
     except Exception as error:
         report.update(status="failed", failure=error.code if isinstance(error, Failure) else "unexpected",
                       failure_stack=[frame.lineno for frame in traceback.extract_tb(error.__traceback__) if frame.filename == __file__])
