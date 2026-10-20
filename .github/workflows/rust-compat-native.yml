@@ -153,6 +153,8 @@ jobs:
           node tests/compat/build-native-utilities.cjs
       - name: Build the unchanged frontend with type checks
         run: pnpm --dir .compat-frontend build 2>&1 | tee tests/compat/evidence/frontend-setup/frontend-build.log
+      - name: Regenerate frozen source and frontend compatibility inventory
+        run: node tests/compat/inventory.cjs "$GITHUB_WORKSPACE/.compat-frontend" "$GITHUB_WORKSPACE/tests/compat/evidence/frontend-setup/source-inventory.json"
       - name: Package and extract the unchanged frontend delivery
         id: frontend-package
         run: python tests/compat/distribution.py --frontend "$GITHUB_WORKSPACE/.compat-frontend" --output "$GITHUB_WORKSPACE/.compat-delivery/frontend"
