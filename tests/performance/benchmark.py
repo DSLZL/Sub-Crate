@@ -526,8 +526,10 @@ class Suite:
         config = copy.deepcopy(original)
         if fixture:
             config["url"] = "\n".join(self.fixture_origin + f"/source/{index}" for index in range(22))
-            config["process"][4]["args"]["content"] = self.fixture_origin + "/health.js"
-            config["process"][4]["args"]["arguments"]["http_meta_port"] = str(urlsplit(self.fixture_origin).port)
+            linked = config["process"][4]["args"]
+            linked["arguments"]["http_meta_port"] = str(urlsplit(self.fixture_origin).port)
+            # Link mode reads URL fragments, not args.arguments (which is the UI editor value).
+            linked["content"] = self.fixture_origin + "/health.js#" + quote(encoded(linked["arguments"]), safe="")
         if variant == "parse":
             config["process"] = []
         elif variant == "no_publisher":

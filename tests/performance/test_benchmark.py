@@ -9,6 +9,8 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
+from urllib.parse import unquote, urlsplit
 
 import benchmark as b
 
@@ -39,6 +41,20 @@ class Contracts(unittest.TestCase):
             b.import_transform(original, broken)
         with self.assertRaises(b.Failure):
             b.import_transform(original, {**imported, "name": "demo_123"})
+
+    def test_link_arguments_are_delivered_through_the_actual_fragment_contract(self):
+        original = {"name": "demo", "url": "https://private.invalid", "process": [{} for _ in range(7)]}
+        original["process"][4] = {"type": "Script Operator", "args": {"mode": "link", "content": "https://script.invalid#max_checks=150", "arguments": {"max_checks": "150", "namespace": "private", "refresh_mode": "always"}}}
+        suite = object.__new__(b.Suite)
+        suite.fixture_origin = "http://127.0.0.1:12345"
+        with patch.object(b, "api", side_effect=[[{"name": "imported"}], None]) as api:
+            config = suite.configure("http://127.0.0.1:1", original)
+        actual = json.loads(unquote(urlsplit(config["process"][4]["args"]["content"]).fragment))
+        self.assertEqual(actual, {"max_checks": "150", "namespace": "private", "refresh_mode": "always", "http_meta_port": "12345"})
+        self.assertEqual(len(config["url"].splitlines()), 22)
+        self.assertEqual(config["process"][4]["args"]["mode"], "link")
+        self.assertEqual(api.call_args.args[3], config)
+        self.assertNotIn("http_meta_port", original["process"][4]["args"]["arguments"])
 
     def test_equivalence_keeps_credentials_order_and_metadata(self):
         nodes = [{"name": "x", "password": "secret", "_latency": "1", "_subName": "x", "nested": {"_latency": "a"}}]
