@@ -2271,7 +2271,7 @@ def standalone_resources(frontend_url, backend_url, mount, state, output, name):
     return observations
 
 
-def configuration_probes(url, state, output, name, limit, allowed, denied, wildcard):
+def configuration_probes(url, state, output, name, limit, allowed, denied, wildcard, powered_by="Sub-Store"):
     observations = []
     def send(step, status):
         before = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")}
@@ -2287,6 +2287,7 @@ def configuration_probes(url, state, output, name, limit, allowed, denied, wildc
             assert before == after, "Rejected/read-only configuration probe changed files"
         return response
     response = send({"path": "/api/settings"}, 200)
+    assert response["headers"].get("x-powered-by") == powered_by
     assert response["headers"].get("access-control-allow-origin") == ("*" if wildcard else None)
     for raw, normalized in allowed:
         response = send({"path": "/api/settings", "headers": {"Origin": raw}}, 200)
@@ -2390,6 +2391,56 @@ def error_diagnostics(url, state, output, name, mode, kind, frontend_url):
         observations.append({"case_id": case_id, "status": status, "diagnostic": comparison,
                              "state": json.loads(after["sub-store.json"]), "root": json.loads(after["root.json"])})
     return observations
+
+
+def runtime_configuration_contracts(binary, node, environment, baseline, root, output, report, image):
+    configurations = (("default", None, 32768), ("custom", " +65536junk", 65536), ("fallback", "0", 32768), ("small", "512", 512))
+    for mode, configured_limit, maximum in configurations:
+        for kind in ("node", "rust"):
+            label = f"{kind}-runtime-config-{mode}"
+            state = output / label
+            state.mkdir()
+            document = {**baseline, "settings": {}, "subs": [], "collections": [], "files": [], "artifacts": [],
+                        "tokens": [], "archives": [], "modules": []}
+            (state / "sub-store.json").write_text(json.dumps(document), encoding="utf-8")
+            (state / "root.json").write_text(json.dumps(root), encoding="utf-8")
+            env = {**environment, "SUB_STORE_DATA_BASE_PATH": str(state)}
+            if configured_limit is not None:
+                env["SUB_STORE_MAX_HEADER_SIZE"] = configured_limit
+            if mode == "custom":
+                env["SUB_STORE_BACKEND_DEFAULT_PROXY"] = "unsupported://fixture"
+            with ControlledUpstream() as upstream:
+                manager = oracle(node, env, output, report, label) if kind == "node" else listener(binary, env, output, report, label, image, host_network=bool(image))
+                with manager as url:
+                    script = """async function operator(proxies) {
+  const result = [];
+  for (const size of [16000, 40000, 70000]) {
+    try { const response = await $substore.http.get(BASE + '/host/header-size/' + size); result.push({size, body:response.body}); }
+    catch (error) { result.push({size, error:error.message}); }
+  }
+  let blocked = false;
+  try { await ProxyUtils.download(BASE + '/host/header-size/100'); } catch (error) { blocked = error instanceof Error; }
+  result.push({defaultProxyBlocked:blocked});
+  $substore.write(JSON.stringify(result), '#m5-runtime-configuration');
+  return proxies;
+}""".replace("BASE", json.dumps(upstream.url))
+                    step = {"method": "POST", "path": "/api/preview/sub?target=JSON", "body": {
+                        "name": label, "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture",
+                        "process": [{"type": "Script Operator", "args": {"content": script}}]}}
+                    response = request(url, step)
+                    saved = json.loads((state / "root.json").read_text(encoding="utf-8"))
+                    alive = request(url, {"path": "/api/settings"})
+                    proof = {"configuration": {key: value for key, value in env.items() if key.startswith("SUB_STORE_")},
+                             "request": step, "response": response, "root": saved, "upstream": upstream.requests, "alive": alive}
+                    (output / f"{label}.json").write_text(json.dumps(proof, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                    assert response["status"] == 200 and alive["status"] == 200, label
+                    expected = [{"size": size, **({"body": "header-fixture"} if size < maximum else {"error": "Headers Overflow Error"})}
+                                for size in (16000, 40000, 70000)] + [{"defaultProxyBlocked": mode == "custom"}]
+                    check_json(json.loads(saved["m5-runtime-configuration"]), expected)
+                    downloaded = any(entry["path"] == "/host/header-size/100" for entry in upstream.requests)
+                    assert downloaded == (mode != "custom"), "Default proxy was ignored or direct download failed"
+                    report["phases"].append({"name": label, "cases": 1, "requests": 2, "status": "passed"})
+    report["http_response_header_limit_and_default_proxy_configurations_checked"] = [item[0] for item in configurations]
 
 
 def main():
@@ -2541,9 +2592,10 @@ def main():
         scheduling_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image, listener)
         business_logs_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
         backup_age_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image, listener)
+        runtime_configuration_contracts(args.binary, args.node, environment, final["node"], baseline_root, output, report, image)
         configurations = [
             ("default", {}, 1048576, [("https://sub-store.vercel.app", "https://sub-store.vercel.app")], "https://denied.invalid", False),
-            ("custom-name", {"SUB_STORE_BACKEND_CUSTOM_NAME": "configuration-fixture", "SUB_STORE_BODY_JSON_LIMIT": "+1GB"}, 1073741824,
+            ("custom-name", {"SUB_STORE_BACKEND_CUSTOM_NAME": "configuration-fixture", "SUB_STORE_BODY_JSON_LIMIT": "+1GB", "SUB_STORE_X_POWERED_BY": "m5-configuration"}, 1073741824,
              [("http://127.0.0.1:9911", "http://127.0.0.1:9911")], "https://127.0.0.1:9911", False),
             ("wildcard", {"SUB_STORE_CORS_ALLOWED_ORIGINS": "https://unused.invalid,*", "SUB_STORE_BODY_JSON_LIMIT": "1.5 kb"}, 1536,
              [("https://arbitrary.invalid", "https://arbitrary.invalid")], None, True),
@@ -2566,7 +2618,8 @@ def main():
                 env = {**environment, **overrides, "NODE_ENV": "production", "SUB_STORE_DATA_BASE_PATH": str(state)}
                 manager = oracle(args.node, env, output, report, label) if kind == "node" else listener(args.binary, env, output, report, label, image)
                 with manager as url:
-                    observed[kind] = configuration_probes(url, state, output, label, limit, allowed, denied, wildcard)
+                    observed[kind] = configuration_probes(url, state, output, label, limit, allowed, denied, wildcard,
+                                                        overrides.get("SUB_STORE_X_POWERED_BY", "Sub-Store"))
             check_json(observed["rust"], observed["node"])
         report["listener_prefix_cors_and_json_limit_configurations_checked"] = [row[0] for row in configurations]
         for mode in ("default", "development", "production"):

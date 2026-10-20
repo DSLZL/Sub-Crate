@@ -53,6 +53,10 @@ def check_network(entries, cases, backend_url):
             for base in (backend_url, case["secondary_backend_url"]):
                 for path in ("/api/utils/env", "/api/subs", "/api/utils/refresh"):
                     assert ("GET", base.rstrip("/") + path, 200) in switched, f"Backend switching did not refresh {base}{path}"
+            assert any(entry["request"]["method"] == "PATCH" and entry["request"]["url"] == case["secondary_backend_url"] + "/api/settings"
+                       and entry["response"]["status"] == 200 and datetime.fromisoformat(entry["startedDateTime"]) >= started
+                       and json.loads(entry["request"].get("postData", {}).get("text", "null")) == {"appearanceSetting": case["appearance_setting"]}
+                       for entry in entries), "Secondary appearance migration did not match the UI request"
         for method, path, status in required[case["id"]]:
             path = path.format(**case)
             parsed = urlsplit(backend_url)
@@ -381,6 +385,10 @@ def main():
                 "name": "m5-secondary-only", "source": "local", "content": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#secondary"}})
             assert response["status"] == 201, "Secondary backend fixture failed"
             secondary_document = json.loads((secondary_state / "sub-store.json").read_text(encoding="utf-8"))
+            # The frozen frontend migrates its local appearance flags on a fresh backend.
+            appearance = {key: False for key in ("isLeftRight", "isIconColor", "isDefaultIcon", "isSimpleReicon",
+                                                 "showFloatingRefreshButton", "istabBar", "istabBar2")}
+            secondary_document["settings"]["appearanceSetting"] = appearance
             command("open", report["server_origin"] + "/settings/api")
             command("wait", "--load", "networkidle")
             command("wait", ".add-api-wrapper input")
@@ -418,7 +426,7 @@ def main():
             check_json(json.loads((secondary_state / "sub-store.json").read_text(encoding="utf-8")), secondary_document)
             (output / "frontend-configured-profiles.json").write_text(json.dumps({"original": original, "secondary": secondary, "restored": restored}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             report["cases"].append({"id": "FE21-configured-backend-switch-and-refresh", "source": "src/views/settings/APISetting.vue:413,513; src/hooks/useHostAPI.ts:86; src/utils/initApp.ts:35",
-                                    "started_at": started, "secondary_backend_url": secondary_url, "status": "browser_passed"})
+                                    "started_at": started, "secondary_backend_url": secondary_url, "appearance_setting": appearance, "status": "browser_passed"})
 
     def restart_and_delete():
         original_url, original_origin = report["server_url"], report["server_origin"]

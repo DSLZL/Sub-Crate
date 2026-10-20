@@ -12,7 +12,7 @@ from upstream import ControlledUpstream
 def run_contracts(binary, node, environment, baseline, root, output, report, image, listener):
     calendar = execute([node, str(HERE / "cron-calendar.cjs")], ROOT, environment, output, "cron-calendar")
     assert calendar.returncode == 0, "Locked cron calendar baseline changed"
-    for mode in ("artifact", "overlap", "global", "produce", "upload", "download", "mmdb", "startup-plain", "startup-base64"):
+    for mode in ("artifact", "overlap", "global", "produce", "upload", "download", "mmdb", "startup-plain", "startup-base64", "legacy"):
         for kind in ("node", "rust"):
             label = f"{kind}-schedule-{mode}"
             state = output / label
@@ -81,8 +81,11 @@ def run_contracts(binary, node, environment, baseline, root, output, report, ima
                         content = base64.b64encode(json.dumps(restored).encode()).decode()
                         upstream.script_gist.github["g1"] = {"description": "Auto Generated Sub-Store Backup",
                             "public": False, "files": {"Sub-Store": {"content": content}}}
-                if mode == "global":
-                    env["SUB_STORE_BACKEND_SYNC_CRON"] = "* * * * * *"
+                if mode in ("global", "legacy"):
+                    if mode == "global":
+                        env["SUB_STORE_BACKEND_SYNC_CRON"] = "* * * * * *"
+                    else:
+                        env.update(SUB_STORE_BACKEND_CRON="* * * * * *", SUB_STORE_CRON="* * * * * *")
                     document["files"] = [file("global-source"), file("independent-source")]
                     document["artifacts"] = [
                         {"name": "global-local", "type": "file", "source": "global-source", "sync": True, "upload": False},
@@ -135,6 +138,12 @@ def run_contracts(binary, node, environment, baseline, root, output, report, ima
                         before = int(stored_root()["cron-attempt"])
                         time.sleep(1.3)
                         assert int(stored_root()["cron-attempt"]) == before and durable()["artifacts"] == []
+                    elif mode == "legacy":
+                        for variable in ("SUB_STORE_BACKEND_CRON", "SUB_STORE_CRON"):
+                            wait(lambda: any(f"[SYNC CRON] {variable} 已弃用, 请使用 SUB_STORE_BACKEND_SYNC_CRON" in message for message in messages()))
+                        time.sleep(1.25)
+                        assert all(not artifact.get("updated") for artifact in durable()["artifacts"]), "Deprecated cron unexpectedly scheduled work"
+                        assert not any("[SYNC CRON] * * * * * * enabled" in message for message in messages())
                     elif mode == "overlap":
                         code = "async function operator(input){if($substore.read('#cron-active'))throw new Error('fixture overlap');$substore.write('yes','#cron-active');await new Promise(r=>setTimeout(r,2200));$substore.write('','#cron-active');return input;}"
                         send({"method": "POST", "path": "/api/files", "body": file("slow-source", code)})
@@ -195,3 +204,4 @@ def run_contracts(binary, node, environment, baseline, root, output, report, ima
                     (output / f"{label}.json").write_text(json.dumps(proof, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
                     report["phases"].append({"name": label, "cases": 1, "requests": sum("request" in entry for entry in proof), "status": "passed"})
     report["real_cron_artifact_overlap_refresh_stop_global_produce_backup_mmdb_and_startup_checked"] = True
+    report["legacy_cron_variables_log_deprecation_without_scheduling_checked"] = True

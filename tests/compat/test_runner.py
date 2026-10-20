@@ -670,21 +670,28 @@ class RunnerTests(unittest.TestCase):
         from frontend import check_network
         primary, secondary = "http://127.0.0.1:1/backend", "http://127.0.0.1:2"
         case = {"id": "FE21-configured-backend-switch-and-refresh", "secondary_backend_url": secondary,
-                "started_at": "2026-10-20T00:00:01+00:00"}
+                "started_at": "2026-10-20T00:00:01+00:00", "appearance_setting": {"istabBar": False}}
         entries = [{"request": {"method": "GET", "url": base + path}, "response": {"status": 200},
                     "startedDateTime": "2026-10-20T00:00:02.000Z"}
                    for base in (primary, secondary) for path in ("/api/utils/env", "/api/subs", "/api/utils/refresh")]
-        self.assertEqual(len(check_network(entries, [case], primary)), 6)
-        for mutation in ("missing", "old", "failed", "wrong-origin"):
+        entries.append({"request": {"method": "PATCH", "url": secondary + "/api/settings",
+                                    "postData": {"text": json.dumps({"appearanceSetting": case["appearance_setting"]})}},
+                        "response": {"status": 200}, "startedDateTime": "2026-10-20T00:00:02.000Z"})
+        self.assertEqual(len(check_network(entries, [case], primary)), 7)
+        for mutation in ("missing", "old", "failed", "wrong-origin", "missing-appearance", "wrong-appearance"):
             changed = copy.deepcopy(entries)
             if mutation == "missing":
-                changed.pop()
+                changed.pop(5)
             elif mutation == "old":
-                changed[-1]["startedDateTime"] = "2026-10-20T00:00:00.000Z"
+                changed[5]["startedDateTime"] = "2026-10-20T00:00:00.000Z"
             elif mutation == "failed":
-                changed[-1]["response"]["status"] = 500
+                changed[5]["response"]["status"] = 500
+            elif mutation == "wrong-origin":
+                changed[5]["request"]["url"] = primary + "/api/utils/refresh"
+            elif mutation == "missing-appearance":
+                changed.pop()
             else:
-                changed[-1]["request"]["url"] = primary + "/api/utils/refresh"
+                changed[-1]["request"]["postData"]["text"] = '{"appearanceSetting":{"istabBar":true}}'
             with self.subTest(mutation=mutation), self.assertRaises(AssertionError):
                 check_network(changed, [case], primary)
 
