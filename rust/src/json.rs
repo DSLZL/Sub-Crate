@@ -175,6 +175,9 @@ pub fn utf16_json(words: &[u16]) -> String {
 }
 
 pub fn parse(mut input: &str) -> serde_json::Result<Value> {
+    if !input.contains("\\u") && !input.contains(MARKER) {
+        return serde_json::from_str(input);
+    }
     let mut output = String::with_capacity(input.len());
     let mut quoted = false;
     while let Some(character) = input.chars().next() {

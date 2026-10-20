@@ -239,10 +239,21 @@ pub(crate) fn produce<'js>(
     let kind = js.text(kind)?;
     if let Some(family) = clash_output::Family::for_target(&target) {
         for (proxy, caller) in values.iter_mut().zip(live) {
-            if proxy["network"] != "ws"
-                || (!crate::state::truthy(&options["include-unsupported-proxy"])
-                    && !clash_output::supported(proxy, family))
+            if !matches!(proxy["network"].as_str(), Some("ws" | "grpc")) {
+                continue;
+            }
+            if !crate::state::truthy(&options["include-unsupported-proxy"])
+                && !clash_output::supported(proxy, family)
             {
+                continue;
+            }
+            if proxy["network"] == "grpc" && crate::state::truthy(&proxy["grpc-opts"]) {
+                let shared = js.get(&caller, "grpc-opts")?;
+                for key in clash_output::GRPC_METADATA {
+                    js.call::<(), _>("remove", (shared.clone(), key))?;
+                }
+            }
+            if proxy["network"] != "ws" {
                 continue;
             }
             let before = proxy
@@ -289,4 +300,115 @@ pub(crate) fn produce<'js>(
         })
     })?;
     crate::js_values::decode(&js.ctx, &output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{hint::black_box, time::Instant};
+
+    fn elapsed<T>(mut operation: impl FnMut() -> T) -> f64 {
+        let began = Instant::now();
+        for _ in 0..3096 {
+            black_box(operation());
+        }
+        began.elapsed().as_secs_f64() * 1000.0
+    }
+
+    #[test]
+    #[ignore = "release profile in GitHub Actions"]
+    fn profile_node_production() {
+        for (label, raw) in [
+            (
+                "flat",
+                r#"{"type":"ss","name":"profile 中🙂","server":"127.0.0.1","port":443,"cipher":"aes-128-gcm","password":"public-fixture","udp":true}"#,
+            ),
+            (
+                "websocket",
+                r#"{"type":"vmess","name":"profile 中🙂","server":"127.0.0.1","port":443,"uuid":"00000000-0000-4000-8000-000000000001","cipher":"auto","alterId":0,"tls":true,"network":"ws","ws-opts":{"path":"/profile?ed=2048","headers":{"Host":"fixture.invalid"}},"udp":true}"#,
+            ),
+            (
+                "metadata",
+                r#"{"type":"vmess","name":"profile 中🙂","server":"127.0.0.1","port":443,"uuid":"00000000-0000-4000-8000-000000000001","cipher":"auto","alterId":0,"tls":true,"network":"ws","ws-opts":{"path":"/profile?ed=2048","headers":{"Host":"fixture.invalid"}},"udp":true,"_subName":"public-source","_collectionName":"public-collection","resolved":true,"extra":{"flags":[true,false,null],"nested":{"name":"literal","values":[1,2,3]},"source":{"name":"public-source","url":"https://fixture.invalid/source"}}}"#,
+            ),
+        ] {
+            let runtime = rquickjs::Runtime::new().unwrap();
+            let context = rquickjs::Context::full(&runtime).unwrap();
+            context.with(|ctx| {
+                ctx.globals()
+                    .set(
+                        "SubStoreScriptUtilities",
+                        rquickjs::Object::new(ctx.clone()).unwrap(),
+                    )
+                    .unwrap();
+                ctx.eval::<(), _>(include_str!("script-bootstrap.js")).unwrap();
+                crate::js_values::initialize(&ctx).unwrap();
+                let js = Js::new(ctx.clone());
+                let input = ctx.json_parse(format!("[{raw}]")).unwrap();
+                let node: Value = input.as_array().unwrap().get(0).unwrap();
+                let target = js.value("ClashMeta").unwrap();
+                let json = js.value("JSON").unwrap();
+                let kind = js.value("internal").unwrap();
+                let options = ctx.json_parse("{}").unwrap();
+                let full = || {
+                    produce(
+                        ctx.clone(),
+                        input.clone(),
+                        target.clone(),
+                        Opt(Some(kind.clone())),
+                        Opt(Some(options.clone())),
+                    )
+                    .unwrap()
+                };
+                let initial = full();
+                let owned = crate::js_values::project(&ctx, node.clone()).unwrap();
+                let output = conversion::produce(
+                    vec![owned.clone()],
+                    "ClashMeta",
+                    "internal",
+                    &serde_json::json!({}),
+                )
+                .ok()
+                .unwrap();
+                assert_eq!(output.as_array().unwrap().len(), 1);
+                assert_eq!(crate::js_values::project(&ctx, initial).unwrap(), output);
+                for block in 1..=3 {
+                    let project = elapsed(|| crate::js_values::project(&ctx, node.clone()).unwrap());
+                    let native = elapsed(|| {
+                        conversion::produce(
+                            vec![owned.clone()],
+                            "ClashMeta",
+                            "internal",
+                            &serde_json::json!({}),
+                        )
+                        .ok()
+                        .unwrap()
+                    });
+                    let decode = elapsed(|| crate::js_values::decode(&ctx, &output).unwrap());
+                    let complete = elapsed(full);
+                    assert_eq!(crate::js_values::project(&ctx, full()).unwrap(), output);
+                    println!(
+                        "node conversion profile: fixture={label}, block={block}, calls=3096, project_ms={project:.3}, native_with_input_clone_ms={native:.3}, decode_ms={decode:.3}, complete_ms={complete:.3}"
+                    );
+                }
+                // Keep the before/after component sequence identical to the baseline.
+                // These fixtures take the same common-preparation branches for JSON.
+                for block in 1..=3 {
+                    let live_json = elapsed(|| {
+                        produce(
+                            ctx.clone(),
+                            input.clone(),
+                            json.clone(),
+                            Opt(Some(kind.clone())),
+                            Opt(Some(options.clone())),
+                        )
+                        .unwrap()
+                    });
+                    println!(
+                        "live JSON preparation profile: fixture={label}, block={block}, calls=3096, elapsed_ms={live_json:.3}"
+                    );
+                }
+            });
+        }
+    }
 }

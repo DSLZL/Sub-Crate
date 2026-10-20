@@ -139,6 +139,26 @@ globalThis.runConversionContracts = async function(check, host, operator, assert
       equal(produced.length, 1, 'shared producer output ' + target);
       websocket[target] = copy(shared);
     }
+    const grpc = {};
+    for (const target of ['Clash', ...aliases[5], 'Stash', ...aliases[10]]) {
+      const shared = {'grpc-service-name': 'public-service', '_grpc-type': 'multi', '_grpc-authority': 'authority.example', extra: {nil: null, flag: false}};
+      const source = {type: 'vmess', name: 'grpc-shared', server: 'grpc.example', port: 443, uuid, network: 'grpc', 'grpc-opts': shared};
+      const before = copy(shared), extra = shared.extra;
+      utils.produce([{...source}], 'JSON', 'internal');
+      equal(shared, before, 'JSON retains shared gRPC metadata ' + target);
+      const caller = {...source}, produced = utils.produce([caller], target, 'internal');
+      assert(caller['grpc-opts'] === shared && shared.extra === extra, 'shared gRPC identity ' + target);
+      equal(shared, {'grpc-service-name': 'public-service', extra: {nil: null, flag: false}}, 'shared gRPC metadata deletion ' + target);
+      equal(produced.length, 1, 'shared gRPC producer output ' + target);
+      equal(produced[0]['grpc-opts'], shared, 'output matches shared gRPC options ' + target);
+      shared['_grpc-type'] = 'gun'; shared['_grpc-authority'] = 'second.example';
+      utils.produce([{...source}], target, 'external');
+      assert(!Object.hasOwn(shared, '_grpc-type') && !Object.hasOwn(shared, '_grpc-authority'), 'external shared gRPC metadata deletion ' + target);
+      grpc[target] = copy(shared);
+    }
+    const grpcFiltered = {type: 'vmess', name: 'filtered-grpc', server: 'grpc.example', port: 443, uuid, network: 'grpc', supported: {ClashMeta: false}, 'grpc-opts': {'_grpc-type': 'multi', '_grpc-authority': 'keep.example'}};
+    equal(utils.produce([{...grpcFiltered}], 'ClashMeta', 'internal'), [], 'gRPC filtering precedes shared mutation');
+    equal(grpcFiltered['grpc-opts'], {'_grpc-type': 'multi', '_grpc-authority': 'keep.example'}, 'filtered gRPC metadata is untouched');
     const filtered = {type: 'h2-connect', name: 'filtered', server: 'ws.example', port: 443, network: 'ws', 'ws-opts': {path: '/ws?ed=1024'}};
     equal(utils.produce([{...filtered}], 'ClashMeta', 'internal'), [], 'target-specific filter precedes transport effects');
     equal(filtered['ws-opts'], {path: '/ws?ed=1024'}, 'filtered transport is untouched');
@@ -152,7 +172,7 @@ globalThis.runConversionContracts = async function(check, host, operator, assert
     const empty = {type: 'vmess', name: 'empty', server: 'ws.example', port: 443, uuid, network: 'ws', 'ws-opts': {path: '', 'max-early-data': 0}};
     utils.produce([{...empty}], 'ClashMeta', 'internal');
     equal(empty['ws-opts'], {path: '/', 'max-early-data': 0}, 'falsy path defaults while explicit early data remains');
-    return {result, external: utils.produce(result, 'JSON'), websocket, upgrade: retainedUpgrade};
+    return {result, external: utils.produce(result, 'JSON'), websocket, grpc, upgrade: retainedUpgrade};
   });
   await check('PC98-conversion-platform-filtering-and-overrides', () => {
     const supported = {...copy(ss), supported: {ClashMeta: false}};

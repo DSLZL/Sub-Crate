@@ -14,7 +14,11 @@ pub(crate) fn optional<'js>(
     value: &Value<'js>,
     key: &str,
 ) -> rquickjs::Result<Value<'js>> {
-    js.call("optional", (value.clone(), key))
+    if value.is_null() || value.is_undefined() {
+        Ok(js.undefined())
+    } else {
+        js.get(value, key)
+    }
 }
 
 fn nullish(value: &Value<'_>) -> bool {

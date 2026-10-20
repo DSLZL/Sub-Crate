@@ -7,15 +7,17 @@ pub(crate) fn initialize(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
       project: value => {
       const paths = [], parents = new WeakMap(); let root = true;
       const text = JSON.stringify(value, function(key, field) {
-        const path = root ? [] : [...parents.get(this), key]; root = false;
+        const first = root; root = false;
         if (field && typeof field === 'object') {
+          const path = first ? [] : [...parents.get(this), key];
           const ancestor = parents.get(field);
           if (ancestor && ancestor.length < path.length && ancestor.every((part,index) => part === path[index])) {
             paths.push([path,path.length-ancestor.length]); return null;
           }
           parents.set(field, path);
+        } else if (typeof field === 'number' && (!Number.isFinite(field) || Object.is(field, -0))) {
+          paths.push([first ? [] : [...parents.get(this), key], Object.is(field, -0) ? '-0' : String(field)]);
         }
-        if (typeof field === 'number' && (!Number.isFinite(field) || Object.is(field, -0))) paths.push([path, Object.is(field, -0) ? '-0' : String(field)]);
         return field;
       });
       return [text, JSON.stringify(paths)];
@@ -150,6 +152,20 @@ pub(crate) fn circular_error(value: &serde_json::Value) -> Option<String> {
     Some(message)
 }
 
+fn needs_restore(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Number(number) => number
+            .as_f64()
+            .is_some_and(|number| number == 0.0 && number.is_sign_negative()),
+        serde_json::Value::String(_) => codec::nonfinite(value).is_some(),
+        serde_json::Value::Array(values) => values.iter().any(needs_restore),
+        serde_json::Value::Object(values) => {
+            cycle(value).is_some() || values.values().any(needs_restore)
+        }
+        _ => false,
+    }
+}
+
 pub(crate) fn stringify<'js>(
     ctx: &Ctx<'js>,
     value: Value<'js>,
@@ -185,6 +201,10 @@ pub(crate) fn decode<'js>(
             .filter(|number| *number == 0.0 && number.is_sign_negative())
     }) {
         return Ok(Value::new_float(ctx.clone(), number));
+    }
+    if !needs_restore(value) {
+        // JSON.parse already restores ordinary numbers; only UTF-16 markers need decoding.
+        return ctx.json_parse(codec::text(&value.to_string()));
     }
     fn wire(value: &serde_json::Value) -> serde_json::Value {
         if cycle(value).is_some() {
@@ -302,5 +322,28 @@ mod tests {
                 }
             });
         }
+    }
+
+    #[test]
+    fn restored_plain_values_keep_utf16_keys_and_js_number_semantics() {
+        let runtime = rquickjs::Runtime::new().unwrap();
+        let context = rquickjs::Context::full(&runtime).unwrap();
+        context.with(|ctx| {
+            initialize(&ctx).unwrap();
+            let raw = r#"{"__proto__":{"literal":true},"\ue000cycle":"literal","\ud800":"\udfff","nul":"\u0000","values":[0,1.25,1e-7,1e21,18446744073709551615,-9223372036854775808,5e-324],"nested":["中🙂",{"false":false,"null":null}]}"#;
+            let expected = ctx.json_parse(raw).unwrap();
+            let restored = decode(&ctx, &codec::parse(raw).unwrap()).unwrap();
+            ctx.globals().set("expected", expected).unwrap();
+            ctx.globals().set("restored", restored).unwrap();
+            let assertion = r#"
+                JSON.stringify(restored) === JSON.stringify(expected) &&
+                Object.getPrototypeOf(restored) === Object.prototype &&
+                Object.hasOwn(restored, '__proto__') && restored.__proto__.literal === true &&
+                restored['\ue000cycle'] === 'literal' &&
+                restored['\ud800'].charCodeAt(0) === 0xdfff && restored.nul.charCodeAt(0) === 0 &&
+                restored.values.every((value, index) => Object.is(value, expected.values[index]))
+            "#;
+            assert!(ctx.eval::<bool, _>(assertion).unwrap());
+        });
     }
 }

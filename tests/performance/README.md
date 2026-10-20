@@ -211,3 +211,109 @@ tree to the diagnostic's pinned `9bab7346`. Extended MD5 and shared WebSocket
 assertions run in both the actual delivered service and the JS probe; a runner
 check prevents their embedded service scripts from drifting from the source
 fixtures. All builds, test execution, browsers and containers run in Actions.
+
+Candidate `312cd230` reduces the per-node value-bridge cost: ordinary scalar
+projection avoids unused ancestry paths, plain JSON bypasses identity-only
+UTF-16 preprocessing, and ordinary owned output avoids restoration copies and
+numeric text normalization before engine JSON.parse. Cycles, nonfinite numbers,
+negative zero, UTF-16/private keys and current getter/toJSON behavior retain
+their existing handling. Shared `grpc-opts` now also receives the original
+Clash-family metadata deletions, including internal production. PC97 covers
+aliases, shallow identity, JSON/filter non-effects and both output kinds in the
+probe and delivered service; the source-drift guard remains required.
+
+[Diagnostic 39448619317](https://github.com/DSLZL/Sub-Store/actions/runs/39448619317)
+at harness `9ec3f2ac` compares frozen `5b68cbb9` with this candidate on the same
+runner. Each public fixture repeats 3,096 actual producer calls per block; the
+table shows three-block medians for candidate, baseline, candidate again.
+Context setup and assertions are outside the timed loops. The baseline has an
+isolated Cargo target and is visibly recompiled from its own source checkout.
+
+| Public fixture | Baseline total ms | Candidate first ms | Candidate repeat ms | Observed reduction |
+|---|---:|---:|---:|---:|
+| Flat SS | 88.260 | 69.445 | 71.471 | 19.0-21.3% |
+| WebSocket | 144.968 | 109.510 | 107.355 | 24.5-25.9% |
+| Nested metadata | 221.442 | 160.295 | 161.365 | 27.1-27.6% |
+
+Projection medians fall about 29-32%, and return-to-JS medians about 54-58%.
+Native business conversion remains essentially unchanged. These bounded,
+repeated-context observations do not establish a whole-subscription speedup.
+The earlier shared-target A/B in 39446530342 is invalid because Cargo reused
+the candidate executable; its before/after rows are excluded. Failed/cancelled
+evidence is retained, including superseded 39447710450.
+
+The final diagnostic passes actual unchanged-file imports/restarts and all
+eight pre-health/cold/warm/no-publisher cells, with 2,846 nodes on each backend.
+Capture attempted all 22 sources and obtained 21 nonempty bodies. All 2,846
+identities verify and output/snapshot checks pass; shared gRPC differences are
+gone. In one warm health invocation, Node/Rust producer totals are 19/137ms
+for 2,846 calls, MD5 totals 28/5ms for 2,848 calls, and operator totals 80/258ms.
+This capture differs from earlier diagnostics; it is not an old/new helper ratio.
+
+Overall Rust latency remains higher in this short block: cold is 19.717s versus
+Node 6.306s (one request), and warm median is 4.068s versus 2.701s (three requests).
+Rust makes 4,139 cold probes for the same 2,846 identities versus Node's 2,846;
+measured warm probes remain zero. Cold transport/retry cost is unresolved and
+unchanged. A successful short diagnostic does not replace the complete matrix,
+concurrency or real-detector checks.
+
+[Native compatibility 39448490215](https://github.com/DSLZL/Sub-Store/actions/runs/39448490215)
+passes all six jobs at `312cd230`: Linux x64/arm64, Windows x64, Docker x64/arm64
+and the unchanged frontend. The ordinary-value regression, extended gRPC source
+assertions and delivered-service source guard are included. The current Rust
+tree and contract fixtures at that checkpoint are identical to this tested revision.
+[Complete matrix 39450897454](https://github.com/DSLZL/Sub-Store/actions/runs/39450897454)
+ran at harness `9ec3f2ac` with that candidate and was cancelled when the newer
+validated conversion candidate replaced it. Its retained partial observations
+do not count as a completed matrix. Its pressure rows at clients4/8 retain
+output mismatches (for example Rust2,806/2,759/2,830 versus Node2,842). A newer
+short diagnostic cannot establish that those full-concurrency failures are fixed.
+
+The next candidate, `cda93a24`, reduces live-value crossings: object reads use
+the engine's property operation, truthiness uses its ToBool, and strict equality
+uses its actual comparison API. Primitive property boxing, String conversion,
+JS write/delete functions and getter/Proxy effects retain their existing paths.
+Rust value-handle equality is not used as JS equality. Clash internal output now
+moves the owned result list into its array value, eliminating a full tree copy.
+No library, output rule, timeout, retry budget or workload setting is changed.
+
+[Diagnostic 39457177406](https://github.com/DSLZL/Sub-Store/actions/runs/39457177406)
+at harness `b42ed623` compares frozen `312cd230` with `cda93a24` using the same
+three public fixtures, 3,096 calls per block, three-block medians and an isolated
+baseline target. Candidate first/repeat bracket the baseline on the same runner.
+
+| Public fixture | Baseline total ms | Candidate first ms | Candidate repeat ms | Observed reduction |
+|---|---:|---:|---:|---:|
+| Flat SS | 46.839 | 38.690 | 38.001 | 17.4-18.9% |
+| WebSocket | 72.768 | 62.926 | 60.766 | 13.5-16.5% |
+| Nested metadata | 114.237 | 96.849 | 96.710 | 15.2-15.3% |
+
+The native stage, including its required owned input clone, falls about 31-45%.
+Projection/restoration implementations are unchanged and remain a large cost.
+The added JSON internal preparation observation runs after each fixture's
+unchanged A/B sequence and takes about 12-13ms per 3,096 calls on this runner.
+It excludes platform output normalization and is not an exact decomposition of
+the Clash call. No earlier runner's absolute timings form an old/new speed ratio.
+
+The full-input short diagnostic passes actual unchanged-file imports/restarts
+and all eight cells. Both backends return 3,354 nodes; 21/22 captured source bodies
+are nonempty. All 3,354 selected identities verify and publish the same snapshot.
+[Inspection 39458413589](https://github.com/DSLZL/Sub-Store/actions/runs/39458413589)
+confirms one complete cold detector batch and zero measured warm probes.
+One warm invocation records producer Node13/Rust82ms for 3,354 calls, MD5 20/6ms
+for 3,356 calls and whole health operator 61/184ms. This is a new capture and
+runner, so it does not establish a 137-to82ms production improvement.
+
+Rust still has higher overall latency: cold 14.930s versus Node5.263s (one sample)
+and warm median 2.733s versus 1.852s (three). Rust cold makes 4,424 probes for the
+same 3,354 identities; Node makes 3,354. Cold CPU is 12.50/4.49s for Rust/Node.
+The excess retry/transport cost remains open and is unchanged by this iteration.
+These observations do not establish full performance acceptance.
+
+[Native compatibility 39457094305](https://github.com/DSLZL/Sub-Store/actions/runs/39457094305)
+passes all six jobs at `cda93a24`: Linux x64/arm64, Windows x64, Docker
+x64/arm64 and the unchanged frontend. Formatting, lint, unit, probe and delivered
+service checks are included; this is conversion compatibility acceptance.
+[Complete matrix 39458493395](https://github.com/DSLZL/Sub-Store/actions/runs/39458493395)
+runs the same new fixed source with the full uninstrumented workload. The broader
+task remains in progress. All product execution and artifacts stay in Actions.
