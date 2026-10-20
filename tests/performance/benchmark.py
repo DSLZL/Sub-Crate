@@ -417,6 +417,7 @@ class Suite:
         self.fixture_origin = None
         self.pristine = {}
         self.expected_hashes = {}
+        self.expected_snapshot_hash = None
         self.clash_hash = None
         self.ordinal = 0
         self.meta = None
@@ -569,16 +570,28 @@ class Suite:
         return json.loads(http(self.fixture_origin + ("/reset" if reset else "/counts"),
                                "POST" if reset else "GET", {"real": real} if reset else None))
 
-    def audit(self, state, output, cold, counts, real=False):
+    def audit(self, state, output, cold, counts, origin, real=False):
         root = json.loads((state / "root.json").read_bytes())
         cache = json.loads(root["sub-store-cached-script-resource"])
         health = [v["data"] for k, v in cache.items() if k.startswith("http-meta:health-inc:v1:")]
-        snapshots = [v["data"] for k, v in cache.items() if k.startswith("health-snapshot:v1:")]
+        snapshots = [(k, v["data"]) for k, v in cache.items() if k.startswith("health-snapshot:v1:")]
         require(len(health) == 1 and len(snapshots) == 1, "snapshot")
-        snapshot, records = snapshots[0], health[0]["records"]
+        (snapshot_key, snapshot), records = snapshots[0], health[0]["records"]
         require(snapshot["version"] == 1 and snapshot["count"] == len(output) > 0, "snapshot")
         require(isinstance(snapshot["generatedAt"], (int, float)) and 0 <= time.time() * 1000 - snapshot["generatedAt"] < WATCHDOG * 1000, "snapshot")
-        require(nodes_hash(snapshot["proxies"]) == nodes_hash(output), "snapshot")
+        snapshot_hash = nodes_hash(snapshot["proxies"])
+        if not real:
+            if self.expected_snapshot_hash is None:
+                self.expected_snapshot_hash = snapshot_hash
+            require(snapshot_hash == self.expected_snapshot_hash, "output_mismatch")
+        # Publication precedes the final producer (SNI/ports/etc.); validate using that actual producer.
+        projected = api(origin, "preview/sub", "POST", {
+            "name": "benchmark-snapshot-validation", "source": "local",
+            "content": "ss://YWVzLTEyOC1nY206YmVuY2g@127.0.0.1:1#validation",
+            "process": [{"type": "Script Operator", "args": {"mode": "script",
+                "content": "function operator() { const s = scriptResourceCache.get($arguments.key); if (!s) throw new Error('missing snapshot'); return ProxyUtils.produce(JSON.parse(JSON.stringify(s.proxies)), 'JSON', 'internal'); }",
+                "arguments": {"key": snapshot_key}}}]})
+        require(nodes_hash(projected["processed"]) == nodes_hash(output), "snapshot")
         require(all(v.get("lastProbe", 0) > 0 for v in records.values()), "work_incomplete")
         if cold:
             require(counts["starts"] == counts["stops"] == 1 and counts["selected"] == len(records) > 0, "work_incomplete")
@@ -588,7 +601,7 @@ class Suite:
             require(counts["starts"] == counts["selected"] == counts["probes"] == 0, "warm_miss")
         return {"identities": len(records), "published": snapshot["count"],
                 "generated_at_ms": snapshot["generatedAt"],
-                "snapshot_sha256": nodes_hash(snapshot["proxies"]),
+                "snapshot_sha256": snapshot_hash,
                 "verified": sum(v.get("lastOk", 0) > 0 for v in records.values())}
 
     def check_output(self, raw, compare=True, key="full"):
@@ -618,7 +631,7 @@ class Suite:
                     warm_output = self.check_output(warm_raw)
                     warm_raw_hash = digest(warm_raw)
                     if case != "no_publisher":
-                        self.audit(state, warm_output, True, self.counts())
+                        self.audit(state, warm_output, True, self.counts(), origin)
                     self.counts(reset=True)
                 last = None
 
@@ -659,7 +672,7 @@ class Suite:
                 row["raw_output_sha256"] = raw_hash
                 row["counts"] = self.counts()
                 if case not in ("parse", "pre_health", "no_publisher"):
-                    row["work"] = self.audit(state, last, not warm, row["counts"], case == "real")
+                    row["work"] = self.audit(state, last, not warm, row["counts"], origin, case == "real")
                 if case == "cold" and block == 0:
                     clash = self.download(origin, config["name"], target="ClashMeta")
                     # Parse via the original's existing locked YAML utility, outside timing.
@@ -717,7 +730,7 @@ class Suite:
             imports = [r for r in self.report["imports"] if r["kind"] == kind]
             if imports:
                 lines.append(f"- {kind}: imports={len(imports)}, startup median={statistics.median(r['startup_s'] for r in imports)*1000:.2f}ms, API import median={statistics.median(r['api_import_s'] for r in imports)*1000:.2f}ms, UI wall median={statistics.median(r['ui_import_wall_s'] for r in imports)*1000:.2f}ms, restart passes={sum(r['restart'] for r in imports)}.")
-        lines += ["", "Paired block estimates (Node / Rust; >1 means Rust takes less time for latency, <1 means Rust uses less throughput):"]
+        lines += ["", "Paired block estimates (Node / Rust; >1 means Rust has lower latency. Pressure uses Node RPS / Rust RPS, where <1 means Rust has higher throughput):"]
         estimates = []
         for case in ("cold", "warm", "pressure", "parse", "pre_health", "no_publisher"):
             for concurrency in (1, 2, 4, 8):

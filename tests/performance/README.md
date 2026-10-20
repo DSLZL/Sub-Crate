@@ -51,8 +51,12 @@ output hashes, import proof, work counters, timings, paired block estimates,
 server CPU deltas, sampled RSS/actual intervals, Linux VmHWM, I/O, and separate
 driver/fixture/detector resource observations. Top-level node `_latency` is the
 only node fingerprint exclusion. Snapshot `generatedAt` is not an equivalence
-key. Output must be nonempty, published snapshot must match, and cold selected /
-completed identities must match. Timeout, crash or incomplete work is a failed
+key. Snapshots are compared independently across runtimes. The real JSON producer
+is invoked through the public preview API, outside timing, to check that the
+pre-producer snapshot corresponds to final output (including legitimate SNI/port
+normalization). No broad field removal or copied producer implementation is used.
+Output must be nonempty, and cold selected / completed identities must match.
+Timeout, crash or incomplete work is a failed
 sample; the harness never trims nodes or re-enables maintenance caps to pass.
 
 RSS is sampled at 50ms; VmHWM is the OS lifetime peak of each fresh process.

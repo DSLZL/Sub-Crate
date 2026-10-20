@@ -98,15 +98,17 @@ class Contracts(unittest.TestCase):
                      "health-snapshot:v1:key": {"data": {"version": 1, "count": 1, "generatedAt": int(time.time() * 1000), "proxies": [{"name": "x"}]}}}
             (state / "root.json").write_text(json.dumps({"sub-store-cached-script-resource": json.dumps(cache)}))
             suite = object.__new__(b.Suite)
+            suite.expected_snapshot_hash = None
             counts = {"starts": 1, "stops": 1, "selected": 2, "unique_probes": 2, "probes": 2}
-            self.assertEqual(suite.audit(state, [{"name": "x"}], True, counts)["identities"], 2)
-            for key in ("selected", "unique_probes", "probes"):
+            with patch.object(b, "api", return_value={"processed": [{"name": "x"}]}):
+                self.assertEqual(suite.audit(state, [{"name": "x"}], True, counts, "http://127.0.0.1:1")["identities"], 2)
+                for key in ("selected", "unique_probes", "probes"):
+                    with self.assertRaises(b.Failure):
+                        suite.audit(state, [{"name": "x"}], True, {**counts, key: 1}, "http://127.0.0.1:1")
                 with self.assertRaises(b.Failure):
-                    suite.audit(state, [{"name": "x"}], True, {**counts, key: 1})
-            with self.assertRaises(b.Failure):
-                suite.audit(state, [], True, counts)
-            with self.assertRaises(b.Failure):
-                suite.audit(state, [{"name": "x"}], False, counts)
+                    suite.audit(state, [], True, counts, "http://127.0.0.1:1")
+                with self.assertRaises(b.Failure):
+                    suite.audit(state, [{"name": "x"}], False, counts, "http://127.0.0.1:1")
 
     def test_resource_units_refer_to_the_owned_server_pid(self):
         script = "import sys,time\nsys.stdin.buffer.read(1)\nend=time.monotonic()+.25\nwhile time.monotonic()<end: pass\nprint('done',flush=True)\nsys.stdin.buffer.read(1)"
