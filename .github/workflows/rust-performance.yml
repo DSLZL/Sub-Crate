@@ -2,9 +2,6 @@ name: Supplied subscription performance
 
 on:
   workflow_dispatch:
-  push:
-    branches: [codex/rust-server-parity]
-    paths: [.github/workflows/rust-performance.yml]
 
 permissions:
   contents: read
