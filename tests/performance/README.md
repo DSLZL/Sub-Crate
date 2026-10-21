@@ -473,4 +473,86 @@ is still unstable. All16 harness checks and26 Rust semantic tests pass. Health
 script instrumentation is identical on all backends; this is not the final
 uninstrumented long-matrix result. Do not combine these ratios with the earlier
 different capture/runner or claim a general cold speedup. Production has no
-diagnostic timers, and its native/full-matrix qualification remains pending.
+diagnostic timers. [Native compatibility39524979905](https://github.com/DSLZL/Sub-Store/actions/runs/39524979905)
+passes all six jobs at exact4adef131. The completed uninstrumented full matrix
+for that exact product is reported below.
+
+The final isolated diagnostic
+[39525638140](https://github.com/DSLZL/Sub-Store/actions/runs/39525638140)
+passes8/8 cells. An actual warm request creates one parser context (12.98ms),
+runs generic YAML normalization once (526.01ms), and reuses its normalized text
+twice (0.010ms total). State delta takes1.29ms over four calls, while six root
+reads still execute. These inclusive timings overlap and use a different
+capture/runner from earlier diagnostics. They verify the retained paths; they
+do not supply a cross-run total-speed ratio. Diagnostic source and timers stay
+on their separate branch, and its clean local source-only worktree is removed.
+
+The final uninstrumented matrix
+[39526057421](https://github.com/DSLZL/Sub-Store/actions/runs/39526057421)
+passes70/70 cells at product4adef131 and harness2b288ed2. Its
+[remote report reader39530822738](https://github.com/DSLZL/Sub-Store/actions/runs/39530822738)
+also passes. Original9cc6b5fa and frontend4bd7b0ac remain fixed. All five actual
+unchanged-file browser imports and five restarts per backend pass. Capture gets
+20/22 nonempty source bodies; two empty/failed sources are recorded and replayed
+equally. Both backends replay all23 source strings, including local content.
+Parse output is6266 on both; full filtered output is3255 on both. All20 cold
+rows (ten pairs) select, verify and publish3255 identities, with exactly3255
+probes per backend, one full batch and no skips. Warm and pressure retain
+zero measured probes and their complete output/snapshot/Clash assertions.
+
+These results use one4-vCPU AMD EPYC7763 Linux x64 hosted runner with15.61GiB
+RAM and no reported cgroup CPU quota. The table gives pooled request medians,
+backend CPU per measured request and sampled backend peak RSS; auxiliary
+driver/browser/fixture/detector processes are excluded from backend resources.
+
+| Case | Requests/backend | Node median s | Rust median s | Node CPU s/request | Rust CPU s/request | Node peak RSS MiB | Rust peak RSS MiB |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Cold | 10 | 10.747 | 10.018 | 7.437 | 5.602 | 520.2 | 249.5 |
+| Warm | 100 | 3.276 | 2.548 | 3.852 | 2.554 | 1230.5 | 231.6 |
+| Parse | 60 | 3.063 | 1.293 | 3.653 | 1.357 | 455.8 | 80.6 |
+| Pre-health | 20 | 3.128 | 1.656 | 3.743 | 1.729 | 440.1 | 73.2 |
+| No publisher | 60 | 3.263 | 2.258 | 3.851 | 2.258 | 1213.6 | 223.5 |
+
+Warm single-request latency is22.2% lower, with33.7% lower backend CPU/request
+and81.2% lower sampled peak RSS in this case. Warm P95 is Node3.344/Rust2.578s
+over100 requests each. Parse latency is57.8% lower and pre-health47.0% lower.
+Cold is still inconclusive: although the pooled median is lower, mean latency
+is Node10.509/Rust10.884s. The ten paired observations give a Node/Rust ratio
+0.972 with bootstrap interval[0.900,1.039], crossing1. Samples range Node7.65-
+15.35s and Rust7.94-15.51s. Do not claim stable cold superiority or a cold P95
+from ten requests. The short A/B ratios and older complete matrix use different
+captures/runners; they cannot be combined into a new before/after speed ratio.
+
+Reading all20 original cold resource records inside Actions
+([39531336358](https://github.com/DSLZL/Sub-Store/actions/runs/39531336358))
+shows stable backend CPU: Node7.21-7.64s and Rust5.57-5.65s. Fixture CPU ranges
+from0.83-8.49s for Node cells and0.75-8.30s for Rust cells, rising with the slow
+wall-time samples; driver CPU stays0.11-0.16s. Thus the public detector fixture
+is a substantial source of cold variability. It creates3255 ephemeral listening
+sockets per batch, then serves3255 probes. Listener allocation, port lifetime
+and probe handling are not separately timed, so the exact fixture cause remains
+unconfirmed. These existing resource records do not justify subtracting CPU from
+wall time or publishing an adjusted cold speedup. The read-only inspection and
+its instrumentation remain off the production branch.
+
+| Pressure clients | Node requests/s | Rust requests/s | Paired Node/Rust throughput ratio |
+|---|---:|---:|---:|
+| 1 | 0.302 | 0.393 | 0.768 |
+| 2 | 0.309 | 0.721 | 0.428 |
+| 4 | 0.299 | 0.787 | 0.380 |
+| 8 | 0.304 | 0.759 | 0.401 |
+
+Each setting has three timed blocks. The8-client pooled medians are Node23.800/
+Rust10.180s. Rust uses about3.31 average cores versus Node1.18 in those windows
+and4.36 versus3.88 backend CPU seconds/request, so this pressure result does not
+imply lower CPU per request at every concurrency. The single-request warm result
+above is independently measured.
+
+Import API medians are Node4.35/Rust4.49ms; startup readiness260.56/51.45ms and
+UI wall63.77/19.23ms, including polling/browser variability. The separate real
+HTTP-META/Mihomo pair returns1305/1094 reachable nodes of3255, at16.544/16.392s
+and10.16/6.93 backend CPU seconds. Its unequal reachable sets and single pair
+cannot establish equal-work performance or explain the reachability difference.
+Keep cold variability and real-network limits open; the measured warm/parse
+single-request gap is resolved for this supplied-input capture. All builds,
+tests, browser flows, measurements and artifact inspection execute in Actions.
