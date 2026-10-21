@@ -120,13 +120,13 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: 6aeed3684f83c396767136c4d07143db68fdb63a
+          ref: 887ddccb36f7724a831a89b4aad416e9c97c7c51
           path: .performance/rust
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: inputs.diagnose_health
         with:
-          ref: 9c659cef8ff193eddea42b6a5fea6c52629cfd54
+          ref: ea16edca545b31fc623ffed9061ecc7024ca511f
           path: .performance/rust-baseline
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -154,7 +154,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-6aeed3684f83c396767136c4d07143db68fdb63a
+          key: subscription-performance-linux-x64-rust-1.98.0-887ddccb36f7724a831a89b4aad416e9c97c7c51
           restore-keys: subscription-performance-linux-x64-rust-1.98.0-
       - name: Build exact original, Rust and unchanged frontend
         run: |
@@ -195,7 +195,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-6aeed3684f83c396767136c4d07143db68fdb63a
+          key: subscription-performance-linux-x64-rust-1.98.0-887ddccb36f7724a831a89b4aad416e9c97c7c51
       - name: Load installed browser workflow and install headless Chromium
         run: |
           agent-browser skills get core
@@ -288,13 +288,13 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: 6aeed3684f83c396767136c4d07143db68fdb63a
+          ref: 887ddccb36f7724a831a89b4aad416e9c97c7c51
           path: .performance/rust
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: inputs.diagnose_health
         with:
-          ref: 9c659cef8ff193eddea42b6a5fea6c52629cfd54
+          ref: ea16edca545b31fc623ffed9061ecc7024ca511f
           path: .performance/rust-baseline
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
