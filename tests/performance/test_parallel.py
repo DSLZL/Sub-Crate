@@ -34,10 +34,12 @@ class ParallelContract(unittest.TestCase):
     def test_complete_matrix_and_rejected_partial_or_unequal_work(self):
         prepared = preparation()
         complete = workers(prepared)
+        dict(complete)["real_0_1"]["detector"] = {"version": "1.3.0", "assets_sha256": ["f" * 64]}
         report = parallel.aggregate(prepared, complete)
         self.assertEqual((report["status"], report["matrix_complete"], len(report["samples"]), len(report["workers"])),
                          ("passed", True, 70, 35))
         self.assertNotIn("workers", prepared)
+        self.assertEqual(report["detector"], dict(complete)["real_0_1"]["detector"])
         for defect in ("missing", "duplicate", "source", "replay", "binary", "output", "failed", "cell", "empty"):
             with self.subTest(defect=defect):
                 broken = copy.deepcopy(complete)

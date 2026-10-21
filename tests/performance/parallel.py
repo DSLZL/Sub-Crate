@@ -48,11 +48,14 @@ def aggregate(prepared, workers, diagnostic=None):
         report["samples"].extend({**row, "worker": shard} if not diagnostic else row for row in cells)
         report["workers"].append({"runner": runner, "replay": replay,
                                   "fixture_calibration": worker.get("fixture_calibration"),
+                                  "failure": worker.get("failure"),
                                   "status": worker.get("status", "failed")})
         if not diagnostic:
             report["workers"][-1]["shard"] = shard
         if diagnostic:
             report["direct_sources"] = worker.get("direct_sources", [])
+        if shard == "real_0_1" and "detector" in worker:
+            report["detector"] = worker["detector"]
     valid &= seen == expected
     # Pair checks happen on each runner; also reject inconsistent controlled work across workers.
     for case in ("parse", "pre_health", "full"):
