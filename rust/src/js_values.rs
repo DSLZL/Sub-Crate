@@ -1,6 +1,6 @@
 //! ECMAScript values at the native conversion/script boundary.
 use crate::{json as codec, profile};
-use rquickjs::{Array, Ctx, Function, IntoJs, Object, Value};
+use rquickjs::{Array, Ctx, Function, Object, Value};
 
 pub(crate) fn initialize(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
     let functions: Object = ctx.eval(
@@ -223,22 +223,6 @@ pub(crate) fn decode<'js>(
             .filter(|number| *number == 0.0 && number.is_sign_negative())
     }) {
         return Ok(Value::new_float(ctx.clone(), number));
-    }
-    let scalar = match value {
-        serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::Number(_) => true,
-        serde_json::Value::String(text) => !text.contains('\u{e000}'),
-        _ => false,
-    };
-    if scalar {
-        drop(classify);
-        let _build = profile::span("decode_build");
-        return match value {
-            serde_json::Value::Null => Ok(Value::new_null(ctx.clone())),
-            serde_json::Value::Bool(value) => (*value).into_js(ctx),
-            serde_json::Value::Number(value) => value.as_f64().unwrap().into_js(ctx),
-            serde_json::Value::String(value) => value.as_str().into_js(ctx),
-            _ => unreachable!(),
-        };
     }
     if !needs_restore(value) {
         drop(classify);

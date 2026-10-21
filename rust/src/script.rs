@@ -1114,12 +1114,12 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     globals.set("__hostReadFile", Func::from(script_io::read_file))?;
     globals.set("__hostRandomValues", Func::from(script_io::random_values))?;
     globals.set("__hostLog", Func::from(console_log))?;
-    ctx.eval::<(), _>(include_bytes!("../vendor/utilities.js").as_slice())?;
-    ctx.eval::<(), _>(include_bytes!("../vendor/script-utilities.js").as_slice())?;
-    ctx.eval::<(), _>(include_bytes!("../vendor/hash-utilities.js").as_slice())?;
-    ctx.eval::<(), _>(include_bytes!("../vendor/url-utilities.js").as_slice())?;
-    ctx.eval::<(), _>(include_str!("script-bootstrap.js"))?;
-    ctx.eval::<(), _>(include_str!("script-primitives.js"))?;
+    crate::script_bytecode::UTILITIES.eval(ctx)?;
+    crate::script_bytecode::SCRIPT_UTILITIES.eval(ctx)?;
+    crate::script_bytecode::HASH.eval(ctx)?;
+    crate::script_bytecode::URL.eval(ctx)?;
+    crate::script_bytecode::BOOTSTRAP.eval(ctx)?;
+    crate::script_bytecode::PRIMITIVES.eval(ctx)?;
     globals.set("__geo", ctx.json_parse(include_str!("geo-flags.json"))?)?;
     globals.set(
         "__scriptEnvironment",

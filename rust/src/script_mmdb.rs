@@ -57,7 +57,7 @@ fn initialize_reader<'js>(
 }
 
 pub(crate) fn initialize<'js>(ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs::Result<()> {
-    ctx.eval::<(), _>(include_str!("../vendor/mmdb-utilities.js"))?;
+    crate::script_bytecode::MMDB.eval(ctx)?;
     ctx.globals()
         .set("__initMMDB", Func::from(initialize_reader))?;
     let constructor: Function =

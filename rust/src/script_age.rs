@@ -253,9 +253,9 @@ pub(crate) async fn rest<'js>(js: &Js<'js>, input: Value<'js>) -> rquickjs::Resu
 }
 
 pub(crate) fn initialize<'js>(ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs::Result<()> {
-    ctx.eval::<(), _>(include_bytes!("../vendor/web-utilities.js").as_slice())?;
-    ctx.eval::<(), _>(include_str!("script-web.js"))?;
-    ctx.eval::<(), _>(include_bytes!("../vendor/age-utilities.js").as_slice())?;
+    crate::script_bytecode::WEB.eval(ctx)?;
+    crate::script_bytecode::WEB_BINDINGS.eval(ctx)?;
+    crate::script_bytecode::AGE.eval(ctx)?;
     let age = Object::new(ctx.clone())?;
     age.set("encrypt", Func::from(Async(encrypt)))?;
     age.set("decrypt", Func::from(Async(decrypt_public)))?;
