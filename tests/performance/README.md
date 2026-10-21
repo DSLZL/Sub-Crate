@@ -37,7 +37,7 @@ UI-created seeds to workers. Its key derives from the private input bytes with
 a domain prefix and random salt, not the published input hash; authentication
 also binds it to the workflow run. The key is never uploaded.
 
-The workflow freezes original `9cc6b5fa`, Rust `6ebcda1c`, and unchanged frontend
+The workflow freezes original `9cc6b5fa`, Rust `ea16edca`, and unchanged frontend
 `4bd7b0ac`, with full revisions in the harness and report. It builds the original
 without compatibility-reference patches. The actual subscription file input on
 `/subs` imports the original file five times per backend into fresh storage.
@@ -618,14 +618,16 @@ included. Earlier reports remain immutable under their narrower input boundary.
 
 ## Per-node preparation and projection candidate (2026-10-21, unverified)
 
-Product `6ebcda1c` lets the script producer dispatch its already prepared owned
+Product `ea16edca` lets the script producer dispatch its already prepared owned
 values without a second pass through common filtering and normalization. The
 duplicate owned preparation has no remaining production callers and is removed;
-the live script producer retains target validation and preparation. Projection keeps an
-active ancestor/path stack instead of allocating a path for every object; it
-copies paths only when recording cycles or special numbers. Focused regressions
-cover sibling aliases, mixed object/array cycles, special numbers, getter/toJSON
-order and recovery after an exception.
+the live script producer retains target validation and preparation. Projection
+returns its existing JSON string directly when there are no exceptional paths,
+avoiding a result tuple and serialization/parsing of an empty path list. Cycles,
+special numbers and unsupported root values keep their previous representation.
+Focused regressions cover ordinary repeated getter/toJSON reads, sibling aliases,
+mixed object/array cycles, special numbers, private/UTF-16 keys and recovery after
+an exception.
 
 The health diagnostic now compares against the immediately preceding production
 version `9c659cef`, using the existing same-input Node/candidate/baseline/repeated
@@ -639,10 +641,14 @@ Status: **PENDING**. The first candidate's native run
 [39605952808](https://github.com/DSLZL/Sub-Store/actions/runs/39605952808)
 found a newly unused preparation entry and a formatting diff. It and the
 superseded diagnostic [39606000665](https://github.com/DSLZL/Sub-Store/actions/runs/39606000665)
-were stopped before accepting a result. The replacement removes the unused
-implementation and applies the CI-generated formatting. No new CI acceptance or
-performance improvement is established yet. The results below belong to their
-stated earlier source versions.
+were stopped before accepting a full result. Its completed public component
+profiles show the active-stack experiment made projection roughly 3-6% slower
+than the immediately preceding baseline on the same runner, so that experiment
+is removed. Runs 39606917279, 39606961853 and 39606968623 were superseded before
+acceptance to avoid continuing that version. The replacement removes the unused
+implementation, applies the CI-generated formatting and omits empty projection
+metadata. No new CI acceptance or performance improvement is established yet.
+The results below belong to their stated earlier source versions.
 
 ## Parallel raw-input result (2026-10-21)
 
