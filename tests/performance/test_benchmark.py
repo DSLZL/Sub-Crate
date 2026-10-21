@@ -25,7 +25,7 @@ if os.environ.get("GITHUB_ACTIONS") != "true":
 class Contracts(unittest.TestCase):
     def test_script_fetch_retries_io_but_keeps_the_pinned_digest(self):
         body = b"pinned script"
-        reply = b.encoded({"content": b.base64.b64encode(body).decode()})
+        reply = b.encoded({"content": b.base64.b64encode(body).decode() + "\n"})
         with patch.dict(os.environ, {"BENCHMARK_ASSET_TOKEN": "fixture-token"}), \
                 patch.object(b, "SCRIPT_HASH", b.digest(body)), \
                 patch.object(b, "urlopen", side_effect=[OSError(), BytesIO(reply)]) as fetch, \

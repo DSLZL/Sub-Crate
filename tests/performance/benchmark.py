@@ -1088,7 +1088,7 @@ def get_script():
     for attempt in range(3):
         try:
             with urlopen(request, timeout=60) as response:
-                body = base64.b64decode(json.load(response)["content"], validate=True)
+                body = base64.b64decode(json.load(response)["content"])
             require(digest(body) == SCRIPT_HASH, "asset")
             return body.decode()
         except OSError:
