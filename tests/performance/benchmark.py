@@ -73,7 +73,7 @@ input_clone clone_stringify clone_parse parse parse_runtime parse_native parse_p
 produce produce_validate produce_filter filter_callback produce_prepare prepare_callback produce_collect
 produce_project_nodes produce_project_options produce_reconcile produce_native produce_decode
 value_project project_stringify project_extract project_parse project_restore value_stringify
-value_decode decode_classify decode_encode decode_parse decode_restore
+value_decode decode_classify decode_encode decode_parse decode_restore decode_build
 """.split())
 PUBLIC_STRINGS.update(PROFILE_STAGES | {"download_sub", "download_collection", "download_file", "other"})
 NODE_FIELDS = {"name", "type", "server", "port", "ports", "password", "uuid", "sni", "tls",

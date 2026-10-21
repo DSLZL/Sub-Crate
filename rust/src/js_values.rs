@@ -1,6 +1,6 @@
 //! ECMAScript values at the native conversion/script boundary.
 use crate::{json as codec, profile};
-use rquickjs::{Array, Ctx, Function, Object, Value};
+use rquickjs::{Array, Ctx, Function, IntoJs, Object, Value, object::Property};
 
 pub(crate) fn initialize(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
     let functions: Object = ctx.eval(
@@ -176,12 +176,54 @@ fn needs_restore(value: &serde_json::Value) -> bool {
         serde_json::Value::Number(number) => number
             .as_f64()
             .is_some_and(|number| number == 0.0 && number.is_sign_negative()),
-        serde_json::Value::String(_) => codec::nonfinite(value).is_some(),
+        serde_json::Value::String(text) => text.contains('\u{e000}'),
         serde_json::Value::Array(values) => values.iter().any(needs_restore),
         serde_json::Value::Object(values) => {
-            cycle(value).is_some() || values.values().any(needs_restore)
+            cycle(value).is_some()
+                || values
+                    .iter()
+                    .any(|(key, value)| key.contains('\u{e000}') || needs_restore(value))
         }
         _ => false,
+    }
+}
+
+fn plain_value<'js>(
+    ctx: &Ctx<'js>,
+    value: &serde_json::Value,
+) -> rquickjs::Result<Value<'js>> {
+    match value {
+        serde_json::Value::Null => Ok(Value::new_null(ctx.clone())),
+        serde_json::Value::Bool(value) => (*value).into_js(ctx),
+        serde_json::Value::Number(value) => value.as_f64().unwrap().into_js(ctx),
+        serde_json::Value::String(value) => value.as_str().into_js(ctx),
+        serde_json::Value::Array(values) => {
+            let array = Array::new(ctx.clone())?;
+            for (index, value) in values.iter().enumerate() {
+                array.as_object().prop(
+                    index,
+                    Property::from(plain_value(ctx, value)?)
+                        .writable()
+                        .enumerable()
+                        .configurable(),
+                )?;
+            }
+            Ok(array.into_value())
+        }
+        serde_json::Value::Object(values) => {
+            let object = Object::new(ctx.clone())?;
+            for (key, value) in values {
+                // JSON.parse defines own data properties, including __proto__.
+                object.prop(
+                    key.as_str(),
+                    Property::from(plain_value(ctx, value)?)
+                        .writable()
+                        .enumerable()
+                        .configurable(),
+                )?;
+            }
+            Ok(object.into_value())
+        }
     }
 }
 
@@ -226,12 +268,8 @@ pub(crate) fn decode<'js>(
     }
     if !needs_restore(value) {
         drop(classify);
-        let encode = profile::span("decode_encode");
-        // JSON.parse already restores ordinary numbers; only UTF-16 markers need decoding.
-        let text = codec::text(&value.to_string());
-        drop(encode);
-        let _parse = profile::span("decode_parse");
-        return ctx.json_parse(text);
+        let _build = profile::span("decode_build");
+        return plain_value(ctx, value);
     }
     drop(classify);
     let _restore = profile::span("decode_restore");
@@ -473,6 +511,49 @@ mod tests {
                 restored.values.every((value, index) => Object.is(value, expected.values[index]))
             "#;
             assert!(ctx.eval::<bool, _>(assertion).unwrap());
+            for raw in [
+                "null", "true", "false", "0", "-0", "1e21", "5e-324",
+                "18446744073709551615", "-9223372036854775808",
+                r#""plain 中🙂\u0000\"\\""#, r#""\ud800\ue000""#,
+            ] {
+                let expected = ctx.json_parse(raw).unwrap();
+                let restored = decode(&ctx, &codec::parse(raw).unwrap()).unwrap();
+                ctx.globals().set("expected", expected).unwrap();
+                ctx.globals().set("restored", restored).unwrap();
+                assert!(ctx.eval::<bool, _>("Object.is(restored, expected)").unwrap(), "{raw}");
+            }
+        });
+    }
+
+    #[test]
+    fn decoded_values_define_own_properties_without_prototype_setters() {
+        let runtime = rquickjs::Runtime::new().unwrap();
+        let context = rquickjs::Context::full(&runtime).unwrap();
+        context.with(|ctx| {
+            initialize(&ctx).unwrap();
+            ctx.eval::<(), _>(r#"
+                Object.defineProperty(Object.prototype, 'trapped', {
+                    set() {throw new Error('object setter');}, configurable: true
+                });
+                Object.defineProperty(Array.prototype, '0', {
+                    set() {throw new Error('array setter');}, configurable: true
+                });
+            "#).unwrap();
+            let raw = r#"{"trapped":[{"__proto__":{"safe":true},"trapped":1}],"10":10,"2":2,"01":1,"4294967295":0}"#;
+            let expected = ctx.json_parse(raw).unwrap();
+            let restored = decode(&ctx, &codec::parse(raw).unwrap()).unwrap();
+            ctx.globals().set("expected", expected).unwrap();
+            ctx.globals().set("restored", restored).unwrap();
+            assert!(ctx.eval::<bool, _>(r#"(() => {
+                const objects = [restored, restored.trapped, restored.trapped[0], restored.trapped[0].__proto__];
+                const flags = objects.every(object => Object.keys(object).every(key => {
+                    const d = Object.getOwnPropertyDescriptor(object, key);
+                    return d.writable && d.enumerable && d.configurable && !d.get && !d.set;
+                }));
+                return flags && JSON.stringify(restored) === JSON.stringify(expected) &&
+                    Object.getPrototypeOf(restored.trapped[0]) === Object.prototype &&
+                    Object.hasOwn(restored.trapped[0], '__proto__') && restored.trapped[0].__proto__.safe;
+            })()"#).unwrap());
         });
     }
 }
