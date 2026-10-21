@@ -122,7 +122,8 @@ mod tests {
 
     #[test]
     fn bytecode_recreates_globals_and_functions_in_independent_runtimes() {
-        let source = b"var counter = 0; let lexical = 7; function bump() { return ++counter + lexical; }";
+        let source =
+            b"var counter = 0; let lexical = 7; function bump() { return ++counter + lexical; }";
         let script = Script::new(source);
         let inspect = "JSON.stringify([bump(),bump(),Object.getOwnPropertyDescriptor(globalThis,'counter'),bump.toString()])";
         let runtime = Runtime::new().unwrap();
@@ -174,7 +175,9 @@ mod tests {
 
     #[test]
     fn bytecode_is_shared_across_threads_without_sharing_js_state() {
-        let script = Arc::new(Script::new(b"var counter = 0; globalThis.bump = () => ++counter;"));
+        let script = Arc::new(Script::new(
+            b"var counter = 0; globalThis.bump = () => ++counter;",
+        ));
         let workers: Vec<_> = (0..4)
             .map(|_| {
                 let script = script.clone();
