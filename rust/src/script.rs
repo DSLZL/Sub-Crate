@@ -459,7 +459,7 @@ fn native_parse<'js>(ctx: Ctx<'js>, raw: JsValue<'js>) -> rquickjs::Result<JsVal
     let js = Js::new(ctx);
     let raw = crate::js_values::project(&js.ctx, raw)?;
     let parser = parser(&js.ctx).map_err(|error| js.error(&conversion_message(error)))?;
-    let proxies = conversion::parse_with(&raw, Some(&parser))
+    let proxies = conversion::parse(&raw, Some(&parser))
         .map_err(|error| js.error(&conversion_message(error)))?;
     crate::js_values::decode(&js.ctx, &json!(proxies))
 }
