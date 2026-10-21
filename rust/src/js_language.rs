@@ -138,7 +138,7 @@ impl<'js> Js<'js> {
             pattern = self.method(pattern, "substring", vec![self.value(4)?])?;
         }
         self.call(
-            "regex",
+            "regexCached",
             (
                 pattern,
                 format!("{}{flags}", if insensitive { "i" } else { "" }),
@@ -226,6 +226,71 @@ mod tests {
             .unwrap();
         ctx.eval::<(), _>(include_str!("script-bootstrap.js"))
             .unwrap();
+    }
+
+    #[test]
+    fn compiled_regex_templates_keep_fresh_instances_and_constructor_effects() {
+        let runtime = rquickjs::Runtime::new().unwrap();
+        let context = rquickjs::Context::full(&runtime).unwrap();
+        context.with(|ctx| {
+            initialize(&ctx);
+            assert!(ctx.eval::<bool, _>(r#"(() => {
+                const make = __language.regexCached, Original = RegExp;
+                const check = value => {if (!value) throw new Error('regexp cache contract');};
+                for (const pattern of ['', 'a+', '中🙂', '\ud800\0', '(?:a|b)+']) {
+                    for (const flags of ['', 'g', 'i', 'ig', 'y', 'u']) {
+                        const actual = make(pattern, flags), expected = new Original(pattern, flags);
+                        check(actual !== expected && actual.source === expected.source && actual.flags === expected.flags);
+                        check(actual.test('Aa中🙂\ud800\0') === expected.test('Aa中🙂\ud800\0'));
+                        check(actual.lastIndex === expected.lastIndex);
+                    }
+                }
+                const first = make('a', 'g'); first.lastIndex = 10; first.compile('b', 'i');
+                const second = make('a', 'g');
+                check(first !== second && second.source === 'a' && second.flags === 'g' && second.lastIndex === 0);
+                second.test('a'); check(make('a', 'g').lastIndex === 0);
+                const test = Original.prototype.test, receivers = [];
+                Original.prototype.test = function(value) {receivers.push(this);return test.call(this, value);};
+                make('a', 'g').test('a'); make('a', 'g').test('a');
+                check(receivers.length === 2 && receivers[0] !== receivers[1]);
+                Original.prototype.test = test;
+                const globalDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'RegExp');
+                let reads = 0;
+                Object.defineProperty(globalThis, 'RegExp', {get() {reads++;return Original;}, configurable: true});
+                make('a', ''); make('a', ''); check(reads === 2);
+                Object.defineProperty(globalThis, 'RegExp', globalDescriptor);
+                const calls = [];
+                globalThis.RegExp = new Proxy(Original, {construct(target, args, constructor) {
+                    calls.push(args);return Reflect.construct(target, args, constructor);
+                }});
+                make('a', 'g'); check(calls.length === 1 && calls[0][0] === 'a' && calls[0][1] === 'g');
+                Object.defineProperty(globalThis, 'RegExp', globalDescriptor);
+                const matchDescriptor = Object.getOwnPropertyDescriptor(Original.prototype, Symbol.match);
+                let matches = 0;
+                Object.defineProperty(Original.prototype, Symbol.match, {get() {matches++;return matchDescriptor.value;}, configurable: true});
+                Object.defineProperty(Object.prototype, 'value', {get() {throw new Error('inherited descriptor getter');}, configurable: true});
+                make('a', ''); check(matches === 0);
+                delete Object.prototype.value;
+                Object.defineProperty(Original.prototype, Symbol.match, matchDescriptor);
+                function effects(construct) {
+                    const trace = [];
+                    const pattern = {toString() {trace.push('pattern');return 'a';}};
+                    const flags = {toString() {trace.push('flags');return 'g';}};
+                    const value = construct(pattern, flags);
+                    return JSON.stringify([trace, value.source, value.flags]);
+                }
+                check(effects(make) === effects((pattern, flags) => new Original(pattern, flags)));
+                for (let index = 0; index < 80; index++) check(make('a' + index, '').source === 'a' + index);
+                check(make('a', 'g').lastIndex === 0);
+                for (const [pattern, flags] of [['[', ''], ['a', 'gg']]) {
+                    let expected, actual;
+                    try {new Original(pattern, flags);} catch (error) {expected = error.name + ':' + error.message;}
+                    try {make(pattern, flags);} catch (error) {actual = error.name + ':' + error.message;}
+                    check(actual === expected);
+                }
+                return true;
+            })()"#).unwrap());
+        });
     }
 
     #[test]
