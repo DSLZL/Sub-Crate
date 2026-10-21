@@ -342,41 +342,113 @@ pub fn number(value: &serde_json::Number) -> String {
 }
 
 fn serialized(input: &str) -> String {
-    let input = ["NaN", "Infinity", "-Infinity"]
-        .into_iter()
-        .fold(input.to_owned(), |input, number| {
-            input.replace(&format!("\"{MARKER}number:{number}\""), "null")
-        });
-    let mut input = input.as_str();
+    let input = if input.contains(MARKER) {
+        std::borrow::Cow::Owned(["NaN", "Infinity", "-Infinity"].into_iter().fold(
+            input.to_owned(),
+            |input, number| input.replace(&format!("\"{MARKER}number:{number}\""), "null"),
+        ))
+    } else {
+        std::borrow::Cow::Borrowed(input)
+    };
+    let mut input: &str = input.as_ref();
     let mut output = String::with_capacity(input.len());
-    let mut quoted = false;
-    while let Some(character) = input.chars().next() {
-        let length = if quoted && character == '\\' {
-            1 + input[1..].chars().next().unwrap().len_utf8()
-        } else if !quoted && (character == '-' || character.is_ascii_digit()) {
-            let length = input
-                .find(|c: char| !matches!(c, '0'..='9' | '-' | '+' | '.' | 'e' | 'E'))
-                .unwrap_or(input.len());
-            let value = serde_json::from_str(&input[..length]).expect("serialized JSON number");
-            output.push_str(&number(&value));
-            input = &input[length..];
-            continue;
-        } else {
-            if character == '"' {
-                quoted = !quoted;
+    while let Some(&first) = input.as_bytes().first() {
+        let length = match first {
+            b'"' => {
+                // Only serde-generated JSON enters here. Copy strings in bulk;
+                // subscription bodies and scripts do not contain number tokens.
+                let bytes = input.as_bytes();
+                let mut end = 1;
+                while bytes[end] != b'"' {
+                    end += if bytes[end] == b'\\' { 2 } else { 1 };
+                }
+                end + 1
             }
-            character.len_utf8()
+            b'-' | b'0'..=b'9' => {
+                let length = input
+                    .find(|c: char| !matches!(c, '0'..='9' | '-' | '+' | '.' | 'e' | 'E'))
+                    .unwrap_or(input.len());
+                let value = serde_json::from_str(&input[..length]).expect("serialized JSON number");
+                output.push_str(&number(&value));
+                input = &input[length..];
+                continue;
+            }
+            _ => 1,
         };
         output.push_str(&input[..length]);
         input = &input[length..];
     }
-    text(&output)
+    if output.contains(MARKER) {
+        text(&output)
+    } else {
+        output
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn bulk_string_copy_matches_the_original_wire_serializer() {
+        fn original(input: &str) -> String {
+            let input = ["NaN", "Infinity", "-Infinity"]
+                .into_iter()
+                .fold(input.to_owned(), |input, number| {
+                    input.replace(&format!("\"{MARKER}number:{number}\""), "null")
+                });
+            let mut input = input.as_str();
+            let mut output = String::with_capacity(input.len());
+            let mut quoted = false;
+            while let Some(character) = input.chars().next() {
+                let length = if quoted && character == '\\' {
+                    1 + input[1..].chars().next().unwrap().len_utf8()
+                } else if !quoted && (character == '-' || character.is_ascii_digit()) {
+                    let length = input
+                        .find(|c: char| !matches!(c, '0'..='9' | '-' | '+' | '.' | 'e' | 'E'))
+                        .unwrap_or(input.len());
+                    let value = serde_json::from_str(&input[..length]).unwrap();
+                    output.push_str(&number(&value));
+                    input = &input[length..];
+                    continue;
+                } else {
+                    if character == '"' {
+                        quoted = !quoted;
+                    }
+                    character.len_utf8()
+                };
+                output.push_str(&input[..length]);
+                input = &input[length..];
+            }
+            text(&output)
+        }
+
+        let mut values = vec![
+            json!(null),
+            json!(true),
+            json!(-0.0),
+            json!(9007199254740993_u64),
+            json!([1e-7, 1e-6, 1e20, 1e21, -1e21]),
+            numeric(f64::NAN),
+            numeric(f64::INFINITY),
+            numeric(f64::NEG_INFINITY),
+            json!(from_units(&[0xd800, 0xe000, 0xdfff])),
+        ];
+        for slashes in 0..=12 {
+            let text = format!("{}\"-123.4e+56\n中🙂\u{e000}number:NaN", "\\".repeat(slashes));
+            values.push(json!(encode(&text)));
+            values.push(json!({(encode(&text)): encode(&text.repeat(100))}));
+        }
+        values.push(Value::Array(values.clone()));
+        for value in values {
+            assert_eq!(stringify(&value), original(&value.to_string()));
+            assert_eq!(
+                pretty(&value),
+                original(&serde_json::to_string_pretty(&value).unwrap()).into_bytes()
+            );
+        }
+    }
 
     #[test]
     fn state_comparison_matches_serialized_order_numbers_and_checked_markers() {
