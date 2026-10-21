@@ -1,5 +1,5 @@
 //! ECMAScript values at the native conversion/script boundary.
-use crate::json as codec;
+use crate::{json as codec, profile};
 use rquickjs::{Array, Ctx, Function, Object, Value};
 
 pub(crate) fn initialize(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
@@ -44,8 +44,12 @@ pub(crate) fn project<'js>(
     ctx: &Ctx<'js>,
     value: Value<'js>,
 ) -> rquickjs::Result<serde_json::Value> {
+    let _project = profile::span("value_project");
+    let serialize = profile::span("project_stringify");
     let stringify = function(ctx, "project")?;
     let result: Value = stringify.call((value,))?;
+    drop(serialize);
+    let extract = profile::span("project_extract");
     let (text, paths) = if let Some(text) = result.as_string() {
         (text.to_string()?, None)
     } else {
@@ -54,11 +58,15 @@ pub(crate) fn project<'js>(
         let paths: String = result.get(1)?;
         (text, Some(paths))
     };
+    drop(extract);
+    let parse = profile::span("project_parse");
     let mut value = codec::parse(&text)
         .map_err(|error| rquickjs::Exception::throw_message(ctx, &error.to_string()))?;
+    drop(parse);
     let Some(paths) = paths else {
         return Ok(value);
     };
+    let _restore = profile::span("project_restore");
     let paths = codec::parse(&paths)
         .map_err(|error| rquickjs::Exception::throw_message(ctx, &error.to_string()))?;
     for entry in paths.as_array().unwrap() {
@@ -182,6 +190,7 @@ pub(crate) fn stringify<'js>(
     value: Value<'js>,
     space: u8,
 ) -> rquickjs::Result<Value<'js>> {
+    let _stringify = profile::span("value_stringify");
     let stringify = function(ctx, "stringify")?;
     match stringify.call((value.clone(), space)) {
         Ok(text) => Ok(text),
@@ -206,6 +215,8 @@ pub(crate) fn decode<'js>(
     ctx: &Ctx<'js>,
     value: &serde_json::Value,
 ) -> rquickjs::Result<Value<'js>> {
+    let _decode = profile::span("value_decode");
+    let classify = profile::span("decode_classify");
     if let Some(number) = codec::nonfinite(value).or_else(|| {
         value
             .as_f64()
@@ -214,9 +225,16 @@ pub(crate) fn decode<'js>(
         return Ok(Value::new_float(ctx.clone(), number));
     }
     if !needs_restore(value) {
+        drop(classify);
+        let encode = profile::span("decode_encode");
         // JSON.parse already restores ordinary numbers; only UTF-16 markers need decoding.
-        return ctx.json_parse(codec::text(&value.to_string()));
+        let text = codec::text(&value.to_string());
+        drop(encode);
+        let _parse = profile::span("decode_parse");
+        return ctx.json_parse(text);
     }
+    drop(classify);
+    let _restore = profile::span("decode_restore");
     fn wire(value: &serde_json::Value) -> serde_json::Value {
         if cycle(value).is_some() {
             return serde_json::Value::Null;

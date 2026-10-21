@@ -1,5 +1,5 @@
 //! Owned application script jobs and thin native bindings.
-use crate::{conversion, js_language::Js, json as codec, processors, script_io, state::Store};
+use crate::{conversion, js_language::Js, json as codec, processors, profile, script_io, state::Store};
 use rquickjs::{
     Array, AsyncContext, AsyncRuntime, Ctx, Exception, Function, JsLifetime, Object, Promise,
     Value as JsValue,
@@ -460,14 +460,19 @@ async fn wait(milliseconds: u64) {
 }
 
 fn native_parse<'js>(ctx: Ctx<'js>, raw: JsValue<'js>) -> rquickjs::Result<JsValue<'js>> {
+    let _parse = profile::span("parse");
     if !raw.is_string() {
         return Err(Exception::throw_type(&ctx, "raw.split is not a function"));
     }
     let js = Js::new(ctx);
     let raw = crate::js_values::project(&js.ctx, raw)?;
+    let prepare = profile::span("parse_runtime");
     let parser = parser(&js.ctx).map_err(|error| js.error(&conversion_message(error)))?;
+    drop(prepare);
+    let native = profile::span("parse_native");
     let proxies = conversion::parse(&raw, Some(&parser))
         .map_err(|error| js.error(&conversion_message(error)))?;
+    drop(native);
     crate::js_values::decode(&js.ctx, &json!(proxies))
 }
 
@@ -502,8 +507,11 @@ async fn invoke<'js>(
     scope: &Scope<'js>,
     input: JsValue<'js>,
 ) -> rquickjs::Result<JsValue<'js>> {
+    let compile = profile::span("script_compile");
     let constructor: Function = js.ctx.globals().get("Function")?;
     let factory: Function = constructor.call(("$arguments,$options,$substore,lodash,ProxyUtils,yaml,Buffer,b64d,b64e,DOMAIN_RESOLVERS,scriptResourceCache,flowUtils,produceArtifact,require", format!("{script}\nreturn {entry}")))?;
+    drop(compile);
+    let bind = profile::span("script_bind");
     let globals = js.ctx.globals();
     let utils: Object = globals.get("ProxyUtils")?;
     let base64: Object = utils.get("Base64")?;
@@ -527,12 +535,15 @@ async fn invoke<'js>(
         args.push_arg(value)?;
     }
     let function: Function = factory.call_arg(args)?;
+    drop(bind);
+    let call = profile::span("script_call");
     let output: JsValue = if entry == "transformFunction" {
         function.call((input, scope.context.clone()))?
     } else {
         function.call((input, scope.target.clone(), scope.context.clone()))?
     };
-    settled(js, output).await
+    drop(call);
+    profile::measure("script_await", None, settled(js, output)).await
 }
 
 async fn apply_script<'js>(
@@ -542,7 +553,8 @@ async fn apply_script<'js>(
     input: JsValue<'js>,
     scope: &Scope<'js>,
 ) -> rquickjs::Result<JsValue<'js>> {
-    let (script, arguments) = crate::script_loading::load(js, &item, &scope.execution).await?;
+    let (script, arguments) = profile::measure("script_load", None, crate::script_loading::load(js, &item, &scope.execution)).await?;
+    let prepare = profile::span("script_prepare");
     let script = js.text(script)?;
     js.set(&scope.context, "source", scope.source.clone())?;
     js.set(
@@ -570,6 +582,7 @@ async fn apply_script<'js>(
             }
         }
     }
+    drop(prepare);
     let first = invoke(js, entry, &script, arguments.clone(), scope, output.clone()).await;
     match first {
         Ok(result) => {
@@ -604,7 +617,7 @@ async fn apply_script<'js>(
                     "async function operator(input = [], targetPlatform, context) {{ if (input && (input.$files || input.$content)) {{ let {{$content,$files,$options,$file}} = input; {script}\n {main} return {{$content,$files,$options,$file}}; }} let list = []; for await (let $server of input) {{ {script}\n list.push($server); }} return list; }}"
                 )
             };
-            match invoke(js, entry, &shortcut, arguments, scope, output.clone()).await {
+            match profile::measure("script_fallback", None, invoke(js, entry, &shortcut, arguments, scope, output.clone())).await {
                 Ok(result) => {
                     if filter || js.truthy(&result)? {
                         output = result;
@@ -680,25 +693,57 @@ async fn process<'js>(
     scope: Scope<'js>,
 ) -> rquickjs::Result<JsValue<'js>> {
     let items: Vec<JsValue> = js.call("iterable", (items,))?;
-    for item in items {
+    for (index, item) in items.into_iter().enumerate() {
+        input = profile::measure("processor", Some(index), process_item(js, input, item, &scope)).await?;
+    }
+    Ok(input)
+}
+
+async fn process_item<'js>(
+    js: &Js<'js>,
+    mut input: JsValue<'js>,
+    item: JsValue<'js>,
+    scope: &Scope<'js>,
+) -> rquickjs::Result<JsValue<'js>> {
         let name = js.get(&item, "type")?;
         if js.equal(&name, &js.value("Response Transformer")?)?
             || skip(js, &item, &scope.context)?
             || js.truthy(&js.get(&item, "disabled")?)?
         {
-            continue;
+            return Ok(input);
         }
         let script_index = js.method(name.clone(), "indexOf", vec![js.value("Script")?])?;
         let is_script = !js.equal(&script_index, &js.value(-1)?)?;
         let name = js.text(name)?;
+        let stage = match name.as_str() {
+            "Script Operator" => "script_operator",
+            "Script Filter" => "script_filter",
+            "Useless Filter" => "useless_filter",
+            "Region Filter" => "region_filter",
+            "Regex Filter" => "regex_filter",
+            "Type Filter" => "type_filter",
+            "Conditional Filter" => "conditional_filter",
+            "Quick Setting Operator" => "quick_setting_operator",
+            "Flag Operator" => "flag_operator",
+            "Sort Operator" => "sort_operator",
+            "Regex Sort Operator" => "regex_sort_operator",
+            "Regex Rename Operator" => "regex_rename_operator",
+            "Regex Delete Operator" => "regex_delete_operator",
+            "Handle Duplicate Operator" => "handle_duplicate_operator",
+            "Add Proxies From Subscription Operator" => "add_proxies_operator",
+            "Resolve Domain Operator" => "resolve_domain_operator",
+            _ => "unknown_processor",
+        };
+        profile::measure(stage, None, async {
         if is_script {
             if !["Script Operator", "Script Filter"].contains(&name.as_str()) {
                 crate::script_loading::load(js, &item, &scope.execution).await?;
                 log(js, "error", &format!("Unknown operator: {name}"));
-                continue;
+                return Ok(input);
             }
-            input = apply_script(js, &name, item, input, &scope).await?;
+            input = apply_script(js, &name, item, input, scope).await?;
         } else if processors::known(&name) {
+            let prepare = profile::span("builtin_prepare");
             let args = js.get(&item, "args")?;
             let args = if js.truthy(&args)? {
                 args
@@ -706,11 +751,13 @@ async fn process<'js>(
                 Object::new(js.ctx.clone())?.into_value()
             };
             let args = processors::prepare(js, &name, args)?;
+            drop(prepare);
             let output = if name.contains("Operator") {
                 js.json_clone(input)?
             } else {
                 input
             };
+            let _apply = profile::span("builtin_apply");
             input = match processors::apply(js, &name, output.clone(), args) {
                 Ok(result) => {
                     if js.truthy(&result)? {
@@ -781,8 +828,8 @@ async fn process<'js>(
             )?;
             input = crate::script_dns::apply(js, input, args).await?;
         }
-    }
-    Ok(input)
+        Ok(input)
+        }).await
 }
 
 async fn native_process<'js>(
@@ -827,7 +874,7 @@ async fn native_process<'js>(
             .filter(|value| !value.is_undefined())
             .unwrap_or(Object::new(js.ctx.clone())?.into_value()),
     };
-    process(
+    profile::measure("process", profile::sequence(), process(
         &js,
         input,
         operators
@@ -835,7 +882,7 @@ async fn native_process<'js>(
             .filter(|value| !value.is_undefined())
             .unwrap_or(js.array([])?),
         scope,
-    )
+    ))
     .await
 }
 
@@ -1125,13 +1172,17 @@ pub async fn run(
     let operation = operation.to_owned();
     let (sender, receiver) = tokio::sync::oneshot::channel();
     let worker = tokio::task::spawn_blocking(move || {
+        let session = profile::Session::start(&operation);
         let mut sender = Some(sender);
         let result = (|| {
-            tokio::runtime::Builder::new_current_thread()
+            let setup = profile::span("executor_setup");
+            let executor = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .map_err(|error| conversion::Error::Legacy(error.to_string()))?
-                .block_on(async {
+                .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
+            drop(setup);
+            executor.block_on(async {
+                    let state = profile::span("state_snapshot");
                     let (cache, root) = {
                         let store = store.lock().map_err(|_| {
                             conversion::Error::Legacy("State lock poisoned".to_owned())
@@ -1143,24 +1194,31 @@ pub async fn run(
                                 .map_err(|error| conversion::Error::Legacy(error.to_string()))?,
                         )
                     };
+                    drop(state);
                     let job = Job {
                         store,
                         baseline: Rc::new(RefCell::new((cache, root))),
                         parser: Rc::new(RefCell::new(None)),
                         background,
                     };
+                    let setup = profile::span("runtime_setup");
                     let runtime = AsyncRuntime::new()
                         .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
-                    let context = AsyncContext::full(&runtime)
+                    drop(setup);
+                    let context = profile::measure("context_setup", None, AsyncContext::full(&runtime))
                         .await
                         .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
-                    let result = context
+                    let result = profile::measure("job", None, context
                         .async_with(async |ctx| {
                             let result = async {
+                                let bootstrap = profile::span("bootstrap");
                                 initialize(&ctx, job)?;
+                                drop(bootstrap);
                                 let js = Js::new(ctx.clone());
+                                let decode = profile::span("input_decode");
                                 let input = ctx.json_parse(codec::stringify(&input))?;
-                                let result = match operation.as_str() {
+                                drop(decode);
+                                let result = profile::measure("execute", None, async { Ok::<_, rquickjs::Error>(match operation.as_str() {
                                     "parse" => crate::script_http::parse(&js, input).await?,
                                     "token-options" => crate::script_tokens::options(&js, input)?,
                                     "artifact-upload" => {
@@ -1288,14 +1346,16 @@ pub async fn run(
                                         .await?
                                     }
                                     _ => return Err(js.error("Unknown script job operation")),
-                                };
+                                }) }).await?;
+                                let _output = profile::span("output_encode");
                                 let text = serialized(&ctx, result)?;
                                 codec::parse(&text).map_err(|error| js.error(&error.to_string()))
                             }
                             .await;
                             result.map_err(|error| conversion::Error::Legacy(message(&ctx, error)))
-                        })
+                        }))
                         .await;
+                    session.finish(result.is_ok());
                     if let Some(sender) = sender.take() {
                         let _ = sender.send(result);
                     }
@@ -1305,6 +1365,7 @@ pub async fn run(
                 })
         })();
         if let Some(sender) = sender {
+            session.finish(false);
             let error = result.err().unwrap_or_else(|| {
                 conversion::Error::Legacy("Script job produced no result".to_owned())
             });

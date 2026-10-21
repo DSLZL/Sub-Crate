@@ -1,5 +1,5 @@
 //! Common producer preparation retains caller objects and ECMAScript values.
-use crate::{clash_output, conversion, js_language::Js, script_pipeline::optional};
+use crate::{clash_output, conversion, js_language::Js, profile, script_pipeline::optional};
 use rquickjs::{Ctx, Value, prelude::Opt};
 
 fn nonblank<'js>(js: &Js<'js>, value: Value<'js>) -> rquickjs::Result<bool> {
@@ -69,6 +69,8 @@ pub(crate) fn produce<'js>(
     kind: Opt<Value<'js>>,
     options: Opt<Value<'js>>,
 ) -> rquickjs::Result<Value<'js>> {
+    let _produce = profile::span("produce");
+    let validate = profile::span("produce_validate");
     let js = Js::new(ctx);
     let target = js.text(target)?;
     if !conversion::ALIASES.contains(&target.as_str()) {
@@ -83,7 +85,10 @@ pub(crate) fn produce<'js>(
     let exact = target.clone();
     let output_target = normalized.clone();
     let opts = options.clone();
+    drop(validate);
+    let filter = profile::span("produce_filter");
     let input = js.filter(input, move |proxy, _| {
+        let _callback = profile::span("filter_callback");
         let include = scope.truthy(&scope.get(&opts, "include-unsupported-proxy")?)?;
         let kind = scope.get(&proxy, "type")?;
         let kind = scope.text(kind)?;
@@ -164,8 +169,11 @@ pub(crate) fn produce<'js>(
         }
         Ok(true)
     })?;
+    drop(filter);
+    let prepare = profile::span("produce_prepare");
     let scope = js.clone();
     let input = js.map(input, move |proxy| {
+        let _callback = profile::span("prepare_callback");
         scope.set(&proxy, "_resolved", scope.get(&proxy, "resolved")?)?;
         if !nonblank(&scope, scope.get(&proxy, "name")?)? {
             scope.set(
@@ -218,6 +226,7 @@ pub(crate) fn produce<'js>(
         }
         Ok(proxy)
     })?;
+    drop(prepare);
     let kind = kind.0.unwrap_or_else(|| js.undefined());
     if ["json", "JSON"].contains(&target.as_str()) {
         if js.equal(&kind, &js.value("internal")?)? {
@@ -225,18 +234,25 @@ pub(crate) fn produce<'js>(
         }
         return crate::js_values::stringify(&js.ctx, input, 2);
     }
+    let collect = profile::span("produce_collect");
     let live = input
         .as_array()
         .ok_or_else(|| js.error("Invalid producer input"))?
         .iter::<Value>()
         .collect::<rquickjs::Result<Vec<_>>>()?;
+    drop(collect);
+    let project = profile::span("produce_project_nodes");
     let mut values = live
         .iter()
         .cloned()
         .map(|value| crate::js_values::project(&js.ctx, value))
         .collect::<rquickjs::Result<Vec<_>>>()?;
+    drop(project);
+    let project = profile::span("produce_project_options");
     let options = crate::js_values::project(&js.ctx, options)?;
     let kind = js.text(kind)?;
+    drop(project);
+    let reconcile = profile::span("produce_reconcile");
     if let Some(family) = clash_output::Family::for_target(&target) {
         for (proxy, caller) in values.iter_mut().zip(live) {
             if !matches!(proxy["network"].as_str(), Some("ws" | "grpc")) {
@@ -294,11 +310,15 @@ pub(crate) fn produce<'js>(
             proxy["ws-opts"] = normalized;
         }
     }
+    drop(reconcile);
+    let native = profile::span("produce_native");
     let output = conversion::produce(values, &target, &kind, &options).map_err(|error| {
         js.error(&match error {
             conversion::Error::Legacy(message) => message,
         })
     })?;
+    drop(native);
+    let _decode = profile::span("produce_decode");
     crate::js_values::decode(&js.ctx, &output)
 }
 

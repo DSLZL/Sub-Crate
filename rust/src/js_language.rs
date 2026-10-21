@@ -121,7 +121,11 @@ impl<'js> Js<'js> {
     }
 
     pub fn json_clone(&self, value: Value<'js>) -> rquickjs::Result<Value<'js>> {
+        let _clone = crate::profile::span("input_clone");
+        let stringify = crate::profile::span("clone_stringify");
         let text = self.ctx.json_stringify(value)?;
+        drop(stringify);
+        let _parse = crate::profile::span("clone_parse");
         self.call(
             "jsonParse",
             (text.map_or_else(|| self.undefined(), |text| text.into_value()),),
