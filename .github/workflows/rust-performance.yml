@@ -216,6 +216,7 @@ jobs:
       - name: Import original file, capture untouched sources and seal private inputs
         env:
           BENCHMARK_SUBSCRIPTION_B64: ${{ secrets.BENCHMARK_SUBSCRIPTION_B64 }}
+          BENCHMARK_ASSET_TOKEN: ${{ github.token }}
         run: |
           umask 077
           diagnostic_args=()

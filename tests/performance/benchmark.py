@@ -28,7 +28,7 @@ import threading
 import time
 import traceback
 from urllib.parse import quote, urlencode, urlsplit
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 import psutil
 
@@ -1080,10 +1080,21 @@ def get_asset(url, expected, path):
 
 
 def get_script():
-    with urlopen("https://api.github.com/repos/DSLZL/scripts/git/blobs/" + SCRIPT_BLOB, timeout=60) as response:
-        body = base64.b64decode(json.load(response)["content"])
-    require(digest(body) == SCRIPT_HASH, "asset")
-    return body.decode()
+    headers = {}
+    token = os.environ.pop("BENCHMARK_ASSET_TOKEN", "")
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    request = Request("https://api.github.com/repos/DSLZL/scripts/git/blobs/" + SCRIPT_BLOB, headers=headers)
+    for attempt in range(3):
+        try:
+            with urlopen(request, timeout=60) as response:
+                body = base64.b64decode(json.load(response)["content"], validate=True)
+            require(digest(body) == SCRIPT_HASH, "asset")
+            return body.decode()
+        except OSError:
+            if attempt == 2:
+                raise Failure("asset") from None
+            time.sleep(1)
 
 
 def cgroup_limit(name):
