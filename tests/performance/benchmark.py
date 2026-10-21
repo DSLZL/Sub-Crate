@@ -31,7 +31,8 @@ from urllib.request import urlopen
 import psutil
 
 ORIGINAL = "9cc6b5fac966993364ae33da8797f446bbf7f571"
-RUST = "464241c8665180a644ff95234fd901d6451d6cdf"
+RUST = "e9da7c39ca42a731355e00a3a7c897050c47f73f"
+RUST_BASELINE = "464241c8665180a644ff95234fd901d6451d6cdf"
 FRONTEND = "4bd7b0acbe65466b933ccea14fc61dbebe036ead"
 INPUT_HASH = "a6e6bb9cbe0587f33de0cf130ec391ecffd3483009888fed0ea59d39492ae890"
 INPUT_NAME = "sub-store_subscription_大杂烩-cron-new_2026-10-20_14-11-50.json"
@@ -39,6 +40,7 @@ SCRIPT_BLOB = "5fc44546b85b965abaa710924e507fae3f50a83d"
 SCRIPT_HASH = "03d4c889ddec7a56576eb14f191e5187a7571d8122bc987431bb4eb48b3b1da8"
 WATCHDOG = 300
 KINDS = ("node", "rust")
+COMPARISON_KINDS = ("node", "rust", "rust_baseline", "rust_repeat")
 CASES = ("import", "cold", "warm", "pressure", "real", "parse", "pre_health", "no_publisher")
 ERRORS = {
     "input", "asset", "source", "startup", "http", "browser", "import_fields",
@@ -46,7 +48,7 @@ ERRORS = {
     "output_mismatch", "snapshot", "work_incomplete", "warm_miss", "timeout",
     "fixture", "privacy", "unexpected", "clash", "resource", "external_io",
 }
-PUBLIC_STRINGS = set(KINDS + CASES) | ERRORS | {
+PUBLIC_STRINGS = set(COMPARISON_KINDS + CASES) | ERRORS | {
     "passed", "failed", "running", "fixture", "real_network", "empty_or_failed",
     "nonempty", "linux_x64", "not_run", "warming", "unpaired", "partial_sources",
     "parse_diagnostic", "health_diagnostic",
@@ -510,7 +512,7 @@ class Suite:
     def server(self, kind, directory, clone=True):
         state = directory / "state"
         if clone:
-            shutil.copytree(self.pristine[kind], state)
+            shutil.copytree(self.pristine["node" if kind == "node" else "rust"], state)
         else:
             state.mkdir()
         port = free_port()
@@ -524,8 +526,8 @@ class Suite:
             argv = [self.node, self.args.original / "backend/dist/sub-store.bundle.js"]
             cwd = self.args.original / "backend"
         else:
-            argv = [self.args.rust / "rust/target/release/sub-store-rust"]
-            cwd = self.args.rust
+            cwd = self.args.rust_baseline if kind == "rust_baseline" else self.args.rust
+            argv = [cwd / "rust/target/release/sub-store-rust"]
             env["PATH"] = ""
         started = time.monotonic()
         with process(argv, cwd, env, directory / "server.log") as child:
@@ -853,6 +855,8 @@ class Suite:
         finally:
             self.publish()
             print(f"Cell {case}/{kind} block={block + 1} clients={concurrency}: {row['status']}; requests={row.get('completed', 0)}, output={row.get('output_count', 0)}, elapsed_s={row.get('elapsed_s', 0):.2f}, failure={row.get('failure', 'none')}.", flush=True)
+            if row["latencies_s"]:
+                print(f"Latency {case}/{kind}: " + json.dumps(distribution(row["latencies_s"]), sort_keys=True), flush=True)
 
     def publish(self):
         public(self.report)
@@ -866,7 +870,7 @@ class Suite:
                  "| Case | Clients | Backend | Passed/measured blocks | Requests | Median ms | P95 ms | RPS | CPU s/request | Peak RSS MiB | OS lifetime peak MiB |", "|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
         for case in CASES:
             for concurrency in (1, 2, 4, 8):
-                for kind in KINDS:
+                for kind in COMPARISON_KINDS:
                     group = [r for r in rows if r["case"] == case and r["kind"] == kind and r["concurrency"] == concurrency and "elapsed_s" in r]
                     if not group:
                         continue
@@ -980,18 +984,27 @@ def cpu_quota(path=Path("/sys/fs/cgroup/cpu.max")):
 
 
 def provenance(args):
-    for path, revision in ((args.original, ORIGINAL), (args.rust, RUST), (args.frontend, FRONTEND)):
+    sources = [(args.original, ORIGINAL), (args.rust, RUST), (args.frontend, FRONTEND)]
+    if args.rust_baseline:
+        sources.append((args.rust_baseline, RUST_BASELINE))
+    for path, revision in sources:
         require(command(["git", "rev-parse", "HEAD"], cwd=path).decode().strip() == revision, "source")
         command(["git", "diff", "--exit-code"], cwd=path)
+    rust_binary = digest((args.rust / "rust/target/release/sub-store-rust").read_bytes())
+    baseline_binary = digest((args.rust_baseline / "rust/target/release/sub-store-rust").read_bytes()) if args.rust_baseline else None
+    if args.rust_baseline:
+        require(RUST != RUST_BASELINE and rust_binary != baseline_binary, "source")
     require(command(["node", "--version"]).decode().strip() == "v24.16.0", "source")
     require(psutil.__version__ == "7.2.2", "source")
     cpu_model = next(line.split(":", 1)[1].strip() for line in Path("/proc/cpuinfo").read_text().splitlines() if line.startswith("model name"))
     PUBLIC_STRINGS.add(cpu_model)
     return {"original": ORIGINAL, "rust": RUST, "frontend": FRONTEND,
+            "rust_baseline": RUST_BASELINE if args.rust_baseline else None,
+            "rust_baseline_binary_sha256": baseline_binary,
             "original_lock_sha256": digest((args.original / "backend/pnpm-lock.yaml").read_bytes()),
             "rust_lock_sha256": digest((args.rust / "rust/Cargo.lock").read_bytes()),
             "node_bundle_sha256": digest((args.original / "backend/dist/sub-store.bundle.js").read_bytes()),
-            "rust_binary_sha256": digest((args.rust / "rust/target/release/sub-store-rust").read_bytes()),
+            "rust_binary_sha256": rust_binary,
             "frontend_assets_sha256": digest([digest(p.read_bytes()) for p in sorted((args.frontend / "dist").rglob("*")) if p.is_file()]),
             "node_version": "24.16.0", "rust_toolchain": "1.98.0", "python_version": sys.version.split()[0],
             "browser_driver_version": "0.27.3", "psutil_version": psutil.__version__,
@@ -1007,6 +1020,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--original", type=Path)
     parser.add_argument("--rust", type=Path)
+    parser.add_argument("--rust-baseline", type=Path)
     parser.add_argument("--frontend", type=Path)
     parser.add_argument("--scratch", type=Path, required=True)
     parser.add_argument("--publish", type=Path)
@@ -1016,6 +1030,7 @@ def main():
     parser.add_argument("--diagnose-health", action="store_true")
     args = parser.parse_args()
     require(not (args.diagnose_parse and args.diagnose_health), "input")
+    require(not args.rust_baseline or args.diagnose_health, "input")
     soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
     resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
     if args.fixture_port:
@@ -1076,7 +1091,8 @@ def main():
             for case, blocks in matrix:
                 for concurrency in ((1, 2, 4, 8) if case == "pressure" else (1,)):
                     for block in range(blocks):
-                        for kind in (KINDS if block % 2 == 0 else KINDS[::-1]):
+                        order = COMPARISON_KINDS if args.rust_baseline else KINDS
+                        for kind in (order if block % 2 == 0 else order[::-1]):
                             print(f"Measuring {case} / {kind}, block {block + 1}, clients {concurrency}.", flush=True)
                             suite.run_case(kind, case, block, original, concurrency,
                                            repeats=3 if (args.diagnose_parse or args.diagnose_health) and case != "cold" else None)

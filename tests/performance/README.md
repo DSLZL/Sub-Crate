@@ -419,3 +419,18 @@ The remaining warm gap persists even with zero probes; further attribution must
 cover the full pipeline, state handling and script execution rather than assume
 the remaining small per-node producer cost explains total request time. No new
 before/after wall-time ratio is inferred across different captures or runners.
+
+The isolated whole-request diagnostic
+[39521899136](https://github.com/DSLZL/Sub-Store/actions/runs/39521899136)
+passes all eight full-input cells. One warm request creates65 parser contexts,
+taking600.7ms of3242.1ms; preprocessing takes1014.4ms and native parse1350.6ms.
+These are overlapping inclusive spans, not an additive breakdown. Diagnostic
+timers remain on their separate branch. The candidate reuses one independent
+parser per job, while continuing conversion, validation and external CA reads.
+
+`--diagnose-health --rust-baseline PATH` compares Node, the candidate, frozen
+464241c8 and the candidate again on one runner and one captured input. Each cell
+starts with an independent copy of the same imported state and keeps complete
+output/snapshot/probe checks. The frozen binary builds in a separate target;
+provenance requires different source revisions and executable hashes. This
+short comparison does not replace the full matrix or native/frontend gates.
