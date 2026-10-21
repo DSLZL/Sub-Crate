@@ -51,6 +51,10 @@
   assert(/^\d+-\d+$/.test(binary.requestId), 'generated request ID shape');
   const text = await $substore.http.get(probeUpstream + '/host/text');
   assert(text.body === value.text, 'HTTP Unicode and CRLF text');
+  const malformed = await $substore.http.get(probeUpstream + '/host/utf8');
+  assert(malformed.body === '\u0000\ufffd\ufffd(订阅🙂\r\n', 'HTTP BOM, NUL and malformed UTF-8 replacement');
+  const rawMalformed = await $substore.http.get({url: probeUpstream + '/host/utf8', encoding: null});
+  equal(Array.from(new Uint8Array(rawMalformed.body)), [239, 187, 191, 0, 255, 195, 40, ...Buffer.from('订阅🙂\r\n')], 'binary keeps BOM and invalid bytes');
   passed.push('SH05-binary-text-headers-and-string-url');
 
   for (const body of [Buffer.from([0, 255, 13, 10]), Uint8Array.from([9, 0, 255, 13, 10, 8]).subarray(1, 5)]) {

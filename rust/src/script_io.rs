@@ -250,7 +250,19 @@ pub(crate) async fn request<'js>(
         }
         let bytes = response.into_body().collect().await?.to_bytes();
         let bytes = decoded(status, &mut headers, bytes.to_vec())?;
-        Ok(json!({"statusCode": status, "headers": headers, "bytes": bytes}).to_string())
+        let mut response = json!({"statusCode": status, "headers": headers});
+        let binary = options
+            .as_ref()
+            .and_then(|options| options.get("responseBytes"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if binary {
+            response["bytes"] = json!(bytes);
+        } else {
+            let text = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(&bytes);
+            response["body"] = json!(String::from_utf8_lossy(text));
+        }
+        Ok(response.to_string())
     }
     send(
         &method,
