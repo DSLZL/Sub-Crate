@@ -43,7 +43,7 @@ steps. Response transformers retain their original processor indices.
 
 Wall time includes async waiting and overlapping siblings must not be added.
 Active time measures elapsed time while a scope's Rust call/future poll runs;
-it includes JS called synchronously there and OS descheduling, so it is **not
+it includes synchronous JS, blocking I/O and OS descheduling, so it is **not
 CPU time**. Self time excludes nested active scopes. Async scopes re-enter only
 while polled. JS jobs the engine drives outside a processor's future poll are
 charged to the enclosing engine/job scope; the complete job and per-processor
@@ -57,6 +57,80 @@ The reader rejects missing/corrupt events, unknown fields, unbalanced times,
 unfinished spans, or overflow beyond 2048 aggregate rows per job. Raw private
 server logs remain in runner scratch. Profiling uses the standard library and
 adds no tracing/profiling dependency.
+
+### Verified processor profile (2026-10-21)
+
+[Run 39622274257](https://github.com/DSLZL/Sub-Store/actions/runs/39622274257)
+and its [reader 39623985503](https://github.com/DSLZL/Sub-Store/actions/runs/39623985503)
+pass at product `887ddccb`, harness `c1b0e201`, previous product `ea16edca`,
+original `9cc6b5fa` and unchanged frontend `4bd7b0ac`. All sixteen cells / forty
+measured requests pass output, state and work checks. Ten profiled requests
+produce complete, balanced events with no dropped rows or unfinished scopes.
+All four variants return 3647 filtered nodes. The frozen capture has 21 nonempty
+remote bodies and one explicitly retained empty/failed body; the 23 ordered raw
+strings, including local content, replay identically before preprocessing.
+
+The following are means over the three profiled warm requests. Processor indices
+refer to the original imported configuration. Parent/child times overlap; each
+processor's complete internal tree remains in `metrics.json`.
+
+| Processor index | Type | Mean wall ms |
+|---:|---|---:|
+| 0 | Quick Setting Operator | 101.205 |
+| 1 | Type Filter | 6.876 |
+| 2 | Regex Filter | 78.835 |
+| 3 | Script Operator | 129.618 |
+| 4 | Script Operator (health) | 302.012 |
+| 5 | Regex Delete Operator | 119.057 |
+| 6 | Script Operator (publisher) | 354.447 |
+
+Inside processor 4, each request makes 3647 actual producer calls. The producer's
+mean inclusive active time is 132.052ms; these immediate child phases partition
+that total, with approximately 8.85ms left for validation, collection and the
+producer's own bookkeeping. The values include instrumentation overhead.
+
+| Producer phase | Mean active ms |
+|---|---:|
+| Project live nodes into owned Rust values | 54.057 |
+| Project options and coerce output kind | 11.648 |
+| Decode output back into JS | 23.437 |
+| Filter and prepare live objects, including callbacks | 22.767 |
+| Reconcile shared WebSocket/gRPC options | 6.665 |
+| Generate native target output | 4.625 |
+
+Node/options projection and output decoding together account for approximately
+89.14ms / **67.5%** of producer active time. Native target generation accounts for
+**3.5%**. This points to the JS/owned-value boundary as the main producer target.
+Within the complete health processor, input cloning contributes 29.377ms and
+compilation 1.465ms. Other request costs remain visible: bootstrap averages
+303.787ms, built-in application 227.032ms across four operators, serialization and
+parsing of five input clones 180.141ms, and the parse entry 354.448ms across 44
+invocations. These totals overlap
+with processor and bridge phases and must not be added indiscriminately.
+Engine work outside narrower polls remains in the enclosing job's self time.
+
+| Case | Requests per variant | Node median s | Previous Rust s | Current, profile off s | Same binary, profile on s |
+|---|---:|---:|---:|---:|---:|
+| Pre-health | 3 | 4.190 | 1.326 | 1.398 | 1.403 |
+| Cold | 1 | 8.780 | 8.431 | 8.262 | 8.978 |
+| Warm | 3 | 4.447 | 2.253 | 2.273 | 2.282 |
+| No publisher | 3 | 4.384 | 1.798 | 1.828 | 1.870 |
+
+The observed enabled/disabled warm difference is 0.4%, and no-publisher is 2.3%.
+Three sequential observations and a single cold request do not establish a
+constant profiler overhead or a throughput/tail-latency result. The earlier
+[39618663779](https://github.com/DSLZL/Sub-Store/actions/runs/39618663779) also passes
+but includes the retained legacy JS timing wrappers and their extra state write.
+Raw body hashes, node counts and runner conditions vary between runs; compare
+variants within each frozen-input run and keep the earlier evidence separate.
+
+[Native acceptance 39618445261](https://github.com/DSLZL/Sub-Store/actions/runs/39618445261)
+passes all six jobs at exact product `887ddccb`: Linux x64/arm64, Windows x64,
+Docker x64/arm64 and the unchanged frontend. Formatting, clippy, all 34 ordinary
+Rust tests and the retained delivered-service/JS/state/restart/rollback contracts
+pass. Performance self-checks pass all 24 tests in Actions. All execution and
+report artifacts remain in Actions; the following report changes leave the tested
+Rust source unchanged.
 
 Select the manual `diagnose_parse` input for a separate short diagnosis. It keeps
 the same actual file imports and full captured inputs, measures all 22 sources
