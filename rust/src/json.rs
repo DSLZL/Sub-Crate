@@ -343,10 +343,13 @@ pub fn number(value: &serde_json::Number) -> String {
 
 fn serialized(input: &str) -> String {
     let input = if input.contains(MARKER) {
-        std::borrow::Cow::Owned(["NaN", "Infinity", "-Infinity"].into_iter().fold(
-            input.to_owned(),
-            |input, number| input.replace(&format!("\"{MARKER}number:{number}\""), "null"),
-        ))
+        std::borrow::Cow::Owned(
+            ["NaN", "Infinity", "-Infinity"]
+                .into_iter()
+                .fold(input.to_owned(), |input, number| {
+                    input.replace(&format!("\"{MARKER}number:{number}\""), "null")
+                }),
+        )
     } else {
         std::borrow::Cow::Borrowed(input)
     };
@@ -436,7 +439,10 @@ mod tests {
             json!(from_units(&[0xd800, 0xe000, 0xdfff])),
         ];
         for slashes in 0..=12 {
-            let text = format!("{}\"-123.4e+56\n中🙂\u{e000}number:NaN", "\\".repeat(slashes));
+            let text = format!(
+                "{}\"-123.4e+56\n中🙂\u{e000}number:NaN",
+                "\\".repeat(slashes)
+            );
             values.push(json!(encode(&text)));
             values.push(json!({(encode(&text)): encode(&text.repeat(100))}));
         }
