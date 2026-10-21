@@ -655,10 +655,13 @@ class Suite:
             with self.server(kind, self.directory("replay-" + kind)) as (origin, _, _, _):
                 config = self.configure(origin, original)
                 actual = self.source_texts(origin, config)
+                require(isinstance(actual, list) and all(isinstance(s, str) for s in actual), "capture")
                 self.report["replay"].append({"kind": kind, "expected_sha256": digest(expected),
                                               "actual_sha256": digest(actual), "equal": actual == expected,
                                               "source_count": len(actual),
-                                              "matching_sources": sum(a == b for a, b in zip(expected, actual))})
+                                              "matching_sources": sum(a == b for a, b in zip(expected, actual)),
+                                              "sources": [{"index": i, "bytes": len(s.encode()), "sha256": digest(s.encode())}
+                                                          for i, s in enumerate(actual)]})
         self.publish()
         require(all(row["equal"] for row in self.report["replay"]), "capture")
 
