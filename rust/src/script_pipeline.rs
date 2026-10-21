@@ -151,8 +151,15 @@ pub(crate) async fn utility<'js>(
     args: Vec<Value<'js>>,
 ) -> rquickjs::Result<Value<'js>> {
     let utils: Value = js.ctx.globals().get("ProxyUtils")?;
-    let stage = match name { "process" => "pipeline_process", "produce" => "pipeline_produce", _ => "pipeline_utility" };
-    profile::measure(stage, None, async { script::settled(js, js.method(utils, name, args)?).await }).await
+    let stage = match name {
+        "process" => "pipeline_process",
+        "produce" => "pipeline_produce",
+        _ => "pipeline_utility",
+    };
+    profile::measure(stage, None, async {
+        script::settled(js, js.method(utils, name, args)?).await
+    })
+    .await
 }
 
 async fn all<'js>(js: &Js<'js>, promises: Vec<Value<'js>>) -> rquickjs::Result<Value<'js>> {
@@ -171,7 +178,12 @@ async fn sources<'js>(
     preview: bool,
     saved_raw: &mut Value<'js>,
 ) -> rquickjs::Result<(Value<'js>, Value<'js>)> {
-    profile::measure("sources", None, source_inputs(js, sub, options, preview, saved_raw)).await
+    profile::measure(
+        "sources",
+        None,
+        source_inputs(js, sub, options, preview, saved_raw),
+    )
+    .await
 }
 
 async fn source_inputs<'js>(

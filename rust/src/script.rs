@@ -1,5 +1,7 @@
 //! Owned application script jobs and thin native bindings.
-use crate::{conversion, js_language::Js, json as codec, processors, profile, script_io, state::Store};
+use crate::{
+    conversion, js_language::Js, json as codec, processors, profile, script_io, state::Store,
+};
 use rquickjs::{
     Array, AsyncContext, AsyncRuntime, Ctx, Exception, Function, JsLifetime, Object, Promise,
     Value as JsValue,
@@ -553,7 +555,12 @@ async fn apply_script<'js>(
     input: JsValue<'js>,
     scope: &Scope<'js>,
 ) -> rquickjs::Result<JsValue<'js>> {
-    let (script, arguments) = profile::measure("script_load", None, crate::script_loading::load(js, &item, &scope.execution)).await?;
+    let (script, arguments) = profile::measure(
+        "script_load",
+        None,
+        crate::script_loading::load(js, &item, &scope.execution),
+    )
+    .await?;
     let prepare = profile::span("script_prepare");
     let script = js.text(script)?;
     js.set(&scope.context, "source", scope.source.clone())?;
@@ -617,7 +624,13 @@ async fn apply_script<'js>(
                     "async function operator(input = [], targetPlatform, context) {{ if (input && (input.$files || input.$content)) {{ let {{$content,$files,$options,$file}} = input; {script}\n {main} return {{$content,$files,$options,$file}}; }} let list = []; for await (let $server of input) {{ {script}\n list.push($server); }} return list; }}"
                 )
             };
-            match profile::measure("script_fallback", None, invoke(js, entry, &shortcut, arguments, scope, output.clone())).await {
+            match profile::measure(
+                "script_fallback",
+                None,
+                invoke(js, entry, &shortcut, arguments, scope, output.clone()),
+            )
+            .await
+            {
                 Ok(result) => {
                     if filter || js.truthy(&result)? {
                         output = result;
@@ -694,7 +707,12 @@ async fn process<'js>(
 ) -> rquickjs::Result<JsValue<'js>> {
     let items: Vec<JsValue> = js.call("iterable", (items,))?;
     for (index, item) in items.into_iter().enumerate() {
-        input = profile::measure("processor", Some(index), process_item(js, input, item, &scope)).await?;
+        input = profile::measure(
+            "processor",
+            Some(index),
+            process_item(js, input, item, &scope),
+        )
+        .await?;
     }
     Ok(input)
 }
@@ -705,36 +723,36 @@ async fn process_item<'js>(
     item: JsValue<'js>,
     scope: &Scope<'js>,
 ) -> rquickjs::Result<JsValue<'js>> {
-        let name = js.get(&item, "type")?;
-        if js.equal(&name, &js.value("Response Transformer")?)?
-            || skip(js, &item, &scope.context)?
-            || js.truthy(&js.get(&item, "disabled")?)?
-        {
-            return Ok(input);
-        }
-        let script_index = js.method(name.clone(), "indexOf", vec![js.value("Script")?])?;
-        let is_script = !js.equal(&script_index, &js.value(-1)?)?;
-        let name = js.text(name)?;
-        let stage = match name.as_str() {
-            "Script Operator" => "script_operator",
-            "Script Filter" => "script_filter",
-            "Useless Filter" => "useless_filter",
-            "Region Filter" => "region_filter",
-            "Regex Filter" => "regex_filter",
-            "Type Filter" => "type_filter",
-            "Conditional Filter" => "conditional_filter",
-            "Quick Setting Operator" => "quick_setting_operator",
-            "Flag Operator" => "flag_operator",
-            "Sort Operator" => "sort_operator",
-            "Regex Sort Operator" => "regex_sort_operator",
-            "Regex Rename Operator" => "regex_rename_operator",
-            "Regex Delete Operator" => "regex_delete_operator",
-            "Handle Duplicate Operator" => "handle_duplicate_operator",
-            "Add Proxies From Subscription Operator" => "add_proxies_operator",
-            "Resolve Domain Operator" => "resolve_domain_operator",
-            _ => "unknown_processor",
-        };
-        profile::measure(stage, None, async {
+    let name = js.get(&item, "type")?;
+    if js.equal(&name, &js.value("Response Transformer")?)?
+        || skip(js, &item, &scope.context)?
+        || js.truthy(&js.get(&item, "disabled")?)?
+    {
+        return Ok(input);
+    }
+    let script_index = js.method(name.clone(), "indexOf", vec![js.value("Script")?])?;
+    let is_script = !js.equal(&script_index, &js.value(-1)?)?;
+    let name = js.text(name)?;
+    let stage = match name.as_str() {
+        "Script Operator" => "script_operator",
+        "Script Filter" => "script_filter",
+        "Useless Filter" => "useless_filter",
+        "Region Filter" => "region_filter",
+        "Regex Filter" => "regex_filter",
+        "Type Filter" => "type_filter",
+        "Conditional Filter" => "conditional_filter",
+        "Quick Setting Operator" => "quick_setting_operator",
+        "Flag Operator" => "flag_operator",
+        "Sort Operator" => "sort_operator",
+        "Regex Sort Operator" => "regex_sort_operator",
+        "Regex Rename Operator" => "regex_rename_operator",
+        "Regex Delete Operator" => "regex_delete_operator",
+        "Handle Duplicate Operator" => "handle_duplicate_operator",
+        "Add Proxies From Subscription Operator" => "add_proxies_operator",
+        "Resolve Domain Operator" => "resolve_domain_operator",
+        _ => "unknown_processor",
+    };
+    profile::measure(stage, None, async {
         if is_script {
             if !["Script Operator", "Script Filter"].contains(&name.as_str()) {
                 crate::script_loading::load(js, &item, &scope.execution).await?;
@@ -874,15 +892,19 @@ async fn native_process<'js>(
             .filter(|value| !value.is_undefined())
             .unwrap_or(Object::new(js.ctx.clone())?.into_value()),
     };
-    profile::measure("process", profile::sequence(), process(
-        &js,
-        input,
-        operators
-            .0
-            .filter(|value| !value.is_undefined())
-            .unwrap_or(js.array([])?),
-        scope,
-    ))
+    profile::measure(
+        "process",
+        profile::sequence(),
+        process(
+            &js,
+            input,
+            operators
+                .0
+                .filter(|value| !value.is_undefined())
+                .unwrap_or(js.array([])?),
+            scope,
+        ),
+    )
     .await
 }
 
@@ -955,7 +977,12 @@ async fn apply_transformer<'js>(
     input: JsValue<'js>,
     scope: &Scope<'js>,
 ) -> rquickjs::Result<JsValue<'js>> {
-    let (script, arguments) = profile::measure("script_load", None, crate::script_loading::load(js, &item, &scope.execution)).await?;
+    let (script, arguments) = profile::measure(
+        "script_load",
+        None,
+        crate::script_loading::load(js, &item, &scope.execution),
+    )
+    .await?;
     let prepare = profile::span("script_prepare");
     let script = js.text(script)?;
     js.set(&scope.context, "source", scope.source.clone())?;
@@ -1063,7 +1090,8 @@ async fn process_response<'js>(
             let result = apply_transformer(&js, item, output, &scope).await?;
             let _normalize = profile::span("response_normalize");
             normalize_response(&js, result)
-        }).await?;
+        })
+        .await?;
     }
     Ok(output)
 }
@@ -1187,43 +1215,46 @@ pub async fn run(
                 .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
             drop(setup);
             executor.block_on(async {
-                    let state = profile::span("state_snapshot");
-                    let (cache, root) = {
-                        let store = store.lock().map_err(|_| {
-                            conversion::Error::Legacy("State lock poisoned".to_owned())
-                        })?;
-                        (
-                            store.data.clone(),
-                            store
-                                .script_root()
-                                .map_err(|error| conversion::Error::Legacy(error.to_string()))?,
-                        )
-                    };
-                    drop(state);
-                    let job = Job {
-                        store,
-                        baseline: Rc::new(RefCell::new((cache, root))),
-                        parser: Rc::new(RefCell::new(None)),
-                        background,
-                    };
-                    let setup = profile::span("runtime_setup");
-                    let runtime = AsyncRuntime::new()
-                        .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
-                    drop(setup);
-                    let context = profile::measure("context_setup", None, AsyncContext::full(&runtime))
-                        .await
-                        .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
-                    let result = profile::measure("job", None, context
-                        .async_with(async |ctx| {
-                            let result = async {
-                                let bootstrap = profile::span("bootstrap");
-                                initialize(&ctx, job)?;
-                                drop(bootstrap);
-                                let js = Js::new(ctx.clone());
-                                let decode = profile::span("input_decode");
-                                let input = ctx.json_parse(codec::stringify(&input))?;
-                                drop(decode);
-                                let result = profile::measure("execute", None, async { Ok::<_, rquickjs::Error>(match operation.as_str() {
+                let state = profile::span("state_snapshot");
+                let (cache, root) = {
+                    let store = store
+                        .lock()
+                        .map_err(|_| conversion::Error::Legacy("State lock poisoned".to_owned()))?;
+                    (
+                        store.data.clone(),
+                        store
+                            .script_root()
+                            .map_err(|error| conversion::Error::Legacy(error.to_string()))?,
+                    )
+                };
+                drop(state);
+                let job = Job {
+                    store,
+                    baseline: Rc::new(RefCell::new((cache, root))),
+                    parser: Rc::new(RefCell::new(None)),
+                    background,
+                };
+                let setup = profile::span("runtime_setup");
+                let runtime = AsyncRuntime::new()
+                    .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
+                drop(setup);
+                let context = profile::measure("context_setup", None, AsyncContext::full(&runtime))
+                    .await
+                    .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
+                let result = profile::measure(
+                    "job",
+                    None,
+                    context.async_with(async |ctx| {
+                        let result = async {
+                            let bootstrap = profile::span("bootstrap");
+                            initialize(&ctx, job)?;
+                            drop(bootstrap);
+                            let js = Js::new(ctx.clone());
+                            let decode = profile::span("input_decode");
+                            let input = ctx.json_parse(codec::stringify(&input))?;
+                            drop(decode);
+                            let result = profile::measure("execute", None, async {
+                                Ok::<_, rquickjs::Error>(match operation.as_str() {
                                     "parse" => crate::script_http::parse(&js, input).await?,
                                     "token-options" => crate::script_tokens::options(&js, input)?,
                                     "artifact-upload" => {
@@ -1351,23 +1382,26 @@ pub async fn run(
                                         .await?
                                     }
                                     _ => return Err(js.error("Unknown script job operation")),
-                                }) }).await?;
-                                let _output = profile::span("output_encode");
-                                let text = serialized(&ctx, result)?;
-                                codec::parse(&text).map_err(|error| js.error(&error.to_string()))
-                            }
-                            .await;
-                            result.map_err(|error| conversion::Error::Legacy(message(&ctx, error)))
-                        }))
+                                })
+                            })
+                            .await?;
+                            let _output = profile::span("output_encode");
+                            let text = serialized(&ctx, result)?;
+                            codec::parse(&text).map_err(|error| js.error(&error.to_string()))
+                        }
                         .await;
-                    session.finish(result.is_ok());
-                    if let Some(sender) = sender.take() {
-                        let _ = sender.send(result);
-                    }
-                    // Optimistic refreshes keep their context after the HTTP reply.
-                    runtime.idle().await;
-                    Ok::<_, conversion::Error>(())
-                })
+                        result.map_err(|error| conversion::Error::Legacy(message(&ctx, error)))
+                    }),
+                )
+                .await;
+                session.finish(result.is_ok());
+                if let Some(sender) = sender.take() {
+                    let _ = sender.send(result);
+                }
+                // Optimistic refreshes keep their context after the HTTP reply.
+                runtime.idle().await;
+                Ok::<_, conversion::Error>(())
+            })
         })();
         if let Some(sender) = sender {
             session.finish(false);
