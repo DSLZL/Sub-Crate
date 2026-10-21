@@ -76,8 +76,7 @@ pub(crate) async fn send<'js>(js: &Js<'js>, input: Value<'js>) -> rquickjs::Resu
         };
         script::console_text(js, "log", &text);
     } else {
-        js.ctx
-            .eval::<(), _>(include_bytes!("../vendor/notification-utilities.js").as_slice())?;
+        crate::script_bytecode::NOTIFICATION.eval(&js.ctx)?;
         let utilities: Value = js.ctx.globals().get("SubStoreNotificationUtilities")?;
         let options = rquickjs::Object::new(js.ctx.clone())?;
         options.set("transport", Func::from(Async(transport)))?;

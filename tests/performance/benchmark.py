@@ -33,8 +33,8 @@ from urllib.request import urlopen
 import psutil
 
 ORIGINAL = "9cc6b5fac966993364ae33da8797f446bbf7f571"
-RUST = "887ddccb36f7724a831a89b4aad416e9c97c7c51"
-RUST_BASELINE = "ea16edca545b31fc623ffed9061ecc7024ca511f"
+RUST = "ee64ab9f7376a68c126950caee256bf3fb9c2b12"
+RUST_BASELINE = "887ddccb36f7724a831a89b4aad416e9c97c7c51"
 FRONTEND = "4bd7b0acbe65466b933ccea14fc61dbebe036ead"
 INPUT_HASH = "a6e6bb9cbe0587f33de0cf130ec391ecffd3483009888fed0ea59d39492ae890"
 INPUT_NAME = "sub-store_subscription_大杂烩-cron-new_2026-10-20_14-11-50.json"
@@ -63,6 +63,7 @@ PUBLIC_STRINGS = set(COMPARISON_KINDS + CASES) | ERRORS | {
 PUBLIC_STRINGS.update(SHARDS)
 PROFILE_STAGES = set("""
 executor_setup state_snapshot runtime_setup context_setup job bootstrap input_decode execute output_encode
+bootstrap_compile bootstrap_load bootstrap_eval
 sources pipeline_parse pipeline_process pipeline_produce pipeline_utility process processor
 script_operator script_filter useless_filter region_filter regex_filter type_filter conditional_filter
 quick_setting_operator flag_operator sort_operator regex_sort_operator regex_rename_operator regex_delete_operator
@@ -73,7 +74,7 @@ input_clone clone_stringify clone_parse parse parse_runtime parse_native parse_p
 produce produce_validate produce_filter filter_callback produce_prepare prepare_callback produce_collect
 produce_project_nodes produce_project_options produce_reconcile produce_native produce_decode
 value_project project_stringify project_extract project_parse project_restore value_stringify
-value_decode decode_classify decode_encode decode_parse decode_restore
+value_decode decode_classify decode_encode decode_parse decode_restore decode_build
 """.split())
 PUBLIC_STRINGS.update(PROFILE_STAGES | {"download_sub", "download_collection", "download_file", "other"})
 NODE_FIELDS = {"name", "type", "server", "port", "ports", "password", "uuid", "sni", "tls",

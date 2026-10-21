@@ -927,3 +927,132 @@ Docker x64/arm64 and the unchanged official frontend. Formatting, clippy with
 warnings denied, all 28 ordinary Rust tests, delivered-service/restart/rollback
 contracts, general-JS oracle checks and browser/container acceptance pass.
 The following report-only commit does not alter that tested production source.
+
+### Value-boundary optimization experiments (2026-10-22)
+
+The starting product for these experiments is `887ddccb`. The official frontend,
+supplied file import, pre-preprocessing source capture, full script work and
+strict output/state comparisons remain unchanged. Timings from different captures
+must not be combined: each new run freezes its own raw bodies for all variants.
+
+The following changes were measured and then removed:
+
+- Lazy linked projection paths (`da7b705c`): the same-run component observations in
+  [39630568439](https://github.com/DSLZL/Sub-Store/actions/runs/39630568439)
+  make ordinary-node projection 5.5–7.0% slower and WebSocket projection about
+  2.8% slower, while metadata-rich projection improves only 1.1–1.5%. The private
+  comparison and remaining native jobs were cancelled after rejecting this path.
+  These component observations remain valid; the cancelled run is not full
+  acceptance evidence.
+- Direct construction of whole ordinary JS trees (`dd87e307`):
+  [39632094342](https://github.com/DSLZL/Sub-Store/actions/runs/39632094342) and
+  [reader 39634071073](https://github.com/DSLZL/Sub-Store/actions/runs/39634071073)
+  pass all sixteen cells / forty requests with 3768 equal outputs. Same-run
+  component decoding improves 28–32%, but warm request median improves only from
+  2.969s to 2.917s, while observed peak RSS grows from 260.8 to 348.1 MiB.
+  No-publisher peak RSS grows from 204.2 to 278.3 MiB. This tradeoff was rejected;
+  these observations do not prove a particular engine allocation cause.
+  [39628419401](https://github.com/DSLZL/Sub-Store/actions/runs/39628419401)
+  passes all six native/frontend/container jobs for that experimental source.
+- Scalar-only direct decoding (`74e4f7e1`):
+  [39635228659](https://github.com/DSLZL/Sub-Store/actions/runs/39635228659) and
+  [reader 39639245816](https://github.com/DSLZL/Sub-Store/actions/runs/39639245816)
+  pass sixteen cells / forty requests with 3754 equal outputs. Warm median is
+  2.762s versus the same-run baseline's 2.750s, with peak RSS 297.1 versus
+  299.7 MiB. No-publisher median is essentially equal, while peak RSS rises from
+  224.8 to 237.9 MiB. This does not establish an end-to-end benefit, so the
+  scalar fast path was removed. The added scalar/prototype semantic regression
+  checks remain. [39634884099](https://github.com/DSLZL/Sub-Store/actions/runs/39634884099)
+  passes all six native/frontend/container jobs for that experimental source.
+- Compiled RegExp templates (`37c6d9c4`, together with scalar-only decoding):
+  [39639235850](https://github.com/DSLZL/Sub-Store/actions/runs/39639235850) and
+  [reader 39641291499](https://github.com/DSLZL/Sub-Store/actions/runs/39641291499)
+  pass sixteen cells / forty requests with 3790 equal outputs. Warm median rises
+  from 1.583 to 1.662s, CPU/request from 1.557 to 1.627s, and peak RSS from
+  274.1 to 307.0 MiB. Both the default-off and profiled candidates are slower
+  than baseline. Fresh-instance/constructor/prototype regression checks pass,
+  but the additional guarded cache was removed after this measured regression.
+  The remaining native jobs for the rejected source were cancelled; this is
+  not full native acceptance or an isolated attribution to regex compilation.
+
+An earlier `dd87e307` comparison,
+[39628489744](https://github.com/DSLZL/Sub-Store/actions/runs/39628489744),
+was rejected before measurement because the worker checkout revisions did not
+match the prepared builds. The workflow now shares candidate/baseline revision
+variables between preparation, workers and cache keys. The comparison regression
+check verifies both checkout pairs against the harness pins. This keeps source
+verification strict and prevents treating a mismatched binary as a timing sample.
+
+### Embedded-library bytecode reuse (2026-10-22)
+
+Product `ee64ab9f7376a68c126950caee256bf3fb9c2b12` retains process-local bytecode
+reuse for fixed embedded libraries. Each request still creates an independent
+runtime/context and executes every initializer; mutable JS values and host state
+are not shared. Only privately compiled bytes enter the cache, without disk or
+external bytecode loading. Loading copies the bytes into the current runtime.
+Global strict mode, the original filename, debug stacks and function source are
+preserved. The rejected projection/direct-decoding/RegExp changes are absent.
+
+The following observations use the same twenty-three ordered raw source strings
+(twenty-two remote sources: nineteen nonempty and three empty/failed, plus the
+local source). The file is imported unchanged through the official frontend;
+normal preprocessing, scripts, node conversion, cache behavior and publication
+still execute. [Attempt 1](https://github.com/DSLZL/Sub-Store/actions/runs/39641575510/attempts/1)
+and [attempt 2](https://github.com/DSLZL/Sub-Store/actions/runs/39641575510/attempts/2)
+each pass all sixteen cells / forty measured requests with 3520 equal outputs.
+Attempt 2 reruns only the measurement job and its aggregate, reusing attempt 1's
+sealed input/build artifacts and frontend-created seeds. It does not recapture
+subscription bodies. Each attempt pairs the original, baseline Rust, default-off
+candidate and the same profiled candidate on one runner.
+
+| Attempt | Case | Node median s | Baseline Rust median s | Candidate median s | Rust reduction |
+|---|---|---:|---:|---:|---:|
+| 1 | pre-health | 5.530 | 1.771 | 1.689 | 4.6% |
+| 2 | pre-health | 5.235 | 1.732 | 1.649 | 4.8% |
+| 1 | cold | 10.850 | 9.655 | 9.517 | 1.4% |
+| 2 | cold | 10.646 | 9.624 | 9.495 | 1.3% |
+| 1 | warm | 5.804 | 3.160 | 2.682 | 15.1% |
+| 2 | warm | 5.649 | 2.641 | 2.605 | 1.4% |
+| 1 | no publisher | 5.511 | 2.333 | 2.270 | 2.7% |
+| 2 | no publisher | 5.324 | 2.302 | 2.220 | 3.6% |
+
+Cold has only one measured request per variant/attempt; other cells have three.
+The first warm 15.1% reduction does not reproduce as a stable effect. Warm
+CPU/request similarly changes from 3.167 to 2.683s in attempt 1, but only from
+2.640 to 2.607s in attempt 2. These observations support a modest initialization
+benefit; they do not establish P95, long-run throughput or a general 15% speedup.
+
+| Warm observation | Baseline peak RSS MiB | Candidate peak RSS MiB | Baseline end/settled MiB | Candidate end/settled MiB |
+|---|---:|---:|---:|---:|
+| Attempt 1 | 256.3 | 347.4 | 256.3 | 307.0 |
+| Attempt 2 | 296.4 | 265.8 | 296.4 | 265.8 |
+
+The profiled candidate's warm peaks are 287.4 and 238.8 MiB respectively. The RSS
+direction reverses across the two attempts, so neither a stable memory reduction
+nor a stable memory regression/leak is established. The 250ms settled sample is
+not an indefinitely idle/leak check; post-response work retains its normal
+lifetime. Preserve both attempts instead of selecting the lower peak. Bounded
+readers [39644881058](https://github.com/DSLZL/Sub-Store/actions/runs/39644881058)
+and [39645417695](https://github.com/DSLZL/Sub-Store/actions/runs/39645417695) expose
+the immutable attempts' CPU, peak/end/settled RSS and numeric pipeline profiles.
+The reader accepts `inspect_attempt` (default `1`), alongside `inspect_run`.
+
+Attempt 1's three profiled warm requests locate the remaining work. Medians of
+same-stage cumulative active time are: all twelve bytecode loads 6.36ms,
+evaluations 7.31ms, and zero repeated compilations; total application bootstrap
+232.90ms; five input clones 232.68ms. The 3520 per-node native conversions take
+8.34ms, versus 79.14ms for node projection, 16.99ms for option projection and
+33.62ms for result decoding. The full `produce` stage also includes a batch
+output call and totals 245.09ms. Global projection stringify/parse totals are
+174.29/39.64ms. Parent/child stages overlap; do not add these into a CPU total or
+treat unclassified bootstrap time as compilation. Reducing full-list copies and
+live JS/native value round trips is the next measured direction.
+
+[39641498364](https://github.com/DSLZL/Sub-Store/actions/runs/39641498364) passes
+all six native Windows/Linux x64/Linux arm64, Docker x64/arm64 and unchanged
+frontend jobs for the exact retained product. Formatting, clippy with warnings
+denied, all 38 ordinary Rust tests, delivered-service/state/restart/rollback and
+general-JS contracts pass. Three component/CPU probes remain opt-in ignored tests;
+the paired workflow explicitly runs its release component probe. All compilation,
+product execution and testing occurred in Actions. Later report/reader changes
+do not alter that tested Rust source.

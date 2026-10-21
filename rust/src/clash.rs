@@ -172,7 +172,8 @@ impl Parser {
         let context = Context::full(&runtime).map_err(|error| Error::Legacy(error.to_string()))?;
         context.with(|ctx| {
             crate::js_values::initialize(&ctx).map_err(|error| Error::Legacy(error.to_string()))?;
-            ctx.eval::<(), _>(include_bytes!("../vendor/utilities.js").as_slice())
+            crate::script_bytecode::UTILITIES
+                .eval(&ctx)
                 .map_err(|error| Error::Legacy(error.to_string()))
         })?;
         Ok(Self {

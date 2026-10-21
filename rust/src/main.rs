@@ -24,6 +24,7 @@ mod scheduler;
 mod script;
 mod script_age;
 mod script_backup;
+mod script_bytecode;
 mod script_conversion;
 mod script_dns;
 mod script_download;

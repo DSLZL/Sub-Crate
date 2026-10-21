@@ -869,7 +869,7 @@ pub(crate) async fn apply<'js>(
 }
 
 pub(crate) fn initialize<'js>(ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs::Result<()> {
-    ctx.eval::<(), _>(include_bytes!("../vendor/dns-utilities.js").as_slice())?;
+    crate::script_bytecode::DNS.eval(ctx)?;
     utils.set(
         "doh",
         Func::from(Async(|ctx: Ctx<'js>, options: Value<'js>| async move {

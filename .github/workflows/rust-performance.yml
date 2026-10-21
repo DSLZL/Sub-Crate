@@ -7,6 +7,10 @@ on:
         description: Inspect bounded sanitized diagnostics from an existing run without rebuilding
         type: string
         default: ''
+      inspect_attempt:
+        description: Read this immutable attempt of inspect_run (preparation is not repeated)
+        type: string
+        default: '1'
       diagnose_parse:
         description: Only diagnose individual sources and three parse/pre-health requests
         type: boolean
@@ -22,6 +26,10 @@ on:
 
 permissions:
   contents: read
+
+env:
+  PERF_RUST_REVISION: ee64ab9f7376a68c126950caee256bf3fb9c2b12
+  PERF_BASELINE_REVISION: 887ddccb36f7724a831a89b4aad416e9c97c7c51
 
 concurrency:
   group: ${{ inputs.inspect_run && 'subscription-report-inspection' || inputs.diagnose_health && 'subscription-health-diagnostic' || inputs.diagnose_parse && 'subscription-parse-diagnostic' || 'supplied-subscription-performance' }}
@@ -66,11 +74,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           INSPECT_RUN: ${{ inputs.inspect_run }}
+          INSPECT_ATTEMPT: ${{ inputs.inspect_attempt }}
         shell: bash
         run: |
-          [[ "$INSPECT_RUN" =~ ^[0-9]+$ ]]
+          [[ "$INSPECT_RUN" =~ ^[0-9]+$ && "$INSPECT_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
           gh run download "$INSPECT_RUN" --repo "$GITHUB_REPOSITORY" \
-            --name "subscription-performance-$INSPECT_RUN-1" --dir "$RUNNER_TEMP/performance-inspect"
+            --name "subscription-performance-$INSPECT_RUN-$INSPECT_ATTEMPT" --dir "$RUNNER_TEMP/performance-inspect"
           python3 - <<'PY'
           import json, math, os, statistics
           from pathlib import Path
@@ -87,6 +96,8 @@ jobs:
                   'rps': len(times) / sum(r['elapsed_s'] for r in rows),
                   'cpu_s_per_request': sum(r['cpu_s'] for r in rows) / len(times),
                   'rss_peak_mib': max(r['rss_peak_bytes'] for r in rows) / 2**20,
+                  'rss_end_mib': max(r['rss_end_bytes'] for r in rows) / 2**20,
+                  'rss_settled_mib': max(r['rss_settled_bytes'] for r in rows) / 2**20,
                   'output_counts': sorted({r['output_count'] for r in rows})}, sort_keys=True))
           for row in report['samples']:
               if (row['block'] != 0 or row['concurrency'] != 1) and row.get('status') != 'failed':
@@ -120,13 +131,13 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: 887ddccb36f7724a831a89b4aad416e9c97c7c51
+          ref: ${{ env.PERF_RUST_REVISION }}
           path: .performance/rust
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: inputs.diagnose_health
         with:
-          ref: ea16edca545b31fc623ffed9061ecc7024ca511f
+          ref: ${{ env.PERF_BASELINE_REVISION }}
           path: .performance/rust-baseline
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -154,7 +165,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-887ddccb36f7724a831a89b4aad416e9c97c7c51
+          key: subscription-performance-linux-x64-rust-1.98.0-${{ env.PERF_RUST_REVISION }}
           restore-keys: subscription-performance-linux-x64-rust-1.98.0-
       - name: Build exact original, Rust and unchanged frontend
         run: |
@@ -169,7 +180,7 @@ jobs:
         if: inputs.diagnose_health
         run: |
           cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust 2>&1 | tee "$RUNNER_TEMP/candidate-tests.log"
-          grep -F 'test result: ok. 34 passed; 0 failed; 3 ignored;' "$RUNNER_TEMP/candidate-tests.log"
+          grep -F 'test result: ok. 38 passed; 0 failed; 3 ignored;' "$RUNNER_TEMP/candidate-tests.log"
       - name: Build the frozen Rust baseline in its separate target for whole-request comparison
         if: inputs.diagnose_health
         run: |
@@ -195,7 +206,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-887ddccb36f7724a831a89b4aad416e9c97c7c51
+          key: subscription-performance-linux-x64-rust-1.98.0-${{ env.PERF_RUST_REVISION }}
       - name: Load installed browser workflow and install headless Chromium
         run: |
           agent-browser skills get core
@@ -289,13 +300,13 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: 887ddccb36f7724a831a89b4aad416e9c97c7c51
+          ref: ${{ env.PERF_RUST_REVISION }}
           path: .performance/rust
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: inputs.diagnose_health
         with:
-          ref: ea16edca545b31fc623ffed9061ecc7024ca511f
+          ref: ${{ env.PERF_BASELINE_REVISION }}
           path: .performance/rust-baseline
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

@@ -473,6 +473,50 @@ mod tests {
                 restored.values.every((value, index) => Object.is(value, expected.values[index]))
             "#;
             assert!(ctx.eval::<bool, _>(assertion).unwrap());
+            for raw in [
+                "null", "true", "false", "0", "-0", "1e21", "5e-324",
+                "18446744073709551615", "-9223372036854775808",
+                r#""plain 中🙂\u0000\"\\""#, r#""\ud800\ue000""#,
+            ] {
+                let expected = ctx.json_parse(raw).unwrap();
+                let restored = decode(&ctx, &codec::parse(raw).unwrap()).unwrap();
+                ctx.globals().set("expected", expected).unwrap();
+                ctx.globals().set("restored", restored).unwrap();
+                assert!(ctx.eval::<bool, _>("Object.is(restored, expected)").unwrap(), "{raw}");
+            }
+        });
+    }
+
+    #[test]
+    fn decoded_values_define_own_properties_without_prototype_setters() {
+        let runtime = rquickjs::Runtime::new().unwrap();
+        let context = rquickjs::Context::full(&runtime).unwrap();
+        context.with(|ctx| {
+            initialize(&ctx).unwrap();
+            ctx.eval::<(), _>(r#"
+                Object.defineProperty(Object.prototype, 'trapped', {
+                    set() {throw new Error('object setter');}, configurable: true
+                });
+                Object.defineProperty(Array.prototype, '0', {
+                    set() {throw new Error('array setter');}, configurable: true
+                });
+            "#).unwrap();
+            let raw = r#"{"trapped":[{"__proto__":{"safe":true},"trapped":1}],"10":10,"2":2,"01":1,"4294967295":0}"#;
+            let expected = ctx.json_parse(raw).unwrap();
+            let restored = decode(&ctx, &codec::parse(raw).unwrap()).unwrap();
+            ctx.eval::<(), _>("delete Object.prototype.trapped; delete Array.prototype[0];").unwrap();
+            ctx.globals().set("expected", expected).unwrap();
+            ctx.globals().set("restored", restored).unwrap();
+            assert!(ctx.eval::<bool, _>(r#"(() => {
+                const objects = [restored, restored.trapped, restored.trapped[0], restored.trapped[0].__proto__];
+                const flags = objects.every(object => Object.keys(object).every(key => {
+                    const d = Object.getOwnPropertyDescriptor(object, key);
+                    return d.writable && d.enumerable && d.configurable && !d.get && !d.set;
+                }));
+                return flags && JSON.stringify(restored) === JSON.stringify(expected) &&
+                    Object.getPrototypeOf(restored.trapped[0]) === Object.prototype &&
+                    Object.hasOwn(restored.trapped[0], '__proto__') && restored.trapped[0].__proto__.safe;
+            })()"#).unwrap());
         });
     }
 }
