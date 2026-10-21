@@ -33,7 +33,7 @@ UI-created seeds to workers. Its key derives from the private input bytes with
 a domain prefix and random salt, not the published input hash; authentication
 also binds it to the workflow run. The key is never uploaded.
 
-The workflow freezes original `9cc6b5fa`, Rust `df926f2f`, and unchanged frontend
+The workflow freezes original `9cc6b5fa`, Rust `9c659cef`, and unchanged frontend
 `4bd7b0ac`, with full revisions in the harness and report. It builds the original
 without compatibility-reference patches. The actual subscription file input on
 `/subs` imports the original file five times per backend into fresh storage.
