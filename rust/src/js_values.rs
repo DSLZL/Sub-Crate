@@ -188,10 +188,7 @@ fn needs_restore(value: &serde_json::Value) -> bool {
     }
 }
 
-fn plain_value<'js>(
-    ctx: &Ctx<'js>,
-    value: &serde_json::Value,
-) -> rquickjs::Result<Value<'js>> {
+fn plain_value<'js>(ctx: &Ctx<'js>, value: &serde_json::Value) -> rquickjs::Result<Value<'js>> {
     match value {
         serde_json::Value::Null => Ok(Value::new_null(ctx.clone())),
         serde_json::Value::Bool(value) => (*value).into_js(ctx),
@@ -201,7 +198,7 @@ fn plain_value<'js>(
             let array = Array::new(ctx.clone())?;
             for (index, value) in values.iter().enumerate() {
                 array.as_object().prop(
-                    index,
+                    index as u32,
                     Property::from(plain_value(ctx, value)?)
                         .writable()
                         .enumerable()
