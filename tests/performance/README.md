@@ -29,7 +29,7 @@ is injected only into the measurement step. It is removed from the environment
 before application processes start. Private files stay in `$RUNNER_TEMP` and
 are never uploaded, cached, or included in console logs.
 
-The workflow freezes original `9cc6b5fa`, Rust `e5890c2a`, and unchanged frontend
+The workflow freezes original `9cc6b5fa`, Rust `464241c8`, and unchanged frontend
 `4bd7b0ac`, with full revisions in the harness and report. It builds the original
 without compatibility-reference patches. The actual subscription file input on
 `/subs` imports the original file five times per backend into fresh storage.
@@ -315,5 +315,107 @@ passes all six jobs at `cda93a24`: Linux x64/arm64, Windows x64, Docker
 x64/arm64 and the unchanged frontend. Formatting, lint, unit, probe and delivered
 service checks are included; this is conversion compatibility acceptance.
 [Complete matrix 39458493395](https://github.com/DSLZL/Sub-Store/actions/runs/39458493395)
-runs the same new fixed source with the full uninstrumented workload. The broader
-task remains in progress. All product execution and artifacts stay in Actions.
+completed with failures at the same source. Rust cold block 4 verifies/publishes
+3,219 of 3,256 identities after 4,964 probes; warm block 0 starts from an incomplete
+3,232-node warmup and fails Clash output verification. This is an output check,
+not evidence of a failed HTTP request. All twelve pressure blocks pass, including
+clients 4/8, but the whole matrix fails. The broader task remains in progress.
+All product execution and artifacts stay in Actions.
+
+An isolated native projection-replacer experiment at `a4d5d725` is not merged.
+[Diagnostic 39465006279](https://github.com/DSLZL/Sub-Store/actions/runs/39465006279)
+shows only 2.0-7.9% lower complete-call medians against `cda93a24`, while actual
+cold/warm/no-publisher checks still fail incomplete health work. Five focused
+value-bridge tests pass. This does not qualify the experiment for acceptance;
+its larger callback implementation stays outside the reconstruction branch.
+
+The next retained candidate, `464241c8` (production change `52c844ef`), reuses
+successful platform certificate-verifier initialization. Previously every
+script HTTP request constructed a verifier, loading/parsing the Linux system
+roots, including plain HTTP probes. Request TLS configs/session state,
+strict/insecure policy, proxies, pooling, cancellations and retry/timeout
+budgets retain their existing owners. Initialization errors remain retryable.
+Linux system roots now have process lifetime; restart after trust-store changes.
+
+[Initial diagnostic 39467750872](https://github.com/DSLZL/Sub-Store/actions/runs/39467750872)
+passes unchanged-file imports/restarts and all eight cells at `52c844ef`, with
+3,261 output nodes on both backends. Cold latency is Node5.226/Rust6.664s and
+CPU4.43/4.44s (one sample); warm median is1.922/2.683s (three). Warm helper totals
+remain Node5/Rust74ms for3,261 producer calls and whole health63/172ms.
+These are paired backend observations on a new capture/runner, not a controlled
+14.930-to6.664s Rust before/after ratio. Rust remains slower overall here.
+The initial verifier microprofile used a nonexistent module filter and ran zero
+tests; it supplies no initialization measurement. The corrected harness requires
+explicit nonzero semantic/profile test summaries and uses `script_io::transport`.
+
+[Final diagnostic 39469080522](https://github.com/DSLZL/Sub-Store/actions/runs/39469080522)
+and [complete matrix 39469086270](https://github.com/DSLZL/Sub-Store/actions/runs/39469086270)
+both PASS at exact candidate `464241c8` and harness `8ab5262d`. That source differs from
+`52c844ef` only in three unit-assertion formatting changes. The full matrix is
+uninstrumented. [Native compatibility 39468483155](https://github.com/DSLZL/Sub-Store/actions/runs/39468483155)
+PASSES all six jobs at that final source: native Linux x64/arm64, Windows x64,
+Docker x64/arm64 and the unchanged frontend. No local product execution occurs.
+
+The corrected diagnostic executes two transport semantic tests (one ignored
+profile), then exactly one ignored release profile; the workflow requires both
+nonzero success summaries. Initial shared-verifier setup takes 3.506ms. Three
+blocks of 100 fresh constructions take 292.765/294.234/292.752ms; 100 shared-owner
+lookups report 0.001ms in each block at the printed precision. This measures
+initialization only, excluding connection/request/TLS handshake costs. Its eight
+full-input cells also pass with 3,280 output nodes on both backends. Its different
+capture, instrumentation and runner timings are not the final performance table.
+The conversion implementation is identical to baseline `cda93a24` in this second
+profile; those conversion rows cannot establish another source improvement.
+
+The completed uninstrumented matrix contains 70 passing cells. All ten cold
+pairs select, verify and publish every one of 2,998 eligible identities in one
+batch, with exactly 2,998 probes per backend and no budget skips. All warm and
+pressure blocks pass the zero-measured-probe, output/snapshot and Clash checks.
+Parse-only output has 5,479 nodes on both backends before the normal filters.
+Both raw replays match all 23 source strings (22 remote plus local content).
+Capture attempts all 22 remote sources and receives 18 nonempty bodies; four
+empty/failed bodies are recorded and replayed equally. This does not measure
+unavailable provider content. Both backends pass five unchanged-file browser
+imports and five restart checks.
+
+These are pooled request medians and process observations from that single
+4-vCPU Intel Xeon Platinum 8370C Linux x64 runner (15.61GiB RAM). CPU excludes
+the browser, driver, fixture, sampler and real detector processes. Peak RSS is
+sampled over each case; the separate OS lifetime peaks remain in the report.
+
+| Case | Node median s | Rust median s | Node CPU s/request | Rust CPU s/request | Node peak RSS MiB | Rust peak RSS MiB |
+|---|---:|---:|---:|---:|---:|---:|
+| Cold, 10 requests/backend | 8.125 | 10.553 | 5.945 | 6.346 | 515.5 | 227.9 |
+| Warm, 100 requests/backend | 2.732 | 3.996 | 3.136 | 4.001 | 1125.1 | 218.0 |
+| Parse, 60 requests/backend | 2.500 | 2.844 | 2.920 | 2.891 | 407.0 | 71.2 |
+| Pre-health, 20 requests/backend | 2.549 | 3.130 | 2.994 | 3.189 | 482.6 | 65.3 |
+| No publisher, 60 requests/backend | 2.664 | 3.658 | 3.076 | 3.664 | 1081.4 | 218.9 |
+
+| Pressure clients | Node requests/s | Rust requests/s | Paired Node/Rust throughput ratio |
+|---|---:|---:|---:|
+| 1 | 0.37 | 0.25 | 1.470 |
+| 2 | 0.37 | 0.47 | 0.776 |
+| 4 | 0.37 | 0.49 | 0.748 |
+| 8 | 0.37 | 0.50 | 0.741 |
+
+Thus Rust still has about 30% higher cold and 46% higher warm single-request
+latency, while paired throughput is about 29/34/35% higher at clients 2/4/8.
+The 8-client Node/Rust pooled median latencies are 19.205/15.933s. Rust uses
+more CPU under pressure (2.79 versus 1.15 average cores across those windows),
+so the throughput result is not a CPU-efficiency claim. Three pressure blocks
+per setting and ten cold pairs are limited samples; retain paired intervals,
+per-block observations and P95 sample qualifications from the Actions report.
+
+Import API medians are Node5.73/Rust5.52ms; startup readiness medians are
+259.20/51.25ms, and UI import wall medians are 20.22/19.19ms. Readiness includes
+the driver's polling interval. The separate real HTTP-META/Mihomo pair passes
+each backend's work/snapshot checks, but verifies different reachable sets
+(Node883/Rust881 of2,998). Its 14.972/17.111s timings and8.05/7.09s CPU are
+observations, not an equal-output speed comparison.
+
+This validates the retained conversion and verifier changes and the complete
+comparison for this capture. It does not establish Rust as faster overall.
+The remaining warm gap persists even with zero probes; further attribution must
+cover the full pipeline, state handling and script execution rather than assume
+the remaining small per-node producer cost explains total request time. No new
+before/after wall-time ratio is inferred across different captures or runners.
