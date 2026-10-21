@@ -71,13 +71,13 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: e9da7c39ca42a731355e00a3a7c897050c47f73f
+          ref: 4adef1315899d4137fc5b5836bce4185a632481d
           path: .performance/rust
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: inputs.diagnose_health
         with:
-          ref: 464241c8665180a644ff95234fd901d6451d6cdf
+          ref: e9da7c39ca42a731355e00a3a7c897050c47f73f
           path: .performance/rust-baseline
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -109,7 +109,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-e9da7c39ca42a731355e00a3a7c897050c47f73f
+          key: subscription-performance-linux-x64-rust-1.98.0-4adef1315899d4137fc5b5836bce4185a632481d
           restore-keys: subscription-performance-linux-x64-rust-1.98.0-
       - name: Build exact original, Rust and unchanged frontend
         run: |
@@ -124,7 +124,7 @@ jobs:
         if: inputs.diagnose_health
         run: |
           cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust 2>&1 | tee "$RUNNER_TEMP/candidate-tests.log"
-          grep -F 'test result: ok. 25 passed; 0 failed; 3 ignored;' "$RUNNER_TEMP/candidate-tests.log"
+          grep -F 'test result: ok. 26 passed; 0 failed; 3 ignored;' "$RUNNER_TEMP/candidate-tests.log"
       - name: Build the frozen Rust baseline in its separate target for whole-request comparison
         if: inputs.diagnose_health
         run: |
@@ -138,7 +138,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-e9da7c39ca42a731355e00a3a7c897050c47f73f
+          key: subscription-performance-linux-x64-rust-1.98.0-4adef1315899d4137fc5b5836bce4185a632481d
       - name: Load installed browser workflow and install headless Chromium
         run: |
           agent-browser skills get core

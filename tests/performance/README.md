@@ -428,9 +428,30 @@ These are overlapping inclusive spans, not an additive breakdown. Diagnostic
 timers remain on their separate branch. The candidate reuses one independent
 parser per job, while continuing conversion, validation and external CA reads.
 
-`--diagnose-health --rust-baseline PATH` compares Node, the candidate, frozen
-464241c8 and the candidate again on one runner and one captured input. Each cell
+`--diagnose-health --rust-baseline PATH` compares Node, the candidate, the pinned
+Rust baseline and the candidate again on one runner and one captured input. Each cell
 starts with an independent copy of the same imported state and keeps complete
 output/snapshot/probe checks. The frozen binary builds in a separate target;
 provenance requires different source revisions and executable hashes. This
 short comparison does not replace the full matrix or native/frontend gates.
+
+The first uninstrumented comparison,
+[39522853939](https://github.com/DSLZL/Sub-Store/actions/runs/39522853939),
+passes16/16 cells with3057 equal output nodes. Parser reuse e9da7c39 gives warm
+medians3.2388/3.2602s versus frozen464241c8 at3.9682s, a reduction of18.4/17.8%.
+Node is2.7716s. Pre-health medians are2.2502/2.2518s versus baseline3.0034s and
+Node2.5905s. No-publisher medians are2.8108/2.8848s versus baseline3.6249s.
+Warm/pre-health/no-publisher cells have only three requests each; cold has one
+per cell, and its7.8383/9.6723s candidate timings are too variable for a stable
+cold improvement claim. All16 harness checks and25 Rust tests execute and pass.
+
+The retained diagnostic
+[39523282917](https://github.com/DSLZL/Sub-Store/actions/runs/39523282917)
+passes8/8 cells and confirms one parser context per request. One warm request's
+three generic YAML normalizations take1564.8ms. Its state comparison/persistence
+spans overlap: codec stringify324.0ms, delta185.7ms and persistence424.6ms.
+The next candidate compares against e9da7c39: reuse only the last successful
+generic normalization text within the request, clone only the requested state
+key, and avoid serialization when ordered marker-free values are identical.
+Final proxy conversion, validation, CA reads and writes remain active; no result
+is reused across jobs. Equivalent-output latency results are still required.
