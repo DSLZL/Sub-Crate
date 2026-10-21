@@ -33,7 +33,7 @@ from urllib.request import urlopen
 import psutil
 
 ORIGINAL = "9cc6b5fac966993364ae33da8797f446bbf7f571"
-RUST = "37c6d9c415983a1d977a4b91be083f7aa70ed642"
+RUST = "fe188648b673f8bf5dc31a681b8c8abf9ec29ed8"
 RUST_BASELINE = "887ddccb36f7724a831a89b4aad416e9c97c7c51"
 FRONTEND = "4bd7b0acbe65466b933ccea14fc61dbebe036ead"
 INPUT_HASH = "a6e6bb9cbe0587f33de0cf130ec391ecffd3483009888fed0ea59d39492ae890"
@@ -63,6 +63,7 @@ PUBLIC_STRINGS = set(COMPARISON_KINDS + CASES) | ERRORS | {
 PUBLIC_STRINGS.update(SHARDS)
 PROFILE_STAGES = set("""
 executor_setup state_snapshot runtime_setup context_setup job bootstrap input_decode execute output_encode
+bootstrap_compile bootstrap_load bootstrap_eval
 sources pipeline_parse pipeline_process pipeline_produce pipeline_utility process processor
 script_operator script_filter useless_filter region_filter regex_filter type_filter conditional_filter
 quick_setting_operator flag_operator sort_operator regex_sort_operator regex_rename_operator regex_delete_operator
