@@ -3,7 +3,8 @@ use crate::json as codec;
 use rquickjs::{Array, Ctx, Function, Object, Value};
 
 pub(crate) fn initialize(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
-    let functions: Object = ctx.eval(r#"({
+    let functions: Object = ctx.eval(
+        r#"({
       project: value => {
       const paths = [], parents = [], keys = []; let root = true;
       const text = JSON.stringify(value, function(key, field) {
@@ -34,7 +35,8 @@ pub(crate) fn initialize(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
         for(let i=0;i<path.length-1;i++) target=target[path[i]];
         target[path[path.length-1]]=value;
       }
-    })"#)?;
+    })"#,
+    )?;
     ctx.globals().set("__nativeValues", functions)
 }
 

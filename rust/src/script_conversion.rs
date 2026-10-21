@@ -294,7 +294,7 @@ pub(crate) fn produce<'js>(
             proxy["ws-opts"] = normalized;
         }
     }
-    let output = conversion::produce_prepared(values, &target, &kind, &options).map_err(|error| {
+    let output = conversion::produce(values, &target, &kind, &options).map_err(|error| {
         js.error(&match error {
             conversion::Error::Legacy(message) => message,
         })
