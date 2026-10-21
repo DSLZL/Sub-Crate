@@ -72,6 +72,7 @@ pub async fn run(
     tokio::time::timeout(
         Duration::from_secs(15),
         context.async_with(async |ctx| {
+            script_io::set_executor(&ctx, tokio::runtime::Handle::current())?;
             let globals = ctx.globals();
             globals.set("probeUpstream", upstream)?;
             globals.set("ageInput", ctx.json_parse(age_input)?)?;

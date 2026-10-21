@@ -226,11 +226,15 @@ The same executable also runs eleven shared `SH01`-`SH11` host-contract groups.
 development Babel loader, followed by the Rust host, against the same loopback
 upstream and independent disposable JSON state. Both execute the unchanged
 `fixtures/script-host-contracts.js`. Each side must pass every required group,
-match typed results/persisted state, and send the expected 28 requests with exact
+match typed results/persisted state, and send the expected 30 requests with exact
 methods, paths, selected headers and body bytes. Separate Node and Rust processes
 then reload both files and must retain the complete values without network I/O.
 The Node executable is an external development oracle; the Rust binary does not
 launch Node or load Node modules.
+
+SH05 also checks a leading UTF-8 BOM, malformed UTF-8, NUL, Unicode and CRLF
+through ordinary text and binary HTTP responses. Text strips one initial BOM
+and replaces malformed bytes like the pinned original; binary retains every byte.
 
 These groups pin synchronous read/write/delete/persist return values, object
 identity, historical root-key slicing, missing/undefined/circular values, all

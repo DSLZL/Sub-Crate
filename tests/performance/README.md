@@ -26,10 +26,14 @@ original exported file bytes. The required SHA256 is
 `a6e6bb9cbe0587f33de0cf130ec391ecffd3483009888fed0ea59d39492ae890`.
 Do not commit this file or put its contents in workflow arguments. The secret
 is injected only into the measurement step. It is removed from the environment
-before application processes start. Private files stay in `$RUNNER_TEMP` and
-are never uploaded, cached, or included in console logs.
+before application processes start. Plaintext private files stay in `$RUNNER_TEMP`
+and are never uploaded, cached, or included in console logs. A one-day artifact
+transfers an AES-256-GCM encrypted capsule of the captured original text and
+UI-created seeds to workers. Its key derives from the private input bytes with
+a domain prefix and random salt, not the published input hash; authentication
+also binds it to the workflow run. The key is never uploaded.
 
-The workflow freezes original `9cc6b5fa`, Rust `464241c8`, and unchanged frontend
+The workflow freezes original `9cc6b5fa`, Rust `7022849b`, and unchanged frontend
 `4bd7b0ac`, with full revisions in the harness and report. It builds the original
 without compatibility-reference patches. The actual subscription file input on
 `/subs` imports the original file five times per backend into fresh storage.
@@ -43,9 +47,23 @@ later diagnostics identify the candidate above and must not overwrite them.
 
 Only after import acceptance does the ordinary PATCH API apply derived workload
 settings. Original names are restored and all 22 source locations are mirrored
-on loopback. The original backend's `produceType=raw` route captures decoded
-parser inputs once. Empty/failed source bodies are counted explicitly; results
+on loopback. An untimed original-backend preview with an inspection-only Script
+Operator captures `context.raw` once, before downloader YAML preprocessing.
+`produceType=raw` exposes already-preprocessed text and is unsuitable for this
+boundary. The pinned input has no URL fragments or age secret arguments.
+Empty/failed source bodies are counted explicitly; results
 cannot establish performance for content the providers did not return.
+Both backends must replay the exact same 23 ordered strings (22 remote sources
+plus local content) before any timed cell starts. A mismatch fails preflight.
+Only the fetched source text is reused: measured requests still enter the public
+download route and execute source preprocessing, parsing, conversion, all configured processors,
+scripts, normal cold/warm cache logic, snapshot publication and output production.
+Parsed nodes and final output are not supplied as cached application results.
+Reports through run `39526057421` used the earlier preprocessed-text capture.
+Their results remain immutable and are not evidence for this stricter boundary;
+new reports identify it with `capture.before_preprocessing=true`.
+The passing raw-input diagnostic below validates this boundary. A complete new
+matrix is required before quoting current cold/warm/pressure performance.
 
 The public pinned health script is modified at exactly five asserted sites:
 workers, batch size and max checks become the full input length; scan budget is
@@ -86,16 +104,24 @@ normalization). No broad field removal or copied producer implementation is used
 Output must be nonempty, and cold selected / completed identities must match.
 Repeated probe requests are counted separately: the original retry policy remains
 active, while unique completed identities must still cover the entire batch.
-Raw replay text is also checked on both backends as a diagnostic: preprocessing
-can change its representation, so measured output semantics determine correctness.
+Raw replay equality is a required input gate on both backends, in addition to
+the measured output/work checks.
 Parse and pre-health cases run first
 to locate processing differences. A product mismatch marks that cell failed but
 allows independent cells to run; observed metrics and differing counts remain in
 the report, while failed/non-equivalent pairs never enter speedup estimates.
 Timeout, crash or incomplete work is a failed
 sample; the harness never trims nodes or re-enables maintenance caps to pass.
-The Actions deadline is 300 minutes: the retained 90-minute attempt completed
-only 33/70 cells, so the full matrix needs a longer execution budget.
+The full matrix now uses 35 independent jobs (up to 20 concurrently), each with
+one Node/Rust pair on the same runner, preserving all 70 cells. Builds, five
+actual imports per backend and original-text capture happen once. Each worker
+validates identical binaries/inputs and all 23 ordered replay strings before
+measurement. Different jobs can have different physical CPUs despite sharing
+the `ubuntu-24.04` label; every runner's model, quotas and load are recorded.
+Paired estimates compare servers on the same machine; pooled distributions span
+these machines. Missing, duplicate, failed or unequal cells fail aggregation.
+Failed-job reruns reuse successful pairs and select the latest attempt of each
+rerun pair; original artifacts remain intact. Pair jobs have a 90-minute deadline.
 
 RSS is sampled at 50ms; VmHWM is the OS lifetime peak of each fresh process.
 CPU seconds use cumulative user+system counters, which have clock granularity.
@@ -556,3 +582,32 @@ cannot establish equal-work performance or explain the reachability difference.
 Keep cold variability and real-network limits open; the measured warm/parse
 single-request gap is resolved for this supplied-input capture. All builds,
 tests, browser flows, measurements and artifact inspection execute in Actions.
+
+## Untouched-source replay acceptance (2026-10-21)
+
+Actions39540875021 PASSES at harness70f0eb9d and productd32f652a; reader
+39541591690 confirms both backends replay23/23 ordered strings with zero timeout
+log entries. The20/22 nonempty remote inputs and two recorded empty/failed
+bodies are captured once before preprocessing. All44 direct-source rows and
+all4 complete-input parse/pre-health diagnostic cells pass exact comparisons.
+Each parse request returns6429 nodes and pre-health3478 on this capture.
+
+Moving owned HTTP I/O to the parent service runtime allows collection to
+continue while synchronous source preprocessing runs on the script worker.
+Only owned strings/results cross runtimes; the JoinSet aborts its owned task
+when dropped. This fixes the observed first-request source loss without changing
+8-second source timers, retries, parsers, caches or measured processing. The
+internal ordinary-text bridge also avoids per-byte JSON arrays and follows
+Undici BOM/UTF8 behavior; binary responses retain their exact bytes.
+
+This diagnostic exposes the cost hidden by historical preprocessed capture:
+three measured parse requests take17.48s Node versus58.33s Rust in total;
+pre-health17.70s versus59.60s. These are cell totals, not per-request medians.
+Several raw YAML direct-source rows are CPU-bound on Rust (source2:0.487s/0.860
+CPU Node versus2.938s/2.920 CPU Rust; source3:0.417s versus2.924s). Parser::yaml
+still executes the pinned generic YAML JavaScript library inside QuickJS. This
+locates further work; no new whole-product speedup or full-matrix pass is claimed.
+
+Product7022849b changes only formatting requested by the retained native CI
+rustfmt diff. No YAML dependency/implementation or test-workload shortcut is
+included. Earlier reports remain immutable under their narrower input boundary.

@@ -224,6 +224,8 @@ class ControlledUpstream:
             return 200, text, []
         if path == "/host/text":
             return 200, text, [("Content-Type", "text/plain; charset=utf-8")]
+        if path == "/host/utf8":
+            return 200, b"\xef\xbb\xbf\x00\xff\xc3(" + "订阅🙂\r\n".encode(), [("Content-Type", "text/plain; charset=utf-8")]
         if path == "/host/echo":
             value = {"method": method, "body": list(body), "accept": headers.get("Accept"),
                      "probe": headers.get("X-Probe"), "authorization": headers.get("Authorization")}

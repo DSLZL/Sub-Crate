@@ -233,6 +233,8 @@ def check_host_requests(requests):
         add(method, "/host/echo", [] if method in ("GET", "HEAD") else text, probe=method)
     add("GET", "/host/binary")
     add("GET", "/host/text")
+    add("GET", "/host/utf8")
+    add("GET", "/host/utf8")
     for _ in range(2):
         add("POST", "/host/echo", [0, 255, 13, 10], accept=None)
     add("GET", "/host/echo", accept="application/json", authorization="Basic dXNlckBuYW1lOnBAc3M6JTIw")
