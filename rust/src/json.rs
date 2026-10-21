@@ -218,6 +218,28 @@ pub fn stringify(value: &Value) -> String {
     serialized(&value.to_string())
 }
 
+pub fn same_json(left: &Value, right: &Value) -> bool {
+    fn identical(left: &Value, right: &Value) -> bool {
+        match (left, right) {
+            (Value::Object(left), Value::Object(right)) => {
+                left.len() == right.len()
+                    && left.iter().zip(right).all(|((key, left), (other, right))| {
+                        key == other && !key.contains(MARKER) && identical(left, right)
+                    })
+            }
+            (Value::Array(left), Value::Array(right)) => {
+                left.len() == right.len()
+                    && left.iter().zip(right).all(|(left, right)| identical(left, right))
+            }
+            (Value::String(left), Value::String(right)) => left == right && !left.contains(MARKER),
+            _ => left == right,
+        }
+    }
+    // Value equality ignores object order. Keep that order and fall back to the
+    // existing serializer for numeric equivalence and checked private markers.
+    identical(left, right) || stringify(left) == stringify(right)
+}
+
 pub fn js_string(value: &Value) -> String {
     if let Some(number) = nonfinite(value) {
         return if number.is_nan() {
@@ -352,6 +374,44 @@ fn serialized(input: &str) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn state_comparison_matches_serialized_order_numbers_and_checked_markers() {
+        let mut values = vec![
+            Value::Null,
+            json!(false),
+            json!(0),
+            json!(-0.0),
+            json!(1),
+            json!(1.0),
+            json!(9007199254740992_u64),
+            json!(9007199254740993_u64),
+            numeric(f64::NAN),
+            numeric(f64::INFINITY),
+            json!("1"),
+            json!("中🙂\\\""),
+            json!(from_units(&[0xd800, 0xe000, 0xdfff])),
+            parse(r#""\ue000number:NaN""#).unwrap(),
+            parse(r#"{"a":1,"b":2}"#).unwrap(),
+            parse(r#"{"b":2,"a":1}"#).unwrap(),
+            parse(r#"{"nested":[{"a":1,"b":2}]}"#).unwrap(),
+            parse(r#"{"nested":[{"b":2,"a":1}]}"#).unwrap(),
+            parse(r#"{"\ud800":{"\ue000":"\udfff"}}"#).unwrap(),
+        ];
+        values.push(Value::Array(values.clone()));
+        for left in &values {
+            for right in &values {
+                assert_eq!(same_json(left, right), stringify(left) == stringify(right));
+            }
+        }
+        assert!(!same_json(&values[14], &values[15]));
+        assert!(!same_json(&values[16], &values[17]));
+        assert!(same_json(&values[6], &values[7]));
+        for invalid in [json!("\u{e000}"), json!({"\u{e000}": 1})] {
+            assert!(std::panic::catch_unwind(|| stringify(&invalid)).is_err());
+            assert!(std::panic::catch_unwind(|| same_json(&invalid, &invalid)).is_err());
+        }
+    }
 
     #[test]
     fn preserves_surrogates_keys_and_literal_marker_sequences() {

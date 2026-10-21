@@ -117,11 +117,12 @@ fn refresh<'js>(
     let key_text = key_text
         .as_str()
         .ok_or_else(|| js.error("Storage key must be a string"))?;
-    let baseline = {
+    let before = {
         let old = job.baseline.borrow();
-        if root { old.1.clone() } else { old.0.clone() }
+        let baseline = if root { &old.1 } else { &old.0 };
+        baseline.get(key_text).cloned()
     };
-    let fresh = {
+    let after = {
         let store = job
             .store
             .lock()
@@ -130,13 +131,19 @@ fn refresh<'js>(
             store
                 .script_root()
                 .map_err(|error| js.error(&error.to_string()))?
+                .get(key_text)
+                .cloned()
         } else {
-            store.data.clone()
+            store.data.get(key_text).cloned()
         }
     };
-    let before = baseline.get(key_text);
-    let after = fresh.get(key_text);
-    if before.map(codec::stringify) == after.map(codec::stringify) {
+    let before = before.as_ref();
+    let after = after.as_ref();
+    if match (before, after) {
+        (Some(before), Some(after)) => codec::same_json(before, after),
+        (None, None) => true,
+        _ => false,
+    } {
         return Ok(());
     }
     let cache = js.get(this, if root { "root" } else { "cache" })?;
