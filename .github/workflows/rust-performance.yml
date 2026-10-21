@@ -28,8 +28,8 @@ permissions:
   contents: read
 
 env:
-  PERF_RUST_REVISION: ee64ab9f7376a68c126950caee256bf3fb9c2b12
-  PERF_BASELINE_REVISION: 887ddccb36f7724a831a89b4aad416e9c97c7c51
+  PERF_RUST_REVISION: bed17b95bf2e45279b571de06921cfa1d9851fe8
+  PERF_BASELINE_REVISION: ee64ab9f7376a68c126950caee256bf3fb9c2b12
 
 concurrency:
   group: ${{ inputs.inspect_run && 'subscription-report-inspection' || inputs.diagnose_health && 'subscription-health-diagnostic' || inputs.diagnose_parse && 'subscription-parse-diagnostic' || 'supplied-subscription-performance' }}
@@ -180,7 +180,7 @@ jobs:
         if: inputs.diagnose_health
         run: |
           cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust 2>&1 | tee "$RUNNER_TEMP/candidate-tests.log"
-          grep -F 'test result: ok. 38 passed; 0 failed; 3 ignored;' "$RUNNER_TEMP/candidate-tests.log"
+          grep -F 'test result: ok. 39 passed; 0 failed; 3 ignored;' "$RUNNER_TEMP/candidate-tests.log"
       - name: Build the frozen Rust baseline in its separate target for whole-request comparison
         if: inputs.diagnose_health
         run: |

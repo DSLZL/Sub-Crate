@@ -33,8 +33,8 @@ from urllib.request import urlopen
 import psutil
 
 ORIGINAL = "9cc6b5fac966993364ae33da8797f446bbf7f571"
-RUST = "ee64ab9f7376a68c126950caee256bf3fb9c2b12"
-RUST_BASELINE = "887ddccb36f7724a831a89b4aad416e9c97c7c51"
+RUST = "bed17b95bf2e45279b571de06921cfa1d9851fe8"
+RUST_BASELINE = "ee64ab9f7376a68c126950caee256bf3fb9c2b12"
 FRONTEND = "4bd7b0acbe65466b933ccea14fc61dbebe036ead"
 INPUT_HASH = "a6e6bb9cbe0587f33de0cf130ec391ecffd3483009888fed0ea59d39492ae890"
 INPUT_NAME = "sub-store_subscription_大杂烩-cron-new_2026-10-20_14-11-50.json"
