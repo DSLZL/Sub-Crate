@@ -120,7 +120,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: dd87e30731fc678e4778530b730a1b94312648d2
+          ref: da7b705c22cdd51b4a7a4a3ba5cbd87748e75d30
           path: .performance/rust
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -154,7 +154,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-dd87e30731fc678e4778530b730a1b94312648d2
+          key: subscription-performance-linux-x64-rust-1.98.0-da7b705c22cdd51b4a7a4a3ba5cbd87748e75d30
           restore-keys: subscription-performance-linux-x64-rust-1.98.0-
       - name: Build exact original, Rust and unchanged frontend
         run: |
