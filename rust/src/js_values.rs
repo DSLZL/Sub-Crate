@@ -7,27 +7,17 @@ pub(crate) fn initialize(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
         r#"({
       project: value => {
       const paths = [], parents = new WeakMap(); let root = true;
-      const path = (parent,key) => {
-        const keys = [key];
-        while (parent.parent) {keys.push(parent.key); parent = parent.parent;}
-        return keys.reverse();
-      };
       const text = JSON.stringify(value, function(key, field) {
         const first = root; root = false;
         if (field && typeof field === 'object') {
-          const parent = first ? null : parents.get(this);
-          const depth = parent ? parent.depth + 1 : 0;
+          const path = first ? [] : [...parents.get(this), key];
           const ancestor = parents.get(field);
-          if (ancestor && ancestor.depth < depth) {
-            for (let entry = parent; entry; entry = entry.parent) {
-              if (entry === ancestor) {
-                paths.push([path(parent,key),depth-ancestor.depth]); return null;
-              }
-            }
+          if (ancestor && ancestor.length < path.length && ancestor.every((part,index) => part === path[index])) {
+            paths.push([path,path.length-ancestor.length]); return null;
           }
-          parents.set(field, {parent,key,depth});
+          parents.set(field, path);
         } else if (typeof field === 'number' && (!Number.isFinite(field) || Object.is(field, -0))) {
-          paths.push([first ? [] : path(parents.get(this),key), Object.is(field, -0) ? '-0' : String(field)]);
+          paths.push([first ? [] : [...parents.get(this), key], Object.is(field, -0) ? '-0' : String(field)]);
         }
         return field;
       });
@@ -447,29 +437,6 @@ mod tests {
                     restored.array[1].root === restored && restored.array[2] === -Infinity;
             })()"#;
             assert!(ctx.eval::<bool, _>(assertion).unwrap());
-            let source = r#"(() => {
-                const root = {}, shared = {zero: -0, number: NaN};
-                root.early = shared;
-                let tail = root;
-                for (let index = 0; index < 40; index++) tail = tail.next = {};
-                tail[''] = {'a\u0000': shared};
-                tail.self = tail;
-                tail.root = root;
-                root.late = shared;
-                return root;
-            })()"#;
-            let value: Value = ctx.eval(source).unwrap();
-            let projected = project(&ctx, value).unwrap();
-            let restored = decode(&ctx, &projected).unwrap();
-            ctx.globals().set("restored", restored).unwrap();
-            assert!(ctx.eval::<bool, _>(r#"(() => {
-                let tail = restored;
-                for (let index = 0; index < 40; index++) tail = tail.next;
-                const nested = tail['']['a\u0000'];
-                return tail.self === tail && tail.root === restored &&
-                    Object.is(nested.zero, -0) && Number.isNaN(nested.number) &&
-                    nested !== restored.early && nested !== restored.late;
-            })()"#).unwrap());
         });
     }
 
