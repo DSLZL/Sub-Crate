@@ -43,15 +43,21 @@ later diagnostics identify the candidate above and must not overwrite them.
 
 Only after import acceptance does the ordinary PATCH API apply derived workload
 settings. Original names are restored and all 22 source locations are mirrored
-on loopback. The original backend's `produceType=raw` route captures decoded
-parser inputs once. Empty/failed source bodies are counted explicitly; results
+on loopback. An untimed original-backend preview with an inspection-only Script
+Operator captures `context.raw` once, before downloader YAML preprocessing.
+`produceType=raw` exposes already-preprocessed text and is unsuitable for this
+boundary. The pinned input has no URL fragments or age secret arguments.
+Empty/failed source bodies are counted explicitly; results
 cannot establish performance for content the providers did not return.
 Both backends must replay the exact same 23 ordered strings (22 remote sources
 plus local content) before any timed cell starts. A mismatch fails preflight.
 Only the fetched source text is reused: measured requests still enter the public
-download route and execute parsing, conversion, all configured processors,
+download route and execute source preprocessing, parsing, conversion, all configured processors,
 scripts, normal cold/warm cache logic, snapshot publication and output production.
 Parsed nodes and final output are not supplied as cached application results.
+Reports through run `39526057421` used the earlier preprocessed-text capture.
+Their results remain immutable and are not evidence for this stricter boundary;
+new reports identify it with `capture.before_preprocessing=true`.
 
 The public pinned health script is modified at exactly five asserted sites:
 workers, batch size and max checks become the full input length; scan budget is

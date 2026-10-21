@@ -46,11 +46,10 @@ class Contracts(unittest.TestCase):
                             b.public(suite.report)
                             published.append(copy.deepcopy(suite.report))
                         suite.publish = publish
-                        def download(origin, name, raw=False):
-                            self.assertTrue(raw)
-                            self.assertEqual(name, original["name"])
-                            return b.encoded(replayed if origin == kind else expected)
-                        with patch.object(suite, "server", side_effect=lambda backend, _: nullcontext((backend, None, None, None))), patch.object(suite, "configure", return_value=original), patch.object(suite, "download", side_effect=download):
+                        def source_texts(origin, config):
+                            self.assertEqual(config, original)
+                            return replayed if origin == kind else expected
+                        with patch.object(suite, "server", side_effect=lambda backend, _: nullcontext((backend, None, None, None))), patch.object(suite, "configure", return_value=original), patch.object(suite, "source_texts", side_effect=source_texts):
                             if replayed == expected:
                                 suite.replay(original)
                             else:
@@ -61,6 +60,25 @@ class Contracts(unittest.TestCase):
                         self.assertEqual(len(published[0]["replay"]), 2)
                         self.assertEqual(all(row["equal"] for row in published[0]["replay"]), replayed == expected)
                         self.assertNotIn("private-", json.dumps(published))
+
+    def test_source_inspection_returns_text_before_preprocessing_and_preserves_configuration(self):
+        suite = object.__new__(b.Suite)
+        config = {"name": "private", "url": "https://private.invalid", "mergeSources": "remoteFirst",
+                  "process": [{"type": "Type Filter", "args": ["ss"]}]}
+        saved = copy.deepcopy(config)
+        texts = ["proxies:\r\n  - {name: 原文, server: example.invalid, port: 1}\r\n", "", "private-local"]
+        with patch.object(b, "api", return_value={"processed": texts}) as preview:
+            self.assertIs(suite.source_texts("http://127.0.0.1:1", config), texts)
+        origin, path, method, inspection = preview.call_args.args
+        self.assertEqual((origin, path, method), ("http://127.0.0.1:1", "preview/sub", "POST"))
+        self.assertEqual(config, saved)
+        self.assertEqual({**inspection, "process": config["process"]}, config)
+        self.assertEqual(len(inspection["process"]), 1)
+        operator = inspection["process"][0]
+        self.assertEqual((operator["type"], operator["args"]["mode"]), ("Script Operator", "script"))
+        script = operator["args"]["content"]
+        check = "const raw = " + json.dumps(texts) + "; require('node:assert/strict').equal(operator([{parsed: true}], 'JSON', {raw}), raw);"
+        b.command(["node", "-e", script + check])
 
     def test_rust_comparison_uses_distinct_binaries_and_identical_disposable_state(self):
         with tempfile.TemporaryDirectory() as tmp:

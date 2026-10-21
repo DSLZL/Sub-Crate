@@ -620,24 +620,26 @@ class Suite:
         api(origin, "sub/" + quote(stored[0]["name"], safe=""), "PATCH", config)
         return config
 
-    def download(self, origin, name, target="JSON", raw=False):
-        query = {"target": target}
-        if raw:
-            query["produceType"] = "raw"
-        return http(origin + "/backend/download/" + quote(name, safe="") + "?" + urlencode(query))
+    def download(self, origin, name, target="JSON"):
+        return http(origin + "/backend/download/" + quote(name, safe="") + "?" + urlencode({"target": target}))
+
+    def source_texts(self, origin, config):
+        # produceType=raw already preprocesses YAML; context.raw retains the original text.
+        inspection = {**config, "process": [{"type": "Script Operator", "args": {
+            "mode": "script", "content": "function operator(proxies, target, context) { return context.raw; }"}}]}
+        return api(origin, "preview/sub", "POST", inspection)["processed"]
 
     def capture(self, original):
         directory = self.directory("capture")
         with self.server("node", directory) as (origin, child, state, _):
-            self.configure(origin, original, fixture=False)
+            config = self.configure(origin, original, fixture=False)
             began = time.monotonic()
-            raw = self.download(origin, original["name"], raw=True)
+            sources = self.source_texts(origin, config)
             elapsed = time.monotonic() - began
-            sources = json.loads(raw)
             require(len(sources) == 23 and all(isinstance(s, str) for s in sources), "capture")
             require(sources[-1] == original["content"], "capture")
             require(any(sources[:22]), "capture")
-            self.report["capture"] = {"elapsed_s": elapsed, "source_count": 22,
+            self.report["capture"] = {"elapsed_s": elapsed, "source_count": 22, "before_preprocessing": True,
                                       "nonempty": sum(bool(s) for s in sources[:22]),
                                       "empty_or_failed": sum(not s for s in sources[:22]),
                                       "sources": [{"index": i, "bytes": len(s.encode()), "sha256": digest(s.encode()),
@@ -652,7 +654,7 @@ class Suite:
         for kind in KINDS:
             with self.server(kind, self.directory("replay-" + kind)) as (origin, _, _, _):
                 config = self.configure(origin, original)
-                actual = json.loads(self.download(origin, config["name"], raw=True))
+                actual = self.source_texts(origin, config)
                 self.report["replay"].append({"kind": kind, "expected_sha256": digest(expected),
                                               "actual_sha256": digest(actual), "equal": actual == expected,
                                               "source_count": len(actual),
@@ -902,7 +904,7 @@ class Suite:
         self.report["estimates"] = estimates
         capture = self.report.get("capture", {})
         if capture:
-            lines += ["", f"Capture: {capture['nonempty']}/22 nonempty source bodies; {capture['empty_or_failed']} empty/failed. Capture wall time {capture['elapsed_s']:.2f}s. These are decoded parser inputs, not original HTTP/TLS envelopes."]
+            lines += ["", f"Capture: {capture['nonempty']}/22 nonempty source bodies; {capture['empty_or_failed']} empty/failed. Capture wall time {capture['elapsed_s']:.2f}s. Source text is captured before subscription preprocessing; HTTP/TLS envelopes are excluded."]
         for row in self.report.get("replay", []):
             lines.append(f"- Raw replay {row['kind']}: equal={row['equal']}, matching sources={row['matching_sources']}/{row['source_count']}.")
         if self.report.get("diagnostic"):
@@ -938,7 +940,7 @@ class Suite:
         failures = [r for r in rows if r["status"] == "failed"]
         if failures or self.report.get("failure"):
             lines += ["", "Failures: " + ", ".join([r.get("failure", "unexpected") for r in failures] + ([self.report["failure"]] if self.report.get("failure") else [])) + ". Failed/incomplete cases are never speedups."]
-        lines += ["", "Limits: fixed decoded-source replay excludes provider transport/decryption; exact ordered replay equality on both backends is required before measurement. Measured requests still execute normal parsing, conversion, scripts, cache behavior and state publication, with output semantics checked. Controlled detector is a fixture; real HTTP-META/Mihomo is reported separately, with changing reachability. Top-level `_latency` is excluded from node fingerprints; only parse-only exports also canonicalize a valid random port within the unchanged declared hopping ranges. Raw output hashes remain recorded. Snapshot timestamp is observed separately. Two warm-up requests precede warm measurements; their node/work counts remain recorded, and measured warm probes must be zero. Warm requests still publish snapshots. RSS sampling is 50ms with actual intervals recorded; VmHWM is process-lifetime peak. CPU counters have OS clock granularity. Low block counts and hosted-runner contention limit confidence; no P99 or cross-platform ranking is claimed.",
+        lines += ["", "Limits: fixed source-text replay excludes provider transport/decryption; the pinned input has no age secret URL arguments. Exact ordered replay equality on both backends is required before measurement. Measured requests still execute normal source preprocessing, parsing, conversion, scripts, cache behavior and state publication, with output semantics checked. Controlled detector is a fixture; real HTTP-META/Mihomo is reported separately, with changing reachability. Top-level `_latency` is excluded from node fingerprints; only parse-only exports also canonicalize a valid random port within the unchanged declared hopping ranges. Raw output hashes remain recorded. Snapshot timestamp is observed separately. Two warm-up requests precede warm measurements; their node/work counts remain recorded, and measured warm probes must be zero. Warm requests still publish snapshots. RSS sampling is 50ms with actual intervals recorded; VmHWM is process-lifetime peak. CPU counters have OS clock granularity. Low block counts and hosted-runner contention limit confidence; no P99 or cross-platform ranking is claimed.",
                   "", "Raw input, proxy data, state, browser HAR and child logs remain private in ephemeral runner scratch. The only published data are allowlisted metrics, counts and hashes."]
         public(self.report)
         write_json(self.args.publish / "metrics.json", self.report)
@@ -1070,7 +1072,7 @@ def main():
         suite.publish()
         print("Importing the unchanged file on both backends (five paired observations).", flush=True)
         suite.imports(original, input_file)
-        print("Capturing decoded source inputs through the original backend.", flush=True)
+        print("Capturing source text before preprocessing through the original backend.", flush=True)
         suite.capture(original)
         fixture_port, meta_port = free_port(), free_port()
         fixture_args = [sys.executable, Path(__file__).resolve(), "--scratch", mirrors,
