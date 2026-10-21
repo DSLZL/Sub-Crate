@@ -955,7 +955,8 @@ async fn apply_transformer<'js>(
     input: JsValue<'js>,
     scope: &Scope<'js>,
 ) -> rquickjs::Result<JsValue<'js>> {
-    let (script, arguments) = crate::script_loading::load(js, &item, &scope.execution).await?;
+    let (script, arguments) = profile::measure("script_load", None, crate::script_loading::load(js, &item, &scope.execution)).await?;
+    let prepare = profile::span("script_prepare");
     let script = js.text(script)?;
     js.set(&scope.context, "source", scope.source.clone())?;
     js.set(
@@ -963,6 +964,7 @@ async fn apply_transformer<'js>(
         "env",
         js.ctx.globals().get("__scriptEnvironment")?,
     )?;
+    drop(prepare);
     match invoke(
         js,
         "transformFunction",
@@ -1050,15 +1052,18 @@ async fn process_response<'js>(
         .unwrap_or(js.array([])?);
     let items: Vec<JsValue> = js.call("iterable", (items,))?;
     let mut output = normalize_response(&js, input)?;
-    for item in items {
+    for (index, item) in items.into_iter().enumerate() {
         if !js.equal(&js.get(&item, "type")?, &js.value("Response Transformer")?)?
             || skip(&js, &item, &scope.context)?
             || js.truthy(&js.get(&item, "disabled")?)?
         {
             continue;
         }
-        let result = apply_transformer(&js, item, output, &scope).await?;
-        output = normalize_response(&js, result)?;
+        output = profile::measure("response_transformer", Some(index), async {
+            let result = apply_transformer(&js, item, output, &scope).await?;
+            let _normalize = profile::span("response_normalize");
+            normalize_response(&js, result)
+        }).await?;
     }
     Ok(output)
 }
