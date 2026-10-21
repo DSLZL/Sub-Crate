@@ -3,8 +3,12 @@ use crate::json as codec;
 use crate::state::truthy;
 use rquickjs::{Array, Context, Ctx, Exception, Function, Object, Runtime, Value as JsValue};
 use serde_json::Value;
+use std::cell::RefCell;
 
-pub struct Parser(Context);
+pub struct Parser {
+    context: Context,
+    preprocessed: RefCell<Option<(String, String)>>,
+}
 
 fn yaml<'js>(ctx: &Ctx<'js>, raw: &str) -> rquickjs::Result<JsValue<'js>> {
     let utilities: Object = ctx.globals().get("SubStoreUtilities")?;
@@ -68,7 +72,10 @@ impl Parser {
             ctx.eval::<(), _>(include_bytes!("../vendor/utilities.js").as_slice())
                 .map_err(|error| Error::Legacy(error.to_string()))
         })?;
-        Ok(Self(context))
+        Ok(Self {
+            context,
+            preprocessed: RefCell::new(None),
+        })
     }
 
     pub fn dump(&self, value: &Value) -> Result<String, Error> {
@@ -90,7 +97,7 @@ impl Parser {
         {
             return Err(Error::Legacy("Unsafe property path".to_owned()));
         }
-        self.0.with(|ctx| {
+        self.context.with(|ctx| {
             let result = (|| -> rquickjs::Result<Value> {
                 let root = crate::js_values::decode(&ctx, value)?;
                 let child: Function = ctx.eval("(object,key) => Object.hasOwn(object,key) && Object(object[key]) === object[key] ? object[key] : undefined")?;
@@ -130,7 +137,7 @@ impl Parser {
     }
 
     fn dump_with_options(&self, value: &Value, defaults: bool) -> Result<String, Error> {
-        self.0.with(|ctx| {
+        self.context.with(|ctx| {
             let result = (|| -> rquickjs::Result<String> {
                 let utilities: Object = ctx.globals().get("SubStoreUtilities")?;
                 let dump: Function = utilities.get("stringifyYaml")?;
@@ -165,7 +172,12 @@ impl Parser {
         if !raw.contains("proxies") {
             return None;
         }
-        self.0.with(|ctx| {
+        if let Some((source, output)) = self.preprocessed.borrow().as_ref()
+            && source == raw
+        {
+            return Some(output.clone());
+        }
+        self.context.with(|ctx| {
             let result = (|| -> rquickjs::Result<Option<String>> {
                 // Downloads serialize YAML entries as canonical JSON; retain YAML for other syntax.
                 if let Some(entries) = raw
@@ -252,6 +264,9 @@ impl Parser {
                         output.push('\n');
                     }
                 }
+                // Keep only the last successful generic normalization. Conversion
+                // still parses fresh nodes and reads external CA files each time.
+                *self.preprocessed.borrow_mut() = Some((raw.to_owned(), output.clone()));
                 Ok(Some(output))
             })();
             match result {
@@ -265,7 +280,7 @@ impl Parser {
     }
 
     pub fn line(&self, raw: &str) -> Result<Option<Value>, Error> {
-        self.0.with(|ctx| {
+        self.context.with(|ctx| {
             let result = (|| -> rquickjs::Result<Option<Value>> {
                 let value: JsValue = match ctx.json_parse(raw) {
                     Ok(value) => value,
@@ -366,7 +381,7 @@ mod tests {
     use serde_json::json;
 
     fn legacy_line(parser: &Parser, raw: &str) -> Value {
-        parser.0.with(|ctx| {
+        parser.context.with(|ctx| {
             let utilities: Object = ctx.globals().get("SubStoreUtilities").unwrap();
             let json5: Object = utilities.get("JSON5").unwrap();
             let parse: Function = json5.get("parse").unwrap();
@@ -416,6 +431,10 @@ mod tests {
         assert_eq!(proxies[0]["reality-opts"]["short-id"], "00123");
         assert_eq!(proxies[0]["extra"], json!({"enabled":false}));
         assert_eq!(proxies[1]["extra"], proxies[0]["extra"]);
+        let mut changed = lines.clone();
+        changed.push_str("caller mutation");
+        assert_ne!(changed, lines);
+        assert_eq!(parser.preprocess(raw), Some(lines));
         assert!(parser.preprocess("proxies: not-an-array").is_none());
         let literal = "proxies:\n  - {\"type\":\"ss\",\"extra\":\"short-id: raw\"}\n";
         assert!(parser.preprocess(literal).is_none());
@@ -433,17 +452,19 @@ mod tests {
             json!({"type":"ss","extra":{"1":"one","2":"two","large":9007199254740993_u64}}).to_string(),
         ] {
             let raw = format!("proxies:\n  - {line}\n");
-            let expected = parser.0.with(|ctx| match yaml(&ctx, &raw) {
+            let expected = parser.context.with(|ctx| match yaml(&ctx, &raw) {
                 Ok(value) => ctx.json_stringify(value).unwrap().unwrap().to_string().ok(),
                 Err(_) => {
                     ctx.catch();
                     None
                 }
             });
-            let actual = parser.preprocess(&raw).map(|lines| {
-                format!("{{\"proxies\":[{}]}}", lines.lines().collect::<Vec<_>>().join(","))
-            });
-            assert_eq!(actual, expected);
+            for _ in 0..2 {
+                let actual = parser.preprocess(&raw).map(|lines| {
+                    format!("{{\"proxies\":[{}]}}", lines.lines().collect::<Vec<_>>().join(","))
+                });
+                assert_eq!(actual, expected);
+            }
         }
         assert!(parser.preprocess("proxies:\n").is_none());
     }
@@ -472,7 +493,7 @@ mod tests {
         let strict = began.elapsed().as_secs_f64();
         let yaml = format!("proxies:\n{}", format!("  - {raw}\n").repeat(5524));
         let began = Instant::now();
-        parser.0.with(|ctx| {
+        parser.context.with(|ctx| {
             let value = super::yaml(&ctx, &yaml).unwrap();
             let proxies: Array = value.as_object().unwrap().get("proxies").unwrap();
             assert_eq!(proxies.len(), 5524);

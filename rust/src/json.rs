@@ -229,7 +229,10 @@ pub fn same_json(left: &Value, right: &Value) -> bool {
             }
             (Value::Array(left), Value::Array(right)) => {
                 left.len() == right.len()
-                    && left.iter().zip(right).all(|(left, right)| identical(left, right))
+                    && left
+                        .iter()
+                        .zip(right)
+                        .all(|(left, right)| identical(left, right))
             }
             (Value::String(left), Value::String(right)) => left == right && !left.contains(MARKER),
             _ => left == right,

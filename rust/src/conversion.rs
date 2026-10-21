@@ -3909,9 +3909,8 @@ mod tests {
     fn reused_parser_observes_changed_and_deleted_ca_files() {
         let parser = crate::clash::Parser::new().ok().unwrap();
         let path = std::env::temp_dir().join(format!("sub-store-parser-ca-{}", std::process::id()));
-        let raw = json!(
-            json!({"type":"trojan","name":"ca","server":"127.0.0.1","port":443,"password":"p","_ca":path}).to_string()
-        );
+        let node = json!({"type":"trojan","name":"ca","server":"127.0.0.1","port":443,"password":"p","_ca":path});
+        let raw = json!(format!("proxies: [{node}]"));
         let mut previous = Value::Null;
         for body in ["AQID", "BAUG"] {
             std::fs::write(
