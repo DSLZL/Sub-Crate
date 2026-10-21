@@ -80,6 +80,11 @@ class ParallelContract(unittest.TestCase):
                 folder.mkdir()
                 (folder / "metrics.json").write_text(json.dumps({"attempt": attempt}))
             self.assertEqual(dict(parallel.latest_workers(root)), {"parse_0_1": {"attempt": 2}, "warm_0_1": {"attempt": 1}})
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            worker = {"diagnostic": "parse_diagnostic", "samples": []}
+            (root / "metrics.json").write_text(json.dumps(worker))
+            self.assertEqual(parallel.latest_workers(root), [("diagnostic", worker)])
 
     def test_capsule_authentication_rejects_changed_input_run_and_public_digest(self):
         fixture = r"""

@@ -69,6 +69,12 @@ def latest_workers(directory):
     # A failed-job rerun reuses successful earlier pairs. Prefer the newest attempt
     # of each pair, while retaining every older artifact as immutable evidence.
     selected = {}
+    # download-artifact v6 flattens a sole pattern match, even with merge=false.
+    if (directory / "metrics.json").exists():
+        worker = json.loads((directory / "metrics.json").read_bytes())
+        shard = worker.get("shard", "diagnostic" if worker.get("diagnostic") else "")
+        b.require(shard in b.SHARDS or shard == "diagnostic", "source")
+        return [(shard, worker)]
     for path in sorted(directory.glob("*/metrics.json")):
         shard, run, attempt = path.parent.name.removeprefix("subscription-performance-shard-").rsplit("-", 2)
         b.require(run == os.environ["GITHUB_RUN_ID"] and attempt.isdecimal(), "source")
@@ -98,6 +104,7 @@ def main():
     for patch in args.prepared.glob("*.patch"):
         shutil.copyfile(patch, args.publish / patch.name)
     publisher.publish()
+    print(f"Aggregation {report['status']}: workers={len(report['workers'])}, cells={len(report['samples'])}, matrix_complete={report['matrix_complete']}", flush=True)
     raise SystemExit(0 if report["status"] == "passed" else 1)
 
 
