@@ -10,6 +10,10 @@ AnyTLS, plus the registered Surge/Loon/QX and Clash JSON5/YAML formats and
 Base64/SSD/FullConfig/Clash preprocessing
 with transport/TLS normalization. Surge External fields are parsed as data.
 V2Ray supports all three legacy aliases.
+Ordinary subscription YAML preprocessing uses `serde-saphyr` with a compatibility
+guard over library parser events. Tags, aliases, schema-sensitive scalars and
+non-string keys retain the locked JS resolver. Public script YAML helpers keep
+their existing implementation and options.
 SurgeMac's external/forced/fallback/merged modes generate native configuration
 data and retain port/override policies; configured programs are never executed.
 Egern retains its protocol filters, stream/TLS/ShadowTLS fields, WireGuard peers,
