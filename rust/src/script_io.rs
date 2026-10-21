@@ -22,6 +22,20 @@ mod transport;
 
 type Failure = Box<dyn Error + Send + Sync>;
 
+#[derive(Clone)]
+struct Executor(tokio::runtime::Handle);
+
+// The executor owns no JavaScript handles or context borrows.
+unsafe impl<'js> JsLifetime<'js> for Executor {
+    type Changed<'to> = Executor;
+}
+
+pub(crate) fn set_executor(ctx: &Ctx<'_>, executor: tokio::runtime::Handle) -> rquickjs::Result<()> {
+    ctx.store_userdata(Executor(executor))
+        .map_err(|_| Exception::throw_message(ctx, "Script I/O executor already borrowed"))?;
+    Ok(())
+}
+
 #[derive(Clone, Default)]
 struct Timers(Rc<RefCell<HashMap<u64, tokio::sync::oneshot::Sender<()>>>>);
 
@@ -264,15 +278,31 @@ pub(crate) async fn request<'js>(
         }
         Ok(response.to_string())
     }
-    send(
-        &method,
-        &url,
-        &headers,
-        body.as_deref(),
-        options.0.as_deref(),
-    )
-    .await
-    .map_err(|error| Exception::throw_message(&ctx, &error.to_string()))
+    let executor = ctx
+        .userdata::<Executor>()
+        .map(|executor| executor.0.clone())
+        .ok_or_else(|| Exception::throw_message(&ctx, "Script I/O executor unavailable"))?;
+    let mut requests = tokio::task::JoinSet::new();
+    requests.spawn_on(
+        async move {
+            send(
+                &method,
+                &url,
+                &headers,
+                body.as_deref(),
+                options.0.as_deref(),
+            )
+            .await
+            .map_err(|error| error.to_string())
+        },
+        &executor,
+    );
+    requests
+        .join_next()
+        .await
+        .expect("HTTP task was just spawned")
+        .map_err(|error| Exception::throw_message(&ctx, &error.to_string()))?
+        .map_err(|error| Exception::throw_message(&ctx, &error))
 }
 
 pub(crate) async fn download_file<'js>(
