@@ -616,7 +616,7 @@ Product7022849b changes only formatting requested by the retained native CI
 rustfmt diff. No YAML dependency/implementation or test-workload shortcut is
 included. Earlier reports remain immutable under their narrower input boundary.
 
-## Per-node preparation and projection candidate (2026-10-21, unverified)
+## Per-node preparation and projection (2026-10-21)
 
 Product `ea16edca` lets the script producer dispatch its already prepared owned
 values without a second pass through common filtering and normalization. The
@@ -637,18 +637,80 @@ pins and build targets remain separate. Source capture, real file import,
 correctness checks, request counts and cold/warm work checks retain their prior
 behavior; all product execution remains in Actions.
 
-Status: **PENDING**. The first candidate's native run
+Performance and native acceptance: **PASSED**. The first candidate's native run
 [39605952808](https://github.com/DSLZL/Sub-Store/actions/runs/39605952808)
 found a newly unused preparation entry and a formatting diff. It and the
 superseded diagnostic [39606000665](https://github.com/DSLZL/Sub-Store/actions/runs/39606000665)
 were stopped before accepting a full result. Its completed public component
-profiles show the active-stack experiment made projection roughly 3-6% slower
+profiles show the active-stack experiment made projection roughly 3-7% slower
 than the immediately preceding baseline on the same runner, so that experiment
 is removed. Runs 39606917279, 39606961853 and 39606968623 were superseded before
 acceptance to avoid continuing that version. The replacement removes the unused
 implementation, applies the CI-generated formatting and omits empty projection
-metadata. No new CI acceptance or performance improvement is established yet.
-The results below belong to their stated earlier source versions.
+metadata. Historical results below retain their stated earlier source versions.
+
+The completed preparation job in [diagnostic39608454627](https://github.com/DSLZL/Sub-Store/actions/runs/39608454627)
+passes all 31 release regressions and all public component assertions. It executes
+candidate/baseline/candidate again on one runner, in separate Cargo targets. Each
+cell below is the median of three blocks of 3,096 actual complete script-producer
+calls; setup and output assertions are outside the timed loops.
+
+| Public fixture | Baseline `9c659cef` ms | Candidate first ms | Candidate again ms | Time reduction |
+|---|---:|---:|---:|---:|
+| Flat SS | 52.834 | 48.430 | 48.320 | 8.3-8.5% |
+| WebSocket | 85.789 | 80.894 | 81.231 | 5.3-5.7% |
+| Nested metadata | 130.362 | 124.268 | 124.515 | 4.5-4.7% |
+
+Projection alone is also lower in both candidate measurements: 15.957/15.818ms
+versus 17.886ms for flat SS, 35.337/35.242 versus 36.224ms for WebSocket, and
+67.720/66.935 versus 69.592ms for nested metadata. These are Rust before/after
+component measurements, separate from Node comparisons and complete-request
+acceptance.
+
+The supplied-input diagnostic passes all sixteen cells with 3,938 equivalent
+output nodes per variant. Warm complete-request medians over three requests are
+Node 5.791s, candidate 3.223s, baseline 3.291s and candidate again 3.232s. This
+observes a 1.8-2.1% reduction from the previous Rust version in this small sample.
+Cold observations span 10.717-11.234s across the Rust variants and do not establish
+a cold-request improvement. The health script's millisecond-resolution warm
+produce counters are Node 16ms, candidate 161ms, baseline 166ms and candidate
+again 175ms for 3,938 calls. These rounded counters do not establish a stable
+improvement for this real helper or parity with Node; the public component
+profiles above provide the controlled before/after measurements.
+
+[Full matrix39608465038](https://github.com/DSLZL/Sub-Store/actions/runs/39608465038)
+passes all seventy cells in thirty-five independent paired worker jobs.
+[Full report39610594741](https://github.com/DSLZL/Sub-Store/actions/runs/39610594741)
+and [diagnostic report39610701917](https://github.com/DSLZL/Sub-Store/actions/runs/39610701917)
+also pass. The capture contains 20/22 nonempty sources and two explicit
+empty/failed sources, before preprocessing; both backends replay all 23 ordered
+raw strings exactly. Parse output is 6,623 nodes and complete controlled output
+is 3,688 on both backends. All cold work audits, warm no-new-probe checks,
+snapshots and ClashMeta output comparisons pass.
+
+| Complete controlled requests | Node median s | Rust median s | Requests per backend |
+|---|---:|---:|---:|
+| Parse | 3.634 | 0.850 | 60 |
+| Pre-health | 3.525 | 1.029 | 20 |
+| Cold | 9.838 | 9.855 | 10 |
+| Warm, all processors | 5.970 | 2.956 | 100 |
+| Without publisher | 3.683 | 1.443 | 60 |
+
+Warm CPU is Node/Rust 7.532/2.722s per request and sampled peak RSS is
+1,373.7/365.4 MiB. Rust pressure throughput is 0.371/0.790/0.765/0.599 requests
+per second at 1/2/4/8 clients; eight clients still have lower throughput than
+two or four clients on the four-CPU workers. These
+new complete-run numbers compare the two engines within this capture, not the
+previous report's different subscription bodies. The separate real-network
+detector returns Node/Rust 1,061/1,396 nodes, so it does not establish an
+equivalent-work speed ratio.
+
+[Native acceptance39608386858](https://github.com/DSLZL/Sub-Store/actions/runs/39608386858)
+passes all six jobs: Linux x64/arm64, Windows x64, Docker x64/arm64 and the
+unchanged frontend. Its harness checkout `3b1b2d54` has the identical Rust source
+tree to the measured product `ea16edca`. Formatting, lint, unit regressions,
+delivered-service contracts and general-JS probes pass on all native targets.
+All compilation, tests, browsers and containers execute in Actions.
 
 ## Parallel raw-input result (2026-10-21)
 
