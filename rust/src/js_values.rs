@@ -1,6 +1,6 @@
 //! ECMAScript values at the native conversion/script boundary.
 use crate::{json as codec, profile};
-use rquickjs::{Array, Ctx, Function, IntoJs, Object, Value, object::Property};
+use rquickjs::{Array, Ctx, Function, IntoJs, Object, Value};
 
 pub(crate) fn initialize(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
     let functions: Object = ctx.eval(
@@ -176,51 +176,12 @@ fn needs_restore(value: &serde_json::Value) -> bool {
         serde_json::Value::Number(number) => number
             .as_f64()
             .is_some_and(|number| number == 0.0 && number.is_sign_negative()),
-        serde_json::Value::String(text) => text.contains('\u{e000}'),
+        serde_json::Value::String(_) => codec::nonfinite(value).is_some(),
         serde_json::Value::Array(values) => values.iter().any(needs_restore),
         serde_json::Value::Object(values) => {
-            cycle(value).is_some()
-                || values
-                    .iter()
-                    .any(|(key, value)| key.contains('\u{e000}') || needs_restore(value))
+            cycle(value).is_some() || values.values().any(needs_restore)
         }
         _ => false,
-    }
-}
-
-fn plain_value<'js>(ctx: &Ctx<'js>, value: &serde_json::Value) -> rquickjs::Result<Value<'js>> {
-    match value {
-        serde_json::Value::Null => Ok(Value::new_null(ctx.clone())),
-        serde_json::Value::Bool(value) => (*value).into_js(ctx),
-        serde_json::Value::Number(value) => value.as_f64().unwrap().into_js(ctx),
-        serde_json::Value::String(value) => value.as_str().into_js(ctx),
-        serde_json::Value::Array(values) => {
-            let array = Array::new(ctx.clone())?;
-            for (index, value) in values.iter().enumerate() {
-                array.as_object().prop(
-                    index as u32,
-                    Property::from(plain_value(ctx, value)?)
-                        .writable()
-                        .enumerable()
-                        .configurable(),
-                )?;
-            }
-            Ok(array.into_value())
-        }
-        serde_json::Value::Object(values) => {
-            let object = Object::new(ctx.clone())?;
-            for (key, value) in values {
-                // JSON.parse defines own data properties, including __proto__.
-                object.prop(
-                    key.as_str(),
-                    Property::from(plain_value(ctx, value)?)
-                        .writable()
-                        .enumerable()
-                        .configurable(),
-                )?;
-            }
-            Ok(object.into_value())
-        }
     }
 }
 
@@ -263,10 +224,30 @@ pub(crate) fn decode<'js>(
     }) {
         return Ok(Value::new_float(ctx.clone(), number));
     }
-    if !needs_restore(value) {
+    let scalar = match value {
+        serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::Number(_) => true,
+        serde_json::Value::String(text) => !text.contains('\u{e000}'),
+        _ => false,
+    };
+    if scalar {
         drop(classify);
         let _build = profile::span("decode_build");
-        return plain_value(ctx, value);
+        return match value {
+            serde_json::Value::Null => Ok(Value::new_null(ctx.clone())),
+            serde_json::Value::Bool(value) => (*value).into_js(ctx),
+            serde_json::Value::Number(value) => value.as_f64().unwrap().into_js(ctx),
+            serde_json::Value::String(value) => value.as_str().into_js(ctx),
+            _ => unreachable!(),
+        };
+    }
+    if !needs_restore(value) {
+        drop(classify);
+        let encode = profile::span("decode_encode");
+        // JSON.parse already restores ordinary numbers; only UTF-16 markers need decoding.
+        let text = codec::text(&value.to_string());
+        drop(encode);
+        let _parse = profile::span("decode_parse");
+        return ctx.json_parse(text);
     }
     drop(classify);
     let _restore = profile::span("decode_restore");
