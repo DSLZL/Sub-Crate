@@ -1,5 +1,5 @@
 //! Existing subscription, collection and generated-file pipeline over live JS values.
-use crate::{js_language::Js, script, script_download, script_network as network};
+use crate::{js_language::Js, profile, script, script_download, script_network as network};
 use rquickjs::{
     Ctx, Function, Object, Promise, Value,
     prelude::{Async, Func},
@@ -151,7 +151,15 @@ pub(crate) async fn utility<'js>(
     args: Vec<Value<'js>>,
 ) -> rquickjs::Result<Value<'js>> {
     let utils: Value = js.ctx.globals().get("ProxyUtils")?;
-    script::settled(js, js.method(utils, name, args)?).await
+    let stage = match name {
+        "process" => "pipeline_process",
+        "produce" => "pipeline_produce",
+        _ => "pipeline_utility",
+    };
+    profile::measure(stage, None, async {
+        script::settled(js, js.method(utils, name, args)?).await
+    })
+    .await
 }
 
 async fn all<'js>(js: &Js<'js>, promises: Vec<Value<'js>>) -> rquickjs::Result<Value<'js>> {
@@ -164,6 +172,21 @@ async fn all<'js>(js: &Js<'js>, promises: Vec<Value<'js>>) -> rquickjs::Result<V
 }
 
 async fn sources<'js>(
+    js: &Js<'js>,
+    sub: Value<'js>,
+    options: Value<'js>,
+    preview: bool,
+    saved_raw: &mut Value<'js>,
+) -> rquickjs::Result<(Value<'js>, Value<'js>)> {
+    profile::measure(
+        "sources",
+        None,
+        source_inputs(js, sub, options, preview, saved_raw),
+    )
+    .await
+}
+
+async fn source_inputs<'js>(
     js: &Js<'js>,
     sub: Value<'js>,
     options: Value<'js>,
@@ -329,6 +352,7 @@ async fn sources<'js>(
 }
 
 fn parse<'js>(js: &Js<'js>, raw: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    let _parse = profile::span("pipeline_parse");
     let scope = js.clone();
     let parsed = js.map(array(js, raw)?, move |value| {
         let utils: Value = scope.ctx.globals().get("ProxyUtils")?;

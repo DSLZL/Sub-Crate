@@ -17,6 +17,7 @@ mod json;
 mod logs;
 mod mmdb;
 mod processors;
+mod profile;
 mod resources;
 mod rules;
 mod scheduler;

@@ -15,6 +15,10 @@ on:
         description: Profile the full-input health script and three warm requests without the long matrix
         type: boolean
         default: false
+      profile_pipeline:
+        description: With diagnose_health, profile every Rust processor/stage in the repeated candidate (same binary on/off)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -38,10 +42,18 @@ jobs:
           package-manager-cache: false
       - name: Check benchmark invariants and source
         run: |
+          if [[ '${{ inputs.profile_pipeline }}' == 'true' ]]; then
+            [[ '${{ inputs.diagnose_health }}' == 'true' && '${{ inputs.diagnose_parse }}' != 'true' ]]
+          fi
           python3.12 -m venv "$RUNNER_TEMP/performance-venv"
           "$RUNNER_TEMP/performance-venv/bin/pip" install --require-hashes --only-binary=:all: -r tests/performance/requirements.txt
           "$RUNNER_TEMP/performance-venv/bin/python" -m py_compile tests/performance/benchmark.py tests/performance/parallel.py tests/performance/test_benchmark.py
           "$RUNNER_TEMP/performance-venv/bin/python" -m unittest discover -s tests/performance -p 'test_*.py'
+      - name: Check profiler source formatting on the runner
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt
+          cargo +1.98.0 fmt --manifest-path rust/Cargo.toml --all
+          git diff --exit-code -- rust
   inspect:
     needs: checks
     if: inputs.inspect_run != ''
@@ -80,7 +92,7 @@ jobs:
               if (row['block'] != 0 or row['concurrency'] != 1) and row.get('status') != 'failed':
                   continue
               keys = ('kind', 'case', 'status', 'failure', 'failure_observations', 'counts',
-                      'warmup_counts', 'output_count', 'health_records', 'health_verified', 'work')
+                      'warmup_counts', 'output_count', 'health_records', 'health_verified', 'work', 'health_profile', 'profiler_enabled', 'pipeline_profiles')
               selected = {key: row[key] for key in keys if key in row}
               selected['health_counts'] = row.get('health_counts', [])[:2]
               print(json.dumps(selected, sort_keys=True))
@@ -108,13 +120,13 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ea16edca545b31fc623ffed9061ecc7024ca511f
+          ref: 887ddccb36f7724a831a89b4aad416e9c97c7c51
           path: .performance/rust
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: inputs.diagnose_health
         with:
-          ref: 9c659cef8ff193eddea42b6a5fea6c52629cfd54
+          ref: ea16edca545b31fc623ffed9061ecc7024ca511f
           path: .performance/rust-baseline
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -142,7 +154,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-ea16edca545b31fc623ffed9061ecc7024ca511f
+          key: subscription-performance-linux-x64-rust-1.98.0-887ddccb36f7724a831a89b4aad416e9c97c7c51
           restore-keys: subscription-performance-linux-x64-rust-1.98.0-
       - name: Build exact original, Rust and unchanged frontend
         run: |
@@ -157,7 +169,7 @@ jobs:
         if: inputs.diagnose_health
         run: |
           cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust 2>&1 | tee "$RUNNER_TEMP/candidate-tests.log"
-          grep -F 'test result: ok. 31 passed; 0 failed; 3 ignored;' "$RUNNER_TEMP/candidate-tests.log"
+          grep -F 'test result: ok. 34 passed; 0 failed; 3 ignored;' "$RUNNER_TEMP/candidate-tests.log"
       - name: Build the frozen Rust baseline in its separate target for whole-request comparison
         if: inputs.diagnose_health
         run: |
@@ -183,7 +195,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-ea16edca545b31fc623ffed9061ecc7024ca511f
+          key: subscription-performance-linux-x64-rust-1.98.0-887ddccb36f7724a831a89b4aad416e9c97c7c51
       - name: Load installed browser workflow and install headless Chromium
         run: |
           agent-browser skills get core
@@ -200,6 +212,7 @@ jobs:
           if [[ '${{ inputs.diagnose_health }}' == 'true' ]]; then
             diagnostic_args+=(--diagnose-health --rust-baseline "$GITHUB_WORKSPACE/.performance/rust-baseline")
           fi
+          if [[ '${{ inputs.profile_pipeline }}' == 'true' ]]; then diagnostic_args+=(--profile-pipeline); fi
           "$RUNNER_TEMP/performance-venv/bin/python" tests/performance/benchmark.py \
             --original "$GITHUB_WORKSPACE/.performance/original" \
             --rust "$GITHUB_WORKSPACE/.performance/rust" \
@@ -276,13 +289,13 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ea16edca545b31fc623ffed9061ecc7024ca511f
+          ref: 887ddccb36f7724a831a89b4aad416e9c97c7c51
           path: .performance/rust
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: inputs.diagnose_health
         with:
-          ref: 9c659cef8ff193eddea42b6a5fea6c52629cfd54
+          ref: ea16edca545b31fc623ffed9061ecc7024ca511f
           path: .performance/rust-baseline
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -321,6 +334,7 @@ jobs:
           if [[ '${{ inputs.diagnose_health }}' == 'true' ]]; then
             mode=(--diagnose-health --rust-baseline "$GITHUB_WORKSPACE/.performance/rust-baseline")
           fi
+          if [[ '${{ inputs.profile_pipeline }}' == 'true' ]]; then mode+=(--profile-pipeline); fi
           "$RUNNER_TEMP/performance-venv/bin/python" tests/performance/benchmark.py \
             --original "$GITHUB_WORKSPACE/.performance/original" \
             --rust "$GITHUB_WORKSPACE/.performance/rust" \

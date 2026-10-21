@@ -33,8 +33,8 @@ from urllib.request import urlopen
 import psutil
 
 ORIGINAL = "9cc6b5fac966993364ae33da8797f446bbf7f571"
-RUST = "ea16edca545b31fc623ffed9061ecc7024ca511f"
-RUST_BASELINE = "9c659cef8ff193eddea42b6a5fea6c52629cfd54"
+RUST = "887ddccb36f7724a831a89b4aad416e9c97c7c51"
+RUST_BASELINE = "ea16edca545b31fc623ffed9061ecc7024ca511f"
 FRONTEND = "4bd7b0acbe65466b933ccea14fc61dbebe036ead"
 INPUT_HASH = "a6e6bb9cbe0587f33de0cf130ec391ecffd3483009888fed0ea59d39492ae890"
 INPUT_NAME = "sub-store_subscription_大杂烩-cron-new_2026-10-20_14-11-50.json"
@@ -61,6 +61,21 @@ PUBLIC_STRINGS = set(COMPARISON_KINDS + CASES) | ERRORS | {
     "parse_diagnostic", "health_diagnostic",
 }
 PUBLIC_STRINGS.update(SHARDS)
+PROFILE_STAGES = set("""
+executor_setup state_snapshot runtime_setup context_setup job bootstrap input_decode execute output_encode
+sources pipeline_parse pipeline_process pipeline_produce pipeline_utility process processor
+script_operator script_filter useless_filter region_filter regex_filter type_filter conditional_filter
+quick_setting_operator flag_operator sort_operator regex_sort_operator regex_rename_operator regex_delete_operator
+handle_duplicate_operator add_proxies_operator resolve_domain_operator unknown_processor
+builtin_prepare builtin_apply script_load script_prepare script_compile script_bind script_call script_await script_fallback
+response_transformer response_normalize
+input_clone clone_stringify clone_parse parse parse_runtime parse_native parse_preprocess parse_nodes
+produce produce_validate produce_filter filter_callback produce_prepare prepare_callback produce_collect
+produce_project_nodes produce_project_options produce_reconcile produce_native produce_decode
+value_project project_stringify project_extract project_parse project_restore value_stringify
+value_decode decode_classify decode_encode decode_parse decode_restore
+""".split())
+PUBLIC_STRINGS.update(PROFILE_STAGES | {"download_sub", "download_collection", "download_file", "other"})
 NODE_FIELDS = {"name", "type", "server", "port", "ports", "password", "uuid", "sni", "tls",
                "_subName", "_subDisplayName", "_latency", "_resolved", "resolved", "id",
                "network", "cipher", "udp", "tfo", "skip-cert-verify", "client-fingerprint",
@@ -109,6 +124,72 @@ def public(value):
             public(item)
     else:
         raise Failure("privacy")
+
+
+def pipeline_profiles(path, offset):
+    """Read only opt-in numeric events, never publish surrounding private logs."""
+    reports = []
+    with path.open("rb") as source:
+        source.seek(offset)
+        for line in source:
+            if not line.startswith(b"SUB_STORE_PROFILE "):
+                continue
+            try:
+                report = json.loads(line[len(b"SUB_STORE_PROFILE "):])
+            except (ValueError, UnicodeError) as error:
+                raise Failure("resource") from error
+            public(report)
+            require(set(report) == {"version", "job", "operation", "success", "wall_ns", "dropped", "open_scopes", "unfinished_spans", "rows"}, "resource")
+            require(report["version"] == 1 and report["operation"] == "download_sub" and report["success"] is True, "resource")
+            require(report["dropped"] == report["open_scopes"] == report["unfinished_spans"] == 0, "resource")
+            rows = report["rows"]
+            require(isinstance(rows, list) and 0 < len(rows) <= 2048, "resource")
+            for index, row in enumerate(rows):
+                require(set(row) == {"id", "parent", "stage", "index", "calls", "wall_ns", "active_ns", "self_ns", "max_wall_ns"}, "resource")
+                require(row["id"] == index and (row["parent"] is None or type(row["parent"]) is int and 0 <= row["parent"] < index), "resource")
+                require(row["stage"] in PROFILE_STAGES and (row["index"] is None or type(row["index"]) is int and row["index"] >= 0), "resource")
+                require(all(type(row[key]) is int and row[key] >= 0 for key in ("calls", "wall_ns", "active_ns", "self_ns", "max_wall_ns")), "resource")
+                require(row["calls"] > 0 and row["self_ns"] <= row["active_ns"] <= row["wall_ns"] and row["max_wall_ns"] <= row["wall_ns"], "resource")
+            require(sum(row["self_ns"] for row in rows) == sum(row["active_ns"] for row in rows if row["parent"] is None), "resource")
+            require(any(row["stage"] == "processor" for row in rows), "resource")
+            reports.append(report)
+    return reports
+
+
+def pipeline_summary(samples):
+    lines = []
+    for sample in samples:
+        profiles = sample.get("pipeline_profiles", [])
+        if not profiles:
+            continue
+        lines += ["", f"### Pipeline profile: {sample['case']} ({len(profiles)} requests)", "",
+                  "`rust_repeat` enables the profiler on the same candidate binary. Its latency includes instrumentation and report writing. Active time measures elapsed time in scoped polls/calls, not OS CPU time. Wall time includes waiting; concurrent wall times overlap. Self time excludes nested active scopes. The complete parent/index tree is in metrics.json.", "",
+                  "| Process | Processor (zero based) | Type | Mean wall ms | Mean active ms |", "|---:|---:|---|---:|---:|"]
+        processors, stages = {}, {}
+        for profile in profiles:
+            rows = profile["rows"]
+            for row in rows:
+                total = stages.setdefault(row["stage"], [0, 0, 0])
+                for index, key in enumerate(("calls", "active_ns", "self_ns")):
+                    total[index] += row[key]
+                if row["stage"] != "processor":
+                    continue
+                parent = row["parent"]
+                while parent is not None and rows[parent]["stage"] != "process":
+                    parent = rows[parent]["parent"]
+                process_index = rows[parent]["index"] if parent is not None else None
+                kind = next((child["stage"] for child in rows if child["parent"] == row["id"]), "skipped")
+                total = processors.setdefault((process_index, row["index"], kind), [0, 0])
+                total[0] += row["wall_ns"]
+                total[1] += row["active_ns"]
+        scale = len(profiles) * 1e6
+        for (process_index, index, kind), (wall, active) in sorted(processors.items(), key=lambda item: str(item[0])):
+            lines.append(f"| {process_index} | {index} | {kind} | {wall / scale:.3f} | {active / scale:.3f} |")
+        lines += ["", "Top stages by mean self time (inclusive active columns must not be added):", "",
+                  "| Stage | Mean calls/request | Mean active ms | Mean self ms |", "|---|---:|---:|---:|"]
+        for stage, (calls, active, own) in sorted(stages.items(), key=lambda item: item[1][2], reverse=True)[:20]:
+            lines.append(f"| {stage} | {calls / len(profiles):.1f} | {active / scale:.3f} | {own / scale:.3f} |")
+    return lines
 
 
 def semantic_nodes(nodes, hopping=False):
@@ -178,8 +259,10 @@ def stress_script(source):
     return source
 
 
-def profile_health_script(source):
+def profile_health_script(source, *, enabled=True):
     """Diagnostic-only wrappers retain calls/results and never alter the full-run script."""
+    if not enabled:
+        return source
     return source + r"""
 const benchmarkOperator = operator;
 operator = async function (...args) {
@@ -537,6 +620,8 @@ class Suite:
             cwd = self.args.rust_baseline if kind == "rust_baseline" else self.args.rust
             argv = [cwd / "rust/target/release/sub-store-rust"]
             env["PATH"] = ""
+            if kind == "rust_repeat" and getattr(self.args, "profile_pipeline", False):
+                env["SUB_STORE_PROFILE"] = "1"
         started = time.monotonic()
         with process(argv, cwd, env, directory / "server.log") as child:
             ready(child, origin + "/backend/api/utils/env")
@@ -780,6 +865,7 @@ class Suite:
                         self.audit(state, warm_output, None, self.counts(), origin, cross_compare=False)
                     self.counts(reset=True)
                 last = None
+                profile_offset = (directory / "server.log").stat().st_size
                 mismatch = None
                 if case == "pressure":
                     # A separate runner has no earlier cold/warm cell to seed this oracle.
@@ -832,7 +918,14 @@ class Suite:
                 row["output_sha256"] = nodes_hash(last, hopping=case == "parse")
                 row["raw_output_sha256"] = raw_hash
                 row["counts"] = self.counts()
-                if getattr(self.args, "diagnose_health", False) and case != "pre_health":
+                if getattr(self.args, "profile_pipeline", False):
+                    row["profiler_enabled"] = kind == "rust_repeat"
+                    profiles = pipeline_profiles(directory / "server.log", profile_offset)
+                    require(len(profiles) == (len(row["latencies_s"]) if row["profiler_enabled"] else 0), "resource")
+                    row["pipeline_profiles"] = profiles
+                    for index, profile in enumerate(profiles):
+                        print(f"Pipeline profile {kind}/{case} sample={index}: " + json.dumps(profile, sort_keys=True), flush=True)
+                if getattr(self.args, "diagnose_health", False) and not getattr(self.args, "profile_pipeline", False) and case != "pre_health":
                     root = json.loads((state / "root.json").read_bytes())
                     row["health_profile"] = root["benchmark-health-profile"]
                     print(f"Health profile {kind}/{case}: " + json.dumps(row["health_profile"], sort_keys=True), flush=True)
@@ -959,6 +1052,7 @@ class Suite:
         failures = [r for r in rows if r["status"] == "failed"]
         if failures or self.report.get("failure"):
             lines += ["", "Failures: " + ", ".join([r.get("failure", "unexpected") for r in failures] + ([self.report["failure"]] if self.report.get("failure") else [])) + ". Failed/incomplete cases are never speedups."]
+        lines += pipeline_summary(rows)
         lines += ["", "Limits: fixed source-text replay excludes provider transport/decryption; the pinned input has no age secret URL arguments. Exact ordered replay equality on both backends is required before measurement. Measured requests still execute normal source preprocessing, parsing, conversion, scripts, cache behavior and state publication, with output semantics checked. Controlled detector is a fixture; real HTTP-META/Mihomo is reported separately, with changing reachability. Top-level `_latency` is excluded from node fingerprints; only parse-only exports also canonicalize a valid random port within the unchanged declared hopping ranges. Raw output hashes remain recorded. Snapshot timestamp is observed separately. Two warm-up requests precede warm measurements; their node/work counts remain recorded, and measured warm probes must be zero. Warm requests still publish snapshots. RSS sampling is 50ms with actual intervals recorded; VmHWM is process-lifetime peak. CPU counters have OS clock granularity. Low block counts and hosted-runner contention limit confidence; no P99 or cross-platform ranking is claimed.",
                   "", "Raw input, proxy data, state, browser HAR and child logs remain private in ephemeral runner scratch. The only published data are allowlisted metrics, counts and hashes."]
         public(self.report)
@@ -1064,6 +1158,7 @@ def load_inputs(suite, input_file, source):
         archive.extractall(suite.args.scratch, filter="data")
     prepared = json.loads((suite.args.scratch / "prepared.json").read_bytes())
     require(prepared["preparation_complete"] and prepared["input_sha256"] == INPUT_HASH, "capture")
+    require(prepared.get("native_pipeline_profile", False) == getattr(suite.args, "profile_pipeline", False), "capture")
     require(all(prepared["provenance"].get(k) == v for k, v in suite.report["provenance"].items() if k != "runner"), "source")
     require(len(prepared["imports"]) == 10 and all(row["restart"] for row in prepared["imports"])
             and all(sum(row["kind"] == kind for row in prepared["imports"]) == 5 for kind in KINDS), "persistence")
@@ -1089,6 +1184,7 @@ def main():
     parser.add_argument("--meta-port", type=int)
     parser.add_argument("--diagnose-parse", action="store_true")
     parser.add_argument("--diagnose-health", action="store_true")
+    parser.add_argument("--profile-pipeline", action="store_true")
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--frozen", type=Path)
     parser.add_argument("--shard", choices=tuple(SHARDS))
@@ -1097,6 +1193,7 @@ def main():
     require(not args.shard or (args.frozen and not args.diagnose_parse and not args.diagnose_health), "input")
     require(not (args.diagnose_parse and args.diagnose_health), "input")
     require(not args.rust_baseline or args.diagnose_health, "input")
+    require(not args.profile_pipeline or (args.diagnose_health and args.rust_baseline), "input")
     soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
     resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
     if args.fixture_port:
@@ -1106,6 +1203,8 @@ def main():
     args.scratch.mkdir(mode=0o700)
     args.publish.mkdir(mode=0o700)
     report = {"status": "running", "input_sha256": INPUT_HASH, "imports": [], "samples": []}
+    if args.profile_pipeline:
+        report["native_pipeline_profile"] = True
     if args.shard:
         report["shard"] = args.shard
     if args.diagnose_parse:
@@ -1132,10 +1231,11 @@ def main():
             report["script"] = {"blob": SCRIPT_BLOB, "original_sha256": SCRIPT_HASH,
                                 "stress_sha256": digest(variant.encode()), "changed_sites": 5}
             if args.diagnose_health:
-                instrumented = profile_health_script(variant)
-                (args.publish / "health-profile.patch").write_text("".join(difflib.unified_diff(variant.splitlines(True), instrumented.splitlines(True), "stress.js", "profile.js")), encoding="utf-8")
-                variant = instrumented
-                report["script"]["profile_sha256"] = digest(variant.encode())
+                instrumented = profile_health_script(variant, enabled=not args.profile_pipeline)
+                if instrumented != variant:
+                    (args.publish / "health-profile.patch").write_text("".join(difflib.unified_diff(variant.splitlines(True), instrumented.splitlines(True), "stress.js", "profile.js")), encoding="utf-8")
+                    variant = instrumented
+                    report["script"]["profile_sha256"] = digest(variant.encode())
             (mirrors / "stress.js").write_text(variant, encoding="utf-8")
             suite.publish()
             print("Importing the unchanged file on both backends (five paired observations).", flush=True)

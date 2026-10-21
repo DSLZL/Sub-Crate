@@ -2624,6 +2624,7 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
 }
 
 pub fn parse(raw: &Value, parser: Option<&crate::clash::Parser>) -> Result<Vec<Value>, Error> {
+    let preprocess_profile = crate::profile::span("parse_preprocess");
     let Some(raw) = raw.as_str() else {
         return Err(Error::Legacy("raw.split is not a function".to_owned()));
     };
@@ -2662,6 +2663,8 @@ pub fn parse(raw: &Value, parser: Option<&crate::clash::Parser>) -> Result<Vec<V
         }
     };
     let raw = clash.preprocess(&raw).unwrap_or_else(|| preprocess(&raw));
+    drop(preprocess_profile);
+    let _nodes = crate::profile::span("parse_nodes");
     let mut proxies = Vec::new();
     let mut last_parser = None;
     for line in raw
