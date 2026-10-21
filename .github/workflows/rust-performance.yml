@@ -24,7 +24,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  checks:
+    name: Check benchmark invariants
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24.16.0
+          package-manager-cache: false
+      - name: Check benchmark invariants and source
+        run: |
+          python3.12 -m venv "$RUNNER_TEMP/performance-venv"
+          "$RUNNER_TEMP/performance-venv/bin/pip" install --require-hashes --only-binary=:all: -r tests/performance/requirements.txt
+          "$RUNNER_TEMP/performance-venv/bin/python" -m py_compile tests/performance/benchmark.py tests/performance/test_benchmark.py
+          "$RUNNER_TEMP/performance-venv/bin/python" -m unittest discover -s tests/performance -p test_benchmark.py
   inspect:
+    needs: checks
     if: inputs.inspect_run != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -67,6 +86,7 @@ jobs:
               print(json.dumps(selected, sort_keys=True))
           PY
   compare:
+    needs: checks
     if: inputs.inspect_run == ''
     runs-on: ubuntu-24.04
     timeout-minutes: 300
@@ -110,10 +130,6 @@ jobs:
           pnpm --dir .performance/frontend install --frozen-lockfile
           python3.12 -m venv "$RUNNER_TEMP/performance-venv"
           "$RUNNER_TEMP/performance-venv/bin/pip" install --require-hashes --only-binary=:all: -r tests/performance/requirements.txt
-      - name: Check benchmark invariants and source
-        run: |
-          "$RUNNER_TEMP/performance-venv/bin/python" -m py_compile tests/performance/benchmark.py tests/performance/test_benchmark.py
-          "$RUNNER_TEMP/performance-venv/bin/python" -m unittest discover -s tests/performance -p test_benchmark.py
       - name: Restore fixed Rust build cache (no runtime data)
         id: rust-cache
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5

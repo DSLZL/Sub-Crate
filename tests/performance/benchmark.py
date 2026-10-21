@@ -658,6 +658,7 @@ class Suite:
                                               "source_count": len(actual),
                                               "matching_sources": sum(a == b for a, b in zip(expected, actual))})
         self.publish()
+        require(all(row["equal"] for row in self.report["replay"]), "capture")
 
     def counts(self, reset=False, real=False):
         return json.loads(http(self.fixture_origin + ("/reset" if reset else "/counts"),
@@ -937,7 +938,7 @@ class Suite:
         failures = [r for r in rows if r["status"] == "failed"]
         if failures or self.report.get("failure"):
             lines += ["", "Failures: " + ", ".join([r.get("failure", "unexpected") for r in failures] + ([self.report["failure"]] if self.report.get("failure") else [])) + ". Failed/incomplete cases are never speedups."]
-        lines += ["", "Limits: fixed decoded-source replay excludes provider transport/decryption; replay text differences are diagnostic, while measured output semantics are the gate. Controlled detector is a fixture; real HTTP-META/Mihomo is reported separately, with changing reachability. Top-level `_latency` is excluded from node fingerprints; only parse-only exports also canonicalize a valid random port within the unchanged declared hopping ranges. Raw output hashes remain recorded. Snapshot timestamp is observed separately. Two warm-up requests precede warm measurements; their node/work counts remain recorded, and measured warm probes must be zero. Warm requests still publish snapshots. RSS sampling is 50ms with actual intervals recorded; VmHWM is process-lifetime peak. CPU counters have OS clock granularity. Low block counts and hosted-runner contention limit confidence; no P99 or cross-platform ranking is claimed.",
+        lines += ["", "Limits: fixed decoded-source replay excludes provider transport/decryption; exact ordered replay equality on both backends is required before measurement. Measured requests still execute normal parsing, conversion, scripts, cache behavior and state publication, with output semantics checked. Controlled detector is a fixture; real HTTP-META/Mihomo is reported separately, with changing reachability. Top-level `_latency` is excluded from node fingerprints; only parse-only exports also canonicalize a valid random port within the unchanged declared hopping ranges. Raw output hashes remain recorded. Snapshot timestamp is observed separately. Two warm-up requests precede warm measurements; their node/work counts remain recorded, and measured warm probes must be zero. Warm requests still publish snapshots. RSS sampling is 50ms with actual intervals recorded; VmHWM is process-lifetime peak. CPU counters have OS clock granularity. Low block counts and hosted-runner contention limit confidence; no P99 or cross-platform ranking is claimed.",
                   "", "Raw input, proxy data, state, browser HAR and child logs remain private in ephemeral runner scratch. The only published data are allowlisted metrics, counts and hashes."]
         public(self.report)
         write_json(self.args.publish / "metrics.json", self.report)

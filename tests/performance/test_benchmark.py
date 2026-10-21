@@ -21,6 +21,47 @@ if os.environ.get("GITHUB_ACTIONS") != "true":
 
 
 class Contracts(unittest.TestCase):
+    def test_replay_requires_identical_ordered_source_text_before_measurement(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp)
+            mirrors = scratch / "mirrors"
+            mirrors.mkdir()
+            sources = [f"private-source-{i}\r\n节点" if i != 3 else "" for i in range(22)]
+            for index, source in enumerate(sources):
+                (mirrors / f"{index}.txt").write_bytes(source.encode())
+            original = {"name": "private-subscription", "content": "private-local-content"}
+            expected = sources + [original["content"]]
+            changed = expected.copy()
+            changed[1] += "changed"
+            reordered = expected.copy()
+            reordered[:2] = reordered[1::-1]
+            for kind in b.KINDS:
+                for replayed in (expected, changed, reordered, expected[:-1]):
+                    with self.subTest(kind=kind, equal=replayed == expected):
+                        suite = object.__new__(b.Suite)
+                        suite.args, suite.report = SimpleNamespace(scratch=scratch), {}
+                        suite.directory = lambda _: scratch
+                        published = []
+                        def publish():
+                            b.public(suite.report)
+                            published.append(copy.deepcopy(suite.report))
+                        suite.publish = publish
+                        def download(origin, name, raw=False):
+                            self.assertTrue(raw)
+                            self.assertEqual(name, original["name"])
+                            return b.encoded(replayed if origin == kind else expected)
+                        with patch.object(suite, "server", side_effect=lambda backend, _: nullcontext((backend, None, None, None))), patch.object(suite, "configure", return_value=original), patch.object(suite, "download", side_effect=download):
+                            if replayed == expected:
+                                suite.replay(original)
+                            else:
+                                with self.assertRaises(b.Failure) as failure:
+                                    suite.replay(original)
+                                self.assertEqual(failure.exception.code, "capture")
+                        self.assertEqual(len(published), 1)
+                        self.assertEqual(len(published[0]["replay"]), 2)
+                        self.assertEqual(all(row["equal"] for row in published[0]["replay"]), replayed == expected)
+                        self.assertNotIn("private-", json.dumps(published))
+
     def test_rust_comparison_uses_distinct_binaries_and_identical_disposable_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

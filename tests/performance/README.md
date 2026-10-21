@@ -46,6 +46,12 @@ settings. Original names are restored and all 22 source locations are mirrored
 on loopback. The original backend's `produceType=raw` route captures decoded
 parser inputs once. Empty/failed source bodies are counted explicitly; results
 cannot establish performance for content the providers did not return.
+Both backends must replay the exact same 23 ordered strings (22 remote sources
+plus local content) before any timed cell starts. A mismatch fails preflight.
+Only the fetched source text is reused: measured requests still enter the public
+download route and execute parsing, conversion, all configured processors,
+scripts, normal cold/warm cache logic, snapshot publication and output production.
+Parsed nodes and final output are not supplied as cached application results.
 
 The public pinned health script is modified at exactly five asserted sites:
 workers, batch size and max checks become the full input length; scan budget is
@@ -86,8 +92,8 @@ normalization). No broad field removal or copied producer implementation is used
 Output must be nonempty, and cold selected / completed identities must match.
 Repeated probe requests are counted separately: the original retry policy remains
 active, while unique completed identities must still cover the entire batch.
-Raw replay text is also checked on both backends as a diagnostic: preprocessing
-can change its representation, so measured output semantics determine correctness.
+Raw replay equality is a required input gate on both backends, in addition to
+the measured output/work checks.
 Parse and pre-health cases run first
 to locate processing differences. A product mismatch marks that cell failed but
 allows independent cells to run; observed metrics and differing counts remain in
