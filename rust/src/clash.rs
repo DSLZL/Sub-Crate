@@ -37,6 +37,96 @@ fn yaml<'js>(ctx: &Ctx<'js>, raw: &str) -> rquickjs::Result<JsValue<'js>> {
     }
 }
 
+fn native_yaml(raw: &str) -> Option<Value> {
+    use serde_saphyr::granit_parser::{Event, Parser, ScalarStyle};
+    // Let the library tokenize YAML. Retain the original resolver for schema,
+    // alias/tag and non-string-key cases whose JavaScript semantics differ.
+    let mut parents: Vec<Option<bool>> = Vec::new();
+    for item in Parser::new_from_str(raw) {
+        match item.ok()?.0 {
+            Event::DocumentStart(_, Some(_)) | Event::Alias(_) => return None,
+            Event::MappingStart(_, anchor, tag) | Event::SequenceStart(_, anchor, tag)
+                if anchor != 0 || tag.is_some() =>
+            {
+                return None;
+            }
+            event @ (Event::MappingStart(_, _, _) | Event::SequenceStart(_, _, _)) => {
+                if let Some(Some(key)) = parents.last_mut() {
+                    if *key {
+                        return None;
+                    }
+                    *key = true;
+                }
+                // A map alternates scalar keys and values; a sequence has no keys.
+                let mapping = matches!(event, Event::MappingStart(..));
+                parents.push(mapping.then_some(true));
+            }
+            Event::MappingEnd | Event::SequenceEnd => {
+                parents.pop()?;
+            }
+            Event::Scalar(text, style, anchor, tag) => {
+                if anchor != 0 || tag.is_some() {
+                    return None;
+                }
+                if style == ScalarStyle::Plain {
+                    let word = text.as_ref();
+                    let lower = word.to_ascii_lowercase();
+                    let number = word.trim_start_matches(['+', '-']);
+                    let numeric = number.starts_with(|c: char| c.is_ascii_digit());
+                    if matches!(lower.as_str(), "true" | "false" | "null")
+                        && ![
+                            "true", "True", "TRUE", "false", "False", "FALSE", "null", "Null",
+                            "NULL",
+                        ]
+                        .contains(&word)
+                        || numeric
+                            && (number.contains('_')
+                                || number.strip_prefix('0').is_some_and(|rest| {
+                                    rest.starts_with(|c: char| {
+                                        c.is_ascii_digit()
+                                            || matches!(c, 'x' | 'X' | 'o' | 'O' | 'b' | 'B')
+                                    })
+                                }))
+                        || word == "<<"
+                    {
+                        return None;
+                    }
+                    if matches!(parents.last(), Some(Some(true)))
+                        && (word.is_empty()
+                            || matches!(lower.as_str(), "true" | "false" | "null" | "~")
+                            || word.starts_with(|c: char| {
+                                c.is_ascii_digit() || matches!(c, '+' | '-' | '.')
+                            }))
+                    {
+                        return None;
+                    }
+                }
+                if let Some(Some(key)) = parents.last_mut() {
+                    *key = !*key;
+                }
+            }
+            _ => {}
+        }
+    }
+    serde_saphyr::from_str_with_options(
+        raw,
+        serde_saphyr::options! {
+            strict_booleans: true,
+            reject_unsupported_tags: true,
+            non_finite_float_policy: serde_saphyr::NonFiniteFloatPolicy::Reject,
+            with_snippet: false,
+        },
+    )
+    .ok()
+}
+
+fn subscription_yaml<'js>(ctx: &Ctx<'js>, raw: &str) -> rquickjs::Result<JsValue<'js>> {
+    match native_yaml(raw) {
+        Some(value) => ctx.json_parse(codec::stringify(&value)),
+        None => yaml(ctx, raw),
+    }
+}
+
 pub(crate) fn short_ids(raw: &str) -> String {
     let mut output = String::new();
     let mut remaining = raw;
@@ -231,7 +321,7 @@ impl Parser {
                         return Ok(Some(output));
                     }
                 }
-                let value = yaml(&ctx, raw)?;
+                let value = subscription_yaml(&ctx, raw)?;
                 let Some(root) = value.as_object() else {
                     return Ok(None);
                 };
@@ -244,7 +334,7 @@ impl Parser {
                     && raw.contains("short-id:")
                     && proxies.as_array().is_some_and(|array| !array.is_empty())
                 {
-                    yaml(&ctx, &short_ids(raw))?
+                    subscription_yaml(&ctx, &short_ids(raw))?
                 } else {
                     value
                 };
@@ -441,6 +531,105 @@ mod tests {
     }
 
     #[test]
+    fn native_subscription_yaml_matches_locked_js_schema_and_fallbacks() {
+        fn render<'js>(ctx: &Ctx<'js>, result: rquickjs::Result<JsValue<'js>>) -> Option<String> {
+            match result.and_then(|value| ctx.json_stringify(value)) {
+                Ok(value) => value.map(|value| value.to_string().unwrap()),
+                Err(_) => {
+                    ctx.catch();
+                    None
+                }
+            }
+        }
+        let parser = Parser::new().ok().unwrap();
+        let mut documents = Vec::new();
+        for scalar in [
+            "0",
+            "-0",
+            "-0.0",
+            "01",
+            "0123",
+            "0x1F",
+            "0X1F",
+            "+0x1F",
+            "-0x1f",
+            "0o17",
+            "0b10",
+            "1_000",
+            "01_000",
+            "1.",
+            ".5",
+            "+.5",
+            "1E3",
+            "1e999",
+            ".inf",
+            ".nan",
+            "null",
+            "Null",
+            "NULL",
+            "nUlL",
+            "true",
+            "True",
+            "TRUE",
+            "TrUe",
+            "false",
+            "FaLsE",
+            "yes",
+            "ON",
+            "2020-01-01",
+            "12:34",
+            "~",
+            "",
+            "'literal'",
+            r#""\N\L\P""#,
+            r#""\ud800""#,
+            "!!str 123",
+            "!unknown 123",
+            "[false, null, 1, \"1\", {nested: value}]",
+            "{1.0: first, 0x10: second}",
+            "{true: first, null: second}",
+            "{\"<<\": {x: 1}}",
+            "{x: 1, x: 2}",
+        ] {
+            documents.push(format!(
+                "proxies:\n  - {{type: ss, server: example.invalid, extra: {scalar}}}\n"
+            ));
+        }
+        documents.extend([
+            "%YAML 1.1\n---\nproxies: [{type: ss, extra: ON}]\n".to_owned(),
+            "proxies: [{type: ss, extra: &value {x: 1}}, {type: ss, extra: *value}]".to_owned(),
+            "defaults: &value {server: example.invalid}\nproxies: [{<<: *value, type: ss}]".to_owned(),
+            "proxies: [{type: ss, extra: &loop {self: *loop}}]".to_owned(),
+            "proxies: [{type: ss}]\n---\nproxies: []".to_owned(),
+            "proxies:\n  - type: ss\n    name: 中文😀\n    server: 127.0.0.1\n    port: 443\n    extra: |\n      original\n      multiline\n".to_owned(),
+        ]);
+        parser.context.with(|ctx| {
+            for raw in documents {
+                let expected = render(&ctx, yaml(&ctx, &raw));
+                let actual = render(&ctx, subscription_yaml(&ctx, &raw));
+                assert_eq!(actual, expected, "{raw}");
+            }
+        });
+    }
+
+    #[test]
+    fn native_subscription_yaml_handles_normal_flow_and_block_documents() {
+        for raw in [
+            "proxies: [{type: ss, server: 127.0.0.1, port: 443, udp: true, extra: [yes, null]}]",
+            "proxies:\n  - type: ss\n    name: 中文😀\n    password: 'private-fixture'\n    server: example.invalid\n    port: 443\n    udp: false\n",
+        ] {
+            let value = native_yaml(raw).unwrap();
+            assert_eq!(value["proxies"][0]["type"], "ss");
+            assert_eq!(value["proxies"][0]["port"], 443);
+        }
+        for extra in [
+            "00123", "0b10", "1_000", "nUlL", "TrUe", "&a value", "!!str 1",
+        ] {
+            assert!(native_yaml(&format!("proxies: [{{extra: {extra}}}] ")).is_none());
+        }
+    }
+
+    #[test]
     fn canonical_download_entries_match_yaml_and_reject_duplicate_keys() {
         let parser = Parser::new().ok().unwrap();
         for line in [
@@ -502,8 +691,37 @@ mod tests {
         let began = Instant::now();
         assert_eq!(parser.preprocess(&yaml).unwrap().lines().count(), 5524);
         let yaml = began.elapsed().as_secs_f64();
+        let raw_yaml = format!("proxies:\n{}", "  - {type: ss, name: profile, server: example.invalid, port: 443, cipher: aes-128-gcm, password: public-fixture, udp: true}\n".repeat(5524));
+        let began = Instant::now();
+        let expected = parser.context.with(|ctx| {
+            let value = super::yaml(&ctx, &raw_yaml).unwrap();
+            ctx.json_stringify(value)
+                .unwrap()
+                .unwrap()
+                .to_string()
+                .unwrap()
+        });
+        let interpreted_raw = began.elapsed().as_secs_f64();
+        let began = Instant::now();
+        assert_eq!(
+            native_yaml(&raw_yaml).unwrap()["proxies"]
+                .as_array()
+                .unwrap()
+                .len(),
+            5524
+        );
+        let actual = parser.context.with(|ctx| {
+            let value = subscription_yaml(&ctx, &raw_yaml).unwrap();
+            ctx.json_stringify(value)
+                .unwrap()
+                .unwrap()
+                .to_string()
+                .unwrap()
+        });
+        let native_raw_two_passes = began.elapsed().as_secs_f64();
+        assert_eq!(actual, expected);
         println!(
-            "parse profile: setup_23_s={setup:.6}, json5_5524_s={json5:.6}, strict_5524_s={strict:.6}, generic_yaml_5524_s={generic_yaml:.6}, yaml_5524_s={yaml:.6}"
+            "parse profile: setup_23_s={setup:.6}, json5_5524_s={json5:.6}, strict_5524_s={strict:.6}, generic_yaml_5524_s={generic_yaml:.6}, yaml_5524_s={yaml:.6}, interpreted_raw_5524_s={interpreted_raw:.6}, native_raw_two_passes_5524_s={native_raw_two_passes:.6}"
         );
     }
 }

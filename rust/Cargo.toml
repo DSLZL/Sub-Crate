@@ -25,6 +25,7 @@ rquickjs = { version = "=0.14.0", features = ["futures"] }
 reqwest = { version = "=0.13.5", default-features = false, features = ["rustls"] }
 rustls-platform-verifier = "=0.7.1"
 serde_json = { version = "1.0", features = ["preserve_order"] }
+serde-saphyr = { version = "=2.0.0", default-features = false, features = ["deserialize"] }
 tokio = { version = "1", features = ["macros", "rt", "time", "net", "io-util", "sync"] }
 tokio-rustls = { version = "=0.26.6", default-features = false, features = ["tls12", "aws-lc-rs"] }
 tower-service = "=0.3.3"
