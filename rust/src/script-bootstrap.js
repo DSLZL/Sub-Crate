@@ -20,33 +20,6 @@ globalThis.__language = {
   method: (value, key, args) => Reflect.apply(value[key], value, args),
   starts: (value, prefix) => value.startsWith(prefix),
   regex: (pattern, flags) => new RegExp(pattern, flags),
-  regexCached: (() => {
-    const NativeRegExp = RegExp;
-    const descriptor = Object.getOwnPropertyDescriptor, own = Object.hasOwn;
-    const match = Symbol.match, originalMatch = descriptor(NativeRegExp.prototype, match).value;
-    const cache = new Map(), get = cache.get.bind(cache), set = cache.set.bind(cache), clear = cache.clear.bind(cache);
-    let count = 0;
-    return (pattern, flags) => {
-      const Constructor = RegExp;
-      if (Constructor !== NativeRegExp || typeof pattern !== 'string' || pattern.length > 4096 ||
-          (flags !== '' && flags !== 'g' && flags !== 'i' && flags !== 'ig')) {
-        return new Constructor(pattern, flags);
-      }
-      const current = descriptor(NativeRegExp.prototype, match);
-      if (!current || !own(current, 'value') || current.value !== originalMatch) {
-        return new Constructor(pattern, flags);
-      }
-      const key = flags + ':' + pattern;
-      let template = get(key);
-      if (!template) {
-        template = new NativeRegExp(pattern, flags);
-        if (count === 64) { clear(); count = 0; }
-        set(key, template); count++;
-      }
-      // Clone compiled bytecode; callers always receive fresh lastIndex and identity.
-      return new NativeRegExp(template);
-    };
-  })(),
   jsonParse: value => JSON.parse(value),
   assign: (base, value) => Object.assign(base, value),
   iterable: value => [...value],
