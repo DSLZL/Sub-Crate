@@ -28,13 +28,13 @@ import threading
 import time
 import traceback
 from urllib.parse import quote, urlencode, urlsplit
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 import psutil
 
 ORIGINAL = "9cc6b5fac966993364ae33da8797f446bbf7f571"
-RUST = "ee64ab9f7376a68c126950caee256bf3fb9c2b12"
-RUST_BASELINE = "887ddccb36f7724a831a89b4aad416e9c97c7c51"
+RUST = "bfae5be4ff67a7bfc9be70ea838e28dce5c0bf02"
+RUST_BASELINE = "ee64ab9f7376a68c126950caee256bf3fb9c2b12"
 FRONTEND = "4bd7b0acbe65466b933ccea14fc61dbebe036ead"
 INPUT_HASH = "a6e6bb9cbe0587f33de0cf130ec391ecffd3483009888fed0ea59d39492ae890"
 INPUT_NAME = "sub-store_subscription_大杂烩-cron-new_2026-10-20_14-11-50.json"
@@ -64,6 +64,7 @@ PUBLIC_STRINGS.update(SHARDS)
 PROFILE_STAGES = set("""
 executor_setup state_snapshot runtime_setup context_setup job bootstrap input_decode execute output_encode
 bootstrap_compile bootstrap_load bootstrap_eval
+bootstrap_state_encode bootstrap_state_parse
 sources pipeline_parse pipeline_process pipeline_produce pipeline_utility process processor
 script_operator script_filter useless_filter region_filter regex_filter type_filter conditional_filter
 quick_setting_operator flag_operator sort_operator regex_sort_operator regex_rename_operator regex_delete_operator
@@ -1079,10 +1080,21 @@ def get_asset(url, expected, path):
 
 
 def get_script():
-    with urlopen("https://api.github.com/repos/DSLZL/scripts/git/blobs/" + SCRIPT_BLOB, timeout=60) as response:
-        body = base64.b64decode(json.load(response)["content"])
-    require(digest(body) == SCRIPT_HASH, "asset")
-    return body.decode()
+    headers = {}
+    token = os.environ.pop("BENCHMARK_ASSET_TOKEN", "")
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    request = Request("https://api.github.com/repos/DSLZL/scripts/git/blobs/" + SCRIPT_BLOB, headers=headers)
+    for attempt in range(3):
+        try:
+            with urlopen(request, timeout=60) as response:
+                body = base64.b64decode(json.load(response)["content"])
+            require(digest(body) == SCRIPT_HASH, "asset")
+            return body.decode()
+        except OSError:
+            if attempt == 2:
+                raise Failure("asset") from None
+            time.sleep(1)
 
 
 def cgroup_limit(name):

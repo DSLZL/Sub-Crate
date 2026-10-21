@@ -2,6 +2,7 @@
 import asyncio
 import copy
 from contextlib import nullcontext
+from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -22,6 +23,23 @@ if os.environ.get("GITHUB_ACTIONS") != "true":
 
 
 class Contracts(unittest.TestCase):
+    def test_script_fetch_retries_io_but_keeps_the_pinned_digest(self):
+        body = b"pinned script"
+        reply = b.encoded({"content": b.base64.b64encode(body).decode() + "\n"})
+        with patch.dict(os.environ, {"BENCHMARK_ASSET_TOKEN": "fixture-token"}), \
+                patch.object(b, "SCRIPT_HASH", b.digest(body)), \
+                patch.object(b, "urlopen", side_effect=[OSError(), BytesIO(reply)]) as fetch, \
+                patch.object(b.time, "sleep") as delay:
+            self.assertEqual(b.get_script(), body.decode())
+            self.assertNotIn("BENCHMARK_ASSET_TOKEN", os.environ)
+            request = fetch.call_args.args[0]
+            self.assertEqual(request.full_url, "https://api.github.com/repos/DSLZL/scripts/git/blobs/" + b.SCRIPT_BLOB)
+            self.assertEqual(request.get_header("Authorization"), "Bearer fixture-token")
+            delay.assert_called_once_with(1)
+        with patch.object(b, "urlopen", return_value=BytesIO(reply)), self.assertRaises(b.Failure) as error:
+            b.get_script()
+        self.assertEqual(error.exception.code, "asset")
+
     def test_pipeline_profiles_reject_private_incomplete_or_unbalanced_events(self):
         def row(index, parent, stage, active, own):
             return {"id": index, "parent": parent, "stage": stage, "index": None,

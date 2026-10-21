@@ -28,8 +28,8 @@ permissions:
   contents: read
 
 env:
-  PERF_RUST_REVISION: ee64ab9f7376a68c126950caee256bf3fb9c2b12
-  PERF_BASELINE_REVISION: 887ddccb36f7724a831a89b4aad416e9c97c7c51
+  PERF_RUST_REVISION: bfae5be4ff67a7bfc9be70ea838e28dce5c0bf02
+  PERF_BASELINE_REVISION: ee64ab9f7376a68c126950caee256bf3fb9c2b12
 
 concurrency:
   group: ${{ inputs.inspect_run && 'subscription-report-inspection' || inputs.diagnose_health && 'subscription-health-diagnostic' || inputs.diagnose_parse && 'subscription-parse-diagnostic' || 'supplied-subscription-performance' }}
@@ -79,12 +79,14 @@ jobs:
         run: |
           [[ "$INSPECT_RUN" =~ ^[0-9]+$ && "$INSPECT_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
           gh run download "$INSPECT_RUN" --repo "$GITHUB_REPOSITORY" \
-            --name "subscription-performance-$INSPECT_RUN-$INSPECT_ATTEMPT" --dir "$RUNNER_TEMP/performance-inspect"
+            --name "subscription-performance-$INSPECT_RUN-$INSPECT_ATTEMPT" --dir "$RUNNER_TEMP/performance-inspect" || \
+          gh run download "$INSPECT_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name "subscription-performance-prepare-$INSPECT_RUN-$INSPECT_ATTEMPT" --dir "$RUNNER_TEMP/performance-inspect"
           python3 - <<'PY'
           import json, math, os, statistics
           from pathlib import Path
           report = json.loads((Path(os.environ['RUNNER_TEMP']) / 'performance-inspect/metrics.json').read_bytes())
-          print('Report ' + json.dumps({key: report.get(key) for key in ('status', 'provenance', 'capture', 'replay', 'estimates')}, sort_keys=True))
+          print('Report ' + json.dumps({key: report.get(key) for key in ('status', 'failure', 'failure_stack', 'provenance', 'capture', 'replay', 'estimates')}, sort_keys=True))
           measured = [r for r in report['samples'] if r.get('latencies_s') and all(key in r for key in ('elapsed_s', 'cpu_s', 'rss_peak_bytes', 'output_count'))]
           groups = sorted({(r['case'], r['kind'], r['concurrency']) for r in measured})
           for case, kind, clients in groups:
@@ -180,7 +182,7 @@ jobs:
         if: inputs.diagnose_health
         run: |
           cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust 2>&1 | tee "$RUNNER_TEMP/candidate-tests.log"
-          grep -F 'test result: ok. 38 passed; 0 failed; 3 ignored;' "$RUNNER_TEMP/candidate-tests.log"
+          grep -F 'test result: ok. 39 passed; 0 failed; 3 ignored;' "$RUNNER_TEMP/candidate-tests.log"
       - name: Build the frozen Rust baseline in its separate target for whole-request comparison
         if: inputs.diagnose_health
         run: |
@@ -214,6 +216,7 @@ jobs:
       - name: Import original file, capture untouched sources and seal private inputs
         env:
           BENCHMARK_SUBSCRIPTION_B64: ${{ secrets.BENCHMARK_SUBSCRIPTION_B64 }}
+          BENCHMARK_ASSET_TOKEN: ${{ github.token }}
         run: |
           umask 077
           diagnostic_args=()

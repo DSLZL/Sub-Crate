@@ -1099,7 +1099,12 @@ async fn process_response<'js>(
 fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     crate::js_values::initialize(ctx)?;
     script_io::set_executor(ctx, job.background.clone())?;
-    let (cache, root) = job.baseline.borrow().clone();
+    let encode = profile::span("bootstrap_state_encode");
+    let (cache, root) = {
+        let baseline = job.baseline.borrow();
+        (codec::stringify(&baseline.0), codec::stringify(&baseline.1))
+    };
+    drop(encode);
     ctx.store_userdata(job)
         .map_err(|_| Exception::throw_message(ctx, "Script job already borrowed"))?;
     let globals = ctx.globals();
@@ -1128,8 +1133,10 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     let host = Object::new(ctx.clone())?;
     host.set("name", "sub-store")?;
     host.set("debug", false)?;
-    host.set("cache", ctx.json_parse(codec::stringify(&cache))?)?;
-    host.set("root", ctx.json_parse(codec::stringify(&root))?)?;
+    let parse = profile::span("bootstrap_state_parse");
+    host.set("cache", ctx.json_parse(cache)?)?;
+    host.set("root", ctx.json_parse(root)?)?;
+    drop(parse);
     host.set("env", ctx.json_parse(r#"{"isNode":false,"isQX":false,"isLoon":false,"isSurge":false,"isStash":false,"isShadowRocket":false,"isLanceX":false,"isEgern":false,"isGUIforCores":false}"#)?)?;
     host.set("read", Func::from(read))?;
     host.set("write", Func::from(write))?;

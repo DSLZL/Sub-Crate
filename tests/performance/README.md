@@ -1056,3 +1056,91 @@ general-JS contracts pass. Three component/CPU probes remain opt-in ignored test
 the paired workflow explicitly runs its release component probe. All compilation,
 product execution and testing occurred in Actions. Later report/reader changes
 do not alter that tested Rust source.
+
+### Bulk JSON state binding (2026-10-22)
+
+Candidate `bfae5be4ff67a7bfc9be70ea838e28dce5c0bf02` builds on retained bytecode
+baseline `ee64ab9f7376a68c126950caee256bf3fb9c2b12`. The shared wire serializer
+copies whole quoted JSON strings instead of appending every character, avoids
+three marker-replacement copies when markers are absent, and returns its owned
+output directly when UTF-16 restoration is unnecessary. Numeric normalization,
+marker escaping, lone surrogates, property order and compact/pretty bytes retain
+their old behavior. The scanner is private and accepts only serde-generated
+JSON. A regression corpus compares both wire formats against the old serializer;
+the existing exhaustive UTF-16, numeric and state-order tests remain unchanged.
+
+Application initialization also serializes its already-owned baseline through
+an immutable borrow, eliminating the extra full `Value` clone. The borrow ends
+before JS evaluation and both strings still parse into independent context-local
+objects. Processor clones, live getters/toJSON, script execution, publication,
+state refresh/merge and post-response work retain their existing behavior.
+`bootstrap_state_encode` and `bootstrap_state_parse` expose numeric phase timing.
+No dependency, node-result cache or runtime/context pool was added.
+
+[Attempt 1](https://github.com/DSLZL/Sub-Store/actions/runs/39649627281/attempts/1)
+and [attempt 2](https://github.com/DSLZL/Sub-Store/actions/runs/39649627281/attempts/2)
+reuse the same twenty-three ordered raw source strings, frozen before normal
+preprocessing. The original JSON is imported unchanged through the official
+frontend. Both backends' raw-source replay hashes match. Each attempt passes all
+sixteen cells / forty measured requests with 3611 equal outputs, including the
+same candidate with profiling enabled. Attempt 2 reruns only measurement and
+aggregation; the sole preparation, encrypted-input and build artifacts remain
+attempt 1's. No subscriptions are recaptured or binaries rebuilt for attempt 2.
+
+| Attempt | Case | Node median s | Previous Rust median s | Candidate median s | Rust reduction |
+|---|---|---:|---:|---:|---:|
+| 1 | pre-health | 4.291 | 1.297 | 1.228 | 5.3% |
+| 2 | pre-health | 5.498 | 1.694 | 1.597 | 5.7% |
+| 1 | cold | 8.696 | 9.354 | 7.817 | 16.4% |
+| 2 | cold | 10.665 | 10.050 | 8.804 | 12.4% |
+| 1 | warm | 4.461 | 2.045 | 1.924 | 5.9% |
+| 2 | warm | 5.710 | 2.752 | 2.536 | 7.9% |
+| 1 | no publisher | 4.291 | 1.722 | 1.643 | 4.6% |
+| 2 | no publisher | 5.482 | 2.316 | 2.263 | 2.3% |
+
+Cold has one measured request per variant/attempt; the other cells have three.
+Warm OS CPU/request changes from 2.017 to 1.900s and from 2.760 to 2.537s.
+The paired warm latency/CPU improvement reproduces in these two short diagnostic
+attempts. Absolute times differ across runners, so compare variants within each
+attempt; do not compare them directly with the preceding 3520-node experiment.
+These are not the full pressure matrix, P95 or long-run memory acceptance.
+
+| Warm observation | Previous peak RSS MiB | Candidate peak MiB | Previous end/settled MiB | Candidate end/settled MiB |
+|---|---:|---:|---:|---:|
+| Attempt 1 | 301.6 | 299.1 | 278.3 | 299.1 |
+| Attempt 2 | 282.9 | 290.8 | 279.7 | 290.8 |
+
+End/250ms-settled RSS is higher in both candidate observations, by about 21 and
+11 MiB. No-publisher peaks are 242.5 -> 266.9 and 261.7 -> 262.2 MiB. Retain these
+costs alongside the CPU/latency gain; no memory improvement is established and
+these short observations do not identify an allocation cause or prove a leak.
+The bounded readers [39651793207](https://github.com/DSLZL/Sub-Store/actions/runs/39651793207)
+and [39652964075](https://github.com/DSLZL/Sub-Store/actions/runs/39652964075) expose
+both immutable attempts' numeric metrics and profiler trees without private
+input/state/log downloads to the workstation.
+
+The profiled candidate's three warm requests have cumulative-stage medians of
+132.52/167.94ms for bootstrap, including 23.63/29.77ms of state encoding and
+17.46/21.45ms of state parsing (attempts 1/2). Input clones remain 182.47/239.81ms
+and produce remains 176.34/259.08ms. Stages overlap; these are active elapsed
+timings, not independent OS CPU measurements. The previous product is measured
+with profiling off, so these phase numbers alone are not a before/after claim.
+
+[39647919148](https://github.com/DSLZL/Sub-Store/actions/runs/39647919148) passes
+all six Windows/Linux x64/Linux arm64, Docker x64/arm64 and unchanged-frontend
+jobs. Its Rust source is identical to the pinned candidate. Formatting, clippy
+with warnings denied, all 39 ordinary Rust tests, delivered HTTP/state/restart/
+rollback, generic JS and original backend contracts pass. The three component
+probes remain opt-in ignored tests. Benchmark self-checks pass all 25 tests.
+All builds and product tests execute in Actions.
+
+Pre-measurement failures remain visible: [39647712535](https://github.com/DSLZL/Sub-Store/actions/runs/39647712535)
+has the initial formatting diff; [39647927619](https://github.com/DSLZL/Sub-Store/actions/runs/39647927619)
+fails at the fixed-script GitHub API fetch before file import; and
+[39649552071](https://github.com/DSLZL/Sub-Store/actions/runs/39649552071) exposes
+GitHub blob base64 line wrapping in the self-check. None provides request
+performance evidence. Setup now authenticates that fixed-host fetch with the
+Actions token, retries only setup I/O failures, retains base64 line wrapping and
+still verifies the pinned SHA-256. The token is excluded from child environments.
+The reader can inspect sanitized preparation failure codes/stack line numbers
+when no aggregate exists. Raw failure messages and private data remain on runners.
