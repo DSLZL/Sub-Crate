@@ -199,7 +199,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-887ddccb36f7724a831a89b4aad416e9c97c7c51
+          key: subscription-performance-linux-x64-rust-1.98.0-${{ env.PERF_RUST_REVISION }}
       - name: Load installed browser workflow and install headless Chromium
         run: |
           agent-browser skills get core
