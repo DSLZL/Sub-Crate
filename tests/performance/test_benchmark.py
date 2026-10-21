@@ -21,6 +21,34 @@ if os.environ.get("GITHUB_ACTIONS") != "true":
 
 
 class Contracts(unittest.TestCase):
+    def test_pipeline_profiles_reject_private_incomplete_or_unbalanced_events(self):
+        def row(index, parent, stage, active, own):
+            return {"id": index, "parent": parent, "stage": stage, "index": None,
+                    "calls": 1, "wall_ns": active + 10, "active_ns": active,
+                    "self_ns": own, "max_wall_ns": active + 10}
+        report = {"version": 1, "job": 1, "operation": "download_sub", "success": True,
+                  "wall_ns": 200, "dropped": 0, "open_scopes": 0, "unfinished_spans": 0,
+                  "rows": [row(0, None, "job", 100, 30), row(1, 0, "processor", 70, 70)]}
+        changes = ({"dropped": 1}, {"unfinished_spans": 1}, {"success": False},
+                   {"rows": [report["rows"][0], {**report["rows"][1], "self_ns": 60}]},
+                   {"rows": [{**report["rows"][0], "stage": "private-sentinel"}]},
+                   {"rows": [{**report["rows"][0], "parent": 0}]})
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "server.log"
+            prefix = b"private-prefix\nSUB_STORE_PROFILE invalid old event\n"
+            for change in ({}, *changes):
+                value = {**copy.deepcopy(report), **copy.deepcopy(change)}
+                path.write_bytes(prefix + b"private-log-line\nSUB_STORE_PROFILE " + b.encoded(value) + b"\n")
+                if change:
+                    with self.assertRaises(b.Failure):
+                        b.pipeline_profiles(path, len(prefix))
+                else:
+                    self.assertEqual(b.pipeline_profiles(path, len(prefix)), [report])
+                    b.public({"pipeline_profiles": [report]})
+            path.write_bytes(b"SUB_STORE_PROFILE {broken\n")
+            with self.assertRaises(b.Failure):
+                b.pipeline_profiles(path, 0)
+
     def test_replay_requires_identical_ordered_source_text_before_measurement(self):
         with tempfile.TemporaryDirectory() as tmp:
             scratch = Path(tmp)

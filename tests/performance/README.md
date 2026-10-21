@@ -18,6 +18,42 @@ write/measurement overhead means these are attribution observations, not the
 unmodified full-run performance result. `health-profile.patch` records the
 instrumentation separately from the unchanged five-site `stress.patch`.
 
+Enable both `diagnose_health` and `profile_pipeline` for per-processor Rust
+diagnostics. The ordinary candidate (`rust`) and its profiled repeat
+(`rust_repeat`) use the **same binary**; the latter alone gets
+`SUB_STORE_PROFILE=1`. Normal service runs emit no profile. Identical raw-source
+replay, output/state/work checks, all processor work and existing test counts
+remain required. The separate historical Rust baseline remains uninstrumented.
+
+Each measured download emits one bounded numeric JSON event before replying.
+`metrics.json` retains the complete tree, and the Actions summary shows every
+processor's zero-based process/processor indices and the most expensive stages.
+Counts, total/max wall nanoseconds, inclusive active nanoseconds and exclusive
+self nanoseconds cover bootstrap/state, source input, parse, each processor,
+script loading/compilation/binding/input cloning/call/await/fallback, final
+production and output encoding. Producer stages split validation, filtering and
+callbacks, preparation and callbacks, collection, node/options projection,
+transport reconciliation, native output and JS decoding. Projection and decoding
+are split again into their serialization, text extraction, parsing and restore
+steps. Response transformers retain their original processor indices.
+
+Wall time includes async waiting and overlapping siblings must not be added.
+Active time measures elapsed time while a scope's Rust call/future poll runs;
+it includes JS called synchronously there and OS descheduling, so it is **not
+CPU time**. Self time excludes nested active scopes. Async scopes re-enter only
+while polled. JS jobs the engine drives outside a processor's future poll are
+charged to the enclosing engine/job scope; the complete job and per-processor
+wall totals remain available. Report writing and disabled/enabled timer overhead
+are observable in the same-binary client-latency comparison, not subtracted from
+measurements. These diagnostic samples are not uninstrumented throughput claims.
+
+Only code-owned labels and numeric indices/timings leave the runner; no
+subscription names, addresses, script bodies or arguments are used as labels.
+The reader rejects missing/corrupt events, unknown fields, unbalanced times,
+unfinished spans, or overflow beyond 2048 aggregate rows per job. Raw private
+server logs remain in runner scratch. Profiling uses the standard library and
+adds no tracing/profiling dependency.
+
 Select the manual `diagnose_parse` input for a separate short diagnosis. It keeps
 the same actual file imports and full captured inputs, measures all 22 sources
 individually through local-content preview (no source HTTP), then three complete
