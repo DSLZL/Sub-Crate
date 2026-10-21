@@ -7,6 +7,10 @@ on:
         description: Inspect bounded sanitized diagnostics from an existing run without rebuilding
         type: string
         default: ''
+      inspect_attempt:
+        description: Read this immutable attempt of inspect_run (preparation is not repeated)
+        type: string
+        default: '1'
       diagnose_parse:
         description: Only diagnose individual sources and three parse/pre-health requests
         type: boolean
@@ -70,11 +74,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           INSPECT_RUN: ${{ inputs.inspect_run }}
+          INSPECT_ATTEMPT: ${{ inputs.inspect_attempt }}
         shell: bash
         run: |
-          [[ "$INSPECT_RUN" =~ ^[0-9]+$ ]]
+          [[ "$INSPECT_RUN" =~ ^[0-9]+$ && "$INSPECT_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
           gh run download "$INSPECT_RUN" --repo "$GITHUB_REPOSITORY" \
-            --name "subscription-performance-$INSPECT_RUN-1" --dir "$RUNNER_TEMP/performance-inspect"
+            --name "subscription-performance-$INSPECT_RUN-$INSPECT_ATTEMPT" --dir "$RUNNER_TEMP/performance-inspect"
           python3 - <<'PY'
           import json, math, os, statistics
           from pathlib import Path
