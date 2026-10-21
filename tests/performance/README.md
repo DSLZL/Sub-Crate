@@ -37,7 +37,7 @@ UI-created seeds to workers. Its key derives from the private input bytes with
 a domain prefix and random salt, not the published input hash; authentication
 also binds it to the workflow run. The key is never uploaded.
 
-The workflow freezes original `9cc6b5fa`, Rust `cd0972df`, and unchanged frontend
+The workflow freezes original `9cc6b5fa`, Rust `6ebcda1c`, and unchanged frontend
 `4bd7b0ac`, with full revisions in the harness and report. It builds the original
 without compatibility-reference patches. The actual subscription file input on
 `/subs` imports the original file five times per backend into fresh storage.
@@ -618,9 +618,10 @@ included. Earlier reports remain immutable under their narrower input boundary.
 
 ## Per-node preparation and projection candidate (2026-10-21, unverified)
 
-Product `cd0972df` lets the script producer dispatch its already prepared owned
-values without a second pass through common filtering and normalization. Native
-callers still enter the complete preparation path. Value projection keeps an
+Product `6ebcda1c` lets the script producer dispatch its already prepared owned
+values without a second pass through common filtering and normalization. The
+duplicate owned preparation has no remaining production callers and is removed;
+the live script producer retains target validation and preparation. Projection keeps an
 active ancestor/path stack instead of allocating a path for every object; it
 copies paths only when recording cycles or special numbers. Focused regressions
 cover sibling aliases, mixed object/array cycles, special numbers, getter/toJSON
@@ -634,10 +635,14 @@ pins and build targets remain separate. Source capture, real file import,
 correctness checks, request counts and cold/warm work checks retain their prior
 behavior; all product execution remains in Actions.
 
-Status: **NOT RUN**. GitHub API and Git transport connections time out from the
-development environment, including through its existing Git proxy. No new CI
-acceptance or performance improvement is established. The results below belong
-to their stated earlier source versions.
+Status: **PENDING**. The first candidate's native run
+[39605952808](https://github.com/DSLZL/Sub-Store/actions/runs/39605952808)
+found a newly unused preparation entry and a formatting diff. It and the
+superseded diagnostic [39606000665](https://github.com/DSLZL/Sub-Store/actions/runs/39606000665)
+were stopped before accepting a result. The replacement removes the unused
+implementation and applies the CI-generated formatting. No new CI acceptance or
+performance improvement is established yet. The results below belong to their
+stated earlier source versions.
 
 ## Parallel raw-input result (2026-10-21)
 
