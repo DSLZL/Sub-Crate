@@ -144,7 +144,7 @@ async fn finalize<'js>(
     };
     let raw = result.clone();
     if preprocess {
-        if let Ok(parser) = crate::clash::Parser::new()
+        if let Ok(parser) = script::parser(&js.ctx)
             && let Some(lines) = parser.preprocess(&js.text(result.clone())?)
         {
             let mut output = String::from("proxies:\n");

@@ -2624,6 +2624,13 @@ fn normalize(proxy: &mut Value) -> Result<(), Error> {
 }
 
 pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
+    parse_with(raw, None)
+}
+
+pub(crate) fn parse_with(
+    raw: &Value,
+    parser: Option<&crate::clash::Parser>,
+) -> Result<Vec<Value>, Error> {
     let Some(raw) = raw.as_str() else {
         return Err(Error::Legacy("raw.split is not a function".to_owned()));
     };
@@ -2653,7 +2660,14 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
             (text, Some(prefix))
         }
     };
-    let clash = crate::clash::Parser::new()?;
+    let owned;
+    let clash = match parser {
+        Some(parser) => parser,
+        None => {
+            owned = crate::clash::Parser::new()?;
+            &owned
+        }
+    };
     let raw = clash.preprocess(&raw).unwrap_or_else(|| preprocess(&raw));
     let mut proxies = Vec::new();
     let mut last_parser = None;
@@ -2695,7 +2709,7 @@ pub fn parse(raw: &Value) -> Result<Vec<Value>, Error> {
                 proxies.push(proxy);
             }
         } else if line.starts_with("trojan://") {
-            if let Some(proxy) = trojan(line, &clash)? {
+            if let Some(proxy) = trojan(line, clash)? {
                 proxies.push(proxy);
             }
         } else if line.split_once("://").is_some_and(|(scheme, _)| {
@@ -3860,6 +3874,58 @@ pub fn produce(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reused_parser_recovers_and_keeps_fresh_parser_values() {
+        let parser = crate::clash::Parser::new().ok().unwrap();
+        let inputs = [
+            json!(r#"{"type":"ss","name":"json","server":"127.0.0.1","port":443,"cipher":"none","password":"p","extra":{"n":9007199254740993,"zero":-0,"overflow":1e400}}"#),
+            json!(r#"{type:'ss',name:'json5',server:'127.0.0.1',port:443,cipher:'none',password:'p',extra:{nan:NaN,high:Infinity,low:-Infinity,zero:-0}}"#),
+            json!("proxies:\n  - {type: vless, name: yaml, server: 127.0.0.1, port: 443, reality-opts: {short-id: 00123}, extra: &loop {self: *loop}}\n"),
+            json!("proxies: [broken"),
+            json!(r#"{"type":"ss","name":"\ud800\ue000\udc00","server":"127.0.0.1","port":443,"cipher":"none","password":"p","extra":{"2":"two","1":"one","__proto__":false}}"#),
+            json!("trojan://p@127.0.0.1:443?type=__proto__.bad&path=%2Fp"),
+            Value::Null,
+            json!("<!DOCTYPE html>invalid subscription"),
+            json!("ss://none:p@127.0.0.1:443#recovered"),
+        ];
+        let encode = |result: Result<Vec<Value>, Error>| {
+            result
+                .map(|values| Value::Array(values).to_string())
+                .map_err(|Error::Legacy(message)| message)
+        };
+        for _ in 0..2 {
+            for input in &inputs {
+                assert_eq!(encode(parse_with(input, Some(&parser))), encode(parse(input)));
+            }
+        }
+    }
+
+    #[test]
+    fn reused_parser_observes_changed_and_deleted_ca_files() {
+        let parser = crate::clash::Parser::new().ok().unwrap();
+        let path = std::env::temp_dir().join(format!("sub-store-parser-ca-{}", std::process::id()));
+        let raw = json!(
+            json!({"type":"trojan","name":"ca","server":"127.0.0.1","port":443,"password":"p","_ca":path}).to_string()
+        );
+        let mut previous = Value::Null;
+        for body in ["AQID", "BAUG"] {
+            std::fs::write(
+                &path,
+                format!("-----BEGIN CERTIFICATE-----\n{body}\n-----END CERTIFICATE-----"),
+            )
+            .unwrap();
+            let actual = parse_with(&raw, Some(&parser)).ok().unwrap();
+            assert_eq!(actual, parse(&raw).ok().unwrap());
+            let fingerprint = &actual[0]["tls-fingerprint"];
+            assert!(fingerprint.is_string());
+            assert_ne!(fingerprint, &previous);
+            previous = fingerprint.clone();
+        }
+        std::fs::remove_file(&path).unwrap();
+        let actual = parse_with(&raw, Some(&parser)).ok().unwrap();
+        assert!(actual[0].get("tls-fingerprint").is_none());
+    }
 
     #[test]
     fn port_hopping_selects_only_members_of_the_source_ranges() {
