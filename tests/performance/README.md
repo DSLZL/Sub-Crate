@@ -4,6 +4,10 @@ Run **Supplied subscription performance** (`rust-performance.yml`) manually on
 `codex/rust-server-parity`. All builds, self-checks, browsers, services and
 measurements run in GitHub Actions; the harness refuses local execution.
 
+The current raw-input result is [39556665967](https://github.com/DSLZL/Sub-Store/actions/runs/39556665967):
+all 35 paired jobs / 70 cells passed in 11m38s including preparation. See the
+2026-10-21 parallel result below; older processed-input results remain historical.
+
 Set `inspect_run` to an earlier run ID to print bounded, already sanitized
 field/work diagnostics in Actions without building or downloading bundles locally.
 Set `diagnose_health` for a separate short full-input diagnosis: pre-health,
@@ -62,8 +66,8 @@ Parsed nodes and final output are not supplied as cached application results.
 Reports through run `39526057421` used the earlier preprocessed-text capture.
 Their results remain immutable and are not evidence for this stricter boundary;
 new reports identify it with `capture.before_preprocessing=true`.
-The passing raw-input diagnostic below validates this boundary. A complete new
-matrix is required before quoting current cold/warm/pressure performance.
+The passing raw-input diagnostic below validates this boundary. The complete
+raw-input matrix is reported in the 2026-10-21 parallel result below.
 
 The public pinned health script is modified at exactly five asserted sites:
 workers, batch size and max checks become the full input length; scan budget is
@@ -611,3 +615,105 @@ locates further work; no new whole-product speedup or full-matrix pass is claime
 Product7022849b changes only formatting requested by the retained native CI
 rustfmt diff. No YAML dependency/implementation or test-workload shortcut is
 included. Earlier reports remain immutable under their narrower input boundary.
+
+## Parallel raw-input result (2026-10-21)
+
+[Full run39556665967](https://github.com/DSLZL/Sub-Store/actions/runs/39556665967)
+at harness `1bc1a72a` and product `9c659cef` passes all 70 cells in 35 paired worker jobs,
+with at most 20 workers concurrently. Including builds, five actual unchanged-file
+frontend imports/restarts per backend and once-only raw capture, workflow wall
+time is 11m38s. [Report reader39558045248](https://github.com/DSLZL/Sub-Store/actions/runs/39558045248)
+passes. Capture records 20/22 nonempty remote bodies and two empty/failed bodies;
+both backends replay all 23 ordered strings exactly on each worker. These results
+cover returned content, not unavailable provider content. Parse output is 6368
+nodes and complete filtered output 3556 on both backends. All ten cold pairs
+select, probe, verify and publish all 3556 identities in one batch, without
+budget skips. Measured warm/pressure requests perform no new probes. All
+controlled output, snapshot and ClashMeta comparisons pass. The separate real
+detector pair is qualified below.
+
+Across five fresh states per backend, startup readiness medians are Node
+258.91ms / Rust 51.35ms, actual file-import API medians 5.65/3.26ms, and browser
+UI wall medians 19.12/17.66ms. All five restarts per backend pass. These small
+startup/UI samples include polling/browser variability and do not establish
+tail latency.
+
+The table contains pooled request medians, process user+system CPU per measured
+request and sampled backend peak RSS. Each Node/Rust pair runs sequentially on
+one Linux x64 worker, alternating order by block; CPU models, quotas and load
+are recorded per worker. Same runner labels do not guarantee identical hardware.
+Pooled distributions span workers; same-worker block estimates are separate.
+
+| Case | Requests/backend | Node median s | Rust median s | Node CPU s/request | Rust CPU s/request | Node peak RSS MiB | Rust peak RSS MiB |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Parse/produce | 60 | 5.266 | 1.337 | 6.590 | 1.270 | 671.8 | 134.2 |
+| Four processors before health | 20 | 5.088 | 1.701 | 6.920 | 1.813 | 645.3 | 134.4 |
+| Cold full scan | 10 | 9.969 | 8.905 | 10.206 | 5.723 | 625.7 | 315.8 |
+| Warm, all seven processors | 100 | 5.597 | 2.736 | 6.764 | 2.292 | 1368.8 | 356.9 |
+| Six stages, no publisher | 60 | 5.634 | 2.372 | 7.602 | 2.376 | 1327.6 | 250.9 |
+
+Pooled parse latency is 74.6% lower and warm latency 51.1% lower in this capture.
+Warm P95 is Node 5.859 / Rust 2.811s over 100 requests each. Geometric means of paired
+block Node/Rust latency ratios are parse 4.103 (bootstrap interval 3.926-4.466,
+three pairs), warm 2.178 (2.072-2.303, five pairs), and cold 1.100 (1.034-1.158,
+ten pairs). Three-block intervals have weak confidence; pre-health has just one
+block. Ten cold requests do not establish tail latency or general cold capacity.
+
+| Pressure clients | Node requests/s | Rust requests/s | Node median s | Rust median s |
+|---|---:|---:|---:|---:|
+| 1 | 0.198 | 0.414 | 5.150 | 2.479 |
+| 2 | 0.177 | 0.643 | 11.229 | 3.097 |
+| 4 | 0.242 | 1.049 | 13.907 | 3.228 |
+| 8 | 0.177 | 0.661 | 35.353 | 12.065 |
+
+All settings have three paired windows and complete equivalent work. On these
+four-CPU workers Rust throughput falls from 4 to 8 clients, CPU/request rises
+from 3.048 to 5.135s and sampled peak RSS from 976.5 to 1368.5MiB. This identifies
+contention under pressure; the records do not isolate a specific responsible
+function. Higher concurrency is not automatically higher capacity.
+
+The raw-source bottleneck was the generic YAML JavaScript library interpreted
+inside QuickJS. Product `9c659cef` uses pinned serde-saphyr 2.0.0 for ordinary
+subscription YAML while retaining the existing resolver for aliases, tags and
+schema-sensitive cases. An initial guard wrongly treated identifier prefixes
+as numbers, forcing entire documents back onto the slow path; full-token guards
+fix that. Native-path selection and rendered-value equality are independently
+checked against the locked original JS utility. No final proxies/output cache,
+source deadline, retry, probe cap or script change supplies the improvement.
+
+[Same-input diagnosis39556670388](https://github.com/DSLZL/Sub-Store/actions/runs/39556670388)
+passes 16/16 cells on one 4-vCPU AMD EPYC 7763 worker; its
+[reader39559054309](https://github.com/DSLZL/Sub-Store/actions/runs/39559054309)
+passes. Node, candidate `9c659cef`, pre-native baseline `7022849b` and candidate again
+receive identical captured text and 3376 filtered nodes. Warm medians are Node
+5.483s, baseline 19.793s, candidate 2.780s and repeat 2.781s: an 86.0% reduction
+against the old Rust baseline in this short sample. Pre-health is baseline
+19.215s versus candidate 1.685/1.701s. Each of these cells has three requests;
+cold has only one. The same coarse diagnostic wrapper runs on all four variants,
+so use the uninstrumented full matrix above for current performance claims.
+This diagnostic capture has 18/22 nonempty remote bodies and four recorded
+empty/failed bodies; do not combine its timings with the full run's capture.
+
+One measured warm health invocation still spends 187ms in 3376 Rust producer
+calls versus 21ms Node; total health-operator time is 360/105ms Rust/Node.
+Rust MD5 is 8ms versus 48ms Node, and warm cache get/set totals are 0/0ms on both
+at millisecond clock resolution. Thus per-node production remains a measured
+local disadvantage although the complete Rust request is now faster. Cold
+health operator time is 4579/3734ms and cache publication 158/46ms Rust/Node in
+this one instrumented invocation. These overlapping wrapper totals and the
+shared detector fixture do not establish a new whole-request optimization ratio.
+
+The full run's separate real HTTP-META/Mihomo pair completes independently:
+Node 1042 reachable outputs at 17.953s, Rust 1349 at 17.122s, with each backend's
+full-probe/work checks passing. Different real reachability sets are not equal
+work and must not enter speed ratios. No architecture ranking, tail-capacity
+claim or estimate for unavailable provider inputs follows from these runs.
+All execution and report inspection remain in Actions; no local product build,
+test, dependency generation or evidence download was performed.
+
+[Native acceptance39556563589](https://github.com/DSLZL/Sub-Store/actions/runs/39556563589)
+at exact product `9c659cef` passes all six jobs: Linux x64/arm64, Windows x64,
+Docker x64/arm64 and the unchanged official frontend. Formatting, clippy with
+warnings denied, all 28 ordinary Rust tests, delivered-service/restart/rollback
+contracts, general-JS oracle checks and browser/container acceptance pass.
+The following report-only commit does not alter that tested production source.
