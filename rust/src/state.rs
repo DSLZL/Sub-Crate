@@ -123,7 +123,7 @@ impl Store {
                 .live_buffers
                 .iter()
                 .copied()
-                .filter(|key| codec::stringify(&baseline[*key]) != codec::stringify(&next[*key]))
+                .filter(|key| !codec::same_json(&baseline[*key], &next[*key]))
                 .collect();
             self.commit(merged)?;
             for key in changed_lists {
@@ -207,7 +207,7 @@ impl Store {
 }
 
 fn script_delta(current: &Value, baseline: &Value, next: &Value) -> Value {
-    if codec::stringify(current) == codec::stringify(baseline) {
+    if codec::same_json(current, baseline) {
         return next.clone();
     }
     let (Some(base), Some(new), Some(existing)) =
@@ -222,7 +222,7 @@ fn script_delta(current: &Value, baseline: &Value, next: &Value) -> Value {
     for (key, value) in new {
         if base
             .get(key)
-            .is_none_or(|old| codec::stringify(old) != codec::stringify(value))
+            .is_none_or(|old| !codec::same_json(old, value))
         {
             merged.insert(key.clone(), value.clone());
         }

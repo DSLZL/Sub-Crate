@@ -41,9 +41,22 @@ jobs:
           gh run download "$INSPECT_RUN" --repo "$GITHUB_REPOSITORY" \
             --name "subscription-performance-$INSPECT_RUN-1" --dir "$RUNNER_TEMP/performance-inspect"
           python3 - <<'PY'
-          import json, os
+          import json, math, os, statistics
           from pathlib import Path
           report = json.loads((Path(os.environ['RUNNER_TEMP']) / 'performance-inspect/metrics.json').read_bytes())
+          print('Report ' + json.dumps({key: report.get(key) for key in ('status', 'provenance', 'capture', 'replay', 'estimates')}, sort_keys=True))
+          measured = [r for r in report['samples'] if r.get('latencies_s') and all(key in r for key in ('elapsed_s', 'cpu_s', 'rss_peak_bytes', 'output_count'))]
+          groups = sorted({(r['case'], r['kind'], r['concurrency']) for r in measured})
+          for case, kind, clients in groups:
+              rows = [r for r in measured if (r['case'], r['kind'], r['concurrency']) == (case, kind, clients)]
+              times = sorted(v for r in rows for v in r['latencies_s'])
+              print('Aggregate ' + json.dumps({'case': case, 'kind': kind, 'clients': clients,
+                  'blocks': len(rows), 'passed': sum(r['status'] == 'passed' for r in rows), 'requests': len(times),
+                  'median_s': statistics.median(times), 'p95_s': times[math.ceil(len(times) * .95) - 1] if len(times) >= 20 else None,
+                  'rps': len(times) / sum(r['elapsed_s'] for r in rows),
+                  'cpu_s_per_request': sum(r['cpu_s'] for r in rows) / len(times),
+                  'rss_peak_mib': max(r['rss_peak_bytes'] for r in rows) / 2**20,
+                  'output_counts': sorted({r['output_count'] for r in rows})}, sort_keys=True))
           for row in report['samples']:
               if (row['block'] != 0 or row['concurrency'] != 1) and row.get('status') != 'failed':
                   continue
@@ -71,13 +84,13 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: 464241c8665180a644ff95234fd901d6451d6cdf
+          ref: 4adef1315899d4137fc5b5836bce4185a632481d
           path: .performance/rust
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: inputs.diagnose_health
         with:
-          ref: cda93a24dd2b51636fdc2151ba33f0ff2f206d62
+          ref: e9da7c39ca42a731355e00a3a7c897050c47f73f
           path: .performance/rust-baseline
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -109,7 +122,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-464241c8665180a644ff95234fd901d6451d6cdf
+          key: subscription-performance-linux-x64-rust-1.98.0-4adef1315899d4137fc5b5836bce4185a632481d
           restore-keys: subscription-performance-linux-x64-rust-1.98.0-
       - name: Build exact original, Rust and unchanged frontend
         run: |
@@ -120,18 +133,15 @@ jobs:
           git -C .performance/original diff --exit-code
           git -C .performance/rust diff --exit-code
           git -C .performance/frontend diff --exit-code
-      - name: Profile HTTP initialization and compare node conversion components
+      - name: Execute candidate regressions before whole-request comparison
         if: inputs.diagnose_health
         run: |
-          cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust script_io::transport::tests 2>&1 | tee "$RUNNER_TEMP/verifier-tests.log"
-          grep -F 'test result: ok. 2 passed; 0 failed; 1 ignored;' "$RUNNER_TEMP/verifier-tests.log"
-          cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust script_io::transport::tests::profile_verifier_initialization -- --ignored --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/verifier-profile.log"
-          grep -F 'test result: ok. 1 passed;' "$RUNNER_TEMP/verifier-profile.log"
-          cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust script_conversion::tests::profile_node_production -- --ignored --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/conversion-profile-candidate-first.log"
-          # Cargo fingerprints can reuse same-named crates across checkout roots.
-          # Keep the frozen baseline's test executable separate from the candidate.
-          cargo +1.98.0 test --manifest-path .performance/rust-baseline/rust/Cargo.toml --target-dir "$RUNNER_TEMP/conversion-baseline-target" --locked --release --bin sub-store-rust script_conversion::tests::profile_node_production -- --ignored --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/conversion-profile-baseline.log"
-          cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust script_conversion::tests::profile_node_production -- --ignored --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/conversion-profile-candidate-repeat.log"
+          cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust 2>&1 | tee "$RUNNER_TEMP/candidate-tests.log"
+          grep -F 'test result: ok. 26 passed; 0 failed; 3 ignored;' "$RUNNER_TEMP/candidate-tests.log"
+      - name: Build the frozen Rust baseline in its separate target for whole-request comparison
+        if: inputs.diagnose_health
+        run: |
+          cargo +1.98.0 build --manifest-path .performance/rust-baseline/rust/Cargo.toml --target-dir "$GITHUB_WORKSPACE/.performance/rust-baseline/rust/target" --locked --release --bin sub-store-rust
           git -C .performance/rust-baseline diff --exit-code
       - name: Save public build inputs before private measurements
         if: steps.rust-cache.outputs.cache-hit != 'true'
@@ -141,7 +151,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-464241c8665180a644ff95234fd901d6451d6cdf
+          key: subscription-performance-linux-x64-rust-1.98.0-4adef1315899d4137fc5b5836bce4185a632481d
       - name: Load installed browser workflow and install headless Chromium
         run: |
           agent-browser skills get core
@@ -156,7 +166,7 @@ jobs:
             diagnostic_args=(--diagnose-parse)
           fi
           if [[ '${{ inputs.diagnose_health }}' == 'true' ]]; then
-            diagnostic_args+=(--diagnose-health)
+            diagnostic_args+=(--diagnose-health --rust-baseline "$GITHUB_WORKSPACE/.performance/rust-baseline")
           fi
           "$RUNNER_TEMP/performance-venv/bin/python" tests/performance/benchmark.py \
             --original "$GITHUB_WORKSPACE/.performance/original" \

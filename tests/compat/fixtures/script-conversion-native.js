@@ -10,6 +10,14 @@ async function operator(proxies) {
     const typed=ProxyUtils.parse('{type:"ss",name:"typed",server:"typed.invalid",port:443,extra:{nil:NaN,high:Infinity,low:-Infinity,minusZero:-0}}')[0];
     assert(Number.isNaN(typed.extra.nil) && typed.extra.high===Infinity && typed.extra.low===-Infinity && Object.is(typed.extra.minusZero,-0),'parse retains nonfinite numbers and negative zero');
     equal(JSON.parse(ProxyUtils.produce([typed],'JSON'))[0].extra,{nil:null,high:null,low:null,minusZero:0},'JSON wire numbers');
+    const originalJSON5Parse=SubStoreUtilities.JSON5.parse;
+    try {
+      SubStoreUtilities.JSON5.parse=()=>{throw new Error('application utility was used by native parser');};
+      const isolated=ProxyUtils.parse("{type:'ss',name:'isolated',server:'127.0.0.1',port:443,cipher:'none',password:'p'}");
+      equal(isolated.map(proxy=>proxy.name),['isolated'],'reused parser remains isolated from application utility changes');
+    } finally {
+      SubStoreUtilities.JSON5.parse=originalJSON5Parse;
+    }
     passed.push('NC-native-typed-numbers-and-wire');
     const cycle={name:'cycle',type:'ss',server:'cycle.invalid',port:443};cycle.extra={self:null};cycle.extra.self=cycle.extra;
     const internal=ProxyUtils.produce([cycle],'JSON','internal');

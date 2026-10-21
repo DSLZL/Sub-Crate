@@ -19,11 +19,13 @@ use std::{
 struct Job {
     store: Arc<Mutex<Store>>,
     baseline: Rc<RefCell<(Value, Value)>>,
+    parser: Rc<RefCell<Option<Rc<crate::clash::Parser>>>>,
     background: tokio::runtime::Handle,
 }
 
-// Job contains only owned Rust state. It never contains a JS handle or borrow;
-// changing the engine lifetime therefore does not change this type.
+// Job has no handles or borrows tied to the application context's lifetime.
+// Its optional parser owns a separate runtime/context and exchanges owned data
+// only. It is created and dropped on this job's blocking worker.
 unsafe impl<'js> JsLifetime<'js> for Job {
     type Changed<'to> = Job;
 }
@@ -32,6 +34,15 @@ fn job(ctx: &Ctx<'_>) -> rquickjs::Result<Job> {
     ctx.userdata::<Job>()
         .map(|data| data.clone())
         .ok_or_else(|| Exception::throw_message(ctx, "Missing script job"))
+}
+
+pub(crate) fn parser(ctx: &Ctx<'_>) -> Result<Rc<crate::clash::Parser>, conversion::Error> {
+    let job = job(ctx).map_err(|error| conversion::Error::Legacy(message(ctx, error)))?;
+    let mut parser = job.parser.borrow_mut();
+    if parser.is_none() {
+        *parser = Some(Rc::new(crate::clash::Parser::new()?));
+    }
+    Ok(Rc::clone(parser.as_ref().unwrap()))
 }
 
 pub(crate) fn message(ctx: &Ctx<'_>, error: rquickjs::Error) -> String {
@@ -106,11 +117,12 @@ fn refresh<'js>(
     let key_text = key_text
         .as_str()
         .ok_or_else(|| js.error("Storage key must be a string"))?;
-    let baseline = {
+    let before = {
         let old = job.baseline.borrow();
-        if root { old.1.clone() } else { old.0.clone() }
+        let baseline = if root { &old.1 } else { &old.0 };
+        baseline.get(key_text).cloned()
     };
-    let fresh = {
+    let after = {
         let store = job
             .store
             .lock()
@@ -119,13 +131,19 @@ fn refresh<'js>(
             store
                 .script_root()
                 .map_err(|error| js.error(&error.to_string()))?
+                .get(key_text)
+                .cloned()
         } else {
-            store.data.clone()
+            store.data.get(key_text).cloned()
         }
     };
-    let before = baseline.get(key_text);
-    let after = fresh.get(key_text);
-    if before.map(codec::stringify) == after.map(codec::stringify) {
+    let before = before.as_ref();
+    let after = after.as_ref();
+    if match (before, after) {
+        (Some(before), Some(after)) => codec::same_json(before, after),
+        (None, None) => true,
+        _ => false,
+    } {
         return Ok(());
     }
     let cache = js.get(this, if root { "root" } else { "cache" })?;
@@ -447,7 +465,9 @@ fn native_parse<'js>(ctx: Ctx<'js>, raw: JsValue<'js>) -> rquickjs::Result<JsVal
     }
     let js = Js::new(ctx);
     let raw = crate::js_values::project(&js.ctx, raw)?;
-    let proxies = conversion::parse(&raw).map_err(|error| js.error(&conversion_message(error)))?;
+    let parser = parser(&js.ctx).map_err(|error| js.error(&conversion_message(error)))?;
+    let proxies = conversion::parse(&raw, Some(&parser))
+        .map_err(|error| js.error(&conversion_message(error)))?;
     crate::js_values::decode(&js.ctx, &json!(proxies))
 }
 
@@ -1125,6 +1145,7 @@ pub async fn run(
                     let job = Job {
                         store,
                         baseline: Rc::new(RefCell::new((cache, root))),
+                        parser: Rc::new(RefCell::new(None)),
                         background,
                     };
                     let runtime = AsyncRuntime::new()

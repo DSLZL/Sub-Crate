@@ -21,6 +21,29 @@ if os.environ.get("GITHUB_ACTIONS") != "true":
 
 
 class Contracts(unittest.TestCase):
+    def test_rust_comparison_uses_distinct_binaries_and_identical_disposable_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            seed = root / "seed"
+            seed.mkdir()
+            (seed / "root.json").write_text('{"same":"imported state"}')
+            suite = object.__new__(b.Suite)
+            suite.args = SimpleNamespace(rust=root / "candidate", rust_baseline=root / "baseline", frontend=root / "frontend")
+            suite.pristine, suite.env = {"rust": seed}, {}
+            for kind, source in (("rust", "candidate"), ("rust_baseline", "baseline"), ("rust_repeat", "candidate")):
+                directory = root / kind
+                directory.mkdir()
+                with patch.object(b, "process", return_value=nullcontext("owned child")) as launch, patch.object(b, "ready"):
+                    with suite.server(kind, directory) as (_, child, state, _):
+                        self.assertEqual(child, "owned child")
+                        self.assertEqual((state / "root.json").read_bytes(), (seed / "root.json").read_bytes())
+                        (state / "root.json").write_text("disposable mutation")
+                    argv, cwd, env, _ = launch.call_args.args
+                    self.assertEqual(argv, [root / source / "rust/target/release/sub-store-rust"])
+                    self.assertEqual(cwd, root / source)
+                    self.assertEqual(env["PATH"], "")
+            self.assertEqual((seed / "root.json").read_text(), '{"same":"imported state"}')
+
     def test_health_profile_preserves_results_errors_and_restores_helpers(self):
         source = """async function operator(value) {
           if (ProxyUtils.produce(value) !== value) throw Error('identity');
