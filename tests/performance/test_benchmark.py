@@ -5,6 +5,7 @@ from contextlib import nullcontext
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -110,6 +111,12 @@ class Contracts(unittest.TestCase):
         b.command(["node", "-e", script + check])
 
     def test_rust_comparison_uses_distinct_binaries_and_identical_disposable_state(self):
+        workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/rust-performance.yml").read_text()
+        for revision, variable, path in ((b.RUST, "PERF_RUST_REVISION", "rust"),
+                                         (b.RUST_BASELINE, "PERF_BASELINE_REVISION", "rust-baseline")):
+            self.assertEqual(re.search(rf"^  {variable}: ([a-f0-9]{{40}})$", workflow, re.M)[1], revision)
+            refs = re.findall(rf"ref: (.+)\n          path: \.performance/{path}\n", workflow)
+            self.assertEqual(refs, ["${{ env." + variable + " }}"] * 2)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             seed = root / "seed"

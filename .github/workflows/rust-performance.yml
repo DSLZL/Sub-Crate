@@ -23,6 +23,10 @@ on:
 permissions:
   contents: read
 
+env:
+  PERF_RUST_REVISION: da7b705c22cdd51b4a7a4a3ba5cbd87748e75d30
+  PERF_BASELINE_REVISION: 887ddccb36f7724a831a89b4aad416e9c97c7c51
+
 concurrency:
   group: ${{ inputs.inspect_run && 'subscription-report-inspection' || inputs.diagnose_health && 'subscription-health-diagnostic' || inputs.diagnose_parse && 'subscription-parse-diagnostic' || 'supplied-subscription-performance' }}
   cancel-in-progress: false
@@ -120,13 +124,13 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: da7b705c22cdd51b4a7a4a3ba5cbd87748e75d30
+          ref: ${{ env.PERF_RUST_REVISION }}
           path: .performance/rust
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: inputs.diagnose_health
         with:
-          ref: 887ddccb36f7724a831a89b4aad416e9c97c7c51
+          ref: ${{ env.PERF_BASELINE_REVISION }}
           path: .performance/rust-baseline
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -154,7 +158,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-da7b705c22cdd51b4a7a4a3ba5cbd87748e75d30
+          key: subscription-performance-linux-x64-rust-1.98.0-${{ env.PERF_RUST_REVISION }}
           restore-keys: subscription-performance-linux-x64-rust-1.98.0-
       - name: Build exact original, Rust and unchanged frontend
         run: |
@@ -289,13 +293,13 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: 887ddccb36f7724a831a89b4aad416e9c97c7c51
+          ref: ${{ env.PERF_RUST_REVISION }}
           path: .performance/rust
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: inputs.diagnose_health
         with:
-          ref: ea16edca545b31fc623ffed9061ecc7024ca511f
+          ref: ${{ env.PERF_BASELINE_REVISION }}
           path: .performance/rust-baseline
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
