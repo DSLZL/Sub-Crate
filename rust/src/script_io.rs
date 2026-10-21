@@ -30,7 +30,10 @@ unsafe impl<'js> JsLifetime<'js> for Executor {
     type Changed<'to> = Executor;
 }
 
-pub(crate) fn set_executor(ctx: &Ctx<'_>, executor: tokio::runtime::Handle) -> rquickjs::Result<()> {
+pub(crate) fn set_executor(
+    ctx: &Ctx<'_>,
+    executor: tokio::runtime::Handle,
+) -> rquickjs::Result<()> {
     ctx.store_userdata(Executor(executor))
         .map_err(|_| Exception::throw_message(ctx, "Script I/O executor already borrowed"))?;
     Ok(())
