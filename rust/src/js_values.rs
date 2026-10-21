@@ -6,27 +6,22 @@ pub(crate) fn initialize(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
     let functions: Object = ctx.eval(
         r#"({
       project: value => {
-      const paths = [], parents = [], keys = []; let root = true;
+      const paths = [], parents = new WeakMap(); let root = true;
       const text = JSON.stringify(value, function(key, field) {
         const first = root; root = false;
-        if (!first) {
-          while (parents.length && parents[parents.length - 1] !== this) {
-            parents.pop(); keys.pop();
-          }
-        }
         if (field && typeof field === 'object') {
-          const ancestor = parents.indexOf(field);
-          if (ancestor !== -1) {
-            paths.push([[...keys, key], parents.length - ancestor]); return null;
+          const path = first ? [] : [...parents.get(this), key];
+          const ancestor = parents.get(field);
+          if (ancestor && ancestor.length < path.length && ancestor.every((part,index) => part === path[index])) {
+            paths.push([path,path.length-ancestor.length]); return null;
           }
-          parents.push(field);
-          if (!first) keys.push(key);
+          parents.set(field, path);
         } else if (typeof field === 'number' && (!Number.isFinite(field) || Object.is(field, -0))) {
-          paths.push([first ? [] : [...keys, key], Object.is(field, -0) ? '-0' : String(field)]);
+          paths.push([first ? [] : [...parents.get(this), key], Object.is(field, -0) ? '-0' : String(field)]);
         }
         return field;
       });
-      return [text, JSON.stringify(paths)];
+      return paths.length === 0 && typeof text === 'string' ? text : [text, JSON.stringify(paths)];
       },
       stringify: (value,space) => JSON.stringify(value,null,space),
       assign: (root,path,value,depth) => {
@@ -50,11 +45,20 @@ pub(crate) fn project<'js>(
     value: Value<'js>,
 ) -> rquickjs::Result<serde_json::Value> {
     let stringify = function(ctx, "project")?;
-    let result: Array = stringify.call((value,))?;
-    let text: String = result.get(0)?;
-    let paths: String = result.get(1)?;
+    let result: Value = stringify.call((value,))?;
+    let (text, paths) = if let Some(text) = result.as_string() {
+        (text.to_string()?, None)
+    } else {
+        let result = Array::from_value(result)?;
+        let text: String = result.get(0)?;
+        let paths: String = result.get(1)?;
+        (text, Some(paths))
+    };
     let mut value = codec::parse(&text)
         .map_err(|error| rquickjs::Exception::throw_message(ctx, &error.to_string()))?;
+    let Some(paths) = paths else {
+        return Ok(value);
+    };
     let paths = codec::parse(&paths)
         .map_err(|error| rquickjs::Exception::throw_message(ctx, &error.to_string()))?;
     for entry in paths.as_array().unwrap() {
@@ -332,6 +336,31 @@ mod tests {
     }
 
     #[test]
+    fn ordinary_projection_reads_current_getters_once_per_call() {
+        let runtime = rquickjs::Runtime::new().unwrap();
+        let context = rquickjs::Context::full(&runtime).unwrap();
+        context.with(|ctx| {
+            initialize(&ctx).unwrap();
+            let source = r#"(() => {
+                globalThis.reads = 0;
+                return {toJSON() {
+                    reads++;
+                    return {get value() {return ++reads;}, nested: {ordinary: 0}};
+                }};
+            })()"#;
+            let value: Value = ctx.eval(source).unwrap();
+            for call in 1..=3 {
+                let projected = project(&ctx, value.clone()).unwrap();
+                assert_eq!(
+                    projected,
+                    serde_json::json!({"value":call * 2,"nested":{"ordinary":0}})
+                );
+                assert_eq!(ctx.eval::<u32, _>("reads").unwrap(), call * 2);
+            }
+        });
+    }
+
+    #[test]
     fn projection_distinguishes_shared_siblings_from_ancestor_cycles() {
         let runtime = rquickjs::Runtime::new().unwrap();
         let context = rquickjs::Context::full(&runtime).unwrap();
@@ -411,10 +440,14 @@ mod tests {
             let raw = r#"{"__proto__":{"literal":true},"\ue000cycle":"literal","\ud800":"\udfff","nul":"\u0000","values":[0,1.25,1e-7,1e21,18446744073709551615,-9223372036854775808,5e-324],"nested":["中🙂",{"false":false,"null":null}]}"#;
             let expected = ctx.json_parse(raw).unwrap();
             let restored = decode(&ctx, &codec::parse(raw).unwrap()).unwrap();
+            let projected = project(&ctx, expected.clone()).unwrap();
+            let projected = decode(&ctx, &projected).unwrap();
+            ctx.globals().set("projected", projected).unwrap();
             ctx.globals().set("expected", expected).unwrap();
             ctx.globals().set("restored", restored).unwrap();
             let assertion = r#"
                 JSON.stringify(restored) === JSON.stringify(expected) &&
+                JSON.stringify(projected) === JSON.stringify(expected) &&
                 Object.getPrototypeOf(restored) === Object.prototype &&
                 Object.hasOwn(restored, '__proto__') && restored.__proto__.literal === true &&
                 restored['\ue000cycle'] === 'literal' &&
