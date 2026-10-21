@@ -40,8 +40,8 @@ jobs:
         run: |
           python3.12 -m venv "$RUNNER_TEMP/performance-venv"
           "$RUNNER_TEMP/performance-venv/bin/pip" install --require-hashes --only-binary=:all: -r tests/performance/requirements.txt
-          "$RUNNER_TEMP/performance-venv/bin/python" -m py_compile tests/performance/benchmark.py tests/performance/test_benchmark.py
-          "$RUNNER_TEMP/performance-venv/bin/python" -m unittest discover -s tests/performance -p test_benchmark.py
+          "$RUNNER_TEMP/performance-venv/bin/python" -m py_compile tests/performance/benchmark.py tests/performance/parallel.py tests/performance/test_benchmark.py
+          "$RUNNER_TEMP/performance-venv/bin/python" -m unittest discover -s tests/performance -p 'test_*.py'
   inspect:
     needs: checks
     if: inputs.inspect_run != ''
@@ -85,11 +85,15 @@ jobs:
               selected['health_counts'] = row.get('health_counts', [])[:2]
               print(json.dumps(selected, sort_keys=True))
           PY
-  compare:
+  prepare:
+    name: Build, import and freeze inputs once
     needs: checks
     if: inputs.inspect_run == ''
     runs-on: ubuntu-24.04
     timeout-minutes: 300
+    outputs:
+      matrix: ${{ steps.matrix.outputs.value }}
+      attempt: ${{ steps.matrix.outputs.attempt }}
     defaults:
       run:
         shell: bash
@@ -172,7 +176,7 @@ jobs:
         run: |
           agent-browser skills get core
           agent-browser install --with-deps
-      - name: Import original file and compare full workloads
+      - name: Import original file, capture untouched sources and seal private inputs
         env:
           BENCHMARK_SUBSCRIPTION_B64: ${{ secrets.BENCHMARK_SUBSCRIPTION_B64 }}
         run: |
@@ -189,7 +193,38 @@ jobs:
             --rust "$GITHUB_WORKSPACE/.performance/rust" \
             --frontend "$GITHUB_WORKSPACE/.performance/frontend" \
             --scratch "$RUNNER_TEMP/subscription-performance-private" \
-            --publish "$RUNNER_TEMP/subscription-performance-public" "${diagnostic_args[@]}"
+            --publish "$RUNNER_TEMP/subscription-performance-public" \
+            --prepare-only --frozen "$RUNNER_TEMP/subscription-performance-inputs.bin" "${diagnostic_args[@]}"
+      - name: Select independent same-runner pairs
+        id: matrix
+        run: |
+          mode=()
+          if [[ '${{ inputs.diagnose_parse }}' == 'true' ]]; then mode=(--diagnostic parse); fi
+          if [[ '${{ inputs.diagnose_health }}' == 'true' ]]; then mode=(--diagnostic health); fi
+          value=$("$RUNNER_TEMP/performance-venv/bin/python" tests/performance/parallel.py matrix "${mode[@]}")
+          echo "value=$value" >> "$GITHUB_OUTPUT"
+          echo "attempt=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - name: Archive the public builds once
+        run: |
+          payloads=(.performance/original/backend/dist .performance/frontend/dist .performance/rust/rust/target/release/sub-store-rust)
+          if [[ '${{ inputs.diagnose_health }}' == 'true' ]]; then
+            payloads+=(.performance/rust-baseline/rust/target/release/sub-store-rust)
+          fi
+          tar -czf "$RUNNER_TEMP/subscription-performance-build.tar.gz" "${payloads[@]}"
+      - name: Share public application builds
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: subscription-performance-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/subscription-performance-build.tar.gz
+          compression-level: 0
+          retention-days: 1
+      - name: Share authenticated encrypted source text and UI-created seeds
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: subscription-performance-inputs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/subscription-performance-inputs.bin
+          compression-level: 0
+          retention-days: 1
       - name: Show sanitized report
         if: always()
         run: |
@@ -197,6 +232,129 @@ jobs:
             cat "$RUNNER_TEMP/subscription-performance-public/summary.md"
           fi
       - name: Preserve sanitized metrics, including failures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: subscription-performance-prepare-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/subscription-performance-public/
+          if-no-files-found: warn
+          retention-days: 30
+
+  compare:
+    name: Pair ${{ matrix.shard }}
+    needs: prepare
+    if: inputs.inspect_run == '' && needs.prepare.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: 9cc6b5fac966993364ae33da8797f446bbf7f571
+          path: .performance/original
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: 7022849b739a04d01f4fc034028f18050a2f6016
+          path: .performance/rust
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: inputs.diagnose_health
+        with:
+          ref: e9da7c39ca42a731355e00a3a7c897050c47f73f
+          path: .performance/rust-baseline
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: sub-store-org/Sub-Store-Front-End
+          ref: 4bd7b0acbe65466b933ccea14fc61dbebe036ead
+          path: .performance/frontend
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24.16.0
+          package-manager-cache: false
+      - name: Install fixed runtime tools and sampler
+        run: |
+          npm install --global pnpm@11.0.9
+          pnpm --dir .performance/original/backend install --frozen-lockfile --prod
+          python3.12 -m venv "$RUNNER_TEMP/performance-venv"
+          "$RUNNER_TEMP/performance-venv/bin/pip" install --require-hashes --only-binary=:all: -r tests/performance/requirements.txt
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: subscription-performance-build-${{ github.run_id }}-${{ needs.prepare.outputs.attempt }}
+          path: ${{ runner.temp }}/performance-build
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: subscription-performance-inputs-${{ github.run_id }}-${{ needs.prepare.outputs.attempt }}
+          path: ${{ runner.temp }}/performance-inputs
+      - name: Extract the exact public builds
+        run: tar -xzf "$RUNNER_TEMP/performance-build/subscription-performance-build.tar.gz"
+      - name: Validate fixed inputs and measure this pair
+        env:
+          BENCHMARK_SUBSCRIPTION_B64: ${{ secrets.BENCHMARK_SUBSCRIPTION_B64 }}
+        run: |
+          umask 077
+          mode=(--shard '${{ matrix.shard }}')
+          if [[ '${{ inputs.diagnose_parse }}' == 'true' ]]; then mode=(--diagnose-parse); fi
+          if [[ '${{ inputs.diagnose_health }}' == 'true' ]]; then
+            mode=(--diagnose-health --rust-baseline "$GITHUB_WORKSPACE/.performance/rust-baseline")
+          fi
+          "$RUNNER_TEMP/performance-venv/bin/python" tests/performance/benchmark.py \
+            --original "$GITHUB_WORKSPACE/.performance/original" \
+            --rust "$GITHUB_WORKSPACE/.performance/rust" \
+            --frontend "$GITHUB_WORKSPACE/.performance/frontend" \
+            --scratch "$RUNNER_TEMP/subscription-performance-private" \
+            --publish "$RUNNER_TEMP/subscription-performance-public" \
+            --frozen "$RUNNER_TEMP/performance-inputs/subscription-performance-inputs.bin" "${mode[@]}"
+      - name: Preserve this pair including failures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: subscription-performance-shard-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/subscription-performance-public/
+          if-no-files-found: warn
+          retention-days: 30
+
+  aggregate:
+    name: Verify and combine all pairs
+    needs: [prepare, compare]
+    if: always() && inputs.inspect_run == '' && needs.prepare.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: subscription-performance-prepare-${{ github.run_id }}-${{ needs.prepare.outputs.attempt }}
+          path: ${{ runner.temp }}/performance-prepared
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          pattern: subscription-performance-shard-*-${{ github.run_id }}-*
+          path: ${{ runner.temp }}/performance-workers
+      - name: Reject incomplete, duplicated or unequal work
+        shell: bash
+        run: |
+          python3.12 -m venv "$RUNNER_TEMP/performance-venv"
+          "$RUNNER_TEMP/performance-venv/bin/pip" install --require-hashes --only-binary=:all: -r tests/performance/requirements.txt
+          mode=()
+          if [[ '${{ inputs.diagnose_parse }}' == 'true' ]]; then mode=(--diagnostic parse); fi
+          if [[ '${{ inputs.diagnose_health }}' == 'true' ]]; then mode=(--diagnostic health); fi
+          "$RUNNER_TEMP/performance-venv/bin/python" tests/performance/parallel.py aggregate \
+            --prepared "$RUNNER_TEMP/performance-prepared" --workers "$RUNNER_TEMP/performance-workers" \
+            --publish "$RUNNER_TEMP/subscription-performance-public" "${mode[@]}"
+      - name: Preserve complete sanitized comparison including failures
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:

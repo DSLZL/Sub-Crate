@@ -8,6 +8,7 @@ import copy
 import difflib
 import gzip
 import hashlib
+import io
 from http.client import HTTPConnection
 import json
 import math
@@ -22,6 +23,7 @@ import socket
 import statistics
 import subprocess
 import sys
+import tarfile
 import threading
 import time
 import traceback
@@ -42,6 +44,11 @@ WATCHDOG = 300
 KINDS = ("node", "rust")
 COMPARISON_KINDS = ("node", "rust", "rust_baseline", "rust_repeat")
 CASES = ("import", "cold", "warm", "pressure", "real", "parse", "pre_health", "no_publisher")
+MATRIX = (("parse", 3), ("pre_health", 1), ("cold", 10), ("warm", 5), ("pressure", 3), ("no_publisher", 3))
+SHARDS = {f"{case}_{block}_{clients}": (case, block, clients)
+          for case, blocks in MATRIX for clients in ((1, 2, 4, 8) if case == "pressure" else (1,))
+          for block in range(blocks)}
+SHARDS["real_0_1"] = ("real", 0, 1)
 ERRORS = {
     "input", "asset", "source", "startup", "http", "browser", "import_fields",
     "import_network", "persistence", "capture", "script_anchor", "empty_output",
@@ -53,6 +60,7 @@ PUBLIC_STRINGS = set(COMPARISON_KINDS + CASES) | ERRORS | {
     "nonempty", "linux_x64", "not_run", "warming", "unpaired", "partial_sources",
     "parse_diagnostic", "health_diagnostic",
 }
+PUBLIC_STRINGS.update(SHARDS)
 NODE_FIELDS = {"name", "type", "server", "port", "ports", "password", "uuid", "sni", "tls",
                "_subName", "_subDisplayName", "_latency", "_resolved", "resolved", "id",
                "network", "cipher", "udp", "tfo", "skip-cert-verify", "client-fingerprint",
@@ -773,6 +781,10 @@ class Suite:
                     self.counts(reset=True)
                 last = None
                 mismatch = None
+                if case == "pressure":
+                    # A separate runner has no earlier cold/warm cell to seed this oracle.
+                    self.expected_outputs.setdefault("full", warm_output)
+                    self.expected_hashes.setdefault("full", nodes_hash(warm_output))
                 if case == "pressure" and nodes_hash(warm_output) != self.expected_hashes["full"]:
                     mismatch = warm_output
 
@@ -942,6 +954,8 @@ class Suite:
         machine = self.report.get("provenance", {}).get("runner")
         if machine:
             lines += ["", f"Runner: {machine['cpu_model']}, logical/affinity CPUs={machine['logical_cpus']}/{machine['affinity_cpus']}, RAM={machine['memory_bytes']/2**30:.2f}GiB, cgroup memory limit={machine['memory_limit_bytes']}, CPU quota/period={machine['cpu_quota_us']}/{machine['cpu_period_us']}us."]
+        if self.report.get("workers"):
+            lines += ["", f"Parallel workers: {len(self.report['workers'])}. Each Node/Rust pair ran on the same worker; runner labels do not imply identical CPUs or contention. Paired estimates retain those worker pairs; pooled latency distributions span the recorded machines."]
         failures = [r for r in rows if r["status"] == "failed"]
         if failures or self.report.get("failure"):
             lines += ["", "Failures: " + ", ".join([r.get("failure", "unexpected") for r in failures] + ([self.report["failure"]] if self.report.get("failure") else [])) + ". Failed/incomplete cases are never speedups."]
@@ -1023,6 +1037,45 @@ def provenance(args):
                        "load_before": list(os.getloadavg())}}
 
 
+def frozen_cipher(operation, input_file, payload):
+    result = subprocess.run([shutil.which("node"), str(Path(__file__).with_name("frozen-inputs.cjs")), operation, str(input_file)],
+                            input=payload, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    require(result.returncode == 0, "capture")
+    return result.stdout
+
+
+def seal_inputs(suite, input_file, destination):
+    stream = io.BytesIO()
+    with tarfile.open(fileobj=stream, mode="w:gz") as archive:
+        for kind, directory in suite.pristine.items():
+            require(not any(p.is_symlink() for p in directory.rglob("*")), "capture")
+            archive.add(directory, arcname="pristine-" + kind)
+        archive.add(suite.args.scratch / "mirrors", arcname="mirrors")
+        metadata = encoded(suite.report)
+        entry = tarfile.TarInfo("prepared.json")
+        entry.size = len(metadata)
+        archive.addfile(entry, io.BytesIO(metadata))
+    destination.write_bytes(frozen_cipher("seal", input_file, stream.getvalue()))
+
+
+def load_inputs(suite, input_file, source):
+    payload = frozen_cipher("open", input_file, source.read_bytes())
+    with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as archive:
+        archive.extractall(suite.args.scratch, filter="data")
+    prepared = json.loads((suite.args.scratch / "prepared.json").read_bytes())
+    require(prepared["preparation_complete"] and prepared["input_sha256"] == INPUT_HASH, "capture")
+    require(all(prepared["provenance"].get(k) == v for k, v in suite.report["provenance"].items() if k != "runner"), "source")
+    require(len(prepared["imports"]) == 10 and all(row["restart"] for row in prepared["imports"])
+            and all(sum(row["kind"] == kind for row in prepared["imports"]) == 5 for kind in KINDS), "persistence")
+    require(prepared["capture"]["before_preprocessing"] and len(prepared["capture"]["sources"]) == 22
+            and {row["index"] for row in prepared["capture"]["sources"]} == set(range(22)), "capture")
+    for row in prepared["capture"]["sources"]:
+        require(digest((suite.args.scratch / "mirrors" / f"{row['index']}.txt").read_bytes()) == row["sha256"], "capture")
+    suite.pristine = {kind: suite.args.scratch / ("pristine-" + kind) for kind in KINDS}
+    for key in ("capture", "imports", "script", "chromium"):
+        suite.report[key] = prepared[key]
+
+
 def main():
     require(os.environ.get("GITHUB_ACTIONS") == "true", "source")
     parser = argparse.ArgumentParser(description=__doc__)
@@ -1036,7 +1089,12 @@ def main():
     parser.add_argument("--meta-port", type=int)
     parser.add_argument("--diagnose-parse", action="store_true")
     parser.add_argument("--diagnose-health", action="store_true")
+    parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--frozen", type=Path)
+    parser.add_argument("--shard", choices=tuple(SHARDS))
     args = parser.parse_args()
+    require(not args.prepare_only or (args.frozen and not args.shard), "input")
+    require(not args.shard or (args.frozen and not args.diagnose_parse and not args.diagnose_health), "input")
     require(not (args.diagnose_parse and args.diagnose_health), "input")
     require(not args.rust_baseline or args.diagnose_health, "input")
     soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
@@ -1048,6 +1106,8 @@ def main():
     args.scratch.mkdir(mode=0o700)
     args.publish.mkdir(mode=0o700)
     report = {"status": "running", "input_sha256": INPUT_HASH, "imports": [], "samples": []}
+    if args.shard:
+        report["shard"] = args.shard
     if args.diagnose_parse:
         report["diagnostic"] = "parse_diagnostic"
     elif args.diagnose_health:
@@ -1062,23 +1122,26 @@ def main():
         original = json.loads(raw)
         require(len(original["process"]) == 7 and len(original["url"].strip().splitlines()) == 22, "input")
         mirrors = args.scratch / "mirrors"
-        mirrors.mkdir()
-        source = get_script()
-        variant = stress_script(source)
-        (args.publish / "stress.patch").write_text("".join(difflib.unified_diff(source.splitlines(True), variant.splitlines(True), "pinned.js", "stress.js")), encoding="utf-8")
-        report["script"] = {"blob": SCRIPT_BLOB, "original_sha256": SCRIPT_HASH,
-                            "stress_sha256": digest(variant.encode()), "changed_sites": 5}
-        if args.diagnose_health:
-            instrumented = profile_health_script(variant)
-            (args.publish / "health-profile.patch").write_text("".join(difflib.unified_diff(variant.splitlines(True), instrumented.splitlines(True), "stress.js", "profile.js")), encoding="utf-8")
-            variant = instrumented
-            report["script"]["profile_sha256"] = digest(variant.encode())
-        (mirrors / "stress.js").write_text(variant, encoding="utf-8")
-        suite.publish()
-        print("Importing the unchanged file on both backends (five paired observations).", flush=True)
-        suite.imports(original, input_file)
-        print("Capturing source text before preprocessing through the original backend.", flush=True)
-        suite.capture(original)
+        if args.frozen and not args.prepare_only:
+            load_inputs(suite, input_file, args.frozen)
+        else:
+            mirrors.mkdir()
+            source = get_script()
+            variant = stress_script(source)
+            (args.publish / "stress.patch").write_text("".join(difflib.unified_diff(source.splitlines(True), variant.splitlines(True), "pinned.js", "stress.js")), encoding="utf-8")
+            report["script"] = {"blob": SCRIPT_BLOB, "original_sha256": SCRIPT_HASH,
+                                "stress_sha256": digest(variant.encode()), "changed_sites": 5}
+            if args.diagnose_health:
+                instrumented = profile_health_script(variant)
+                (args.publish / "health-profile.patch").write_text("".join(difflib.unified_diff(variant.splitlines(True), instrumented.splitlines(True), "stress.js", "profile.js")), encoding="utf-8")
+                variant = instrumented
+                report["script"]["profile_sha256"] = digest(variant.encode())
+            (mirrors / "stress.js").write_text(variant, encoding="utf-8")
+            suite.publish()
+            print("Importing the unchanged file on both backends (five paired observations).", flush=True)
+            suite.imports(original, input_file)
+            print("Capturing source text before preprocessing through the original backend.", flush=True)
+            suite.capture(original)
         fixture_port, meta_port = free_port(), free_port()
         fixture_args = [sys.executable, Path(__file__).resolve(), "--scratch", mirrors,
                         "--fixture-port", fixture_port, "--meta-port", meta_port]
@@ -1093,12 +1156,19 @@ def main():
                                              "driver_cpu_s": cpu(psutil.Process()) - driver_before,
                                              "fixture_cpu_s": cpu(psutil.Process(fixture.pid)) - fixture_before}
             suite.replay(original)
+            if args.prepare_only:
+                report.update(status="passed", preparation_complete=True)
+                suite.publish()
+                seal_inputs(suite, input_file, args.frozen)
+                raise SystemExit(0)
             if args.diagnose_parse:
                 suite.diagnose_sources()
-            matrix = (("pre_health", 1), ("cold", 1), ("warm", 1), ("no_publisher", 1)) if args.diagnose_health else (("parse", 1), ("pre_health", 1)) if args.diagnose_parse else (("parse", 3), ("pre_health", 1), ("cold", 10), ("warm", 5), ("pressure", 3), ("no_publisher", 3))
+            matrix = (("pre_health", 1), ("cold", 1), ("warm", 1), ("no_publisher", 1)) if args.diagnose_health else (("parse", 1), ("pre_health", 1)) if args.diagnose_parse else MATRIX
             for case, blocks in matrix:
                 for concurrency in ((1, 2, 4, 8) if case == "pressure" else (1,)):
                     for block in range(blocks):
+                        if args.shard and SHARDS[args.shard] != (case, block, concurrency):
+                            continue
                         order = COMPARISON_KINDS if args.rust_baseline else KINDS
                         for kind in (order if block % 2 == 0 else order[::-1]):
                             print(f"Measuring {case} / {kind}, block {block + 1}, clients {concurrency}.", flush=True)
@@ -1107,6 +1177,9 @@ def main():
             if args.diagnose_parse or args.diagnose_health:
                 report["status"] = "passed" if all(r["status"] == "passed" for r in report["samples"] + report.get("direct_sources", [])) else "failed"
                 print("Short diagnostic status: " + report["status"], flush=True)
+                raise SystemExit(0 if report["status"] == "passed" else 1)
+            if args.shard and SHARDS[args.shard][0] != "real":
+                report.update(status="passed" if all(row["status"] == "passed" for row in report["samples"]) else "failed", shard=args.shard)
                 raise SystemExit(0 if report["status"] == "passed" else 1)
             print("Running the separately reported real HTTP-META/Mihomo pair.", flush=True)
             meta_dir = args.scratch / "http-meta"
@@ -1139,7 +1212,9 @@ def main():
                 for kind in KINDS:
                     suite.run_case(kind, "real", 0, original)
         require(len(report["imports"]) == 10 and all(r["restart"] for r in report["imports"]), "persistence")
-        report["matrix_complete"] = True
+        report["matrix_complete"] = not args.shard
+        if args.shard:
+            report["shard"] = args.shard
         report["status"] = "passed" if all(r["status"] == "passed" for r in report["samples"]) else "failed"
     except Exception as error:
         report.update(status="failed", failure=error.code if isinstance(error, Failure) else "unexpected",

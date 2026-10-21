@@ -26,8 +26,12 @@ original exported file bytes. The required SHA256 is
 `a6e6bb9cbe0587f33de0cf130ec391ecffd3483009888fed0ea59d39492ae890`.
 Do not commit this file or put its contents in workflow arguments. The secret
 is injected only into the measurement step. It is removed from the environment
-before application processes start. Private files stay in `$RUNNER_TEMP` and
-are never uploaded, cached, or included in console logs.
+before application processes start. Plaintext private files stay in `$RUNNER_TEMP`
+and are never uploaded, cached, or included in console logs. A one-day artifact
+transfers an AES-256-GCM encrypted capsule of the captured original text and
+UI-created seeds to workers. Its key derives from the private input bytes with
+a domain prefix and random salt, not the published input hash; authentication
+also binds it to the workflow run. The key is never uploaded.
 
 The workflow freezes original `9cc6b5fa`, Rust `7022849b`, and unchanged frontend
 `4bd7b0ac`, with full revisions in the harness and report. It builds the original
@@ -108,8 +112,16 @@ allows independent cells to run; observed metrics and differing counts remain in
 the report, while failed/non-equivalent pairs never enter speedup estimates.
 Timeout, crash or incomplete work is a failed
 sample; the harness never trims nodes or re-enables maintenance caps to pass.
-The Actions deadline is 300 minutes: the retained 90-minute attempt completed
-only 33/70 cells, so the full matrix needs a longer execution budget.
+The full matrix now uses 35 independent jobs (up to 20 concurrently), each with
+one Node/Rust pair on the same runner, preserving all 70 cells. Builds, five
+actual imports per backend and original-text capture happen once. Each worker
+validates identical binaries/inputs and all 23 ordered replay strings before
+measurement. Different jobs can have different physical CPUs despite sharing
+the `ubuntu-24.04` label; every runner's model, quotas and load are recorded.
+Paired estimates compare servers on the same machine; pooled distributions span
+these machines. Missing, duplicate, failed or unequal cells fail aggregation.
+Failed-job reruns reuse successful pairs and select the latest attempt of each
+rerun pair; original artifacts remain intact. Pair jobs have a 90-minute deadline.
 
 RSS is sampled at 50ms; VmHWM is the OS lifetime peak of each fresh process.
 CPU seconds use cumulative user+system counters, which have clock granularity.
