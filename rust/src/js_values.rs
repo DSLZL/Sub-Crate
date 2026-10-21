@@ -539,6 +539,7 @@ mod tests {
             let raw = r#"{"trapped":[{"__proto__":{"safe":true},"trapped":1}],"10":10,"2":2,"01":1,"4294967295":0}"#;
             let expected = ctx.json_parse(raw).unwrap();
             let restored = decode(&ctx, &codec::parse(raw).unwrap()).unwrap();
+            ctx.eval::<(), _>("delete Object.prototype.trapped; delete Array.prototype[0];").unwrap();
             ctx.globals().set("expected", expected).unwrap();
             ctx.globals().set("restored", restored).unwrap();
             assert!(ctx.eval::<bool, _>(r#"(() => {
