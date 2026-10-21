@@ -45,7 +45,7 @@ jobs:
           from pathlib import Path
           report = json.loads((Path(os.environ['RUNNER_TEMP']) / 'performance-inspect/metrics.json').read_bytes())
           for row in report['samples']:
-              if row['block'] != 0 or row['concurrency'] != 1:
+              if (row['block'] != 0 or row['concurrency'] != 1) and row.get('status') != 'failed':
                   continue
               keys = ('kind', 'case', 'status', 'failure', 'failure_observations', 'counts',
                       'warmup_counts', 'output_count', 'health_records', 'health_verified', 'work')
@@ -71,13 +71,13 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: cda93a24dd2b51636fdc2151ba33f0ff2f206d62
+          ref: 464241c8665180a644ff95234fd901d6451d6cdf
           path: .performance/rust
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: inputs.diagnose_health
         with:
-          ref: 312cd23096923a4b7b0bb353165958340ac76811
+          ref: cda93a24dd2b51636fdc2151ba33f0ff2f206d62
           path: .performance/rust-baseline
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -109,7 +109,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-cda93a24dd2b51636fdc2151ba33f0ff2f206d62
+          key: subscription-performance-linux-x64-rust-1.98.0-464241c8665180a644ff95234fd901d6451d6cdf
           restore-keys: subscription-performance-linux-x64-rust-1.98.0-
       - name: Build exact original, Rust and unchanged frontend
         run: |
@@ -120,9 +120,13 @@ jobs:
           git -C .performance/original diff --exit-code
           git -C .performance/rust diff --exit-code
           git -C .performance/frontend diff --exit-code
-      - name: Compare node conversion components before and after the optimization
+      - name: Profile HTTP initialization and compare node conversion components
         if: inputs.diagnose_health
         run: |
+          cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust script_io::transport::tests 2>&1 | tee "$RUNNER_TEMP/verifier-tests.log"
+          grep -F 'test result: ok. 2 passed; 0 failed; 1 ignored;' "$RUNNER_TEMP/verifier-tests.log"
+          cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust script_io::transport::tests::profile_verifier_initialization -- --ignored --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/verifier-profile.log"
+          grep -F 'test result: ok. 1 passed;' "$RUNNER_TEMP/verifier-profile.log"
           cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust script_conversion::tests::profile_node_production -- --ignored --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/conversion-profile-candidate-first.log"
           # Cargo fingerprints can reuse same-named crates across checkout roots.
           # Keep the frozen baseline's test executable separate from the candidate.
@@ -137,7 +141,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-cda93a24dd2b51636fdc2151ba33f0ff2f206d62
+          key: subscription-performance-linux-x64-rust-1.98.0-464241c8665180a644ff95234fd901d6451d6cdf
       - name: Load installed browser workflow and install headless Chromium
         run: |
           agent-browser skills get core
