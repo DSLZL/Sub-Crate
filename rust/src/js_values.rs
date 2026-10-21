@@ -3,7 +3,8 @@ use crate::json as codec;
 use rquickjs::{Array, Ctx, Function, Object, Value};
 
 pub(crate) fn initialize(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
-    let functions: Object = ctx.eval(r#"({
+    let functions: Object = ctx.eval(
+        r#"({
       project: value => {
       const paths = [], parents = new WeakMap(); let root = true;
       const text = JSON.stringify(value, function(key, field) {
@@ -20,7 +21,7 @@ pub(crate) fn initialize(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
         }
         return field;
       });
-      return [text, JSON.stringify(paths)];
+      return paths.length === 0 && typeof text === 'string' ? text : [text, JSON.stringify(paths)];
       },
       stringify: (value,space) => JSON.stringify(value,null,space),
       assign: (root,path,value,depth) => {
@@ -29,7 +30,8 @@ pub(crate) fn initialize(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
         for(let i=0;i<path.length-1;i++) target=target[path[i]];
         target[path[path.length-1]]=value;
       }
-    })"#)?;
+    })"#,
+    )?;
     ctx.globals().set("__nativeValues", functions)
 }
 
@@ -43,11 +45,20 @@ pub(crate) fn project<'js>(
     value: Value<'js>,
 ) -> rquickjs::Result<serde_json::Value> {
     let stringify = function(ctx, "project")?;
-    let result: Array = stringify.call((value,))?;
-    let text: String = result.get(0)?;
-    let paths: String = result.get(1)?;
+    let result: Value = stringify.call((value,))?;
+    let (text, paths) = if let Some(text) = result.as_string() {
+        (text.to_string()?, None)
+    } else {
+        let result = Array::from_value(result)?;
+        let text: String = result.get(0)?;
+        let paths: String = result.get(1)?;
+        (text, Some(paths))
+    };
     let mut value = codec::parse(&text)
         .map_err(|error| rquickjs::Exception::throw_message(ctx, &error.to_string()))?;
+    let Some(paths) = paths else {
+        return Ok(value);
+    };
     let paths = codec::parse(&paths)
         .map_err(|error| rquickjs::Exception::throw_message(ctx, &error.to_string()))?;
     for entry in paths.as_array().unwrap() {
@@ -325,6 +336,102 @@ mod tests {
     }
 
     #[test]
+    fn ordinary_projection_reads_current_getters_once_per_call() {
+        let runtime = rquickjs::Runtime::new().unwrap();
+        let context = rquickjs::Context::full(&runtime).unwrap();
+        context.with(|ctx| {
+            initialize(&ctx).unwrap();
+            let source = r#"(() => {
+                globalThis.reads = 0;
+                return {toJSON() {
+                    reads++;
+                    return {get value() {return ++reads;}, nested: {ordinary: 0}};
+                }};
+            })()"#;
+            let value: Value = ctx.eval(source).unwrap();
+            for call in 1..=3 {
+                let projected = project(&ctx, value.clone()).unwrap();
+                assert_eq!(
+                    projected,
+                    serde_json::json!({"value":call * 2,"nested":{"ordinary":0}})
+                );
+                assert_eq!(ctx.eval::<u32, _>("reads").unwrap(), call * 2);
+            }
+        });
+    }
+
+    #[test]
+    fn projection_distinguishes_shared_siblings_from_ancestor_cycles() {
+        let runtime = rquickjs::Runtime::new().unwrap();
+        let context = rquickjs::Context::full(&runtime).unwrap();
+        context.with(|ctx| {
+            initialize(&ctx).unwrap();
+            let source = r#"(() => {
+                const shared = {number: NaN, zero: -0};
+                shared.self = shared;
+                const root = {first: shared, branch: {child: shared}, last: shared};
+                root.array = [shared, {root}, -Infinity];
+                return root;
+            })()"#;
+            let value: Value = ctx.eval(source).unwrap();
+            let projected = project(&ctx, value).unwrap();
+            let restored = decode(&ctx, &projected).unwrap();
+            ctx.globals().set("restored", restored).unwrap();
+            let assertion = r#"(() => {
+                const copies = [restored.first, restored.branch.child, restored.last, restored.array[0]];
+                return copies.every(copy => copy.self === copy && Number.isNaN(copy.number) && Object.is(copy.zero, -0)) &&
+                    copies.every((copy, index) => copies.slice(index + 1).every(other => copy !== other)) &&
+                    restored.array[1].root === restored && restored.array[2] === -Infinity;
+            })()"#;
+            assert!(ctx.eval::<bool, _>(assertion).unwrap());
+        });
+    }
+
+    #[test]
+    fn projection_keeps_getter_order_and_recovers_after_a_throw() {
+        let runtime = rquickjs::Runtime::new().unwrap();
+        let context = rquickjs::Context::full(&runtime).unwrap();
+        context.with(|ctx| {
+            initialize(&ctx).unwrap();
+            let source = r#"(() => {
+                globalThis.events = [];
+                const child = {toJSON(key) {
+                    events.push('json:' + key);
+                    return {get zero() {events.push('zero:' + key); return -0;}};
+                }};
+                return {get first() {events.push('first'); return child;},
+                    get second() {events.push('second'); return child;},
+                    get last() {events.push('last'); return Infinity;}};
+            })()"#;
+            let value: Value = ctx.eval(source).unwrap();
+            let projected = project(&ctx, value).unwrap();
+            assert_eq!(
+                ctx.eval::<String, _>("events.join(',')").unwrap(),
+                "first,json:first,zero:first,second,json:second,zero:second,last"
+            );
+            assert!(codec::to_number(&projected["first"]["zero"]).is_sign_negative());
+            assert!(codec::to_number(&projected["second"]["zero"]).is_sign_negative());
+            assert_eq!(codec::nonfinite(&projected["last"]), Some(f64::INFINITY));
+            let source = "({nested: {get broken() {throw new Error('projection getter');}}})";
+            let throwing: Value = ctx.eval(source).unwrap();
+            assert!(project(&ctx, throwing).is_err());
+            let error = ctx.catch();
+            assert_eq!(
+                error
+                    .as_object()
+                    .unwrap()
+                    .get::<_, String>("message")
+                    .unwrap(),
+                "projection getter"
+            );
+            let value: Value = ctx.eval("({ok: {zero: -0}, after: [NaN]})").unwrap();
+            let projected = project(&ctx, value).unwrap();
+            assert!(codec::to_number(&projected["ok"]["zero"]).is_sign_negative());
+            assert!(codec::nonfinite(&projected["after"][0]).unwrap().is_nan());
+        });
+    }
+
+    #[test]
     fn restored_plain_values_keep_utf16_keys_and_js_number_semantics() {
         let runtime = rquickjs::Runtime::new().unwrap();
         let context = rquickjs::Context::full(&runtime).unwrap();
@@ -333,10 +440,14 @@ mod tests {
             let raw = r#"{"__proto__":{"literal":true},"\ue000cycle":"literal","\ud800":"\udfff","nul":"\u0000","values":[0,1.25,1e-7,1e21,18446744073709551615,-9223372036854775808,5e-324],"nested":["中🙂",{"false":false,"null":null}]}"#;
             let expected = ctx.json_parse(raw).unwrap();
             let restored = decode(&ctx, &codec::parse(raw).unwrap()).unwrap();
+            let projected = project(&ctx, expected.clone()).unwrap();
+            let projected = decode(&ctx, &projected).unwrap();
+            ctx.globals().set("projected", projected).unwrap();
             ctx.globals().set("expected", expected).unwrap();
             ctx.globals().set("restored", restored).unwrap();
             let assertion = r#"
                 JSON.stringify(restored) === JSON.stringify(expected) &&
+                JSON.stringify(projected) === JSON.stringify(expected) &&
                 Object.getPrototypeOf(restored) === Object.prototype &&
                 Object.hasOwn(restored, '__proto__') && restored.__proto__.literal === true &&
                 restored['\ue000cycle'] === 'literal' &&

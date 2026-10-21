@@ -108,13 +108,13 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: 9c659cef8ff193eddea42b6a5fea6c52629cfd54
+          ref: ea16edca545b31fc623ffed9061ecc7024ca511f
           path: .performance/rust
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: inputs.diagnose_health
         with:
-          ref: 7022849b739a04d01f4fc034028f18050a2f6016
+          ref: 9c659cef8ff193eddea42b6a5fea6c52629cfd54
           path: .performance/rust-baseline
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -142,7 +142,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-9c659cef8ff193eddea42b6a5fea6c52629cfd54
+          key: subscription-performance-linux-x64-rust-1.98.0-ea16edca545b31fc623ffed9061ecc7024ca511f
           restore-keys: subscription-performance-linux-x64-rust-1.98.0-
       - name: Build exact original, Rust and unchanged frontend
         run: |
@@ -157,12 +157,24 @@ jobs:
         if: inputs.diagnose_health
         run: |
           cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust 2>&1 | tee "$RUNNER_TEMP/candidate-tests.log"
-          grep -F 'test result: ok. 28 passed; 0 failed; 3 ignored;' "$RUNNER_TEMP/candidate-tests.log"
+          grep -F 'test result: ok. 31 passed; 0 failed; 3 ignored;' "$RUNNER_TEMP/candidate-tests.log"
       - name: Build the frozen Rust baseline in its separate target for whole-request comparison
         if: inputs.diagnose_health
         run: |
           cargo +1.98.0 build --manifest-path .performance/rust-baseline/rust/Cargo.toml --target-dir "$GITHUB_WORKSPACE/.performance/rust-baseline/rust/target" --locked --release --bin sub-store-rust
           git -C .performance/rust-baseline diff --exit-code
+      - name: Compare per-node components on this runner (candidate, baseline, candidate again)
+        if: inputs.diagnose_health
+        run: |
+          for variant in candidate baseline candidate_repeat; do
+            checkout=.performance/rust
+            if [[ "$variant" == baseline ]]; then checkout=.performance/rust-baseline; fi
+            echo "Per-node profile: variant=$variant source=$(git -C "$checkout" rev-parse HEAD)"
+            cargo +1.98.0 test --manifest-path "$checkout/rust/Cargo.toml" \
+              --target-dir "$GITHUB_WORKSPACE/$checkout/rust/target" --locked --release \
+              --bin sub-store-rust script_conversion::tests::profile_node_production \
+              -- --ignored --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/node-profile-$variant.log"
+          done
       - name: Save public build inputs before private measurements
         if: steps.rust-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
@@ -171,7 +183,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-9c659cef8ff193eddea42b6a5fea6c52629cfd54
+          key: subscription-performance-linux-x64-rust-1.98.0-ea16edca545b31fc623ffed9061ecc7024ca511f
       - name: Load installed browser workflow and install headless Chromium
         run: |
           agent-browser skills get core
@@ -264,13 +276,13 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: 9c659cef8ff193eddea42b6a5fea6c52629cfd54
+          ref: ea16edca545b31fc623ffed9061ecc7024ca511f
           path: .performance/rust
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: inputs.diagnose_health
         with:
-          ref: 7022849b739a04d01f4fc034028f18050a2f6016
+          ref: 9c659cef8ff193eddea42b6a5fea6c52629cfd54
           path: .performance/rust-baseline
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
