@@ -71,21 +71,36 @@ fn native_yaml(raw: &str) -> Option<Value> {
                 if style == ScalarStyle::Plain {
                     let word = text.as_ref();
                     let lower = word.to_ascii_lowercase();
-                    let number = word.trim_start_matches(['+', '-']);
+                    let number = word.strip_prefix(['+', '-']).unwrap_or(word);
                     let numeric = number.starts_with(|c: char| c.is_ascii_digit());
+                    let decimal = number
+                        .bytes()
+                        .all(|c| c.is_ascii_digit() || b"._eE+-".contains(&c));
+                    let radix = ["0x", "0X", "0o", "0O", "0b", "0B"].iter().any(|prefix| {
+                        number.strip_prefix(*prefix).is_some_and(|digits| {
+                            !digits.is_empty()
+                                && digits.bytes().all(|c| {
+                                    c == b'_'
+                                        || match *prefix {
+                                            "0x" | "0X" => c.is_ascii_hexdigit(),
+                                            "0o" | "0O" => matches!(c, b'0'..=b'7'),
+                                            _ => matches!(c, b'0' | b'1'),
+                                        }
+                                })
+                        })
+                    });
                     if matches!(lower.as_str(), "true" | "false" | "null")
                         && ![
                             "true", "True", "TRUE", "false", "False", "FALSE", "null", "Null",
                             "NULL",
                         ]
                         .contains(&word)
+                        || radix
                         || numeric
+                            && decimal
                             && (number.contains('_')
                                 || number.strip_prefix('0').is_some_and(|rest| {
-                                    rest.starts_with(|c: char| {
-                                        c.is_ascii_digit()
-                                            || matches!(c, 'x' | 'X' | 'o' | 'O' | 'b' | 'B')
-                                    })
+                                    rest.starts_with(|c: char| c.is_ascii_digit())
                                 }))
                         || word == "<<"
                     {
@@ -94,9 +109,7 @@ fn native_yaml(raw: &str) -> Option<Value> {
                     if matches!(parents.last(), Some(Some(true)))
                         && (word.is_empty()
                             || matches!(lower.as_str(), "true" | "false" | "null" | "~")
-                            || word.starts_with(|c: char| {
-                                c.is_ascii_digit() || matches!(c, '+' | '-' | '.')
-                            }))
+                            || word.parse::<f64>().is_ok())
                     {
                         return None;
                     }
@@ -588,6 +601,7 @@ mod tests {
             "[false, null, 1, \"1\", {nested: value}]",
             "{1.0: first, 0x10: second}",
             "{true: first, null: second}",
+            "{000-provider: {uuid: 00112233-4455-6677-8899-aabbccddeeff, password: 0bX_private}}",
             "{\"<<\": {x: 1}}",
             "{x: 1, x: 2}",
         ] {
@@ -617,6 +631,7 @@ mod tests {
         for raw in [
             "proxies: [{type: ss, server: 127.0.0.1, port: 443, udp: true, extra: [yes, null]}]",
             "proxies:\n  - type: ss\n    name: 中文😀\n    password: 'private-fixture'\n    server: example.invalid\n    port: 443\n    udp: false\n",
+            "proxies: [{type: ss, server: 127.0.0.1, port: 443, uuid: 00112233-4455-6677-8899-aabbccddeeff, password: 0bX_private, extra: {000-provider: value}}]",
         ] {
             let value = native_yaml(raw).unwrap();
             assert_eq!(value["proxies"][0]["type"], "ss");
