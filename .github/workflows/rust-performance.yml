@@ -45,9 +45,10 @@ jobs:
           from pathlib import Path
           report = json.loads((Path(os.environ['RUNNER_TEMP']) / 'performance-inspect/metrics.json').read_bytes())
           print('Report ' + json.dumps({key: report.get(key) for key in ('status', 'provenance', 'capture', 'replay', 'estimates')}, sort_keys=True))
-          groups = sorted({(r['case'], r['kind'], r['concurrency']) for r in report['samples'] if r.get('latencies_s')})
+          measured = [r for r in report['samples'] if r.get('latencies_s') and all(key in r for key in ('elapsed_s', 'cpu_s', 'rss_peak_bytes', 'output_count'))]
+          groups = sorted({(r['case'], r['kind'], r['concurrency']) for r in measured})
           for case, kind, clients in groups:
-              rows = [r for r in report['samples'] if (r['case'], r['kind'], r['concurrency']) == (case, kind, clients) and r.get('latencies_s')]
+              rows = [r for r in measured if (r['case'], r['kind'], r['concurrency']) == (case, kind, clients)]
               times = sorted(v for r in rows for v in r['latencies_s'])
               print('Aggregate ' + json.dumps({'case': case, 'kind': kind, 'clients': clients,
                   'blocks': len(rows), 'passed': sum(r['status'] == 'passed' for r in rows), 'requests': len(times),

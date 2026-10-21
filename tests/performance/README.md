@@ -455,3 +455,22 @@ generic normalization text within the request, clone only the requested state
 key, and avoid serialization when ordered marker-free values are identical.
 Final proxy conversion, validation, CA reads and writes remain active; no result
 is reused across jobs. Equivalent-output latency results are still required.
+
+The second same-runner comparison,
+[39525101503](https://github.com/DSLZL/Sub-Store/actions/runs/39525101503),
+passes16/16 cells with3102 equal nodes. Product4adef131 versus baselinee9da7c39:
+
+| Case | Node s | Baseline Rust s | Candidate first/repeat s |
+|---|---:|---:|---:|
+| Pre-health | 1.8290 | 1.4801 | 0.8959 / 0.9059 |
+| Warm | 1.9729 | 2.1077 | 1.4468 / 1.4244 |
+| No publisher | 1.8851 | 1.8453 | 1.2378 / 1.2676 |
+| Cold, one request/cell | 5.2789 | 8.3129 | 5.4101 / 8.8577 |
+
+Warm latency is31.4/32.4% lower than the preceding Rust product and26.7/27.8%
+lower than Node in this short capture; each warm cell has three requests. Cold
+is still unstable. All16 harness checks and26 Rust semantic tests pass. Health
+script instrumentation is identical on all backends; this is not the final
+uninstrumented long-matrix result. Do not combine these ratios with the earlier
+different capture/runner or claim a general cold speedup. Production has no
+diagnostic timers, and its native/full-matrix qualification remains pending.
