@@ -5,18 +5,23 @@ use rquickjs::{Array, Ctx, Function, Object, Value};
 pub(crate) fn initialize(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
     let functions: Object = ctx.eval(r#"({
       project: value => {
-      const paths = [], parents = new WeakMap(); let root = true;
+      const paths = [], parents = [], keys = []; let root = true;
       const text = JSON.stringify(value, function(key, field) {
         const first = root; root = false;
-        if (field && typeof field === 'object') {
-          const path = first ? [] : [...parents.get(this), key];
-          const ancestor = parents.get(field);
-          if (ancestor && ancestor.length < path.length && ancestor.every((part,index) => part === path[index])) {
-            paths.push([path,path.length-ancestor.length]); return null;
+        if (!first) {
+          while (parents.length && parents[parents.length - 1] !== this) {
+            parents.pop(); keys.pop();
           }
-          parents.set(field, path);
+        }
+        if (field && typeof field === 'object') {
+          const ancestor = parents.indexOf(field);
+          if (ancestor !== -1) {
+            paths.push([[...keys, key], parents.length - ancestor]); return null;
+          }
+          parents.push(field);
+          if (!first) keys.push(key);
         } else if (typeof field === 'number' && (!Number.isFinite(field) || Object.is(field, -0))) {
-          paths.push([first ? [] : [...parents.get(this), key], Object.is(field, -0) ? '-0' : String(field)]);
+          paths.push([first ? [] : [...keys, key], Object.is(field, -0) ? '-0' : String(field)]);
         }
         return field;
       });
@@ -322,6 +327,77 @@ mod tests {
                 }
             });
         }
+    }
+
+    #[test]
+    fn projection_distinguishes_shared_siblings_from_ancestor_cycles() {
+        let runtime = rquickjs::Runtime::new().unwrap();
+        let context = rquickjs::Context::full(&runtime).unwrap();
+        context.with(|ctx| {
+            initialize(&ctx).unwrap();
+            let source = r#"(() => {
+                const shared = {number: NaN, zero: -0};
+                shared.self = shared;
+                const root = {first: shared, branch: {child: shared}, last: shared};
+                root.array = [shared, {root}, -Infinity];
+                return root;
+            })()"#;
+            let value: Value = ctx.eval(source).unwrap();
+            let projected = project(&ctx, value).unwrap();
+            let restored = decode(&ctx, &projected).unwrap();
+            ctx.globals().set("restored", restored).unwrap();
+            let assertion = r#"(() => {
+                const copies = [restored.first, restored.branch.child, restored.last, restored.array[0]];
+                return copies.every(copy => copy.self === copy && Number.isNaN(copy.number) && Object.is(copy.zero, -0)) &&
+                    copies.every((copy, index) => copies.slice(index + 1).every(other => copy !== other)) &&
+                    restored.array[1].root === restored && restored.array[2] === -Infinity;
+            })()"#;
+            assert!(ctx.eval::<bool, _>(assertion).unwrap());
+        });
+    }
+
+    #[test]
+    fn projection_keeps_getter_order_and_recovers_after_a_throw() {
+        let runtime = rquickjs::Runtime::new().unwrap();
+        let context = rquickjs::Context::full(&runtime).unwrap();
+        context.with(|ctx| {
+            initialize(&ctx).unwrap();
+            let source = r#"(() => {
+                globalThis.events = [];
+                const child = {toJSON(key) {
+                    events.push('json:' + key);
+                    return {get zero() {events.push('zero:' + key); return -0;}};
+                }};
+                return {get first() {events.push('first'); return child;},
+                    get second() {events.push('second'); return child;},
+                    get last() {events.push('last'); return Infinity;}};
+            })()"#;
+            let value: Value = ctx.eval(source).unwrap();
+            let projected = project(&ctx, value).unwrap();
+            assert_eq!(
+                ctx.eval::<String, _>("events.join(',')").unwrap(),
+                "first,json:first,zero:first,second,json:second,zero:second,last"
+            );
+            assert!(codec::to_number(&projected["first"]["zero"]).is_sign_negative());
+            assert!(codec::to_number(&projected["second"]["zero"]).is_sign_negative());
+            assert_eq!(codec::nonfinite(&projected["last"]), Some(f64::INFINITY));
+            let source = "({nested: {get broken() {throw new Error('projection getter');}}})";
+            let throwing: Value = ctx.eval(source).unwrap();
+            assert!(project(&ctx, throwing).is_err());
+            let error = ctx.catch();
+            assert_eq!(
+                error
+                    .as_object()
+                    .unwrap()
+                    .get::<_, String>("message")
+                    .unwrap(),
+                "projection getter"
+            );
+            let value: Value = ctx.eval("({ok: {zero: -0}, after: [NaN]})").unwrap();
+            let projected = project(&ctx, value).unwrap();
+            assert!(codec::to_number(&projected["ok"]["zero"]).is_sign_negative());
+            assert!(codec::nonfinite(&projected["after"][0]).unwrap().is_nan());
+        });
     }
 
     #[test]

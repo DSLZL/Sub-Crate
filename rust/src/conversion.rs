@@ -3714,8 +3714,6 @@ pub fn produce(
     kind: &str,
     opts: &Value,
 ) -> Result<Value, Error> {
-    use crate::clash_output::Family;
-    let family = Family::for_target(target);
     if !ALIASES.contains(&target) {
         return Err(Error::Legacy(format!(
             "Target platform: {target} is not supported!"
@@ -3826,7 +3824,18 @@ pub fn produce(
             normalize_wireguard(proxy);
         }
     }
-    if let Some(family) = family {
+    produce_prepared(proxies, target, kind, opts)
+}
+
+/// Dispatch proxies whose common filtering and normalization already ran.
+/// Script callers prepare their live objects before projecting them to owned values.
+pub(crate) fn produce_prepared(
+    proxies: Vec<Value>,
+    target: &str,
+    kind: &str,
+    opts: &Value,
+) -> Result<Value, Error> {
+    if let Some(family) = crate::clash_output::Family::for_target(target) {
         return crate::clash_output::produce(proxies, kind, opts, family);
     }
     if matches!(target, "qx" | "QX" | "QuantumultX" | "Loon") {
