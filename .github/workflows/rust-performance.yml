@@ -24,7 +24,7 @@ permissions:
   contents: read
 
 env:
-  PERF_RUST_REVISION: 74e4f7e1b8227928dc5ebe6352489c9914f54e3f
+  PERF_RUST_REVISION: 37c6d9c415983a1d977a4b91be083f7aa70ed642
   PERF_BASELINE_REVISION: 887ddccb36f7724a831a89b4aad416e9c97c7c51
 
 concurrency:
@@ -173,7 +173,7 @@ jobs:
         if: inputs.diagnose_health
         run: |
           cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust 2>&1 | tee "$RUNNER_TEMP/candidate-tests.log"
-          grep -F 'test result: ok. 35 passed; 0 failed; 3 ignored;' "$RUNNER_TEMP/candidate-tests.log"
+          grep -F 'test result: ok. 36 passed; 0 failed; 3 ignored;' "$RUNNER_TEMP/candidate-tests.log"
       - name: Build the frozen Rust baseline in its separate target for whole-request comparison
         if: inputs.diagnose_health
         run: |
