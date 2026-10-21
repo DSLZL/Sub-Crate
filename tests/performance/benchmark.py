@@ -31,7 +31,7 @@ from urllib.request import urlopen
 import psutil
 
 ORIGINAL = "9cc6b5fac966993364ae33da8797f446bbf7f571"
-RUST = "843f142633dbabd8580cf4adf8c55eb8da43f822"
+RUST = "d32f652adf4067a81a5805b8f112b99af11c1740"
 RUST_BASELINE = "e9da7c39ca42a731355e00a3a7c897050c47f73f"
 FRONTEND = "4bd7b0acbe65466b933ccea14fc61dbebe036ead"
 INPUT_HASH = "a6e6bb9cbe0587f33de0cf130ec391ecffd3483009888fed0ea59d39492ae890"
@@ -652,7 +652,8 @@ class Suite:
         expected = [(self.args.scratch / "mirrors" / f"{i}.txt").read_bytes().decode() for i in range(22)] + [original["content"]]
         self.report["replay"] = []
         for kind in KINDS:
-            with self.server(kind, self.directory("replay-" + kind)) as (origin, _, _, _):
+            directory = self.directory("replay-" + kind)
+            with self.server(kind, directory) as (origin, _, _, _):
                 config = self.configure(origin, original)
                 actual = self.source_texts(origin, config)
                 require(isinstance(actual, list) and all(isinstance(s, str) for s in actual), "capture")
@@ -660,6 +661,7 @@ class Suite:
                                               "actual_sha256": digest(actual), "equal": actual == expected,
                                               "source_count": len(actual),
                                               "matching_sources": sum(a == b for a, b in zip(expected, actual)),
+                                              "timeout_log_entries": (directory / "server.log").read_text(encoding="utf-8", errors="replace").count("exceeds the timeout"),
                                               "sources": [{"index": i, "bytes": len(s.encode()), "sha256": digest(s.encode())}
                                                           for i, s in enumerate(actual)]})
         self.publish()

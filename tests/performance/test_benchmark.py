@@ -26,6 +26,7 @@ class Contracts(unittest.TestCase):
             scratch = Path(tmp)
             mirrors = scratch / "mirrors"
             mirrors.mkdir()
+            (scratch / "server.log").write_text("private-sentinel exceeds the timeout 8000 ms")
             sources = [f"private-source-{i}\r\n节点" if i != 3 else "" for i in range(22)]
             for index, source in enumerate(sources):
                 (mirrors / f"{index}.txt").write_bytes(source.encode())
