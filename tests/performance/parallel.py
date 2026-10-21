@@ -29,6 +29,9 @@ def aggregate(prepared, workers, diagnostic=None):
             b.PUBLIC_STRINGS.add(runner["cpu_model"])
         valid &= {k: v for k, v in provenance.items() if k != "runner"} == {k: v for k, v in prepared["provenance"].items() if k != "runner"}
         valid &= worker.get("capture") == prepared.get("capture") and worker.get("script") == prepared.get("script")
+        valid &= worker.get("native_pipeline_profile", False) == prepared.get("native_pipeline_profile", False)
+        if prepared.get("native_pipeline_profile"):
+            valid &= "profile_sha256" not in worker.get("script", {})
         replay = worker.get("replay", [])
         valid &= len(replay) == 2 and {r["kind"] for r in replay} == set(b.KINDS)
         valid &= all(r["equal"] and r["matching_sources"] == r["source_count"] == 23 for r in replay)

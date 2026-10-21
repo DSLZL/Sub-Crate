@@ -259,8 +259,10 @@ def stress_script(source):
     return source
 
 
-def profile_health_script(source):
+def profile_health_script(source, *, enabled=True):
     """Diagnostic-only wrappers retain calls/results and never alter the full-run script."""
+    if not enabled:
+        return source
     return source + r"""
 const benchmarkOperator = operator;
 operator = async function (...args) {
@@ -923,7 +925,7 @@ class Suite:
                     row["pipeline_profiles"] = profiles
                     for index, profile in enumerate(profiles):
                         print(f"Pipeline profile {kind}/{case} sample={index}: " + json.dumps(profile, sort_keys=True), flush=True)
-                if getattr(self.args, "diagnose_health", False) and case != "pre_health":
+                if getattr(self.args, "diagnose_health", False) and not getattr(self.args, "profile_pipeline", False) and case != "pre_health":
                     root = json.loads((state / "root.json").read_bytes())
                     row["health_profile"] = root["benchmark-health-profile"]
                     print(f"Health profile {kind}/{case}: " + json.dumps(row["health_profile"], sort_keys=True), flush=True)
@@ -1156,6 +1158,7 @@ def load_inputs(suite, input_file, source):
         archive.extractall(suite.args.scratch, filter="data")
     prepared = json.loads((suite.args.scratch / "prepared.json").read_bytes())
     require(prepared["preparation_complete"] and prepared["input_sha256"] == INPUT_HASH, "capture")
+    require(prepared.get("native_pipeline_profile", False) == getattr(suite.args, "profile_pipeline", False), "capture")
     require(all(prepared["provenance"].get(k) == v for k, v in suite.report["provenance"].items() if k != "runner"), "source")
     require(len(prepared["imports"]) == 10 and all(row["restart"] for row in prepared["imports"])
             and all(sum(row["kind"] == kind for row in prepared["imports"]) == 5 for kind in KINDS), "persistence")
@@ -1190,7 +1193,7 @@ def main():
     require(not args.shard or (args.frozen and not args.diagnose_parse and not args.diagnose_health), "input")
     require(not (args.diagnose_parse and args.diagnose_health), "input")
     require(not args.rust_baseline or args.diagnose_health, "input")
-    require(not args.profile_pipeline or (args.diagnose_health and args.rust_baseline and not args.prepare_only), "input")
+    require(not args.profile_pipeline or (args.diagnose_health and args.rust_baseline), "input")
     soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
     resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
     if args.fixture_port:
@@ -1200,6 +1203,8 @@ def main():
     args.scratch.mkdir(mode=0o700)
     args.publish.mkdir(mode=0o700)
     report = {"status": "running", "input_sha256": INPUT_HASH, "imports": [], "samples": []}
+    if args.profile_pipeline:
+        report["native_pipeline_profile"] = True
     if args.shard:
         report["shard"] = args.shard
     if args.diagnose_parse:
@@ -1226,10 +1231,11 @@ def main():
             report["script"] = {"blob": SCRIPT_BLOB, "original_sha256": SCRIPT_HASH,
                                 "stress_sha256": digest(variant.encode()), "changed_sites": 5}
             if args.diagnose_health:
-                instrumented = profile_health_script(variant)
-                (args.publish / "health-profile.patch").write_text("".join(difflib.unified_diff(variant.splitlines(True), instrumented.splitlines(True), "stress.js", "profile.js")), encoding="utf-8")
-                variant = instrumented
-                report["script"]["profile_sha256"] = digest(variant.encode())
+                instrumented = profile_health_script(variant, enabled=not args.profile_pipeline)
+                if instrumented != variant:
+                    (args.publish / "health-profile.patch").write_text("".join(difflib.unified_diff(variant.splitlines(True), instrumented.splitlines(True), "stress.js", "profile.js")), encoding="utf-8")
+                    variant = instrumented
+                    report["script"]["profile_sha256"] = digest(variant.encode())
             (mirrors / "stress.js").write_text(variant, encoding="utf-8")
             suite.publish()
             print("Importing the unchanged file on both backends (five paired observations).", flush=True)

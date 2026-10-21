@@ -24,6 +24,10 @@ diagnostics. The ordinary candidate (`rust`) and its profiled repeat
 `SUB_STORE_PROFILE=1`. Normal service runs emit no profile. Identical raw-source
 replay, output/state/work checks, all processor work and existing test counts
 remain required. The separate historical Rust baseline remains uninstrumented.
+This mode runs the five-site stress script directly on all four variants, without
+the old Date.now helper wrappers or their extra `benchmark-health-profile` state
+write. Prepared/worker mode flags and script hashes must agree. Ordinary
+`diagnose_health` without this flag retains its historical JS wrappers.
 
 Each measured download emits one bounded numeric JSON event before replying.
 `metrics.json` retains the complete tree, and the Actions summary shows every

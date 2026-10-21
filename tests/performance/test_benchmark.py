@@ -140,6 +140,7 @@ class Contracts(unittest.TestCase):
           if (value.fail) throw Error('original failure');
           return value;
         }"""
+        self.assertEqual(b.profile_health_script(source, enabled=False), source)
         fixture = """const assert = require('node:assert/strict');
         let profile;
         const ProxyUtils = {produce(value) { assert.equal(this, ProxyUtils); return value; }, hex_md5() { return 'x'; }};
