@@ -24,6 +24,8 @@ pub mod notifications;
 pub mod sharing;
 pub mod browser;
 pub mod frontend;
+pub mod raw_http;
+pub mod edges;
 #[cfg(test)]
 mod notices_tests;
 

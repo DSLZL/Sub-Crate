@@ -17,6 +17,9 @@ fn native_delivery() -> Result {
     Ok(())
 }
 
+#[test] fn settings_numeric_coercion_recipient_validation_order_and_failed_writes()->Result {sub_store_tests::edges::settings_and_keys(&process::scratch("service-settings-keys")?)}
+#[test] fn crud_typed_references_null_records_raw_buffers_restart_and_node_rollback()->Result {sub_store_tests::edges::crud_lifecycle(&process::scratch("service-crud-edges")?)}
+
 #[test]
 fn frozen_node_unit_suite() -> Result {
     reference::unit(&process::scratch("reference-unit")?)
