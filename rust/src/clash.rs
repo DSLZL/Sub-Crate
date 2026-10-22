@@ -401,6 +401,13 @@ impl Parser {
     }
 
     pub fn line(&self, raw: &str) -> Result<Option<Value>, Error> {
+        // JSON5 nodes require an object delimiter; a confirmed YAML string cannot be a node.
+        if !raw.contains('{') {
+            let _probe = crate::profile::span("parse_scalar_probe");
+            if matches!(native_yaml(raw), Some(Value::String(_))) {
+                return Ok(None);
+            }
+        }
         self.context()?.with(|ctx| {
             let result = (|| -> rquickjs::Result<Option<Value>> {
                 let value: JsValue = match ctx.json_parse(raw) {
@@ -539,6 +546,41 @@ mod tests {
         let fresh = Parser::new().ok().unwrap();
         assert!(fresh.context.get().is_none());
         assert_eq!(fresh.line(raw).ok().unwrap(), expected);
+    }
+
+    #[test]
+    fn scalar_probes_preserve_generic_object_precedence_without_initializing_an_engine() {
+        let parser = Parser::new().ok().unwrap();
+        let oracle = Parser::new().ok().unwrap();
+        for raw in [
+            "Surge = ss, ss.example.com, 8388, encrypt-method=aes-128-gcm, password=secret",
+            "shadowsocks=ss.example.com:8388,method=aes-128-gcm,password=secret,tag=QX",
+            "shadowsocks=[2001:db8::1]:8388,method=aes-128-gcm,password=secret,tag=IPv6",
+        ] {
+            assert!(legacy_line(&oracle, raw).is_string());
+            assert!(parser.line(raw).ok().unwrap().is_none());
+            let nodes = crate::conversion::parse(&json!(raw), Some(&parser))
+                .ok()
+                .unwrap();
+            assert_eq!(nodes.len(), 1);
+            assert!(parser.context.get().is_none());
+        }
+        for raw in ["not a proxy", "\"quoted scalar\""] {
+            assert!(legacy_line(&oracle, raw).is_string());
+            assert!(parser.line(raw).ok().unwrap().is_none());
+            assert!(parser.context.get().is_none());
+        }
+        for raw in [
+            "type: ss",
+            "/*prefix*/{type:'ss',name:'generic'}//=ss,ss.example,443,password=secret",
+            "!!map {type: ss, name: tagged}",
+        ] {
+            assert_eq!(
+                parser.line(raw).ok().unwrap(),
+                Some(legacy_line(&oracle, raw))
+            );
+        }
+        assert!(parser.context.get().is_some());
     }
 
     fn legacy_line(parser: &Parser, raw: &str) -> Value {

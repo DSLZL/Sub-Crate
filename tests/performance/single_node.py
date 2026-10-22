@@ -111,7 +111,12 @@ def endpoint(args, suite, cases, report):
                    for kind in ("node", "rust_baseline", "rust")}
         fixtures = json.loads((Path(__file__).parents[1] / "compat/fixtures/http-cases.json").read_bytes())
         source = next(case for case in fixtures if case["id"] == "P02-input-surge-native")["steps"][0]["body"]
-        for index, raw in enumerate([*source["data"].splitlines(), source["data"]]):
+        probe_inputs = [*source["data"].splitlines(), source["data"],
+                        "not a proxy", "type: ss",
+                        "/*prefix*/{type:'ss',name:'generic',server:'json.example',port:443,cipher:'aes-128-gcm',password:'secret'}//=ss,other.example,443,password=other",
+                        "shadowsocks=ss.example.com:8388,method=aes-128-gcm,password=secret,tag=type: ss",
+                        '"Surge = ss, ss.example.com, 8388, encrypt-method=aes-128-gcm, password=secret"']
+        for index, raw in enumerate(probe_inputs):
             expected = None
             for kind, origin in origins.items():
                 parsed = b.urlsplit(origin)
@@ -123,12 +128,12 @@ def endpoint(args, suite, cases, report):
                     body = json.loads(response.read())
                 finally:
                     connection.close()
-                assert response.status == 200, f"public Surge input {index}, {kind}: {body}"
+                assert response.status == 200, f"public parser input {index}, {kind}: {body}"
                 if expected is None:
                     expected = body
                 else:
-                    assert body == expected, f"public Surge input {index}, {kind}: output mismatch"
-        print("single-node public Surge preflight complete", flush=True)
+                    assert body == expected, f"public parser input {index}, {kind}: output mismatch"
+        print(f"single-node public parser preflight complete: inputs={len(probe_inputs)}, backends={len(origins)}", flush=True)
         for case in cases:
             payloads = [{"data": case["raw"] + suffix, "client": "JSON", "type": "internal"}
                         for suffix in ("", "\n")]
@@ -166,12 +171,11 @@ def profiles(args, suite, cases, report):
                 assert b.api(server[0], "proxy/parse", "POST", payload) == expected
             events = b.pipeline_profiles(directory / "server.log", offset, operation="other", processor=False)
             assert len(events) == BLOCKS
-            if case["id"] in ("ss_uri", "vmess_ws", "vless_ws", "trojan", "hysteria2"):
+            if case["id"] in ("ss_uri", "vmess_ws", "vless_ws", "trojan", "hysteria2", "surge_ss", "qx_ss"):
                 assert all(row["stage"] != "parse_context_init" for event in events for row in event["rows"]), \
-                    f"{case['id']}: native URI parsing initialized the generic engine"
-            if case["id"] in ("ss_uri", "vmess_ws", "vless_ws", "trojan", "hysteria2", "clash_json", "clash_yaml"):
-                assert all(row["stage"] != "parse_utilities_init" for event in events for row in event["rows"]), \
-                    f"{case['id']}: parsing initialized the generic libraries"
+                    f"{case['id']}: native parsing initialized the generic engine"
+            assert all(row["stage"] != "parse_utilities_init" for event in events for row in event["rows"]), \
+                f"{case['id']}: parsing initialized the generic libraries"
             report["profiles"].append({"case": case["id"], "events": events})
 
 
@@ -192,15 +196,19 @@ def summary(report):
             values.append(statistics.median(samples) / 1_000_000)
         lines.append("| " + case + " | " + " | ".join(f"{value:.3f}" for value in values) + " |")
     if report["profiles"]:
-        events = report["profiles"][0]["events"]
-        lines += ["", "Separate Rust SS-URI profile: median active ms over seven requests.",
+        groups = {group["case"]: group["events"] for group in report["profiles"]}
+        lines += ["", "Separate Rust profiles: median active ms over seven requests per format.",
                   "Profiler-on samples do not enter the latency table. Parent/child stages overlap; active time is not OS CPU time.",
-                  "", "| Stage | Median active ms |", "|---|---:|"]
+                  "", "| Stage | SS URI | Surge SS | QX SS |", "|---|---:|---:|---:|"]
         for stage in ("executor_setup", "state_snapshot", "runtime_setup", "context_setup", "job", "bootstrap",
                       "bootstrap_load", "bootstrap_eval", "bootstrap_state_encode", "bootstrap_state_parse",
-                      "parse_runtime", "parse_context_init", "parse_utilities_init", "parse_native", "produce", "output_encode"):
-            samples = [sum(row["active_ns"] for row in event["rows"] if row["stage"] == stage) / 1e6 for event in events]
-            lines.append(f"| {stage} | {statistics.median(samples):.3f} |")
+                      "parse_runtime", "parse_context_init", "parse_utilities_init", "parse_scalar_probe",
+                      "parse_native", "produce", "output_encode"):
+            values = []
+            for case in ("ss_uri", "surge_ss", "qx_ss"):
+                samples = [sum(row["active_ns"] for row in event["rows"] if row["stage"] == stage) / 1e6 for event in groups[case]]
+                values.append(f"{statistics.median(samples):.3f}")
+            lines.append("| " + stage + " | " + " | ".join(values) + " |")
         lines += ["", "Generic-parser setup per request (separate profiles).",
                   "| Format | Median context calls | Context active ms | Median library calls | Library active ms |",
                   "|---|---:|---:|---:|---:|"]
@@ -234,7 +242,7 @@ def main():
               "cases": [case["id"] for case in cases], "pure": [], "http": [], "profiles": [], "status": "running"}
     assert b.command(["git", "rev-parse", "HEAD"], args.original).decode().strip() == b.ORIGINAL
     report["rust_baseline"] = b.command(["git", "rev-parse", "HEAD"], args.rust_baseline).decode().strip()
-    assert report["rust_baseline"] == "87a105287588c4dc9526a9313889615d2856fbbe"
+    assert report["rust_baseline"] == "ef44869c214ee669ec0af9a3cada7a54b5a7e6c7"
     report["binary_sha256"] = {kind: hashlib.sha256((root / "rust/target/release/sub-store-rust").read_bytes()).hexdigest()
                                for kind, root in (("rust", args.rust), ("rust_baseline", args.rust_baseline))}
     assert len(set(report["binary_sha256"].values())) == 2, "candidate and baseline must be distinct binaries"

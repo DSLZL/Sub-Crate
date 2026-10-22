@@ -1389,12 +1389,9 @@ extracted locally. The supplied-subscription long test was not repeated, and
 this single-node measurement does not establish memory savings or release
 readiness.
 
-The separate compatibility run is
+All six jobs pass in the separate compatibility run
 [39728781382](https://github.com/DSLZL/Sub-Store/actions/runs/39728781382),
 at the same candidate source. Native Linux x64/arm64, Docker Linux x64/arm64,
-and the unchanged official frontend in headless Chrome passed. Windows x64
-passed formatting and its lint/test/release-build step, but its delivered-service
-HTTP/state/restart/rollback step was still running at the last successful
-status read. Subsequent GitHub API requests returned connection EOF errors;
-the final Windows result is NOT VERIFIED. This record does not claim all six
-compatibility jobs passed.
+Windows x64 and the unchanged official frontend in headless Chrome passed.
+The final Windows result was confirmed after the earlier GitHub connection EOF
+errors cleared; its HTTP/state/restart/rollback checks passed.
