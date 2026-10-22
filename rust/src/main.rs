@@ -1200,11 +1200,14 @@ async fn serve(
                 let config = Arc::clone(&config);
                 let store = Arc::clone(&store);
                 async move {
-                    if frontend {
-                        frontend_handle(request, config, store).await
-                    } else {
-                        handle(request, config, store).await
-                    }
+                    profile::request(async move {
+                        if frontend {
+                            frontend_handle(request, config, store).await
+                        } else {
+                            handle(request, config, store).await
+                        }
+                    })
+                    .await
                 }
             });
             if let Err(error) = http1::Builder::new()

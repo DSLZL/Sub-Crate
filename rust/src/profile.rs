@@ -51,15 +51,44 @@ fn nanos(began: Instant) -> u64 {
     began.elapsed().as_nanos().min(u64::MAX as u128) as u64
 }
 
+fn enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("SUB_STORE_PROFILE").is_ok_and(|v| v == "1"))
+}
+
+pub(crate) async fn request<T>(future: impl Future<Output = T>) -> T {
+    let began = enabled().then(Instant::now);
+    let result = future.await;
+    if let Some(began) = began {
+        let report = json!({"version":1, "wall_ns":nanos(began)});
+        let _ = writeln!(std::io::stdout().lock(), "SUB_STORE_HTTP_PROFILE {report}");
+    }
+    result
+}
+
 pub(crate) struct Session;
 
 impl Session {
-    pub(crate) fn start(operation: &str) -> Self {
-        static ENABLED: OnceLock<bool> = OnceLock::new();
-        Self::new(
-            *ENABLED.get_or_init(|| std::env::var("SUB_STORE_PROFILE").is_ok_and(|v| v == "1")),
-            operation,
-        )
+    pub(crate) fn start(operation: &str, queued: Instant) -> Self {
+        let session = Self::new(enabled(), operation);
+        CURRENT.with_borrow_mut(|current| {
+            if let Some(state) = current {
+                state.began = queued;
+                let wall_ns = nanos(queued);
+                let key = (None, "worker_queue", None);
+                state.keys.insert(key, 0);
+                state.rows.push((
+                    key,
+                    Row {
+                        calls: 1,
+                        wall_ns,
+                        max_wall_ns: wall_ns,
+                        ..Row::default()
+                    },
+                ));
+            }
+        });
+        session
     }
 
     fn new(enabled: bool, operation: &str) -> Self {

@@ -18,7 +18,11 @@ import benchmark as b
 BLOCKS = 7
 TARGET_NS = 250_000_000
 HTTP_REQUESTS = 30
-VARIANTS = ("node", "rust_warm_parser", "rust_fresh_parser")
+VARIANTS = ("node", "rust_baseline_warm_parser", "rust_baseline_fresh_parser", "rust_warm_parser", "rust_fresh_parser")
+
+
+def parser_worker(variant):
+    return "node" if variant == "node" else "rust_baseline" if variant.startswith("rust_baseline_") else "rust"
 
 
 class Worker:
@@ -60,6 +64,7 @@ def workers(args, suite, fixtures):
     commands = {
         "node": [suite.node, Path(__file__).with_name("single-node.cjs").resolve(), args.original],
         "rust": [args.rust_test, "single_node_profile::compare", "--ignored", "--exact", "--nocapture", "--test-threads=1"],
+        "rust_baseline": [args.rust_baseline_test, "single_node_profile::compare", "--ignored", "--exact", "--nocapture", "--test-threads=1"],
     }
     children = {}
     try:
@@ -88,10 +93,10 @@ def pure(args, suite, fixtures, cases, report):
             assert expected[0][0]["type"] == case["protocol"], f"{case['id']}: unexpected protocol"
             counts = {}
             for variant in VARIANTS:
-                worker = running["node" if variant == "node" else "rust"]
+                worker = running[parser_worker(variant)]
                 count = 1
                 for _ in range(5):
-                    sample = worker.call(index, count, warmup=2, fresh=variant == "rust_fresh_parser")
+                    sample = worker.call(index, count, warmup=2, fresh=variant.endswith("_fresh_parser"))
                     assert sample["outputs"] == expected, f"{case['id']}: {variant} output mismatch"
                     if sample["elapsed_ns"] >= TARGET_NS // 2:
                         break
@@ -100,8 +105,8 @@ def pure(args, suite, fixtures, cases, report):
             for block in range(BLOCKS):
                 order = VARIANTS if block % 2 == 0 else VARIANTS[::-1]
                 for variant in order:
-                    sample = running["node" if variant == "node" else "rust"].call(
-                        index, counts[variant], fresh=variant == "rust_fresh_parser")
+                    sample = running[parser_worker(variant)].call(
+                        index, counts[variant], fresh=variant.endswith("_fresh_parser"))
                     assert sample.pop("outputs") == expected, f"{case['id']}: measured output mismatch"
                     report["pure"].append({"case": case["id"], "variant": variant, "block": block, **sample})
             print("single-node pure complete: " + case["id"], flush=True)
@@ -158,6 +163,26 @@ def endpoint(args, suite, cases, report):
             print("single-node HTTP complete: " + case["id"], flush=True)
 
 
+def complete_profiles(path, offset, count):
+    until = time.monotonic() + 30
+    while time.monotonic() < until:
+        with path.open("rb") as source:
+            source.seek(offset)
+            lines = [line for line in source if line.endswith(b"\n")]
+        workers = sum(line.startswith(b"SUB_STORE_PROFILE ") for line in lines)
+        http = [json.loads(line[len(b"SUB_STORE_HTTP_PROFILE "):])
+                for line in lines if line.startswith(b"SUB_STORE_HTTP_PROFILE ")]
+        assert workers <= count and len(http) <= count, "unexpected extra profile events"
+        if workers == len(http) == count:
+            events = b.pipeline_profiles(path, offset, operation="other", processor=False)
+            for event in http:
+                assert set(event) == {"version", "wall_ns"} and event["version"] == 1
+                assert type(event["wall_ns"]) is int and event["wall_ns"] > 0
+            return events, [event["wall_ns"] for event in http]
+        time.sleep(.01)
+    raise TimeoutError("profile completion watchdog")
+
+
 def profiles(args, suite, cases, report):
     # Timed endpoint samples above retain default profiling-off behavior.
     args.profile_pipeline = True
@@ -166,19 +191,31 @@ def profiles(args, suite, cases, report):
         for case in cases:
             payload = {"data": case["raw"], "client": "JSON", "type": "internal"}
             expected = suite.expected_outputs[case["id"]]
+            path = directory / "server.log"
+            offset = path.stat().st_size
             for _ in range(2):
                 assert b.api(server[0], "proxy/parse", "POST", payload) == expected
-            offset = (directory / "server.log").stat().st_size
+            complete_profiles(path, offset, 2)
+            offset = path.stat().st_size
+            client_ns = []
             for _ in range(BLOCKS):
-                assert b.api(server[0], "proxy/parse", "POST", payload) == expected
-            events = b.pipeline_profiles(directory / "server.log", offset, operation="other", processor=False)
+                began = time.perf_counter_ns()
+                response = b.http(server[0] + "/backend/api/proxy/parse", "POST", payload)
+                client_ns.append(time.perf_counter_ns() - began)
+                assert json.loads(response) == {"status": "success", "data": expected}
+            events, server_ns = complete_profiles(path, offset, BLOCKS)
             assert len(events) == BLOCKS
             if case["format"] in ("URI", "Surge", "QX"):
                 assert all(row["stage"] != "parse_context_init" for event in events for row in event["rows"]), \
                     f"{case['id']}: native parsing initialized the generic engine"
             assert all(row["stage"] != "parse_utilities_init" for event in events for row in event["rows"]), \
                 f"{case['id']}: parsing initialized the generic libraries"
-            report["profiles"].append({"case": case["id"], "events": events})
+            assert all(sum(row["calls"] for row in event["rows"] if row["stage"] == "worker_queue") == 1
+                       and sum(row["calls"] for row in event["rows"] if row["stage"] == "runtime_teardown") == 1
+                       for event in events)
+            assert all(row["stage"] != "bootstrap_state_encode" for event in events for row in event["rows"])
+            report["profiles"].append({"case": case["id"], "events": events,
+                                       "server_ns": server_ns, "client_ns": client_ns})
 
 
 def summary(report):
@@ -188,8 +225,8 @@ def summary(report):
              "HTTP includes JSON production and transport, starts with empty application state.",
              f"Coverage: {len(report['cases'])} fixtures, including all {len(report['clash_types'])} pinned Clash node types and Surge external.",
              "This measures configuration parsing/conversion, not network traffic through those protocols.",
-             "", "| Case | Protocol | Input | Node pure us | Rust reused parser us | Rust new parser us | Node HTTP ms | Previous Rust HTTP ms | Rust HTTP ms |",
-             "|---|---|---|---:|---:|---:|---:|---:|---:|"]
+             "", "| Case | Protocol | Input | Node pure us | Previous Rust reused us | Previous Rust fresh us | Rust reused us | Rust fresh us | Node HTTP ms | Previous Rust HTTP ms | Rust HTTP ms |",
+             "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
     for case in report["cases"]:
         values = []
         for variant in VARIANTS:
@@ -209,12 +246,27 @@ def summary(report):
         for stage in ("executor_setup", "state_snapshot", "runtime_setup", "context_setup", "job", "bootstrap",
                       "bootstrap_values", "bootstrap_load", "bootstrap_eval", "bootstrap_state_encode", "bootstrap_state_parse",
                       "parse_runtime", "parse_context_init", "parse_utilities_init", "parse_scalar_probe",
-                      "parse_native", "produce", "output_encode"):
+                      "parse_native", "produce", "output_encode", "runtime_teardown"):
             values = []
             for case in ("ss_uri", "surge_ss", "qx_ss"):
                 samples = [sum(row["active_ns"] for row in event["rows"] if row["stage"] == stage) / 1e6 for event in groups[case]]
                 values.append(f"{statistics.median(samples):.3f}")
             lines.append("| " + stage + " | " + " | ".join(values) + " |")
+        lines += ["", "Complete request components (separate profiler-on medians, us).",
+                  "Worker lifetime includes queueing and teardown; the response can be delivered before teardown finishes.",
+                  "Server time stops when the response is ready, before socket transmission. Client time includes HTTP transport and client work.",
+                  "These intervals overlap; do not add them or subtract independent medians to infer exact overhead.",
+                  "| Case | Queue | Worker lifetime | Bootstrap | Native parse | Produce | Teardown | Server response ready | Client HTTP |",
+                  "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
+        for group in report["profiles"]:
+            values = []
+            for stage in ("worker_queue", None, "bootstrap", "parse_native", "produce", "runtime_teardown"):
+                samples = [event["wall_ns"] if stage is None else
+                           sum(row["wall_ns"] for row in event["rows"] if row["stage"] == stage)
+                           for event in group["events"]]
+                values.append(statistics.median(samples) / 1000)
+            values += [statistics.median(group[key]) / 1000 for key in ("server_ns", "client_ns")]
+            lines.append("| " + group["case"] + " | " + " | ".join(f"{value:.3f}" for value in values) + " |")
         lines += ["", "Generic-parser setup per request (separate profiles).",
                   "| Format | Median context calls | Context active ms | Median library calls | Library active ms |",
                   "|---|---:|---:|---:|---:|"]
@@ -233,7 +285,7 @@ def main():
     if os.environ.get("GITHUB_ACTIONS") != "true":
         raise SystemExit("Run in GitHub Actions only")
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("original", "rust", "rust-baseline", "rust-test", "scratch", "output"):
+    for name in ("original", "rust", "rust-baseline", "rust-test", "rust-baseline-test", "scratch", "output"):
         parser.add_argument("--" + name, required=True, type=lambda value: Path(value).resolve())
     args = parser.parse_args()
     args.scratch.mkdir(parents=True)
@@ -258,7 +310,7 @@ def main():
               "cases": [case["id"] for case in cases], "pure": [], "http": [], "profiles": [], "status": "running"}
     assert b.command(["git", "rev-parse", "HEAD"], args.original).decode().strip() == b.ORIGINAL
     report["rust_baseline"] = b.command(["git", "rev-parse", "HEAD"], args.rust_baseline).decode().strip()
-    assert report["rust_baseline"] == "7d034cd522778241f49b902dec61f18634f00862"
+    assert report["rust_baseline"] == "274a4ff1f63fdbe997dda0e0dcb99daf68135d06"
     report["binary_sha256"] = {kind: hashlib.sha256((root / "rust/target/release/sub-store-rust").read_bytes()).hexdigest()
                                for kind, root in (("rust", args.rust), ("rust_baseline", args.rust_baseline))}
     assert len(set(report["binary_sha256"].values())) == 2, "candidate and baseline must be distinct binaries"

@@ -3,7 +3,7 @@ use crate::state::truthy;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use percent_encoding::percent_decode_str;
 use serde_json::{Map, Value, json};
-use std::net::Ipv6Addr;
+use std::{borrow::Cow, net::Ipv6Addr};
 
 pub enum Error {
     Legacy(String),
@@ -46,6 +46,9 @@ pub(crate) const ALIASES: [&str; 33] = [
 ];
 
 fn component(raw: &str) -> Option<String> {
+    if !raw.contains('%') {
+        return Some(codec::encode(raw));
+    }
     if raw.as_bytes().iter().enumerate().any(|(index, byte)| {
         *byte == b'%'
             && !raw
@@ -1775,41 +1778,44 @@ fn ssd(raw: &str) -> Option<String> {
     Some(lines.join("\n"))
 }
 
-fn preprocess(raw: &str) -> String {
+fn preprocess(raw: &str) -> Cow<'_, str> {
     if raw.starts_with("ssd://") {
-        return ssd(raw).unwrap_or_else(|| raw.to_owned());
+        return ssd(raw).map_or(Cow::Borrowed(raw), Cow::Owned);
     }
-    let compact: String = raw.chars().filter(|c| !codec::is_space(*c)).collect();
-    let unpadded = compact
-        .strip_suffix("==")
-        .or_else(|| compact.strip_suffix('='))
-        .unwrap_or(&compact);
-    let alphabet = |extra: &[u8]| {
-        unpadded
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || extra.contains(&byte))
-    };
-    if (alphabet(b"+/") || alphabet(b"-_"))
-        && let Some(text) = decoded(raw)
-        && text
-            .split(['\r', '\n', '\u{2028}', '\u{2029}'])
-            .any(|line| {
-                let word = |c: u8| c.is_ascii_alphanumeric() || c == b'_';
-                let prefix = line.bytes().take_while(|byte| word(*byte)).count();
-                if prefix == 0 {
-                    return false;
-                }
-                let tail = &line[prefix..];
-                tail.strip_prefix("://")
-                    .is_some_and(|tail| tail.bytes().next().is_some_and(word))
-                    || codec::trim(tail)
-                        .strip_prefix('=')
-                        .is_some_and(|tail| codec::trim(tail).bytes().next().is_some_and(word))
-            })
-    {
-        return text;
+    // A colon cannot occur in either accepted Base64 alphabet.
+    if !raw.contains(':') {
+        let compact: String = raw.chars().filter(|c| !codec::is_space(*c)).collect();
+        let unpadded = compact
+            .strip_suffix("==")
+            .or_else(|| compact.strip_suffix('='))
+            .unwrap_or(&compact);
+        let alphabet = |extra: &[u8]| {
+            unpadded
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || extra.contains(&byte))
+        };
+        if (alphabet(b"+/") || alphabet(b"-_"))
+            && let Some(text) = decoded(raw)
+            && text
+                .split(['\r', '\n', '\u{2028}', '\u{2029}'])
+                .any(|line| {
+                    let word = |c: u8| c.is_ascii_alphanumeric() || c == b'_';
+                    let prefix = line.bytes().take_while(|byte| word(*byte)).count();
+                    if prefix == 0 {
+                        return false;
+                    }
+                    let tail = &line[prefix..];
+                    tail.strip_prefix("://")
+                        .is_some_and(|tail| tail.bytes().next().is_some_and(word))
+                        || codec::trim(tail)
+                            .strip_prefix('=')
+                            .is_some_and(|tail| codec::trim(tail).bytes().next().is_some_and(word))
+                })
+        {
+            return Cow::Owned(text);
+        }
     }
-    crate::surge::full_config(raw).unwrap_or(raw).to_owned()
+    Cow::Borrowed(crate::surge::full_config(raw).unwrap_or(raw))
 }
 
 fn ss(line: &str) -> Result<Option<Value>, Error> {
@@ -2185,12 +2191,18 @@ fn ss(line: &str) -> Result<Option<Value>, Error> {
 }
 
 fn normalize(proxy: &mut Value) -> Result<(), Error> {
-    let keys: Vec<_> = proxy.as_object().unwrap().keys().cloned().collect();
+    let keys: Vec<_> = proxy
+        .as_object()
+        .unwrap()
+        .keys()
+        .filter(|key| {
+            key.get(key.len().saturating_sub(5)..)
+                .is_some_and(|suffix| suffix.eq_ignore_ascii_case("-opts"))
+        })
+        .cloned()
+        .collect();
     for key in keys {
         let lower = key.to_lowercase();
-        if !lower.ends_with("-opts") {
-            continue;
-        }
         if key != lower {
             let value = proxy.as_object_mut().unwrap().shift_remove(&key).unwrap();
             proxy
@@ -2631,27 +2643,31 @@ pub fn parse(raw: &Value, parser: Option<&crate::clash::Parser>) -> Result<Vec<V
     if raw.starts_with("<!DOCTYPE html>") {
         return Ok(Vec::new());
     }
-    let units = codec::units(raw);
     // Rust strings cannot hold lone UTF-16 units; reserve absent tags until parsing finishes.
-    let (raw, surrogate_tag) = match String::from_utf16(&units) {
-        Ok(raw) => (raw, None),
-        Err(_) => {
-            let lower = raw.to_lowercase();
-            let mut index = 0;
-            let prefix = loop {
-                let prefix = format!("\u{f0000}{index:x}\u{f0001}");
-                if !lower.contains(&prefix) {
-                    break prefix;
-                }
-                index += 1;
-            };
-            let text = char::decode_utf16(units)
-                .map(|character| match character {
-                    Ok(character) => character.to_string(),
-                    Err(error) => format!("{prefix}{:04x}{prefix}", error.unpaired_surrogate()),
-                })
-                .collect::<String>();
-            (text, Some(prefix))
+    let (raw, surrogate_tag) = if !raw.contains('\u{e000}') {
+        (Cow::Borrowed(raw), None)
+    } else {
+        let units = codec::units(raw);
+        match String::from_utf16(&units) {
+            Ok(raw) => (Cow::Owned(raw), None),
+            Err(_) => {
+                let lower = raw.to_lowercase();
+                let mut index = 0;
+                let prefix = loop {
+                    let prefix = format!("\u{f0000}{index:x}\u{f0001}");
+                    if !lower.contains(&prefix) {
+                        break prefix;
+                    }
+                    index += 1;
+                };
+                let text = char::decode_utf16(units)
+                    .map(|character| match character {
+                        Ok(character) => character.to_string(),
+                        Err(error) => format!("{prefix}{:04x}{prefix}", error.unpaired_surrogate()),
+                    })
+                    .collect::<String>();
+                (Cow::Owned(text), Some(prefix))
+            }
         }
     };
     let owned;
@@ -2662,7 +2678,10 @@ pub fn parse(raw: &Value, parser: Option<&crate::clash::Parser>) -> Result<Vec<V
             &owned
         }
     };
-    let raw = clash.preprocess(&raw).unwrap_or_else(|| preprocess(&raw));
+    let raw = clash
+        .preprocess(&raw)
+        .map(Cow::Owned)
+        .unwrap_or_else(|| preprocess(&raw));
     drop(preprocess_profile);
     let _nodes = crate::profile::span("parse_nodes");
     let mut proxies = Vec::new();
@@ -3759,6 +3778,46 @@ pub fn produce(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_text_parsing_preserves_encoded_units_and_base64_precedence() {
+        let raw = "https://u%40ser:p%3Aword@[2001:db8::1]:443#节点😀";
+        let expected = json!({"name":"节点😀","type":"http","tls":true,
+            "server":"2001:db8::1","port":443,"username":"u@ser","password":"p:word","udp":true});
+        for raw in [raw.to_owned(), format!("{raw}\n"), STANDARD.encode(raw)] {
+            assert_eq!(parse(&json!(raw), None).ok().unwrap(), vec![expected.clone()]);
+        }
+        for name in [vec![0x61, 0xe000, 0x62], vec![0xd800, 0xe000, 0xdc00]] {
+            let prefix = "http://h.example:80#".encode_utf16();
+            let raw = codec::from_units(&prefix.chain(name.iter().copied()).collect::<Vec<_>>());
+            let nodes = parse(&json!(raw), None).ok().unwrap();
+            assert_eq!(codec::units(nodes[0]["name"].as_str().unwrap()), name);
+        }
+        for invalid in ["http://u:%zz@h.example:80#x", "http://h.example:80#%ff"] {
+            assert!(parse(&json!(invalid), None).ok().unwrap().is_empty());
+        }
+        let nested = STANDARD.encode("<!DOCTYPE html>ss://none:p@h.example:80#nested");
+        assert_eq!(preprocess(&nested), nested);
+    }
+
+    #[test]
+    fn option_normalization_retains_case_conflicts_and_property_order() {
+        let mut proxy = json!({"type":"http","name":"kept","WS-OPTS":{"HOST":"first","host":"kept"},
+            "ws-opts":{"PATH":"/kept","path":"/first"},"Ü-OPTS":{"HeAdErS":false},"普通":true});
+        normalize(&mut proxy).ok().unwrap();
+        assert_eq!(proxy["ws-opts"], json!({"path":"/first"}));
+        assert_eq!(proxy["ü-opts"], json!({"headers":false}));
+        assert_eq!(proxy["普通"], true);
+        assert_eq!(
+            proxy
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["type", "name", "ws-opts", "普通", "ü-opts", "udp"]
+        );
+    }
 
     #[test]
     fn reused_parser_recovers_and_keeps_fresh_parser_values() {
