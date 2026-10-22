@@ -116,5 +116,6 @@ jobs:
             ${{ runner.temp }}/sub-store-script-probe-*
             ${{ runner.temp }}/sub-store-age-probe-*
             ${{ runner.temp }}/sub-store-download-probe-*
+            ${{ runner.temp }}/sub-store-service-*
           if-no-files-found: warn
           retention-days: 7

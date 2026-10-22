@@ -14,6 +14,8 @@ pub mod probe;
 pub mod distribution;
 pub mod age;
 pub mod download;
+pub mod api;
+pub mod service;
 #[cfg(test)]
 mod notices_tests;
 

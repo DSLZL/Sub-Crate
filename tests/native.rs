@@ -43,6 +43,11 @@ fn downloads_preserve_exact_wire_cache_stream_bytes_files_and_resume() -> Result
 }
 
 #[test]
+fn conversion_business_contracts_clocks_restarts_isolation_and_concurrency() -> Result {
+    sub_store_tests::service::conversions(&process::scratch("service-conversions")?)
+}
+
+#[test]
 fn rust_and_node_preserve_shared_state_restart_write_failure_and_rollback() -> Result {
     let output = process::scratch("state-parity")?;
     reference::verify(&output)?;
