@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: [backend/**, scripts/ip-flag-node.js, rust/**, tests/compat/**, .github/workflows/rust-compat-native.yml]
+    paths: [rust/**, tests/compat/**, .github/actions/node-reference/**, .github/workflows/rust-compat-native.yml]
 
 permissions:
   contents: read
@@ -44,10 +44,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Verify approved reference fixes
-        run: |
-          git diff --no-ext-diff --binary --no-color --full-index --unified=0 9cc6b5fac966993364ae33da8797f446bbf7f571 -- backend scripts/ip-flag-node.js > "$RUNNER_TEMP/reference-fixes.patch"
-          diff --strip-trailing-cr -u tests/compat/approved-reference-fixes.patch "$RUNNER_TEMP/reference-fixes.patch"
+      - uses: ./.github/actions/node-reference
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24.16.0
@@ -144,6 +141,7 @@ jobs:
           ref: 4bd7b0acbe65466b933ccea14fc61dbebe036ead
           path: .compat-frontend
           persist-credentials: false
+      - uses: ./.github/actions/node-reference
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24.16.0
@@ -235,6 +233,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - uses: ./.github/actions/node-reference
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24.16.0

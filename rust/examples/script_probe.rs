@@ -265,7 +265,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .catch(&ctx)
             .map_err(|error| format!("host setup: {error:?}"))?;
             // Preserve the supplied script bytes; redirect its known external API in the probe host.
-            ctx.eval::<(), _>(include_str!("../../scripts/ip-flag-node.js"))
+            ctx.eval::<(), _>(include_str!("../../tests/compat/fixtures/ip-flag.js"))
                 .catch(&ctx)
                 .map_err(|error| format!("ip-flag script: {error:?}"))?;
             let promise: Promise = ctx

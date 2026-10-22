@@ -20,11 +20,13 @@ The frontend API and existing data formats are retained. The frontend still sees
 
 - [`main`](https://github.com/DSLZL/Sub-Store/tree/main) contains the Rust backend and its Actions workflows.
 - [`js`](https://github.com/DSLZL/Sub-Store/tree/js) follows the upstream JavaScript backend. The wei/pull GitHub App reads [.github/pull.yml](.github/pull.yml) on the default branch and synchronizes upstream `sub-store-org/Sub-Store:master` into `js` using `hardreset`. Local JS changes should use a separate branch.
-- `backend/` on `main` is the frozen Node reference used by compatibility tests, including the approved reference fixes. Upstream synchronization does not modify this reference or Rust `main`.
+- Compatibility tests restore the frozen Node reference from commit `9cc6b5fac966993364ae33da8797f446bbf7f571` on Actions runners and apply the approved reference fixes. The JavaScript application is not carried on `main`; updates to `js` do not change the comparison baseline.
 
 ## Development and validation
 
 All product builds, tests, browser checks, Docker execution and benchmarks run in GitHub Actions. The compatibility workflow requires all six native, Docker and unchanged frontend jobs. [Performance records](tests/performance/README.md) retain the measured source revisions and limitations.
+
+See the [cleanup inventory](rust/CLEANUP.md) for removed upstream application files and retained runtime, fixture and license dependencies.
 
 ## License and acknowledgements
 

@@ -1,0 +1,12 @@
+name: Frozen Node reference
+description: Restore the fixed comparison source on the Actions runner only.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        git restore --source=9cc6b5fac966993364ae33da8797f446bbf7f571 --staged --worktree -- backend config .node-version scripts/ip-flag-node.js
+        git apply --unidiff-zero tests/compat/approved-reference-fixes.patch
+        git diff --no-ext-diff --binary --no-color --full-index --unified=0 9cc6b5fac966993364ae33da8797f446bbf7f571 -- backend scripts/ip-flag-node.js > "$RUNNER_TEMP/reference-fixes.patch"
+        diff --strip-trailing-cr -u tests/compat/approved-reference-fixes.patch "$RUNNER_TEMP/reference-fixes.patch"
+        diff --strip-trailing-cr -u scripts/ip-flag-node.js tests/compat/fixtures/ip-flag.js

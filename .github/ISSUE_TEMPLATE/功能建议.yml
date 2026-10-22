@@ -20,18 +20,14 @@ body:
     id: runtime
     attributes:
       label: 运行环境
-      description: 请选择这个建议涉及的运行环境。
+      description: 请选择这个建议涉及的 Rust 后端平台。
       multiple: false
       options:
-        - Node.js
-        - Android
-        - Docker
-        - 自部署
-        - Surge
-        - Loon
-        - Quantumult X
-        - Stash
-        - Shadowrocket
+        - Linux x64
+        - Linux arm64
+        - Windows x64
+        - Docker Linux x64
+        - Docker Linux arm64
         - 其他
     validations:
       required: true
@@ -48,7 +44,7 @@ body:
         - 节点/策略组
         - 同步/缓存
         - 配置/部署
-        - 代理 App 兼容
+        - 目标客户端配置
         - 文档
         - 其他
     validations:

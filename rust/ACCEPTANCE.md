@@ -26,6 +26,10 @@ constants. Prior discovery inventories remain historical evidence.
 The full workflow requires the original 826 Node tests on each native platform,
 strict Node/Rust HTTP and persisted-state comparisons, outgoing request and
 cache checks, general script/async/host calls, and Rust capability/error checks.
+The fixed Node source, module configurations and toolchain file are restored
+from the baseline commit on each runner by `.github/actions/node-reference`,
+then receive only the existing approved reference patch. These application
+files are absent from Rust `main`; the source and patch guards remain mandatory.
 The frontend must pass all 21 declared workflows against Node, merged Rust and
 separate Rust: CRUD/edit/reload, previews, shares, archives, logs, backups,
 permanent deletion/restarts, configured backend selection, cache refresh and
