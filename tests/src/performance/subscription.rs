@@ -459,7 +459,8 @@ pub fn inspect() -> Result {
             .filter_map(Value::as_f64)
             .collect::<Vec<_>>();
         let stats = distribution(&times)?;
-        let mut summary = json!({"requests":stats["n"],"median_s":stats["median"],"p95_s":stats["p95"]});
+        let mut summary =
+            json!({"requests":stats["n"],"median_s":stats["median"],"p95_s":stats["p95"]});
         summary["case"] = json!(case);
         summary["kind"] = json!(kind);
         summary["clients"] = json!(clients);
