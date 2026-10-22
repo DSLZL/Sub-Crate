@@ -1462,3 +1462,66 @@ All six jobs also pass in
 [39735798237](https://github.com/DSLZL/Sub-Store/actions/runs/39735798237)
 at the same source: native Linux x64/arm64 and Windows x64, Docker Linux
 x64/arm64, and the unchanged official frontend in headless Chrome.
+
+### Reuse compilation of the JS value bridge (2026-10-22)
+
+[39740799145](https://github.com/DSLZL/Sub-Store/actions/runs/39740799145)
+passes at `7d034cd522778241f49b902dec61f18634f00862`, comparing the pinned
+Node original and Rust `1cf6c2b175cee2773b25ce700b52d7ef7b2ed05e` with the
+candidate on one Ubuntu x64 runner. Separate build directories and distinct
+binary hashes are recorded as before. Use these paired observations, rather
+than comparing absolute times between runners.
+
+Application bootstrap already reused compiled fixed libraries, but the value
+bridge still compiled its inline expression on every initialization. Its
+unchanged source now uses the existing private, immutable bytecode cache.
+`Script::eval_value` returns the newly evaluated object in the current context;
+`js_values::initialize` installs it at the same global property. Each engine
+still constructs fresh functions and objects. The first use in a process still
+compiles and serializes the source. No user script, live context, converted node
+or mutable bridge is cached.
+
+Median uninstrumented HTTP milliseconds per request:
+
+| Input | Node | Previous Rust | Candidate Rust |
+|---|---:|---:|---:|
+| SS URI | 0.590 | 0.801 | 0.630 |
+| VMess WS | 0.737 | 0.817 | 0.670 |
+| VLESS WS | 0.622 | 0.825 | 0.677 |
+| Trojan | 0.558 | 0.770 | 0.645 |
+| Hysteria2 | 0.575 | 0.790 | 0.658 |
+| Surge SS | 0.874 | 0.806 | 0.651 |
+| QX SS | 1.206 | 0.811 | 0.668 |
+| Clash JSON | 0.655 | 1.069 | 0.796 |
+| Single-node Clash YAML | 1.044 | 1.080 | 0.806 |
+
+All nine HTTP medians fall by 16.2–25.5% against previous Rust. Surge/QX fall
+by 19.2%/17.6% against previous Rust and 25.5%/44.6% against Node. VMess and
+Clash YAML also have lower medians than Node; the other five fixtures do not.
+These are fixture medians, not a universal throughput or tail-latency claim.
+Pure parser algorithms are unchanged. Candidate fresh-parser Surge/QX medians
+are `7.711 / 7.676 us`; Clash JSON/YAML are `133.873 / 138.895 us`.
+
+Separate Surge/QX profiles report median active `bootstrap_values=0.015 /
+0.014 ms`, `bootstrap=0.064 / 0.063 ms`, `context_setup=0.111 / 0.108 ms`,
+`job=0.170 / 0.164 ms`, `parse_native=0.035 / 0.033 ms` and
+`produce=0.018 / 0.017 ms`. Context creation is now the largest reported
+fixed setup stage. These active elapsed spans do not isolate all HTTP transport
+or scheduling costs, and are not OS CPU time. Nested stages overlap and their
+independently computed medians must not be added.
+
+Formatting, clippy, 42 ordinary Rust tests, 25 harness self-checks, all 66 public
+preflight responses, 5,670 timed responses and 63 balanced profiles pass. The
+new returned-object test verifies independent mutable objects and methods
+across runtimes after bytecode loads; the existing number, cycle, getter,
+exception and concurrent-context checks remain in place. All seven native
+fixtures still initialize no generic context, and all nine load no generic
+library bundle. Builds, product execution and measurements ran only in Actions;
+no artifacts were downloaded or extracted locally. The supplied-subscription
+long test was not repeated; cold-process latency was not measured in this run.
+
+All six jobs pass in
+[39740799201](https://github.com/DSLZL/Sub-Store/actions/runs/39740799201)
+at the same source: native Linux x64/arm64 and Windows x64, Docker Linux
+x64/arm64, and the unchanged official frontend in headless Chrome. The Windows
+HTTP/state/restart/rollback, Rust JS and original Node regression steps passed.
