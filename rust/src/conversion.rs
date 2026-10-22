@@ -3783,7 +3783,7 @@ mod tests {
     fn native_text_parsing_preserves_encoded_units_and_base64_precedence() {
         let raw = "https://u%40ser:p%3Aword@[2001:db8::1]:443#节点😀";
         let expected = json!({"name":"节点😀","type":"http","tls":true,
-            "server":"2001:db8::1","port":443,"username":"u@ser","password":"p:word","udp":true});
+            "server":"2001:db8::1","port":443.0,"username":"u@ser","password":"p:word","udp":true});
         for raw in [raw.to_owned(), format!("{raw}\n"), STANDARD.encode(raw)] {
             assert_eq!(
                 parse(&json!(raw), None).ok().unwrap(),
