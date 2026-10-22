@@ -282,6 +282,7 @@ pub fn expected_connections() -> Vec<serde_json::Value> {
 pub fn check_native(requests: &[serde_json::Value], connections: &[serde_json::Value], errors: &[String]) -> Result {
     use serde_json::{Value,json};
     require(errors.is_empty(),"Controlled DNS fixture failed")?;
+    require(connections.iter().all(|item| ["transport","handshake","server_name"].iter().all(|key| item.get(key).is_some())),"Missing DNS connection evidence")?;
     let actual=requests.iter().map(|item| json!({"transport":item["transport"],"domain":item["domain"],"packet":item["packet"],"frame":item["frame"]})).collect::<Vec<_>>();
     crate::json::check(&json!(actual),&json!(expected_native_requests()?),false)?;
     let actual=connections.iter().map(|item| json!({"transport":item["transport"],"handshake":item["handshake"],"server_name":item["server_name"]})).collect::<Vec<_>>();

@@ -10,6 +10,7 @@ pub mod notices;
 pub mod server;
 pub mod reference;
 pub mod mmdb;
+pub mod probe;
 #[cfg(test)]
 mod notices_tests;
 

@@ -38,7 +38,7 @@ fn omitted_rquickjs_workspace_license_is_pinned_to_version_repository_and_hash()
     for mutation in ["version","repository","license","hash"] {
         let mut changed=metadata.clone();
         match mutation { "version"=>changed["packages"][1]["version"]=json!("0.14.1"),"repository"=>changed["packages"][1]["repository"]=json!("https://example.invalid/wrong"),"license"=>changed["packages"][1]["license"]=json!("Apache-2.0"),_=>() }
-        let output=root.join(mutation); std::fs::create_dir(&output).unwrap();
+        let output=root.join(format!("mutation-{mutation}")); std::fs::create_dir(&output).unwrap();
         assert!(notices::collect(&changed,&output,&root.join("toolchain"),&root,if mutation=="hash" { &bad } else { &pinned }).is_err());
     }
 }

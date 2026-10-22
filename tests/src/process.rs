@@ -83,7 +83,15 @@ impl Completed {
 }
 
 pub fn run(command: &mut Command, output: &Path, label: &str, timeout: Duration) -> Result<Completed> {
-    let rtk=find_program("rtk", command);
+    execute(command,output,label,timeout,None)
+}
+
+pub fn run_direct(command: &mut Command, output: &Path, label: &str, timeout: Duration, reason: &str) -> Result<Completed> {
+    execute(command,output,label,timeout,Some(reason))
+}
+
+fn execute(command: &mut Command, output: &Path, label: &str, timeout: Duration, direct_reason: Option<&str>) -> Result<Completed> {
+    let rtk=if direct_reason.is_some() { None } else { find_program("rtk", command) };
     let mut wrapper;
     let command=if let Some(rtk)=rtk {
         wrapper=Command::new(rtk); wrapper.arg("proxy").arg(command.get_program()).args(command.get_args());
@@ -100,7 +108,7 @@ pub fn run(command: &mut Command, output: &Path, label: &str, timeout: Duration)
     crate::json::write_new(output.join(format!("{label}.command.json")), &json!({
         "argv":argv, "cwd":cwd, "started":started, "finished":jiff::Timestamp::now().to_string(),
         "exit_code":status.code(), "timed_out":timed_out,
-        "rtk_exception":if wrapped { None } else { Some("RTK unavailable on this runner") }
+        "rtk_exception":direct_reason.or(if wrapped { None } else { Some("RTK unavailable on this runner") })
     }))?;
     Ok(Completed { status, timed_out, stdout:String::from_utf8_lossy(&std::fs::read(&process.stdout)?).into_owned(), stderr:String::from_utf8_lossy(&std::fs::read(&process.stderr)?).into_owned() })
 }

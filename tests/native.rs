@@ -10,6 +10,9 @@ fn frozen_node_unit_suite() -> Result { reference::unit(&process::scratch("refer
 fn frozen_node_http_suites() -> Result { reference::http_suites(&process::scratch("reference-http")?) }
 
 #[test]
+fn shared_native_script_host_processors_dns_mmdb_wire_state_and_resume() -> Result { sub_store_tests::probe::shared(&process::scratch("script-probe")?) }
+
+#[test]
 fn rust_and_node_preserve_shared_state_restart_write_failure_and_rollback() -> Result {
     let output=process::scratch("state-parity")?;
     reference::verify(&output)?;

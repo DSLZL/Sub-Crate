@@ -23,7 +23,7 @@ pub fn unit(output: &Path) -> Result {
     let mocha=stream.next().ok_or("Empty Mocha JSON result")??;
     report["stats"]=mocha["stats"].clone(); report["pending"]=mocha["pending"].clone(); report["failures"]=mocha["failures"].clone();
     json::write_new(output.join("node-unit.json"),&report)?;
-    require(result.success() && mocha["stats"]["tests"]==826 && mocha["pending"].as_array().is_some_and(Vec::is_empty) && mocha["failures"].as_array().is_some_and(Vec::is_empty),"Frozen Node unit suite did not pass all 826 tests without pending cases")
+    require(result.success() && mocha["stats"]["tests"]==826 && mocha["pending"].as_array().is_some_and(Vec::is_empty) && mocha["failures"].as_array().is_some_and(Vec::is_empty),format!("Frozen Node suite expected 826 passing tests: tests={}, pending={}, failures={}, process_success={}",mocha["stats"]["tests"],mocha["stats"]["pending"],mocha["stats"]["failures"],result.success()))
 }
 
 pub fn http_suites(output: &Path) -> Result {
