@@ -166,6 +166,12 @@ def profiles(args, suite, cases, report):
                 assert b.api(server[0], "proxy/parse", "POST", payload) == expected
             events = b.pipeline_profiles(directory / "server.log", offset, operation="other", processor=False)
             assert len(events) == BLOCKS
+            if case["id"] in ("ss_uri", "vmess_ws", "vless_ws", "trojan", "hysteria2"):
+                assert all(row["stage"] != "parse_context_init" for event in events for row in event["rows"]), \
+                    f"{case['id']}: native URI parsing initialized the generic engine"
+            if case["id"] in ("ss_uri", "vmess_ws", "vless_ws", "trojan", "hysteria2", "clash_json", "clash_yaml"):
+                assert all(row["stage"] != "parse_utilities_init" for event in events for row in event["rows"]), \
+                    f"{case['id']}: parsing initialized the generic libraries"
             report["profiles"].append({"case": case["id"], "events": events})
 
 
@@ -192,9 +198,20 @@ def summary(report):
                   "", "| Stage | Median active ms |", "|---|---:|"]
         for stage in ("executor_setup", "state_snapshot", "runtime_setup", "context_setup", "job", "bootstrap",
                       "bootstrap_load", "bootstrap_eval", "bootstrap_state_encode", "bootstrap_state_parse",
-                      "parse_runtime", "parse_context_init", "parse_native", "produce", "output_encode"):
+                      "parse_runtime", "parse_context_init", "parse_utilities_init", "parse_native", "produce", "output_encode"):
             samples = [sum(row["active_ns"] for row in event["rows"] if row["stage"] == stage) / 1e6 for event in events]
             lines.append(f"| {stage} | {statistics.median(samples):.3f} |")
+        lines += ["", "Generic-parser setup per request (separate profiles).",
+                  "| Format | Median context calls | Context active ms | Median library calls | Library active ms |",
+                  "|---|---:|---:|---:|---:|"]
+        for group in report["profiles"]:
+            values = []
+            for stage in ("parse_context_init", "parse_utilities_init"):
+                rows = [[row for row in event["rows"] if row["stage"] == stage] for event in group["events"]]
+                calls = [sum(row["calls"] for row in sample) for sample in rows]
+                times = [sum(row["active_ns"] for row in sample) / 1e6 for sample in rows]
+                values += [f"{statistics.median(calls):.0f}", f"{statistics.median(times):.3f}"]
+            lines.append("| " + group["case"] + " | " + " | ".join(values) + " |")
     return "\n".join(lines) + "\n"
 
 

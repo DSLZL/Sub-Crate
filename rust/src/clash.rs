@@ -10,8 +10,19 @@ pub struct Parser {
     preprocessed: RefCell<Option<(String, String)>>,
 }
 
+fn utilities<'js>(ctx: &Ctx<'js>) -> rquickjs::Result<Object<'js>> {
+    let globals = ctx.globals();
+    let value: JsValue = globals.get("SubStoreUtilities")?;
+    if let Some(utilities) = value.as_object() {
+        return Ok(utilities.clone());
+    }
+    let _setup = crate::profile::span("parse_utilities_init");
+    crate::script_bytecode::UTILITIES.eval(ctx)?;
+    globals.get("SubStoreUtilities")
+}
+
 fn yaml<'js>(ctx: &Ctx<'js>, raw: &str) -> rquickjs::Result<JsValue<'js>> {
-    let utilities: Object = ctx.globals().get("SubStoreUtilities")?;
+    let utilities = utilities(ctx)?;
     let parse: Function = utilities.get("parseYaml")?;
     let options = ctx.json_parse(r#"{"logLevel":"error","merge":true}"#)?;
     match parse.call((raw, options.clone())) {
@@ -183,10 +194,7 @@ impl Parser {
         let runtime = Runtime::new().map_err(|error| Error::Legacy(error.to_string()))?;
         let context = Context::full(&runtime).map_err(|error| Error::Legacy(error.to_string()))?;
         context.with(|ctx| {
-            crate::js_values::initialize(&ctx).map_err(|error| Error::Legacy(error.to_string()))?;
-            crate::script_bytecode::UTILITIES
-                .eval(&ctx)
-                .map_err(|error| Error::Legacy(error.to_string()))
+            crate::js_values::initialize(&ctx).map_err(|error| Error::Legacy(error.to_string()))
         })?;
         Ok(self.context.get_or_init(|| context))
     }
@@ -252,7 +260,7 @@ impl Parser {
     fn dump_with_options(&self, value: &Value, defaults: bool) -> Result<String, Error> {
         self.context()?.with(|ctx| {
             let result = (|| -> rquickjs::Result<String> {
-                let utilities: Object = ctx.globals().get("SubStoreUtilities")?;
+                let utilities = utilities(&ctx)?;
                 let dump: Function = utilities.get("stringifyYaml")?;
                 let content = crate::js_values::decode(&ctx, value)?;
                 let text: String = if defaults {
@@ -399,7 +407,7 @@ impl Parser {
                     Ok(value) => value,
                     Err(_) => {
                         ctx.catch();
-                        let utilities: Object = ctx.globals().get("SubStoreUtilities")?;
+                        let utilities = utilities(&ctx)?;
                         let json5: Object = utilities.get("JSON5")?;
                         let parse: Function = json5.get("parse")?;
                         match parse.call((raw,)) {
@@ -502,15 +510,30 @@ mod tests {
             "trojan://secret@tr.example:443?allowInsecure=1#native",
             "hysteria2://secret@hy.example:443#native",
         ] {
-            let nodes = crate::conversion::parse(&json!(raw), Some(&parser)).ok().unwrap();
+            let nodes = crate::conversion::parse(&json!(raw), Some(&parser))
+                .ok()
+                .unwrap();
             assert_eq!(nodes.len(), 1);
             assert_eq!(nodes[0]["name"], "native");
             assert!(parser.context.get().is_none());
         }
+        let strict = r#"{"type":"ss","name":"strict","extra":{"n":9007199254740993,"zero":-0}}"#;
+        let proxy = parser.line(strict).ok().unwrap().unwrap();
+        assert_eq!(proxy["name"], "strict");
+        let canonical = "proxies:\n  - {\"type\":\"ss\",\"name\":\"canonical\",\"port\":443}\n";
+        assert!(parser.preprocess(canonical).is_some());
+        parser.context().ok().unwrap().with(|ctx| {
+            let utilities: JsValue = ctx.globals().get("SubStoreUtilities").unwrap();
+            assert!(utilities.is_undefined());
+        });
         let raw = "{type:'ss',name:'fallback',extra:{nan:NaN,zero:-0}}";
         let expected = parser.line(raw).ok().unwrap();
         assert_eq!(expected.as_ref().unwrap()["name"], "fallback");
         assert!(parser.context.get().is_some());
+        parser.context().ok().unwrap().with(|ctx| {
+            let utilities: JsValue = ctx.globals().get("SubStoreUtilities").unwrap();
+            assert!(utilities.is_object());
+        });
         assert!(parser.line("{").ok().unwrap().is_none());
         assert_eq!(parser.line(raw).ok().unwrap(), expected);
         let fresh = Parser::new().ok().unwrap();
@@ -520,7 +543,7 @@ mod tests {
 
     fn legacy_line(parser: &Parser, raw: &str) -> Value {
         parser.context().ok().unwrap().with(|ctx| {
-            let utilities: Object = ctx.globals().get("SubStoreUtilities").unwrap();
+            let utilities = utilities(&ctx).unwrap();
             let json5: Object = utilities.get("JSON5").unwrap();
             let parse: Function = json5.get("parse").unwrap();
             let value: JsValue = match parse.call((raw,)) {
@@ -720,7 +743,9 @@ mod tests {
         let began = Instant::now();
         for _ in 0..23 {
             let parser = Parser::new().ok().unwrap();
-            black_box(parser.context().ok().unwrap());
+            parser.context().ok().unwrap().with(|ctx| {
+                black_box(utilities(&ctx).unwrap());
+            });
         }
         let setup = began.elapsed().as_secs_f64();
         let parser = Parser::new().ok().unwrap();
