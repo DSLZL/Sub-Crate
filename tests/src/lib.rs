@@ -18,6 +18,8 @@ pub mod api;
 pub mod service;
 pub mod backup;
 pub mod scheduling;
+pub mod static_files;
+pub mod business;
 #[cfg(test)]
 mod notices_tests;
 

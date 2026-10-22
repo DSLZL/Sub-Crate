@@ -18,7 +18,7 @@ pub fn baseline(output:&Path)->Result<(Value,Value)> {
     contracts::check(&api.http,&api.listener.url,&state,&contracts::cases("service-state")?,None,&output.join("baseline.json"))?;
     Ok((api.durable()?,api.stored("root.json")?))
 }
-fn clock(latest:bool)->i64 {
+pub fn clock(latest:bool)->i64 {
     #[cfg(windows)] {
         #[repr(C)] #[derive(Default)] struct FileTime{low:u32,high:u32}
         #[link(name="kernel32")] unsafe extern "system" {fn GetSystemTimeAsFileTime(value:*mut FileTime);fn GetSystemTimePreciseAsFileTime(value:*mut FileTime);}
@@ -27,6 +27,13 @@ fn clock(latest:bool)->i64 {
         let samples=[millis(standard),millis(precise)];if latest {*samples.iter().max().unwrap()} else {*samples.iter().min().unwrap()}
     }
     #[cfg(not(windows))] {let _=latest;jiff::Timestamp::now().as_millisecond()}
+}
+
+pub fn compare_cases(left:&[Value],right:&[Value],skip_env:bool)->Result {
+    require(left.len()==right.len(),"Paired scenario count differs")?;for (left,right) in left.iter().zip(right) {json::check(&left["id"],&right["id"],false)?;let left=left["steps"].as_array().ok_or("Missing scenario steps")?;let right=right["steps"].as_array().ok_or("Missing scenario steps")?;require(left.len()==right.len(),"Paired step count differs")?;for (left,right) in left.iter().zip(right) {if skip_env && left["path"]=="/api/utils/env" {continue;}contracts::compare_step(left,right)?;}}Ok(())
+}
+pub fn captured_clocks(cases:&[Value],lower:i64,upper:i64)->Result {
+    for case in cases {for step in case["steps"].as_array().ok_or("Missing scenario steps")? {if let Some(captures)=step.get("captured").and_then(Value::as_object) {for (key,value) in captures {let value=if let Some(value)=value.as_i64() {Some(value)} else if key.ends_with("ARCHIVE_ID") {Some(value.as_str().ok_or("Invalid archive ID")?.split('-').next().ok_or("Missing archive time")?.parse()?)} else {None};if let Some(value)=value {require((lower..=upper).contains(&value),"Captured timestamp outside actual request bounds")?;}}}}}Ok(())
 }
 pub fn conversions(output:&Path)->Result {
     reference::verify(output)?;let (document,root)=baseline(output)?;

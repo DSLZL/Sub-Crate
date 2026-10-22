@@ -65,6 +65,10 @@ fn actual_schedules_cover_overlap_updates_disable_delete_sync_backup_mmdb_and_st
     sub_store_tests::scheduling::run(&process::scratch("service-scheduling")?)
 }
 
+#[test] fn actual_utilities_and_sync_preserve_wire_cache_ttl_state_and_rf02() -> Result { sub_store_tests::business::utilities_sync(&process::scratch("service-utilities-sync")?) }
+#[test] fn archive_lifecycle_preserves_restart_atomic_restore_and_write_failures() -> Result { sub_store_tests::business::archives(&process::scratch("service-archives")?) }
+#[test] fn logs_preserve_typed_seed_capture_filter_retention_restart_and_failed_clear() -> Result { sub_store_tests::business::logs(&process::scratch("service-logs")?) }
+
 #[test]
 fn rust_and_node_preserve_shared_state_restart_write_failure_and_rollback() -> Result {
     let output = process::scratch("state-parity")?;
