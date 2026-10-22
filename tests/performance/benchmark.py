@@ -33,7 +33,7 @@ from urllib.request import Request, urlopen
 import psutil
 
 ORIGINAL = "9cc6b5fac966993364ae33da8797f446bbf7f571"
-RUST = "bfae5be4ff67a7bfc9be70ea838e28dce5c0bf02"
+RUST = "af08b0649c4d2f2814fe38ce6943b1397f5e1c14"
 RUST_BASELINE = "ee64ab9f7376a68c126950caee256bf3fb9c2b12"
 FRONTEND = "4bd7b0acbe65466b933ccea14fc61dbebe036ead"
 INPUT_HASH = "a6e6bb9cbe0587f33de0cf130ec391ecffd3483009888fed0ea59d39492ae890"

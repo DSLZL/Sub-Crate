@@ -28,7 +28,7 @@ permissions:
   contents: read
 
 env:
-  PERF_RUST_REVISION: bfae5be4ff67a7bfc9be70ea838e28dce5c0bf02
+  PERF_RUST_REVISION: af08b0649c4d2f2814fe38ce6943b1397f5e1c14
   PERF_BASELINE_REVISION: ee64ab9f7376a68c126950caee256bf3fb9c2b12
 
 concurrency:
