@@ -221,7 +221,7 @@ impl Unicode<'_> {
                 self.send(
                     "POST",
                     "/api/storage",
-                    Some(json!({"content":content})),
+                    Some(json!({"content":json::literal(&content)})),
                     200,
                     false,
                 )?;
@@ -232,9 +232,7 @@ impl Unicode<'_> {
                 )?;
                 json::check(
                     &json::parse(
-                        self.api.stored("root.json")?["sub-store"]
-                            .as_str()
-                            .ok_or("Missing Unicode backup root")?,
+                        &json::text(&self.api.stored("root.json")?["sub-store"])?,
                     )?,
                     &restored,
                     false,
@@ -244,7 +242,7 @@ impl Unicode<'_> {
             self.send(
                 "POST",
                 "/api/storage",
-                Some(json!({"content":json::stringify(&restored)})),
+                Some(json!({"content":json::literal(&json::stringify(&restored))})),
                 500,
                 false,
             )?;

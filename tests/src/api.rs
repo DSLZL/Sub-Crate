@@ -52,9 +52,11 @@ impl Api {
         let response = self.http.request(&self.listener.url, step)?;
         let index = self.next.get();
         self.next.set(index + 1);
+        let mut evidence = response.clone();
+        evidence["body"] = json!(json::literal(response["body"].as_str().ok_or("Missing response body")?));
         json::write_new(
             self.proof.join(format!("{index:04}.json")),
-            &json!({"request":step,"response":response}),
+            &json!({"request":step,"response":evidence}),
         )?;
         Ok(response)
     }
@@ -64,7 +66,7 @@ impl Api {
             response["status"] == status,
             format!(
                 "Unexpected service response: {}",
-                json::stringify(&json!({"request":step,"response":response}))
+                json!({"request":step,"response":response})
             ),
         )?;
         json::parse(response["body"].as_str().ok_or("Missing response body")?)
