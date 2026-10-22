@@ -1395,3 +1395,70 @@ at the same candidate source. Native Linux x64/arm64, Docker Linux x64/arm64,
 Windows x64 and the unchanged official frontend in headless Chrome passed.
 The final Windows result was confirmed after the earlier GitHub connection EOF
 errors cleared; its HTTP/state/restart/rollback checks passed.
+
+### Surge/QX scalar probes before generic initialization (2026-10-22)
+
+[39735798119](https://github.com/DSLZL/Sub-Store/actions/runs/39735798119)
+passes at `1cf6c2b175cee2773b25ce700b52d7ef7b2ed05e`, comparing the pinned
+Node original, Rust `ef44869c214ee669ec0af9a3cada7a54b5a7e6c7`, and the
+candidate on one Ubuntu x64 runner. Baseline and candidate use separate build
+directories and have distinct binary hashes. Compare these paired observations;
+absolute times from the earlier run came from a different runner.
+
+Before starting the generic engine, `clash::Parser::line` reuses the existing
+conservative YAML reader to reject confirmed scalar strings without an object
+delimiter. Ordinary Surge/QX lines then reach the existing classic parser
+without creating a generic context or loading its libraries. JSON/JSON5 objects,
+tagged YAML and ambiguous inputs retain the previous fallback order. Nothing
+changes in the five URI parser routes. Every request retains its private
+application context; no live engine or converted result is reused.
+
+Median uninstrumented HTTP milliseconds per request:
+
+| Input | Node | Previous Rust | Candidate Rust |
+|---|---:|---:|---:|
+| SS URI | 0.569 | 0.767 | 0.815 |
+| VMess WS | 0.672 | 0.877 | 0.873 |
+| VLESS WS | 0.673 | 0.864 | 0.773 |
+| Trojan | 0.708 | 0.749 | 0.710 |
+| Hysteria2 | 0.453 | 0.731 | 0.836 |
+| Surge SS | 0.768 | 2.573 | 0.712 |
+| QX SS | 1.164 | 2.570 | 0.843 |
+| Clash JSON | 0.592 | 1.154 | 1.015 |
+| Single-node Clash YAML | 1.054 | 1.171 | 1.013 |
+
+Surge/QX HTTP medians fall by 72.3%/67.2% against previous Rust and by
+7.3%/27.6% against Node. Their HTTP P95 values are respectively
+`1.024 / 2.762 / 0.870 ms` and `1.477 / 2.795 / 0.944 ms` for
+Node/previous Rust/candidate. These focused gains do not establish a speedup
+for every input: several other formats still have higher HTTP medians than
+Node, and unchanged URI routes fluctuate against previous Rust in this run.
+
+Pure parsing remains separate from HTTP. Fresh-parser Surge/QX calls take
+`6.972 / 6.858 us`, against Node's `126.092 / 267.710 us`, or 18.09x/39.04x
+faster. Reused-parser candidate medians are `6.977 / 6.906 us`. Those ratios
+must not be presented as request-level speedups.
+
+The separate Surge/QX profiles report median active `context_setup=0.107 /
+0.112 ms`, `bootstrap=0.176 / 0.176 ms`, `parse_scalar_probe=0.014 /
+0.013 ms`, `parse_native=0.031 / 0.029 ms` and `produce=0.019 / 0.019 ms`.
+The probe is nested within parsing. Parent/child stages overlap; independent
+medians cannot be added, and these are elapsed active spans, not OS CPU time.
+Application initialization remains a larger cost than native parsing. The
+native producer still requires the script layer's filtering, preparation and
+JavaScript value semantics; bypassing that layer is not a verified substitute.
+
+All 5,670 timed responses, 66 untimed public correctness responses and 63
+balanced profiles pass. The additional preflight cases cover ignored strings,
+minimal YAML, a comment-prefixed JSON5 object and a QX name resembling YAML.
+All seven native-format profiles assert zero generic contexts; all nine
+fixtures assert zero generic library initializations. Formatting, clippy,
+41 ordinary Rust tests and 25 harness self-checks also pass. Samples and logs
+remain in Actions; no artifacts were downloaded or extracted locally. The
+supplied-subscription long test was not repeated, and this localhost
+single-node comparison does not establish memory savings or release readiness.
+
+All six jobs also pass in
+[39735798237](https://github.com/DSLZL/Sub-Store/actions/runs/39735798237)
+at the same source: native Linux x64/arm64 and Windows x64, Docker Linux
+x64/arm64, and the unchanged official frontend in headless Chrome.
