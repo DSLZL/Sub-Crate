@@ -72,8 +72,9 @@ impl ScriptGist {
             }
             if ["GET","PATCH","PUT"].contains(&request.method.as_str()) { return Ok(Reply::json(200,&metadata(key,store))); }
         }
-        if parts.len()==3 && parts[0]=="raw" && request.method=="GET" {
-            if let Some(content)=store.get(&parts[1]).and_then(|gist| gist["files"].get(&parts[2])).and_then(|file| file["content"].as_str()) { return Ok(Reply::new(200,content).header("Content-Type","text/plain; charset=utf-8")); }
+        if parts.len()==3 && parts[0]=="raw" && request.method=="GET"
+            && let Some(content)=store.get(&parts[1]).and_then(|gist| gist["files"].get(&parts[2])).and_then(|file| file["content"].as_str()) {
+            return Ok(Reply::new(200,content).header("Content-Type","text/plain; charset=utf-8"));
         }
         Ok(Reply::json(404,&json!({"message":"fixture resource missing"})))
     }

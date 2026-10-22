@@ -6,6 +6,7 @@ pub mod providers;
 pub mod dns;
 pub mod upstream;
 pub mod contracts;
+pub mod notices;
 
 use std::path::PathBuf;
 

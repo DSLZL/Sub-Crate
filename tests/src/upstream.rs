@@ -52,8 +52,9 @@ pub fn substitute(value: &Value, origin: &str) -> Value {
 impl State {
     fn response(&self, request: &Request, origin: &str) -> Result<Reply> {
         let url=request.url(origin)?; let path=url.path();
-        if request.target.starts_with("http://") || request.target.starts_with("https://") {
-            if url.scheme()!="http" || url.host_str()!=Some("ip-api.com") || url.port_or_known_default()!=Some(80) || request.method!="GET" { return Ok(Reply::json(502,&json!({"message":"Fixture proxy forbids this authority"})).header("subscription-userinfo","upload=10; download=20; total=1000")); }
+        if (request.target.starts_with("http://") || request.target.starts_with("https://"))
+            && (url.scheme()!="http" || url.host_str()!=Some("ip-api.com") || url.port_or_known_default()!=Some(80) || request.method!="GET") {
+            return Ok(Reply::json(502,&json!({"message":"Fixture proxy forbids this authority"})).header("subscription-userinfo","upload=10; download=20; total=1000"));
         }
         if path.starts_with("/host/") {
             let reply=if path.starts_with("/host/gist/") { self.script_gist.response(request,origin)? }

@@ -45,9 +45,11 @@ jobs:
           cargo +1.98.0 fmt --manifest-path tests/Cargo.toml --all
           git diff --binary -- tests/src > "$RUNNER_TEMP/harness-format.patch"
           cp tests/Cargo.lock "$RUNNER_TEMP/harness-Cargo.lock"
-      - name: Clippy, inventory and nextest self-checks
+      - name: Clippy
+        run: cargo +1.98.0 clippy --manifest-path tests/Cargo.toml --locked --all-targets -- -D warnings
+      - name: Inventory and nextest self-checks
+        if: ${{ !cancelled() }}
         run: |
-          cargo +1.98.0 clippy --manifest-path tests/Cargo.toml --locked --all-targets -- -D warnings
           cargo +1.98.0 nextest list --manifest-path tests/Cargo.toml --locked --config-file .config/nextest.toml
           cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --config-file .config/nextest.toml --profile ci
       - name: Preserve test reports and small source patches
