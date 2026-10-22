@@ -21,6 +21,11 @@ test-group = 'containers'
 filter = 'test(=frozen_node_unit_suite)'
 threads-required = "num-test-threads"
 
+[[profile.ci.overrides]]
+# Cron deadlines must not compete with unrelated acceptance suites.
+filter = 'test(=actual_schedules_cover_overlap_updates_disable_delete_sync_backup_mmdb_and_startup)'
+threads-required = "num-test-threads"
+
 [profile.benchmark]
 inherits = "ci"
 test-threads = 1
