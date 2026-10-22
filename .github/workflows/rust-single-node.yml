@@ -2,6 +2,9 @@ name: Single-node parsing comparison
 
 on:
   workflow_dispatch:
+  push:
+    branches: [codex/rust-server-parity]
+    paths: [.github/workflows/rust-single-node.yml, tests/performance/single-node.*, tests/performance/single_node.*]
 
 permissions:
   contents: read
