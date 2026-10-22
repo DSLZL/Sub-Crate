@@ -4,13 +4,12 @@ COPY rust/Cargo.toml rust/Cargo.lock rust/
 COPY rust/examples rust/examples
 COPY rust/src/script_io.rs rust/src/script_transport.rs rust/src/script-primitives.js rust/src/
 COPY rust/src/dns_transport.rs rust/src/mmdb.rs rust/src/
-COPY scripts/ip-flag-node.js scripts/ip-flag-node.js
 COPY tests/compat/fixtures tests/compat/fixtures
 COPY tests/compat/.generated/script-helpers.js tests/compat/.generated/script-helpers.js
 COPY tests/compat/.generated/script-helper-licenses.txt tests/compat/.generated/script-helper-licenses.txt
 RUN cargo build --manifest-path rust/Cargo.toml --locked --release --example script_probe
 
-# shortcut: this packages the M1 experiment; replace it with the service image at M5.
+# Contained compatibility probe; the production image uses rust/Dockerfile.
 FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
 WORKDIR /work/rust
 COPY --from=build /work/rust/target/release/examples/script_probe /usr/local/bin/script_probe

@@ -4,8 +4,6 @@
 !rust/Cargo.lock
 !rust/examples/
 !rust/examples/**
-!scripts/
-!scripts/ip-flag-node.js
 !tests/
 !tests/compat/
 !tests/compat/fixtures/

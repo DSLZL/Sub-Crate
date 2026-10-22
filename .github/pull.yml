@@ -1,0 +1,6 @@
+version: "1"
+rules:
+  - base: js
+    upstream: sub-store-org:master
+    mergeMethod: hardreset
+    mergeUnstable: true

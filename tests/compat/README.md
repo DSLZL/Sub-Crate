@@ -16,6 +16,16 @@ GitHub Actions runners. `evidence/`, `.generated/`, `node_modules/` and
 Review Actions summaries/logs remotely and fetch only a specific small report
 when needed; do not download and expand whole runs into this directory.
 
+The workflow first runs `.github/actions/node-reference` after its full-history
+checkout. This restores the fixed Node source, proxy-app unit-test configurations
+and Node toolchain file from `9cc6b5fac966993364ae33da8797f446bbf7f571` on the
+runner, then applies and verifies `approved-reference-fixes.patch`. Restored
+paths are staged only in the disposable runner index so the existing Git source
+guards can inspect their exact blob identities. No commit is made. `main` does
+not retain the Node application or its deployment files. The unchanged IP-flag
+script is a test fixture at `fixtures/ip-flag.js`; the bootstrap compares it
+against the fixed original script before compiling the contained Rust probe.
+
 The sections below preserve the original discovery and contained-proof history;
 their milestone/pending statements describe those earlier stages. The final
 production boundary is the acceptance document above.

@@ -310,7 +310,7 @@ def main():
         mmdb_files = [str((MMDB_FIXTURES / item["file"]).relative_to(ROOT)).replace("\\", "/") for item in mmdb_manifest["files"]]
         for relative in ("rust/Cargo.toml", "rust/Cargo.lock", "rust/examples/script_probe.rs", "rust/examples/support/script_host.rs", "rust/src/dns_transport.rs", "rust/src/mmdb.rs", "rust/src/script_io.rs", "rust/src/script_transport.rs", "rust/src/script-primitives.js",
                          "tests/compat/probe.py", "tests/compat/runner.py", "tests/compat/reference.py", "tests/compat/upstream.py", "tests/compat/register.cjs",
-                         "tests/compat/host-reference.cjs", "scripts/ip-flag-node.js", "tests/compat/fixtures/script-host-probe.js",
+                         "tests/compat/host-reference.cjs", "scripts/ip-flag-node.js", "tests/compat/fixtures/ip-flag.js", "tests/compat/fixtures/script-host-probe.js",
                          "tests/compat/fixtures/script-assertions.js", "tests/compat/fixtures/script-host.js",
                          "tests/compat/fixtures/script-host-contracts.js", "tests/compat/.generated/script-helpers.js",
                          "tests/compat/.generated/script-helper-licenses.txt",
