@@ -268,8 +268,9 @@ pub fn settings_and_keys(output: &Path) -> Result {
                             && response["headers"]["content-security-policy"]
                                 == "default-src 'none'"
                             && response["headers"]["x-content-type-options"] == "nosniff",
-                        "Invalid recipient PATCH diagnostics changed",
+                        format!("Invalid recipient PATCH diagnostics changed ({kind}): {response}"),
                     )?;
+                    sharing::diagnostic(&response, "production", kind, 500, "", true, false)?;
                     edge.observed.push(json!({"method":"PATCH","path":path,"body":{"age-public-key":invalid},"html":response["body"],"state":api.durable()?}));
                     let rejected = edge.send(
                         "POST",
@@ -748,7 +749,7 @@ fn reference_graphs(edge: &mut Edge, kind: &str) -> Result {
                     bytes,
                     None,
                 )?;
-                require(setup.status == 200, "Live Buffer reference setup failed")?;
+                require(setup.status == 200, format!("Live Buffer reference setup failed ({kind}/{id}/{method}): {}", setup.evidence()))?;
             }
             let before = files(api)?;
             let published_before = api.send(&json!({"path":"/api/storage"}), 200)?;
