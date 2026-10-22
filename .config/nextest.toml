@@ -75,3 +75,43 @@ inherits = "ci"
 
 [profile.frontend-delivery.junit]
 path = "junit-frontend-delivery.xml"
+
+[profile.perf-matrix]
+inherits = "benchmark"
+[profile.perf-matrix.junit]
+path = "junit-perf-matrix.xml"
+
+[profile.perf-prepare]
+inherits = "benchmark"
+[profile.perf-prepare.junit]
+path = "junit-perf-prepare.xml"
+
+[profile.perf-pair]
+inherits = "benchmark"
+[profile.perf-pair.junit]
+path = "junit-perf-pair.xml"
+
+[profile.perf-aggregate]
+inherits = "benchmark"
+[profile.perf-aggregate.junit]
+path = "junit-perf-aggregate.xml"
+
+[profile.perf-inspect]
+inherits = "benchmark"
+[profile.perf-inspect.junit]
+path = "junit-perf-inspect.xml"
+
+[profile.single-node]
+inherits = "benchmark"
+[profile.single-node.junit]
+path = "junit-single-node.xml"
+
+[profile.single-inspect]
+inherits = "benchmark"
+[profile.single-inspect.junit]
+path = "junit-single-inspect.xml"
+
+[profile.cpu-conversion-repeat]
+inherits = "ci"
+[profile.cpu-conversion-repeat.junit]
+path = "junit-cpu-conversion-repeat.xml"

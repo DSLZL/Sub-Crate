@@ -16,7 +16,9 @@ pub fn literal(text: &str) -> String {
 }
 
 pub fn text(value: &Value) -> Result<String> {
-    Ok(serde_json::from_str(&quote(value.as_str().ok_or("Expected string value")?))?)
+    Ok(serde_json::from_str(&quote(
+        value.as_str().ok_or("Expected string value")?,
+    ))?)
 }
 
 pub fn parse(raw: &str) -> Result<Value> {
@@ -535,9 +537,11 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn external_json_text_and_nested_backups_preserve_literal_markers_and_surrogate_escapes() -> Result {
+    fn external_json_text_and_nested_backups_preserve_literal_markers_and_surrogate_escapes()
+    -> Result {
         crate::actions_only();
-        let raw = "{\"marker\":\"\u{e000}d800\",\"markers\":\"\u{e000}\u{e000}\",\"high\":\"\\ud800\"}";
+        let raw =
+            "{\"marker\":\"\u{e000}d800\",\"markers\":\"\u{e000}\u{e000}\",\"high\":\"\\ud800\"}";
         let document = parse(raw)?;
         let envelope = json!({"body":literal(raw),"content":literal(&stringify(&document))});
         let decoded = parse(&stringify(&envelope))?;

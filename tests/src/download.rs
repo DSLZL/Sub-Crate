@@ -419,13 +419,17 @@ fn execute(
         } else {
             crate::root()
         });
-    if kind == "node" { process::run_direct(
-        &mut command,
-        output,
-        label,
-        Duration::from_secs(60),
-        "Direct download process ownership allows watchdog cleanup on Windows",
-    ) } else { binary.run(&mut command, output, label) }
+    if kind == "node" {
+        process::run_direct(
+            &mut command,
+            output,
+            label,
+            Duration::from_secs(60),
+            "Direct download process ownership allows watchdog cleanup on Windows",
+        )
+    } else {
+        binary.run(&mut command, output, label)
+    }
 }
 pub fn run(output: &Path, binary: &crate::script_target::Target) -> Result {
     let prepare = output.join("download-prepare-state");

@@ -68,8 +68,7 @@ impl Requests<'_> {
             .as_u64()
             .map(usize::try_from)
             .transpose()?;
-        let reply =
-            raw_http::request(self.base, method, path, &headers, body, chunks)?;
+        let reply = raw_http::request(self.base, method, path, &headers, body, chunks)?;
         let after = [
             std::fs::read(self.api.state.join("sub-store.json"))?,
             std::fs::read(self.api.state.join("root.json"))?,
@@ -149,7 +148,13 @@ impl Requests<'_> {
         }
     }
 }
-pub fn run(api: &Api, base: &str, output: &Path, label: &str, origin: Option<&str>) -> Result<Vec<Value>> {
+pub fn run(
+    api: &Api,
+    base: &str,
+    output: &Path,
+    label: &str,
+    origin: Option<&str>,
+) -> Result<Vec<Value>> {
     let original = api.durable()?;
     let mut request = Requests {
         api,

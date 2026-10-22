@@ -20,9 +20,11 @@ const CACHES: [&str; 3] = [
 ];
 
 pub fn root_fixture() -> Value {
-    let mut root=json!({"opaque":{"text":"根缓存🙂\r\n","zero":0,"flag":false,"nil":null},"sub-store":"previous backup"});
+    let mut root = json!({"opaque":{"text":"根缓存🙂\r\n","zero":0,"flag":false,"nil":null},"sub-store":"previous backup"});
     for cache in CACHES {
-        root[cache]=json!(json::stringify(&json!({"fixture":{"time":4102444800000_i64,"data":"cached"}})));
+        root[cache] = json!(json::stringify(
+            &json!({"fixture":{"time":4102444800000_i64,"data":"cached"}})
+        ));
     }
     root
 }

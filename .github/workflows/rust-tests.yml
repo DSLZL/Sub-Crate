@@ -3,9 +3,6 @@ name: Rust test harness migration
 on:
   workflow_call:
   workflow_dispatch:
-  push:
-    branches: [test/nextest-migration]
-    paths: [tests/Cargo.toml, tests/Cargo.lock, tests/*.rs, tests/src/**, .config/nextest.toml, .github/workflows/rust-tests.yml]
 
 permissions:
   contents: read

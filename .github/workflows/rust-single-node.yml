@@ -4,16 +4,20 @@ on:
   workflow_dispatch:
     inputs:
       inspect_run:
-        description: Inspect HTTP tail batches from a completed public-fixture run without rebuilding
+        description: Inspect public-fixture HTTP tail batches from a completed run
         type: string
         default: ''
+      inspect_attempt:
+        description: Immutable run attempt to inspect
+        type: string
+        default: '1'
       diagnose_tail:
-        description: Repeat Hy2 and SS control requests in three fresh server rounds, with separate tail profiles
+        description: Repeat Hy2 and SS controls in three fresh server rounds with separate tail profiles
         type: boolean
         default: false
   push:
     branches: [main]
-    paths: [.github/workflows/rust-single-node.yml, tests/performance/single-node.*, tests/performance/single_node.*]
+    paths: [.github/workflows/rust-single-node.yml, .github/actions/nextest/**, .config/nextest.toml, tests/Cargo.*, tests/performance.rs, tests/src/performance/**, tests/src/performance.rs, tests/performance/single-node.*, tests/performance/single_node.rs]
 
 permissions:
   contents: read
@@ -22,7 +26,7 @@ jobs:
   inspect:
     if: inputs.inspect_run != '' && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
     permissions:
       contents: read
       actions: read
@@ -30,24 +34,30 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - name: Inspect existing public-fixture HTTP batches on the runner
+      - uses: ./.github/actions/nextest
+      - name: Inspect existing public-fixture HTTP batches on runner
         env:
           GH_TOKEN: ${{ github.token }}
           INSPECT_RUN: ${{ inputs.inspect_run }}
+          INSPECT_ATTEMPT: ${{ inputs.inspect_attempt }}
         shell: bash
         run: |
-          [[ "$INSPECT_RUN" =~ ^[0-9]+$ ]]
-          gh run download "$INSPECT_RUN" --repo "$GITHUB_REPOSITORY" \
-            --name "single-node-$INSPECT_RUN-1" --dir "$RUNNER_TEMP/single-node-inspect"
-          python3.12 -m venv "$RUNNER_TEMP/single-node-venv"
-          "$RUNNER_TEMP/single-node-venv/bin/pip" install --require-hashes --only-binary=:all: -r tests/performance/requirements.txt
-          "$RUNNER_TEMP/single-node-venv/bin/python" -m unittest discover -s tests/performance -p 'test_*.py'
-          "$RUNNER_TEMP/single-node-venv/bin/python" tests/performance/single_node.py \
-            --inspect "$RUNNER_TEMP/single-node-inspect"
+          [[ "$INSPECT_RUN" =~ ^[0-9]+$ && "$INSPECT_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          gh run download "$INSPECT_RUN" --repo "$GITHUB_REPOSITORY" --name "single-node-$INSPECT_RUN-$INSPECT_ATTEMPT" --dir "$RUNNER_TEMP/single-node-inspect"
+          export PERF_INSPECT="$RUNNER_TEMP/single-node-inspect"
+          cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --release --test performance --config-file .config/nextest.toml --profile single-inspect -E 'test(=single_node_inspect)' --success-output immediate
+      - name: Preserve inspection JUnit
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: single-node-inspect-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sub-store-nextest-build/nextest/
+          if-no-files-found: warn
+
   compare:
     if: inputs.inspect_run == '' || github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 50
     defaults:
       run:
         shell: bash
@@ -74,55 +84,58 @@ jobs:
         with:
           node-version: 24.16.0
           package-manager-cache: false
-      - name: Install locked tooling on runner
+      - uses: ./.github/actions/nextest
+      - name: Install locked reference tooling
         run: |
           npm install --global pnpm@11.0.9
           pnpm --dir .performance/original/backend install --frozen-lockfile
-          python3.12 -m venv "$RUNNER_TEMP/single-node-venv"
-          "$RUNNER_TEMP/single-node-venv/bin/pip" install --require-hashes --only-binary=:all: -r tests/performance/requirements.txt
-          rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
-      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
             .performance/rust/rust/target
-          key: single-node-linux-x64-rust-1.98.0-${{ github.sha }}
-          restore-keys: subscription-performance-linux-x64-rust-1.98.0-
-      - name: Build and check exact source
+            .performance/rust-baseline/rust/target
+          key: single-node-apps-1.98.0-${{ github.sha }}
+          restore-keys: single-node-apps-1.98.0-
+      - name: Check exact source and harness invariants
         run: |
+          cargo +1.98.0 fmt --manifest-path tests/Cargo.toml --all -- --check
           cargo +1.98.0 fmt --manifest-path .performance/rust/rust/Cargo.toml --all -- --check
-          "$RUNNER_TEMP/single-node-venv/bin/python" -m unittest discover -s tests/performance -p 'test_*.py'
-          (cd .performance/original/backend && node bundle-esbuild.js)
-          cargo +1.98.0 build --manifest-path .performance/rust-baseline/rust/Cargo.toml --locked --release --bin sub-store-rust
-          cargo +1.98.0 test --manifest-path .performance/rust-baseline/rust/Cargo.toml --locked --release --bin sub-store-rust --no-run --message-format=json > "$RUNNER_TEMP/single-node-baseline-build.jsonl"
-          cargo +1.98.0 clippy --manifest-path .performance/rust/rust/Cargo.toml --locked --all-targets -- -D warnings
-          cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust
-          cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust --no-run --message-format=json > "$RUNNER_TEMP/single-node-build.jsonl"
-          cargo +1.98.0 build --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust
-          git -C .performance/original diff --exit-code
-          git -C .performance/rust diff --exit-code
-          git -C .performance/rust-baseline diff --exit-code
-      - name: Compare pure parsing, parser setup and actual HTTP requests
+          cargo +1.98.0 clippy --manifest-path tests/Cargo.toml --locked --all-targets -- -D warnings
+          cargo +1.98.0 clippy --manifest-path .performance/rust/rust/Cargo.toml --target-dir "$GITHUB_WORKSPACE/.performance/rust/rust/target" --locked --all-targets -- -D warnings
+          cargo +1.98.0 nextest list --manifest-path tests/Cargo.toml --locked --release --lib --config-file .config/nextest.toml
+          cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --release --lib --config-file .config/nextest.toml --profile ci
+          cargo +1.98.0 nextest run --manifest-path .performance/rust/rust/Cargo.toml --target-dir "$GITHUB_WORKSPACE/.performance/rust/rust/target" --locked --release --bin sub-store-rust --config-file .config/nextest.toml --profile production
+      - name: Build actual applications and interactive parser helpers
         run: |
-          test_binary=$("$RUNNER_TEMP/single-node-venv/bin/python" -c 'import json,sys; rows=[json.loads(line) for line in open(sys.argv[1])]; matches=[row["executable"] for row in rows if row.get("reason")=="compiler-artifact" and row.get("profile",{}).get("test") and row.get("executable")]; assert len(matches)==1; print(matches[0])' "$RUNNER_TEMP/single-node-build.jsonl")
-          baseline_test_binary=$("$RUNNER_TEMP/single-node-venv/bin/python" -c 'import json,sys; rows=[json.loads(line) for line in open(sys.argv[1])]; matches=[row["executable"] for row in rows if row.get("reason")=="compiler-artifact" and row.get("profile",{}).get("test") and row.get("executable")]; assert len(matches)==1; print(matches[0])' "$RUNNER_TEMP/single-node-baseline-build.jsonl")
-          tail_args=()
-          if [[ '${{ inputs.diagnose_tail }}' == 'true' ]]; then tail_args=(--diagnose-tail); fi
-          "$RUNNER_TEMP/single-node-venv/bin/python" tests/performance/single_node.py \
-            --original "$GITHUB_WORKSPACE/.performance/original" \
-            --rust "$GITHUB_WORKSPACE/.performance/rust" --rust-test "$test_binary" \
-            --rust-baseline "$GITHUB_WORKSPACE/.performance/rust-baseline" --rust-baseline-test "$baseline_test_binary" \
-            --scratch "$RUNNER_TEMP/single-node-scratch" --output "$RUNNER_TEMP/single-node-results" "${tail_args[@]}"
-          cat "$RUNNER_TEMP/single-node-results/summary.md" >> "$GITHUB_STEP_SUMMARY"
-      - name: Preserve measurements and public-fixture failure logs
+          (cd .performance/original/backend && node bundle-esbuild.js)
+          for kind in rust-baseline rust; do
+            cargo +1.98.0 build --manifest-path ".performance/$kind/rust/Cargo.toml" --target-dir "$GITHUB_WORKSPACE/.performance/$kind/rust/target" --locked --release --bin sub-store-rust
+            cargo +1.98.0 test --manifest-path ".performance/$kind/rust/Cargo.toml" --target-dir "$GITHUB_WORKSPACE/.performance/$kind/rust/target" --locked --release --bin sub-store-rust --no-run --message-format=json > "$RUNNER_TEMP/single-node-$kind-build.jsonl"
+            git -C ".performance/$kind" diff --exit-code
+          done
+          git -C .performance/original diff --exit-code
+      - name: Compare pure parsing, setup and actual HTTP requests
+        env:
+          PERF_ORIGINAL: ${{ github.workspace }}/.performance/original
+          PERF_RUST: ${{ github.workspace }}/.performance/rust
+          PERF_BASELINE: ${{ github.workspace }}/.performance/rust-baseline
+          PERF_TEST_BUILD: ${{ runner.temp }}/single-node-rust-build.jsonl
+          PERF_BASELINE_TEST_BUILD: ${{ runner.temp }}/single-node-rust-baseline-build.jsonl
+          PERF_PUBLIC: ${{ runner.temp }}/single-node-results
+          PERF_DIAGNOSE_TAIL: ${{ inputs.diagnose_tail && '1' || '0' }}
+        run: |
+          export TEST_NODE="$(node -p 'process.execPath')"
+          cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --release --test performance --config-file .config/nextest.toml --profile single-node -E 'test(=single_node_compare)' --success-output immediate
+          cat "$PERF_PUBLIC/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve measurements, public-fixture failure logs and JUnit
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: single-node-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/single-node-results/
-            ${{ runner.temp }}/single-node-scratch/*.log
-            ${{ runner.temp }}/single-node-scratch/*/server.log
+            ${{ runner.temp }}/sub-store-single-node-*/pure-*.log
+            ${{ runner.temp }}/sub-store-single-node-*/*/server.*.log
+            ${{ runner.temp }}/sub-store-nextest-build/nextest/
           if-no-files-found: warn
           retention-days: 30

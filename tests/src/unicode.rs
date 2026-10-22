@@ -231,9 +231,7 @@ impl Unicode<'_> {
                     false,
                 )?;
                 json::check(
-                    &json::parse(
-                        &json::text(&self.api.stored("root.json")?["sub-store"])?,
-                    )?,
+                    &json::parse(&json::text(&self.api.stored("root.json")?["sub-store"])?)?,
                     &restored,
                     false,
                 )?;

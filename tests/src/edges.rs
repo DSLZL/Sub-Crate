@@ -264,7 +264,11 @@ pub fn settings_and_keys(output: &Path) -> Result {
                             && response["headers"]["x-content-type-options"] == "nosniff",
                         format!("Invalid recipient PATCH diagnostics changed ({kind}): {response}"),
                     )?;
-                    require(response["body"] == "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>[object Object]</pre>\n</body>\n</html>\n", "Recipient object diagnostics changed")?;
+                    require(
+                        response["body"]
+                            == "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>[object Object]</pre>\n</body>\n</html>\n",
+                        "Recipient object diagnostics changed",
+                    )?;
                     edge.observed.push(json!({"method":"PATCH","path":path,"body":{"age-public-key":invalid},"html":response["body"],"state":api.durable()?}));
                     let rejected = edge.send(
                         "POST",
@@ -743,7 +747,13 @@ fn reference_graphs(edge: &mut Edge, kind: &str) -> Result {
                     bytes,
                     None,
                 )?;
-                require(setup.status == 200, format!("Live Buffer reference setup failed ({kind}/{id}/{method}): {}", setup.evidence()))?;
+                require(
+                    setup.status == 200,
+                    format!(
+                        "Live Buffer reference setup failed ({kind}/{id}/{method}): {}",
+                        setup.evidence()
+                    ),
+                )?;
             }
             let before = files(api)?;
             let published_before = api.send(&json!({"path":"/api/storage"}), 200)?;

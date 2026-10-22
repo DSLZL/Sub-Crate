@@ -118,13 +118,17 @@ pub fn run(output: &Path, executable: &crate::script_target::Target) -> Result {
             } else {
                 crate::root()
             });
-        let result = if kind == "node" { process::run_direct(
-            &mut command,
-            output,
-            name,
-            Duration::from_secs(60),
-            "Direct age process ownership allows watchdog cleanup on Windows",
-        )? } else { executable.run(&mut command, output, name)? };
+        let result = if kind == "node" {
+            process::run_direct(
+                &mut command,
+                output,
+                name,
+                Duration::from_secs(60),
+                "Direct age process ownership allows watchdog cleanup on Windows",
+            )?
+        } else {
+            executable.run(&mut command, output, name)?
+        };
         require(
             result.success(),
             format!("{name} failed: {}", result.stderr),

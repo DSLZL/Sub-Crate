@@ -40,7 +40,8 @@ fn unicode_json_and_utf16_keep_lone_surrogates_markers_restart_and_node_rollback
     sub_store_tests::unicode::run(&process::scratch("service-unicode")?)
 }
 #[test]
-fn live_raw_buffers_keep_identity_across_failed_writes_restore_restart_and_node_rollback() -> Result {
+fn live_raw_buffers_keep_identity_across_failed_writes_restore_restart_and_node_rollback() -> Result
+{
     sub_store_tests::buffers::run(&process::scratch("service-buffers")?)
 }
 #[test]
@@ -48,15 +49,19 @@ fn runtime_proxy_header_limits_listener_prefix_cors_and_json_limits_preserve_con
     sub_store_tests::configuration::run(&process::scratch("service-configuration")?)
 }
 #[test]
-fn diagnostic_envelopes_native_frames_reasons_and_failed_state_match_all_environment_modes() -> Result {
+fn diagnostic_envelopes_native_frames_reasons_and_failed_state_match_all_environment_modes()
+-> Result {
     sub_store_tests::configuration::diagnostics(&process::scratch("service-diagnostics")?)
 }
 #[test]
 fn corrupt_native_startups_and_restore_journals_exit_without_resetting_either_file() -> Result {
-    sub_store_tests::configuration::rejected_startups(&process::scratch("service-rejected-startups")?)
+    sub_store_tests::configuration::rejected_startups(&process::scratch(
+        "service-rejected-startups",
+    )?)
 }
 #[test]
-fn merged_and_standalone_static_ranges_validators_api_methods_queries_and_forwarded_bodies() -> Result {
+fn merged_and_standalone_static_ranges_validators_api_methods_queries_and_forwarded_bodies()
+-> Result {
     sub_store_tests::static_files::run(&process::scratch("service-static-http")?)
 }
 

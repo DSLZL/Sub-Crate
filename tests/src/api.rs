@@ -53,7 +53,9 @@ impl Api {
         let index = self.next.get();
         self.next.set(index + 1);
         let mut evidence = response.clone();
-        evidence["body"] = json!(json::literal(response["body"].as_str().ok_or("Missing response body")?));
+        evidence["body"] = json!(json::literal(
+            response["body"].as_str().ok_or("Missing response body")?
+        ));
         json::write_new(
             self.proof.join(format!("{index:04}.json")),
             &json!({"request":step,"response":evidence}),

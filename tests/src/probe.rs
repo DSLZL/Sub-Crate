@@ -298,13 +298,17 @@ pub fn shared(output: &Path) -> Result {
                     dns.connections().len(),
                     dns.errors().len(),
                 );
-                let result = if kind == "node" { process::run_direct(
-                    &mut command,
-                    output,
-                    &label,
-                    Duration::from_secs(60),
-                    "Direct native ownership allows the watchdog to kill the evaluated host on Windows",
-                )? } else { executable.run(&mut command, output, &label)? };
+                let result = if kind == "node" {
+                    process::run_direct(
+                        &mut command,
+                        output,
+                        &label,
+                        Duration::from_secs(60),
+                        "Direct native ownership allows the watchdog to kill the evaluated host on Windows",
+                    )?
+                } else {
+                    executable.run(&mut command, output, &label)?
+                };
                 dns.wait_for_idle()?;
                 let requests = upstream.fixture.since(offset);
                 let dns_requests = dns.requests()[dns_offset..].to_vec();
