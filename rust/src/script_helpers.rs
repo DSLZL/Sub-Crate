@@ -15,7 +15,10 @@ fn matches<'js>(js: &Js<'js>, pattern: &str, value: Value<'js>) -> rquickjs::Res
     js.regex_test(expression, value)
 }
 
-pub(crate) fn random_port<'js>(ctx: Ctx<'js>, input: Opt<Value<'js>>) -> rquickjs::Result<Value<'js>> {
+pub(crate) fn random_port<'js>(
+    ctx: Ctx<'js>,
+    input: Opt<Value<'js>>,
+) -> rquickjs::Result<Value<'js>> {
     let js = Js::new(ctx);
     let input = input.0.unwrap_or_else(|| js.undefined());
     let expression = js.call("regex", (",|/", ""))?;

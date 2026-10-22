@@ -109,6 +109,26 @@ def endpoint(args, suite, cases, report):
     with ExitStack() as stack:
         origins = {kind: stack.enter_context(suite.server(kind, suite.directory("http-" + kind), clone=False))[0]
                    for kind in ("node", "rust_baseline", "rust")}
+        fixtures = json.loads((Path(__file__).parents[1] / "compat/fixtures/http-cases.json").read_bytes())
+        source = next(case for case in fixtures if case["id"] == "P02-input-surge-native")["steps"][0]["body"]
+        for index, raw in enumerate([*source["data"].splitlines(), source["data"]]):
+            expected = None
+            for kind, origin in origins.items():
+                parsed = b.urlsplit(origin)
+                connection = b.HTTPConnection(parsed.hostname, parsed.port, timeout=30)
+                try:
+                    connection.request("POST", "/backend/api/proxy/parse", b.encoded({**source, "data": raw}),
+                                       {"Content-Type": "application/json"})
+                    response = connection.getresponse()
+                    body = json.loads(response.read())
+                finally:
+                    connection.close()
+                assert response.status == 200, f"public Surge input {index}, {kind}: {body}"
+                if expected is None:
+                    expected = body
+                else:
+                    assert body == expected, f"public Surge input {index}, {kind}: output mismatch"
+        print("single-node public Surge preflight complete", flush=True)
         for case in cases:
             payloads = [{"data": case["raw"] + suffix, "client": "JSON", "type": "internal"}
                         for suffix in ("", "\n")]
