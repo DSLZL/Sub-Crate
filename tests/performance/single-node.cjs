@@ -12,6 +12,8 @@ const readline = require('node:readline');
   globalThis.require = createRequire(path.join(original, 'package.json'));
   for (const key of ['log', 'info', 'warn', 'error', 'debug']) console[key] = () => {};
   const {parse} = await import(pathToFileURL(path.join(original, 'dist/proxy-utils.esm.mjs')));
+  // Import installs persistent log capture. Exclude that I/O only from the pure parser measurement.
+  for (const key of ['log', 'info', 'warn', 'error', 'debug']) console[key] = () => {};
   const fixtures = JSON.parse(fs.readFileSync(process.env.SINGLE_NODE_FIXTURES, 'utf8'));
   const lines = readline.createInterface({input: process.stdin});
   for await (const line of lines) {
