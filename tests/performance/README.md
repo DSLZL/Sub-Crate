@@ -1525,3 +1525,122 @@ All six jobs pass in
 at the same source: native Linux x64/arm64 and Windows x64, Docker Linux
 x64/arm64, and the unchanged official frontend in headless Chrome. The Windows
 HTTP/state/restart/rollback, Rust JS and original Node regression steps passed.
+
+### Initialize conversion and parser intrinsics on demand (2026-10-22)
+
+The first accepted measurement is
+[39747263963](https://github.com/DSLZL/Sub-Store/actions/runs/39747263963)
+at `81707dbc696b22c5197657f9c18e21a88364eea4`. It compares the pinned Node
+original, Rust `7d034cd522778241f49b902dec61f18634f00862` and the candidate
+on one runner, with separate build directories and distinct binary hashes.
+The earlier `74475486` attempt
+[39746997402](https://github.com/DSLZL/Sub-Store/actions/runs/39746997402)
+stopped at two rustfmt differences before measurements; the format-only fix is
+included in `81707dbc`. Its superseded compatibility run was cancelled.
+
+Direct HTTP conversion now creates only base objects, Eval, RegExpCompiler,
+RegExp, Json, MapSet and Promise. Downloading and all other application jobs
+retain the full context. The separate generic parser starts with base objects,
+Eval, Json and MapSet, then adds all omitted intrinsics before loading its fixed
+JSON5/YAML library. Strict JSON still uses actual QuickJS parsing and the existing
+lossless value bridge. No user script can mutate the private parser's globals;
+existing JSON/MapSet identities survive fallback initialization. Fresh contexts,
+numeric semantics, ordering and fallback precedence remain unchanged.
+
+In this first paired run all nine HTTP medians improve by approximately 5–14%
+against previous Rust. Fresh-parser Clash JSON is `95.566 us` against Node's
+`104.844 us`; all nine candidate fresh-parser fixture medians are below Node.
+Separate SS/Surge/QX profiles report application context active medians
+`0.076 / 0.068 / 0.069 ms`; generic Clash JSON/YAML context medians are
+`0.077 / 0.078 ms`. These are active elapsed spans, not CPU measurements, and
+do not isolate all transport or scheduling costs. They are not paired component
+speedup estimates against profiles recorded on a different runner.
+
+Formatting, clippy, 43 ordinary Rust tests, 25 harness self-checks, 66 public
+preflight responses, 5,670 timed responses and 63 balanced profiles pass.
+The strict JSON/JSON5/YAML differential check now uses a separate full-context
+oracle; the new application-context test checks language operations and isolation
+in fresh reduced/full engines. Five compatibility jobs passed at `81707dbc` in
+[39747198498](https://github.com/DSLZL/Sub-Store/actions/runs/39747198498);
+the remaining Windows job was cancelled when the next candidate started, so
+this run is not a complete six-job acceptance.
+
+`401595abaa1001f88162f9e7f2305f849435b913` additionally avoids constructing
+another Tokio executor for the same direct-conversion route. The existing
+Tokio handle polls its future on the blocking worker; the per-job QuickJS
+runtime/context, parser, state snapshot, response delivery and runtime drain
+are retained. Downloading and other operations keep their per-job executor.
+If this route gains I/O or user callbacks, restore the full executor and
+intrinsics before exposing the new behavior.
+
+[39748733206](https://github.com/DSLZL/Sub-Store/actions/runs/39748733206)
+passes at that source with the same pinned Node and previous Rust sources.
+The following are same-run medians; do not use the earlier runner's absolute
+values to estimate the executor change alone.
+
+| Input | Node pure us | Rust reused-parser us | Rust fresh-parser us | Node HTTP ms | Previous Rust HTTP ms | Candidate HTTP ms |
+|---|---:|---:|---:|---:|---:|---:|
+| SS URI | 15.310 | 6.629 | 6.655 | 0.673 | 0.674 | 0.606 |
+| VMess WS | 42.942 | 13.442 | 13.551 | 0.667 | 0.713 | 0.641 |
+| VLESS WS | 33.889 | 11.076 | 11.174 | 0.557 | 0.710 | 0.641 |
+| Trojan | 54.560 | 6.360 | 6.353 | 0.640 | 0.677 | 0.616 |
+| Hysteria2 | 52.011 | 6.930 | 6.940 | 0.616 | 0.682 | 0.611 |
+| Surge SS | 166.868 | 8.224 | 8.197 | 0.837 | 0.683 | 0.621 |
+| QX SS | 337.841 | 8.274 | 8.283 | 1.081 | 0.684 | 0.621 |
+| Clash JSON | 105.659 | 15.191 | 94.119 | 0.649 | 0.828 | 0.719 |
+| Single-node Clash YAML | 258.222 | 20.416 | 100.276 | 1.027 | 0.841 | 0.751 |
+
+All nine candidate HTTP medians are 9.0–13.2% below previous Rust. Seven are
+below Node; VLESS WS and Clash JSON remain 15.1% and 10.8% above Node. All nine
+fresh-parser medians are below Node. This resolves the measured fresh-parser
+Clash JSON disadvantage, while leaving two complete HTTP median gaps explicit.
+The finite 210-request candidate P95 for each fixture is below both other
+backends in this run; this does not establish general tail-latency performance.
+
+Separate SS/Surge/QX profiles round executor setup to `0.000 ms` and report
+application context active medians `0.069 / 0.069 / 0.067 ms`, bootstrap
+`0.058 / 0.059 / 0.058 ms`, native parsing `0.017 / 0.028 / 0.028 ms` and
+production `0.016 / 0.017 / 0.017 ms`. Generic Clash JSON/YAML context medians
+are both `0.079 ms`. Every native-format profile has zero generic contexts,
+and all nine fixtures load no generic library bundle. The profile does not
+fully attribute HTTP transport, worker-queue delay or post-response teardown.
+Nested spans overlap; active elapsed time is not OS CPU time.
+
+Formatting, clippy, 43 ordinary Rust tests, 25 harness self-checks, all 66 public
+preflight responses, 5,670 timed responses and 63 balanced profiles pass again.
+The measured candidate/baseline SHA256 values are distinct. All compilation,
+product execution, tests and measurements ran in Actions; no artifacts were
+downloaded or extracted locally. Neither the supplied-subscription long test
+nor cold-process latency was measured in these two runs. No memory, universal
+protocol, throughput or release-readiness claim follows from these fixtures.
+
+
+The compatibility matrix at the final source is
+[39748732183](https://github.com/DSLZL/Sub-Store/actions/runs/39748732183).
+Attempt 1 passed Linux x64/arm64, both Docker architectures and the unchanged
+frontend. Windows passed formatting, lint, 43 Rust tests, packaging and its
+native JavaScript checks, but the service contract runner timed out at step 7
+of `T02-merged-share-count-and-origin`: standalone frontend
+`POST /share/file/merged-share?token=limited`. Subsequent ordered share cases
+were not run. This non-GET error path does not execute the conversion job.
+The original five-second timeout and failed evidence remain unchanged.
+
+The separate, temporary-branch diagnostic
+[39752607561](https://github.com/DSLZL/Sub-Store/actions/runs/39752607561)
+inspected the retained failure and ran the exact delivered Windows executable
+(SHA256 `1eaa389a38158d5a4c0ec6cf74b2bf02b030924355c199e9defb896aa1332cc2`)
+on a fresh Windows Actions runner. Two fresh non-production processes returned
+the first non-GET sharing error in approximately 87 ms and 43 ms. Neither
+reproduced the five-second timeout. This does not establish the original cause;
+no production error handling, stack formatting or contract timeout was changed.
+The diagnostic downloaded artifacts only inside Actions, with no local
+artifact download, extraction, build or product execution.
+
+Attempt 2 reran only the Windows job at the unchanged `401595ab` source.
+[Windows job 119736564310](https://github.com/DSLZL/Sub-Store/actions/runs/39748732183/job/119736564310)
+passed its actual-binary HTTP/state/restart/rollback contracts, native Rust JS
+probe, Node HTTP contracts and Node regression suite. With the original five
+successful jobs retained, the matrix now has six successful jobs. The first
+Windows timeout remains a retained, unreproduced failure with an unconfirmed
+cause; this rerun is not evidence that an error-path defect was fixed. The
+temporary diagnostic branch and local plaintext workflow drafts were removed.
