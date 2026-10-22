@@ -1117,7 +1117,10 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job, conversion_only: bool) -> rquickjs:
         utils.set("parse", Func::from(native_parse))?;
         utils.set("produce", Func::from(crate::script_conversion::produce))?;
         crate::script_helpers::initialize_ip(&utils)?;
-        utils.set("getRandomPort", Func::from(crate::script_helpers::random_port))?;
+        utils.set(
+            "getRandomPort",
+            Func::from(crate::script_helpers::random_port),
+        )?;
         globals.set("ProxyUtils", utils)?;
         return Ok(());
     }
