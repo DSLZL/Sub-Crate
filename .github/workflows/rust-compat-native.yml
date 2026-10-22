@@ -76,7 +76,7 @@ jobs:
           agent-browser install --with-deps 2>&1 | tee tests/compat/evidence/frontend-setup/browser-install.log
       - name: Build delivered Rust backend on runner
         run: |
-          cargo +1.98.0 fmt --manifest-path tests/Cargo.toml --all
+          cargo +1.98.0 fmt --manifest-path tests/Cargo.toml --all -- --check
           cargo +1.98.0 build --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust
           echo "TEST_NODE=$(node -p 'process.execPath')" >> "$GITHUB_ENV"
           echo "TEST_BROWSER=$(npm root --global)/agent-browser/bin/agent-browser-linux-x64" >> "$GITHUB_ENV"
@@ -171,7 +171,7 @@ jobs:
           echo "TEST_NODE=$(node -p 'process.execPath')" >> "$GITHUB_ENV"
       - name: Rust harness checks
         run: |
-          cargo +1.98.0 fmt --manifest-path tests/Cargo.toml --all
+          cargo +1.98.0 fmt --manifest-path tests/Cargo.toml --all -- --check
           cargo +1.98.0 clippy --manifest-path tests/Cargo.toml --locked --all-targets -- -D warnings
           cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --lib --config-file .config/nextest.toml --profile ci
       - name: Build actual Node-free images on the native runner

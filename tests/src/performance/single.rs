@@ -627,6 +627,17 @@ pub fn run() -> Result {
         .ok_or("Single-node fixture list missing")?
         .clone();
     let mut suite = Suite::new(args, json!({}))?;
+    check(
+        suite
+            .command(
+                Command::new(&suite.node).arg("--version"),
+                "node-version",
+                30,
+            )?
+            .trim()
+            == "v24.16.0",
+        "source",
+    )?;
     let source = std::fs::read_to_string(
         suite
             .args

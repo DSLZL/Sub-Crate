@@ -46,11 +46,10 @@ jobs:
             ${{ runner.temp }}/sub-store-test-build
           key: nextest-harness-${{ matrix.runner }}-1.98.0-${{ hashFiles('tests/Cargo.toml', 'tests/Cargo.lock') }}
           restore-keys: nextest-harness-${{ matrix.runner }}-1.98.0-
-      - name: Preserve runner formatting patch during migration
+      - name: Check source formatting
         run: |
-          cargo +1.98.0 fmt --manifest-path tests/Cargo.toml --all
-          cargo +1.98.0 fmt --manifest-path rust/Cargo.toml --all
-          git diff --binary -- tests/src tests/*.rs rust/examples/collect_notices.rs > "$RUNNER_TEMP/harness-format.patch"
+          cargo +1.98.0 fmt --manifest-path tests/Cargo.toml --all -- --check
+          cargo +1.98.0 fmt --manifest-path rust/Cargo.toml --all -- --check
       - name: Clippy
         run: |
           cargo +1.98.0 clippy --manifest-path tests/Cargo.toml --locked --all-targets -- -D warnings
@@ -108,14 +107,6 @@ jobs:
           path: ${{ steps.native.outputs.publish }}
           if-no-files-found: error
           retention-days: 30
-      - name: Preserve small source formatting patch separately
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: harness-source-${{ matrix.runner }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/harness-format.patch
-          if-no-files-found: warn
-          retention-days: 7
       - name: Preserve test reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
