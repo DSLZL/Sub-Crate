@@ -41,3 +41,15 @@ inherits = "ci"
 
 [profile.production.junit]
 path = "junit-production.xml"
+
+[profile.cpu-parse]
+inherits = "ci"
+
+[profile.cpu-parse.junit]
+path = "junit-cpu-parse.xml"
+
+[profile.cpu-conversion]
+inherits = "ci"
+
+[profile.cpu-conversion.junit]
+path = "junit-cpu-conversion.xml"

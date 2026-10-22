@@ -20,6 +20,7 @@ pub mod backup;
 pub mod scheduling;
 pub mod static_files;
 pub mod business;
+pub mod notifications;
 #[cfg(test)]
 mod notices_tests;
 

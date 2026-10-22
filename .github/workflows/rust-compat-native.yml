@@ -9,7 +9,7 @@ on:
         default: false
   push:
     branches: [main]
-    paths: [rust/**, tests/compat/**, .github/actions/node-reference/**, .github/workflows/rust-compat-native.yml]
+    paths: [rust/**, tests/**, .config/nextest.toml, .github/actions/node-reference/**, .github/workflows/rust-compat-native.yml, .github/workflows/rust-tests.yml]
 
 permissions:
   contents: read
@@ -69,6 +69,9 @@ jobs:
         run: |
           rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
           rustup override set 1.98.0
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
+        with:
+          tool: nextest@0.9.149
       - name: Runner self-checks
         run: python -m unittest discover -s tests/compat -p test_runner.py
       - name: Rust service formatting (preserve CI formatting output)
@@ -85,13 +88,17 @@ jobs:
         run: |
           mkdir -p tests/compat/evidence/service-build
           cargo clippy --manifest-path rust/Cargo.toml --locked --all-targets ${{ matrix.cargo_args }} -- -D warnings 2>&1 | tee tests/compat/evidence/service-build/clippy.log
-          cargo test --manifest-path rust/Cargo.toml --locked --all-targets ${{ matrix.cargo_args }} 2>&1 | tee tests/compat/evidence/service-build/tests.log
+          cargo nextest list --manifest-path rust/Cargo.toml --locked --all-targets ${{ matrix.cargo_args }} --config-file .config/nextest.toml 2>&1 | tee tests/compat/evidence/service-build/inventory.log
+          cargo nextest run --manifest-path rust/Cargo.toml --locked --all-targets ${{ matrix.cargo_args }} --config-file .config/nextest.toml --profile production 2>&1 | tee tests/compat/evidence/service-build/tests.log
+          cp rust/target/nextest/production/junit-production.xml tests/compat/evidence/service-build/
           cargo build --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust ${{ matrix.cargo_args }} 2>&1 | tee tests/compat/evidence/service-build/release.log
       - name: Attribute parsing and node conversion CPU in release mode
         if: ${{ !cancelled() && steps.service-build.outcome == 'success' && matrix.target == 'linux-x64' }}
         run: |
-          cargo test --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust clash::tests::profile_structured_subscription -- --ignored --exact --nocapture 2>&1 | tee tests/compat/evidence/service-build/parse-profile.log
-          cargo test --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust script_conversion::tests::profile_node_production -- --ignored --exact --nocapture 2>&1 | tee tests/compat/evidence/service-build/conversion-profile.log
+          cargo nextest run --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust --config-file .config/nextest.toml --profile cpu-parse --run-ignored only -E 'test(=clash::tests::profile_structured_subscription)' --success-output immediate 2>&1 | tee tests/compat/evidence/service-build/parse-profile.log
+          cp rust/target/nextest/cpu-parse/junit-cpu-parse.xml tests/compat/evidence/service-build/
+          cargo nextest run --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust --config-file .config/nextest.toml --profile cpu-conversion --run-ignored only -E 'test(=script_conversion::tests::profile_node_production)' --success-output immediate 2>&1 | tee tests/compat/evidence/service-build/conversion-profile.log
+          cp rust/target/nextest/cpu-conversion/junit-cpu-conversion.xml tests/compat/evidence/service-build/
       - name: Package and verify the native delivery
         id: service-package
         if: ${{ !cancelled() && steps.service-build.outcome == 'success' }}

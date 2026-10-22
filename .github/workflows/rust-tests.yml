@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     branches: [test/nextest-migration]
-    paths: [tests/Cargo.toml, tests/Cargo.lock, tests/src/**, .config/nextest.toml, .github/workflows/rust-tests.yml]
+    paths: [tests/Cargo.toml, tests/Cargo.lock, tests/native.rs, tests/src/**, .config/nextest.toml, .github/workflows/rust-tests.yml]
 
 permissions:
   contents: read
