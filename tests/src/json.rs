@@ -222,7 +222,8 @@ pub fn project_captured_scalars(response: &Value, expected: &Value, captured: &M
     if targets.is_empty() { return Ok(None); }
     let body = response["body"].as_str().ok_or("Missing captured body")?;
     let _ = parse(body)?;
-    require(response["headers"]["content-length"] == body.len().to_string(), "Captured body length mismatch")?;
+    let length = body.len().to_string();
+    require(response["headers"]["content-length"].as_str() == Some(length.as_str()), "Captured body length mismatch")?;
     let digest = base64::engine::general_purpose::STANDARD_NO_PAD.encode(aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA1_FOR_LEGACY_USE_ONLY, body.as_bytes()).as_ref());
     require(response["headers"]["etag"] == format!("W/\"{:x}-{digest}\"", body.len()), "Captured body ETag mismatch")?;
 

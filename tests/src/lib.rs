@@ -1,6 +1,11 @@
 pub mod json;
 pub mod http;
 pub mod process;
+pub mod fixture;
+pub mod providers;
+pub mod dns;
+pub mod upstream;
+pub mod contracts;
 
 use std::path::PathBuf;
 
