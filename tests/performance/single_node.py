@@ -19,6 +19,7 @@ import benchmark as b
 BLOCKS = 7
 TARGET_NS = 250_000_000
 HTTP_REQUESTS = 30
+TAIL_CASES = ("clash_hysteria2", "hysteria2", "clash_json")
 VARIANTS = ("node", "rust_baseline_warm_parser", "rust_baseline_fresh_parser", "rust_warm_parser", "rust_fresh_parser")
 
 
@@ -184,7 +185,7 @@ def endpoint(args, suite, cases, report):
                 for block in range(BLOCKS):
                     for kind in (tuple(origins) if block % 2 == 0 else tuple(origins)[::-1]):
                         samples = []
-                        for index in range(HTTP_REQUESTS):
+                        for index in range(200 if getattr(args, "diagnose_tail", False) else HTTP_REQUESTS):
                             began = time.perf_counter_ns()
                             response = request(kind, index)
                             samples.append(time.perf_counter_ns() - began)
@@ -192,6 +193,8 @@ def endpoint(args, suite, cases, report):
                         report["http"].append({"case": case["id"], "variant": kind, "mode": mode,
                                                "block": block, "ns": samples})
             print("single-node HTTP complete: " + case["id"], flush=True)
+        if getattr(args, "diagnose_tail", False):
+            return
         # Separate load cells: never mix concurrent/profile-on samples into single-client latency.
         for clients in (1, 8):
             for block in range(3):
@@ -250,35 +253,96 @@ def profiles(args, suite, cases, report):
     args.profile_pipeline = True
     directory = suite.directory("profile-rust")
     with suite.server("rust_repeat", directory, clone=False) as server:
-        for index, case in enumerate(cases):
-            payload = {"data": case["raw"], "client": "JSON", "type": "internal"}
-            expected = suite.expected_outputs[case["id"]]
-            path = directory / "server.log"
-            offset = path.stat().st_size
-            for _ in range(2):
-                assert b.api(server[0], "proxy/parse", "POST", payload) == expected
-            warmup, _ = complete_profiles(path, offset, 2)
-            conversion_lifecycle(warmup)
-            if index == 0:
-                assert any(row["stage"] == "conversion_miss" for row in warmup[0]["rows"])
-                report["cold_profile"] = warmup[0]
-            offset = path.stat().st_size
-            client_ns = []
-            for _ in range(BLOCKS):
-                began = time.perf_counter_ns()
+        parsed = b.urlsplit(server[0])
+        connection = b.HTTPConnection(parsed.hostname, parsed.port, timeout=30)
+        with ExitStack() as stack:
+            stack.callback(connection.close)
+            profile_requests(args, suite, cases, report, directory, server, connection)
+
+
+def profile_requests(args, suite, cases, report, directory, server, connection):
+    count = 1000 if getattr(args, "diagnose_tail", False) else BLOCKS
+    for index, case in enumerate(cases):
+        payload = {"data": case["raw"], "client": "JSON", "type": "internal"}
+        expected = suite.expected_outputs[case["id"]]
+        path = directory / "server.log"
+        offset = path.stat().st_size
+        for _ in range(2):
+            assert b.api(server[0], "proxy/parse", "POST", payload) == expected
+        warmup, _ = complete_profiles(path, offset, 2)
+        conversion_lifecycle(warmup)
+        if index == 0:
+            assert any(row["stage"] == "conversion_miss" for row in warmup[0]["rows"])
+            report["cold_profile"] = warmup[0]
+        offset = path.stat().st_size
+        client_ns = []
+        for request in range(count):
+            began = time.perf_counter_ns()
+            if getattr(args, "diagnose_tail", False):
+                previous = connection.sock
+                connection.request("POST", "/backend/api/proxy/parse",
+                                   b.encoded({**payload, "data": case["raw"] + ("\n" if request % 2 else "")}),
+                                   {"Content-Type": "application/json"})
+                received = connection.getresponse()
+                response = received.read()
+                assert received.status == 200 and connection.sock is not None
+                assert previous is None or connection.sock is previous
+            else:
                 response = b.http(server[0] + "/backend/api/proxy/parse", "POST", payload)
-                client_ns.append(time.perf_counter_ns() - began)
-                assert json.loads(response) == {"status": "success", "data": expected}
-            events, server_ns = complete_profiles(path, offset, BLOCKS)
-            assert len(events) == BLOCKS
-            if case["format"] in ("URI", "Surge", "QX"):
-                assert all(row["stage"] != "parse_context_init" for event in events for row in event["rows"]), \
-                    f"{case['id']}: native parsing initialized the generic engine"
-            assert all(row["stage"] != "parse_utilities_init" for event in events for row in event["rows"]), \
-                f"{case['id']}: parsing initialized the generic libraries"
-            conversion_lifecycle(events)
-            report["profiles"].append({"case": case["id"], "events": events,
-                                       "server_ns": server_ns, "client_ns": client_ns})
+            client_ns.append(time.perf_counter_ns() - began)
+            assert json.loads(response) == {"status": "success", "data": expected}
+        events, server_ns = complete_profiles(path, offset, count)
+        assert len(events) == count
+        if case["format"] in ("URI", "Surge", "QX"):
+            assert all(row["stage"] != "parse_context_init" for event in events for row in event["rows"]), \
+                f"{case['id']}: native parsing initialized the generic engine"
+        assert all(row["stage"] != "parse_utilities_init" for event in events for row in event["rows"]), \
+            f"{case['id']}: parsing initialized the generic libraries"
+        conversion_lifecycle(events)
+        report["profiles"].append({"case": case["id"], "events": events,
+                                   "server_ns": server_ns, "client_ns": client_ns})
+
+
+def distribution(samples):
+    values = sorted(samples)
+    assert values and all(type(value) is int and value > 0 for value in values)
+    return {"requests": len(values), "p50_ns": statistics.median(values),
+            "p95_ns": values[math.ceil(len(values) * .95) - 1], "max_ns": values[-1]}
+
+
+def tail_summary(report):
+    lines = ["HTTP tail diagnostic; durations are ns. Profile-on requests are separate from timed batches."]
+    lines.append("TAIL_SOURCE " + json.dumps({key: report.get(key) for key in
+                 ("original", "rust", "rust_baseline", "fixture_sha256", "binary_sha256", "status")}))
+    rows = [row for row in report["http"] if row["case"] in TAIL_CASES]
+    for case, mode, variant in sorted({(row["case"], row["mode"], row["variant"]) for row in rows}):
+        selected = [row for row in rows if (row["case"], row["mode"], row["variant"]) == (case, mode, variant)]
+        label = {"case": case, "mode": mode, "variant": variant}
+        pooled = [sample for row in selected for sample in row["ns"]]
+        lines.append("TAIL_HTTP " + json.dumps({**label, "scope": "all", **distribution(pooled)}))
+        for row in selected:
+            slowest = sorted(enumerate(row["ns"]), key=lambda pair: pair[1], reverse=True)[:5]
+            lines.append("TAIL_HTTP " + json.dumps({**label, "scope": "block", "round": row.get("round", 0),
+                         "block": row["block"], **distribution(row["ns"]), "slowest": slowest}))
+    for group in report.get("profiles", []):
+        if group["case"] not in TAIL_CASES:
+            continue
+        assert len(group["events"]) == len(group["server_ns"]) == len(group["client_ns"])
+        pairs = []
+        for index, (event, server, client) in enumerate(zip(group["events"], group["server_ns"], group["client_ns"])):
+            pairs.append({"index": index, "client_ns": client, "server_ns": server, "worker_ns": event["wall_ns"],
+                          **{stage: sum(row["wall_ns"] for row in event["rows"] if row["stage"] == stage)
+                             for stage in ("worker_queue", "conversion_miss", "conversion_reuse", "input_decode",
+                                           "parse_native", "produce", "output_encode", "conversion_cleanup", "runtime_teardown")}})
+        for pair in sorted(pairs, key=lambda pair: pair["client_ns"], reverse=True)[:10]:
+            lines.append("TAIL_PROFILE_SLOW " + json.dumps({"case": group["case"], **pair}))
+        for key in ("client_ns", "server_ns", "worker_ns", "worker_queue", "parse_native", "produce"):
+            lines.append("TAIL_PROFILE " + json.dumps({"case": group["case"], "stage": key,
+                         **distribution([pair[key] for pair in pairs])}))
+        lines.append("TAIL_LIFECYCLE " + json.dumps({"case": group["case"],
+                     **{stage: sum(row["calls"] for event in group["events"] for row in event["rows"] if row["stage"] == stage)
+                        for stage in ("conversion_miss", "conversion_reuse", "conversion_retain", "runtime_teardown")}}))
+    return "\n".join(lines) + "\n"
 
 
 def summary(report):
@@ -401,9 +465,16 @@ def main():
     if os.environ.get("GITHUB_ACTIONS") != "true":
         raise SystemExit("Run in GitHub Actions only")
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--inspect", type=Path)
+    parser.add_argument("--diagnose-tail", action="store_true")
     for name in ("original", "rust", "rust-baseline", "rust-test", "rust-baseline-test", "scratch", "output"):
-        parser.add_argument("--" + name, required=True, type=lambda value: Path(value).resolve())
+        parser.add_argument("--" + name, type=lambda value: Path(value).resolve())
     args = parser.parse_args()
+    if args.inspect:
+        print(tail_summary(json.loads(args.inspect.read_bytes())), flush=True)
+        return
+    assert all(getattr(args, name) is not None for name in
+               ("original", "rust", "rust_baseline", "rust_test", "rust_baseline_test", "scratch", "output"))
     args.scratch.mkdir(parents=True)
     args.output.mkdir(parents=True)
     args.frontend = args.scratch / "unused-frontend"
@@ -419,6 +490,9 @@ def main():
     assert covered == set(clash_types), f"protocol coverage: missing={set(clash_types) - covered}, extra={covered - set(clash_types)}"
     assert {case["protocol"] for case in cases} == covered | {"external"}
     assert any(case["protocol"] == "external" and case["format"] == "Surge" for case in cases)
+    if args.diagnose_tail:
+        cases = [case for case in cases if case["id"] in TAIL_CASES]
+        assert {case["id"] for case in cases} == set(TAIL_CASES)
     report = {"version": 1, "original": b.ORIGINAL, "rust": b.command(["git", "rev-parse", "HEAD"], args.rust).decode().strip(),
               "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(), "machine": platform.machine(),
               "clash_types": clash_types,
@@ -434,6 +508,18 @@ def main():
     print("SINGLE_NODE_BINARIES " + json.dumps(report["binary_sha256"]), flush=True)
     suite = b.Suite(args, {})
     try:
+        if args.diagnose_tail:
+            for repeat in range(3):
+                start = len(report["http"])
+                endpoint(args, suite, cases, report)
+                for row in report["http"][start:]:
+                    row["round"] = repeat
+            profiles(args, suite, cases, report)
+            report["status"] = "passed"
+            text = tail_summary(report)
+            (args.output / "summary.md").write_text(text)
+            print(text, flush=True)
+            return
         pure(args, suite, fixture, cases, report)
         endpoint(args, suite, cases, report)
         profiles(args, suite, cases, report)

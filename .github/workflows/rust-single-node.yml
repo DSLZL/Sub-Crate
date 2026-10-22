@@ -2,6 +2,15 @@ name: Single-node parsing comparison
 
 on:
   workflow_dispatch:
+    inputs:
+      inspect_run:
+        description: Inspect HTTP tail batches from a completed public-fixture run without rebuilding
+        type: string
+        default: ''
+      diagnose_tail:
+        description: Repeat Hy2 and SS control requests in three fresh server rounds, with separate tail profiles
+        type: boolean
+        default: false
   push:
     branches: [codex/rust-server-parity]
     paths: [.github/workflows/rust-single-node.yml, tests/performance/single-node.*, tests/performance/single_node.*]
@@ -10,7 +19,33 @@ permissions:
   contents: read
 
 jobs:
+  inspect:
+    if: inputs.inspect_run != '' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Inspect existing public-fixture HTTP batches on the runner
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INSPECT_RUN: ${{ inputs.inspect_run }}
+        shell: bash
+        run: |
+          [[ "$INSPECT_RUN" =~ ^[0-9]+$ ]]
+          gh run download "$INSPECT_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name "single-node-$INSPECT_RUN-1" --dir "$RUNNER_TEMP/single-node-inspect"
+          python3.12 -m venv "$RUNNER_TEMP/single-node-venv"
+          "$RUNNER_TEMP/single-node-venv/bin/pip" install --require-hashes --only-binary=:all: -r tests/performance/requirements.txt
+          "$RUNNER_TEMP/single-node-venv/bin/python" -m unittest discover -s tests/performance -p 'test_*.py'
+          "$RUNNER_TEMP/single-node-venv/bin/python" tests/performance/single_node.py \
+            --inspect "$RUNNER_TEMP/single-node-inspect/metrics.json"
   compare:
+    if: inputs.inspect_run == '' || github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     defaults:
@@ -72,11 +107,13 @@ jobs:
         run: |
           test_binary=$("$RUNNER_TEMP/single-node-venv/bin/python" -c 'import json,sys; rows=[json.loads(line) for line in open(sys.argv[1])]; matches=[row["executable"] for row in rows if row.get("reason")=="compiler-artifact" and row.get("profile",{}).get("test") and row.get("executable")]; assert len(matches)==1; print(matches[0])' "$RUNNER_TEMP/single-node-build.jsonl")
           baseline_test_binary=$("$RUNNER_TEMP/single-node-venv/bin/python" -c 'import json,sys; rows=[json.loads(line) for line in open(sys.argv[1])]; matches=[row["executable"] for row in rows if row.get("reason")=="compiler-artifact" and row.get("profile",{}).get("test") and row.get("executable")]; assert len(matches)==1; print(matches[0])' "$RUNNER_TEMP/single-node-baseline-build.jsonl")
+          tail_args=()
+          if [[ '${{ inputs.diagnose_tail }}' == 'true' ]]; then tail_args=(--diagnose-tail); fi
           "$RUNNER_TEMP/single-node-venv/bin/python" tests/performance/single_node.py \
             --original "$GITHUB_WORKSPACE/.performance/original" \
             --rust "$GITHUB_WORKSPACE/.performance/rust" --rust-test "$test_binary" \
             --rust-baseline "$GITHUB_WORKSPACE/.performance/rust-baseline" --rust-baseline-test "$baseline_test_binary" \
-            --scratch "$RUNNER_TEMP/single-node-scratch" --output "$RUNNER_TEMP/single-node-results"
+            --scratch "$RUNNER_TEMP/single-node-scratch" --output "$RUNNER_TEMP/single-node-results" "${tail_args[@]}"
           cat "$RUNNER_TEMP/single-node-results/summary.md" >> "$GITHUB_STEP_SUMMARY"
       - name: Preserve measurements and public-fixture failure logs
         if: always()

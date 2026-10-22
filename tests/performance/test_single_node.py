@@ -13,6 +13,35 @@ if os.environ.get("GITHUB_ACTIONS") != "true":
 
 
 class Profiles(unittest.TestCase):
+    def test_tail_statistics_pool_requests_and_preserve_round_and_sample_identity(self):
+        rows = [{"case": "clash_hysteria2", "mode": "keep_alive", "variant": "rust", "block": 0,
+                 "round": index, "ns": [value] * 95 + [value * 10] * 5}
+                for index, value in enumerate((1000, 2000))]
+        text = s.tail_summary({"http": rows})
+        values = [json.loads(line.removeprefix("TAIL_HTTP ")) for line in text.splitlines() if line.startswith("TAIL_HTTP ")]
+        total, first, second = values
+        self.assertEqual((total["requests"], total["p95_ns"]), (200, 2000))
+        self.assertEqual((first["round"], second["round"]), (0, 1))
+        self.assertEqual(second["slowest"][0], [95, 20000])
+        self.assertEqual((first["p95_ns"], second["p95_ns"]), (1000, 2000))
+        for invalid in ([], [True], [0], [-1]):
+            with self.subTest(samples=invalid), self.assertRaises(AssertionError):
+                s.distribution(invalid)
+
+    def test_tail_profiles_keep_slow_client_and_worker_events_paired(self):
+        events = [{"wall_ns": wall, "rows": [{"stage": stage, "wall_ns": value, "calls": 1}
+                   for stage, value in (("worker_queue", queue), ("parse_native", 10), ("produce", 5),
+                                        ("conversion_reuse", 1), ("conversion_retain", 1))]}
+                  for wall, queue in ((50, 1), (500, 400))]
+        group = {"case": "clash_hysteria2", "events": events, "client_ns": [100, 1000], "server_ns": [90, 900]}
+        text = s.tail_summary({"http": [], "profiles": [group]})
+        slow = [json.loads(line.removeprefix("TAIL_PROFILE_SLOW ")) for line in text.splitlines()
+                if line.startswith("TAIL_PROFILE_SLOW ")]
+        self.assertEqual((slow[0]["index"], slow[0]["client_ns"], slow[0]["worker_ns"], slow[0]["worker_queue"]),
+                         (1, 1000, 500, 400))
+        with self.assertRaises(AssertionError):
+            s.tail_summary({"http": [], "profiles": [{**group, "server_ns": [90]}]})
+
     def test_conversion_lifecycle_rejects_false_reuse_and_incomplete_cleanup(self):
         def event(stages):
             return [{"rows": [{"stage": stage, "calls": 1}
