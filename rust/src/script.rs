@@ -1108,6 +1108,19 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job, conversion_only: bool) -> rquickjs:
     ctx.store_userdata(job)
         .map_err(|_| Exception::throw_message(ctx, "Script job already borrowed"))?;
     let globals = ctx.globals();
+    // This JSON-only route cannot invoke downloads or user scripts.
+    if conversion_only {
+        globals.set("SubStoreScriptUtilities", Object::new(ctx.clone())?)?;
+        globals.set("__hostLog", Func::from(console_log))?;
+        crate::script_bytecode::BOOTSTRAP.eval(ctx)?;
+        let utils = Object::new(ctx.clone())?;
+        utils.set("parse", Func::from(native_parse))?;
+        utils.set("produce", Func::from(crate::script_conversion::produce))?;
+        crate::script_helpers::initialize_ip(&utils)?;
+        utils.set("getRandomPort", Func::from(crate::script_helpers::random_port))?;
+        globals.set("ProxyUtils", utils)?;
+        return Ok(());
+    }
     globals.set("__hostWait", Func::from(Async(wait)))?;
     globals.set("__hostTimer", Func::from(script_io::timer))?;
     globals.set("__hostCancelTimer", Func::from(script_io::cancel_timer))?;
@@ -1195,13 +1208,10 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job, conversion_only: bool) -> rquickjs:
     crate::script_helpers::initialize(ctx, &utils)?;
     crate::script_flow::initialize(ctx)?;
     crate::script_download::initialize(ctx, &utils)?;
-    // JSON-only parse/produce cannot invoke download helpers or user scripts.
-    if !conversion_only {
-        crate::script_age::initialize(ctx, &utils)?;
-        crate::script_mmdb::initialize(ctx, &utils)?;
-        crate::script_gist::initialize(ctx, &utils)?;
-        crate::script_dns::initialize(ctx, &utils)?;
-    }
+    crate::script_age::initialize(ctx, &utils)?;
+    crate::script_mmdb::initialize(ctx, &utils)?;
+    crate::script_gist::initialize(ctx, &utils)?;
+    crate::script_dns::initialize(ctx, &utils)?;
     globals.set("ProxyUtils", utils)?;
     crate::script_pipeline::initialize(ctx)
 }

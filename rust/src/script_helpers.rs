@@ -15,7 +15,7 @@ fn matches<'js>(js: &Js<'js>, pattern: &str, value: Value<'js>) -> rquickjs::Res
     js.regex_test(expression, value)
 }
 
-fn random_port<'js>(ctx: Ctx<'js>, input: Opt<Value<'js>>) -> rquickjs::Result<Value<'js>> {
+pub(crate) fn random_port<'js>(ctx: Ctx<'js>, input: Opt<Value<'js>>) -> rquickjs::Result<Value<'js>> {
     let js = Js::new(ctx);
     let input = input.0.unwrap_or_else(|| js.undefined());
     let expression = js.call("regex", (",|/", ""))?;
@@ -393,7 +393,7 @@ fn resource_cache<'js>(
     Ok(cache)
 }
 
-pub fn initialize<'js>(ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs::Result<()> {
+pub(crate) fn initialize_ip<'js>(utils: &Object<'js>) -> rquickjs::Result<()> {
     for (name, pattern) in [("isIPv4", IPV4), ("isIPv6", IPV6)] {
         utils.set(
             name,
@@ -403,6 +403,11 @@ pub fn initialize<'js>(ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs::Result<
             }),
         )?;
     }
+    Ok(())
+}
+
+pub fn initialize<'js>(ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs::Result<()> {
+    initialize_ip(utils)?;
     utils.set(
         "isIP",
         Func::from(|ctx: Ctx<'js>, value: Opt<Value<'js>>| {
