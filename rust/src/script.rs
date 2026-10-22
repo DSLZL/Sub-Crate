@@ -1096,7 +1096,7 @@ async fn process_response<'js>(
     Ok(output)
 }
 
-fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
+fn initialize<'js>(ctx: &Ctx<'js>, job: Job, conversion_only: bool) -> rquickjs::Result<()> {
     crate::js_values::initialize(ctx)?;
     script_io::set_executor(ctx, job.background.clone())?;
     let encode = profile::span("bootstrap_state_encode");
@@ -1195,10 +1195,13 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     crate::script_helpers::initialize(ctx, &utils)?;
     crate::script_flow::initialize(ctx)?;
     crate::script_download::initialize(ctx, &utils)?;
-    crate::script_age::initialize(ctx, &utils)?;
-    crate::script_mmdb::initialize(ctx, &utils)?;
-    crate::script_gist::initialize(ctx, &utils)?;
-    crate::script_dns::initialize(ctx, &utils)?;
+    // JSON-only parse/produce cannot invoke download helpers or user scripts.
+    if !conversion_only {
+        crate::script_age::initialize(ctx, &utils)?;
+        crate::script_mmdb::initialize(ctx, &utils)?;
+        crate::script_gist::initialize(ctx, &utils)?;
+        crate::script_dns::initialize(ctx, &utils)?;
+    }
     globals.set("ProxyUtils", utils)?;
     crate::script_pipeline::initialize(ctx)
 }
@@ -1209,6 +1212,7 @@ pub async fn run(
     input: Value,
 ) -> Result<Value, conversion::Error> {
     let background = tokio::runtime::Handle::current();
+    let conversion_only = operation == "parse" && !crate::state::truthy(&input["download"]);
     let operation = operation.to_owned();
     let (sender, receiver) = tokio::sync::oneshot::channel();
     let worker = tokio::task::spawn_blocking(move || {
@@ -1254,7 +1258,7 @@ pub async fn run(
                     context.async_with(async |ctx| {
                         let result = async {
                             let bootstrap = profile::span("bootstrap");
-                            initialize(&ctx, job)?;
+                            initialize(&ctx, job, conversion_only)?;
                             drop(bootstrap);
                             let js = Js::new(ctx.clone());
                             let decode = profile::span("input_decode");

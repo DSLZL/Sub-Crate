@@ -1,6 +1,6 @@
 """Paired single-node parsing measurements; public fixtures, Actions only."""
 import argparse
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 import hashlib
 import json
 import math
@@ -106,9 +106,9 @@ def pure(args, suite, fixtures, cases, report):
 
 
 def endpoint(args, suite, cases, report):
-    with suite.server("node", suite.directory("http-node"), clone=False) as node, \
-            suite.server("rust", suite.directory("http-rust"), clone=False) as rust:
-        origins = {"node": node[0], "rust": rust[0]}
+    with ExitStack() as stack:
+        origins = {kind: stack.enter_context(suite.server(kind, suite.directory("http-" + kind), clone=False))[0]
+                   for kind in ("node", "rust_baseline", "rust")}
         for case in cases:
             payloads = [{"data": case["raw"] + suffix, "client": "JSON", "type": "internal"}
                         for suffix in ("", "\n")]
@@ -119,7 +119,7 @@ def endpoint(args, suite, cases, report):
                 for index in range(20):
                     assert b.api(origins[kind], "proxy/parse", "POST", payloads[index % 2]) == expected
             for block in range(BLOCKS):
-                for kind in (("node", "rust") if block % 2 == 0 else ("rust", "node")):
+                for kind in (tuple(origins) if block % 2 == 0 else tuple(origins)[::-1]):
                     samples = []
                     for index in range(HTTP_REQUESTS):
                         began = time.perf_counter_ns()
@@ -154,14 +154,14 @@ def summary(report):
              "Pure: median of seven block means, us/call. HTTP: median of 210 requests, ms/request.",
              "Equivalent original/newline inputs alternate; no last-input preprocessing cache hits.",
              "HTTP includes JSON production and transport, starts with empty application state.",
-             "", "| Format | Node pure us | Rust reused parser us | Rust new parser us | Node HTTP ms | Rust HTTP ms |",
-             "|---|---:|---:|---:|---:|---:|"]
+             "", "| Format | Node pure us | Rust reused parser us | Rust new parser us | Node HTTP ms | Previous Rust HTTP ms | Rust HTTP ms |",
+             "|---|---:|---:|---:|---:|---:|---:|"]
     for case in report["cases"]:
         values = []
         for variant in VARIANTS:
             rows = [row for row in report["pure"] if row["case"] == case and row["variant"] == variant]
             values.append(statistics.median(row["elapsed_ns"] / row["iterations"] / 1000 for row in rows))
-        for variant in ("node", "rust"):
+        for variant in ("node", "rust_baseline", "rust"):
             samples = [sample for row in report["http"] if row["case"] == case and row["variant"] == variant for sample in row["ns"]]
             values.append(statistics.median(samples) / 1_000_000)
         lines.append("| " + case + " | " + " | ".join(f"{value:.3f}" for value in values) + " |")
@@ -182,7 +182,7 @@ def main():
     if os.environ.get("GITHUB_ACTIONS") != "true":
         raise SystemExit("Run in GitHub Actions only")
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("original", "rust", "rust-test", "scratch", "output"):
+    for name in ("original", "rust", "rust-baseline", "rust-test", "scratch", "output"):
         parser.add_argument("--" + name, required=True, type=lambda value: Path(value).resolve())
     args = parser.parse_args()
     args.scratch.mkdir(parents=True)
@@ -196,6 +196,8 @@ def main():
               "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(), "machine": platform.machine(),
               "cases": [case["id"] for case in cases], "pure": [], "http": [], "profiles": [], "status": "running"}
     assert b.command(["git", "rev-parse", "HEAD"], args.original).decode().strip() == b.ORIGINAL
+    report["rust_baseline"] = b.command(["git", "rev-parse", "HEAD"], args.rust_baseline).decode().strip()
+    assert report["rust_baseline"] == "bfae5be4ff67a7bfc9be70ea838e28dce5c0bf02"
     suite = b.Suite(args, {})
     try:
         pure(args, suite, fixture, cases, report)
@@ -211,7 +213,7 @@ def main():
                        for variant in VARIANTS}
             samples["http_p95_ms"] = {variant: sorted(value / 1e6 for row in report["http"]
                                                    if row["case"] == case and row["variant"] == variant for value in row["ns"])[math.ceil(BLOCKS * HTTP_REQUESTS * .95) - 1]
-                                      for variant in ("node", "rust")}
+                                      for variant in ("node", "rust_baseline", "rust")}
             print("SINGLE_NODE_SAMPLES " + json.dumps({"case": case, **samples}), flush=True)
     except Exception:
         report["status"] = "failed"
