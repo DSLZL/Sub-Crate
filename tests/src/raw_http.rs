@@ -100,7 +100,7 @@ pub fn request(
     socket.take(128 * 1024 * 1024).read_to_end(&mut wire)?;
     decode(&wire, method == "HEAD")
 }
-fn decode(wire: &[u8], head: bool) -> Result<Reply> {
+pub(crate) fn decode(wire: &[u8], head: bool) -> Result<Reply> {
     let end = wire
         .windows(4)
         .position(|bytes| bytes == b"\r\n\r\n")

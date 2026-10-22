@@ -3,6 +3,9 @@ use serde_json::{Value, json};
 use std::{collections::{BTreeMap, BTreeSet}, fmt, path::Path};
 
 pub mod report;
+pub mod capsule;
+pub mod resources;
+pub mod transport;
 
 pub const ORIGINAL:&str="9cc6b5fac966993364ae33da8797f446bbf7f571";
 pub const RUST:&str="af08b0649c4d2f2814fe38ce6943b1397f5e1c14";
@@ -26,7 +29,7 @@ impl std::error::Error for Failure{}
 pub fn check(condition:bool,code:&'static str)->Result{
     if condition{Ok(())}else{Err(Box::new(Failure{code,observations:None}))}
 }
-pub fn failure(error:&(dyn std::error::Error+Send+Sync))->Value{
+pub fn failure(error:&(dyn std::error::Error+Send+Sync+'static))->Value{
     match error.downcast_ref::<Failure>(){Some(error)=>json!({"failure":error.code,"failure_observations":error.observations}),None=>json!({"failure":"unexpected"})}
 }
 pub fn canonical(value:&Value)->Vec<u8>{

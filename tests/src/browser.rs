@@ -44,11 +44,12 @@ impl Browser {
         );
         let mut command = Command::new(&self.executable);
         command
+            .env_clear()
             .args(["--session", &self.session, "--json"])
             .args(args)
             .current_dir(crate::root());
         for (key, _) in std::env::vars_os()
-            .filter(|(key, _)| key.to_string_lossy().starts_with("AGENT_BROWSER_"))
+            .filter(|(key, _)| !self.environment.contains_key(key) || key.to_string_lossy().starts_with("AGENT_BROWSER_"))
         {
             command.env_remove(key);
         }

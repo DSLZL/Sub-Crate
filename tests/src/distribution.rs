@@ -50,7 +50,7 @@ pub fn asset_hashes(directory: &Path) -> Result<BTreeMap<String, String>> {
         })
         .collect()
 }
-fn copy_tree(source: &Path, destination: &Path) -> Result {
+pub(crate) fn copy_tree(source: &Path, destination: &Path) -> Result {
     for path in files(source)? {
         let target = destination.join(path.strip_prefix(source)?);
         std::fs::create_dir_all(target.parent().ok_or("Missing copy parent")?)?;
