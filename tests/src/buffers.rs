@@ -22,8 +22,8 @@ impl Buffers<'_>{
     fn get(&mut self,path:&str)->Result<Value>{self.send("GET",path,None,None,200,None)}
     fn run(&mut self)->Result{
         if self.phase=="restore"{
-            let original=self.requests.api.durable()?;self.send("POST","/api/storage",Some(json!({"content":json::stringify(&original)})),None,200,None)?;
-            json::check(&json::parse(self.requests.api.stored("root.json")?["sub-store"].as_str().ok_or("Missing Buffer restore root")?)?,&original,false)?;
+            let original=self.requests.api.durable()?;self.send("POST","/api/storage",Some(json!({"content":json::literal(&json::stringify(&original))})),None,200,None)?;
+            json::check(&json::parse(&json::text(&self.requests.api.stored("root.json")?["sub-store"])?)?,&original,false)?;
         }
         for(plural,singular,label)in[("subs","sub","Subscription"),("collections","collection","Collection")]{
             let live=["live","live-before-restart"].contains(&self.phase);let list=format!("/api/{plural}");let item=format!("/api/{singular}/buffer-missing");
@@ -77,7 +77,7 @@ pub fn run(output:&Path)->Result{
                     let failed=api.send(&json!({"method":"PUT","path":format!("/api/{plural}"),"body":[]}),500)?;require(failed["error"]["code"]=="STATE_WRITE_FAILED","Buffer failed write error changed")?;
                     json::check(&api.send(&json!({"method":"POST","path":format!("/api/{plural}"),"body":{"name":"buffer-new"}}),500)?,&json!({"status":"failed","error":{"message":"e.push is not a function"}}),false)?;
                 }
-                require(api.send(&json!({"method":"POST","path":"/api/storage","body":{"content":json::stringify(&seed)}}),500)?["error"]["code"]=="STATE_WRITE_FAILED","Buffer failed restore error changed")?;
+                require(api.send(&json!({"method":"POST","path":"/api/storage","body":{"content":json::literal(&json::stringify(&seed))}}),500)?["error"]["code"]=="STATE_WRITE_FAILED","Buffer failed restore error changed")?;
                 json::check(&api.send(&json!({"method":"POST","path":"/api/collections","body":{"name":"buffer-new"}}),500)?,&json!({"status":"failed","error":{"message":"e.push is not a function"}}),false)
             })();std::fs::remove_dir(&path)?;std::fs::rename(saved,path)?;checked?;require(api::files(&api)?==before,"Failed Buffer writes changed either file")?;
             json::write_new(output.join("buffer-write-failure.json"),&json!({"both_files_unchanged":true,"live_identity_preserved":true}))?;

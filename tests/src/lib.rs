@@ -22,6 +22,7 @@ pub mod notices;
 mod notices_tests;
 pub mod notifications;
 pub mod persistence;
+pub mod performance;
 pub mod probe;
 pub mod process;
 pub mod providers;
