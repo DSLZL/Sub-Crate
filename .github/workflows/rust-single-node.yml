@@ -58,9 +58,7 @@ jobs:
         run: |
           "$RUNNER_TEMP/single-node-venv/bin/python" -m unittest discover -s tests/performance -p 'test_*.py'
           (cd .performance/original/backend && node bundle-esbuild.js)
-          cargo +1.98.0 build --manifest-path .performance/rust-baseline/rust/Cargo.toml --target-dir .performance/rust/rust/target --locked --release --bin sub-store-rust
-          mkdir -p .performance/rust-baseline/rust/target/release
-          cp .performance/rust/rust/target/release/sub-store-rust .performance/rust-baseline/rust/target/release/
+          cargo +1.98.0 build --manifest-path .performance/rust-baseline/rust/Cargo.toml --locked --release --bin sub-store-rust
           cargo +1.98.0 fmt --manifest-path .performance/rust/rust/Cargo.toml --all -- --check
           cargo +1.98.0 clippy --manifest-path .performance/rust/rust/Cargo.toml --locked --all-targets -- -D warnings
           cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust

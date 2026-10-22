@@ -198,6 +198,10 @@ def main():
     assert b.command(["git", "rev-parse", "HEAD"], args.original).decode().strip() == b.ORIGINAL
     report["rust_baseline"] = b.command(["git", "rev-parse", "HEAD"], args.rust_baseline).decode().strip()
     assert report["rust_baseline"] == "bfae5be4ff67a7bfc9be70ea838e28dce5c0bf02"
+    report["binary_sha256"] = {kind: hashlib.sha256((root / "rust/target/release/sub-store-rust").read_bytes()).hexdigest()
+                               for kind, root in (("rust", args.rust), ("rust_baseline", args.rust_baseline))}
+    assert len(set(report["binary_sha256"].values())) == 2, "candidate and baseline must be distinct binaries"
+    print("SINGLE_NODE_BINARIES " + json.dumps(report["binary_sha256"]), flush=True)
     suite = b.Suite(args, {})
     try:
         pure(args, suite, fixture, cases, report)
