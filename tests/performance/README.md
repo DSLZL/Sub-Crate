@@ -1254,3 +1254,79 @@ formatting failure `39701116768`, supply no accepted performance numbers.
 Artifacts `single-node-39701402820-1` and `single-node-39702044025-1` retain the
 public samples and runner logs for 30 days. No local product execution or
 artifact extraction was used.
+
+### Direct parse bootstrap specialization (2026-10-22)
+
+The accepted same-runner comparison is
+[39717747810](https://github.com/DSLZL/Sub-Store/actions/runs/39717747810),
+source `87a105287588c4dc9526a9313889615d2856fbbe`. It compares the pinned
+original, Rust `bfae5be4ff67a7bfc9be70ea838e28dce5c0bf02`, and the candidate
+on one Ubuntu x64 runner. Baseline and candidate have separate Cargo output
+directories and distinct binary hashes, recorded in `metrics.json` and the log.
+The earlier shared-output comparison `39713194124` is not accepted: its final
+candidate service build reused existing release output. It supplies no speedup
+evidence. The isolated intermediate comparison `39713856286` measured a
+36.0–38.1% reduction before the final specialization below.
+
+Only direct `parse` jobs with a JavaScript-falsy `download` use the smaller
+environment. They still execute the existing value bridge, language operations,
+native parser and producer, IP predicates and random-port helper. Each request
+retains its own engine/context/parser and normal state handling. Downloads and
+every script-capable operation retain complete initialization. No transformed
+node, live engine, callback or response is shared between requests.
+
+The final driver also checks the existing public Surge fixture's 16 lines
+individually and as one mixed input on all three backends: 51 untimed
+correctness requests. This caught a missing `isIP` binding for AnyTLS with
+`sni=off`; the final candidate reuses the original predicate. The native service
+suite additionally compares `download=null/false/0/""` with the original.
+Failed setup runs `39715021242` and `39716332827`, the Surge failure in
+`39715004018`, and its focused reproduction `39716867675` remain historical
+evidence; none contributes accepted candidate latency samples.
+
+Timed HTTP methodology remains seven blocks of 30 requests for each of nine
+formats and three backends, alternating equivalent raw/newline inputs. All
+5,670 timed responses match the original. Profiling stays disabled for these
+requests. Median milliseconds per request:
+
+| Input | Node | Previous Rust | Candidate Rust |
+|---|---:|---:|---:|
+| SS URI | 0.609 | 15.303 | 2.267 |
+| VMess WS | 0.635 | 15.358 | 2.301 |
+| VLESS WS | 0.602 | 15.261 | 2.292 |
+| Trojan | 0.569 | 15.432 | 2.270 |
+| Hysteria2 | 0.616 | 15.224 | 2.269 |
+| Surge SS | 0.798 | 15.035 | 2.440 |
+| QX SS | 1.085 | 15.045 | 2.436 |
+| Clash JSON | 0.693 | 14.942 | 2.277 |
+| Single-node Clash YAML | 0.954 | 15.054 | 2.287 |
+
+The candidate reduces these HTTP medians by 83.77–85.29%, or 6.16–6.80x.
+It remains 2.25–3.99x slower than Node on this endpoint. SS P95 is
+`0.883 / 20.003 / 2.455 ms` for Node/previous Rust/candidate. Pure parsing
+algorithms are unchanged; the candidate's reused-parser medians still favor
+Rust by 1.14–13.04x on these fixtures.
+
+The separate candidate SS profile reports median active `bootstrap=0.192 ms`,
+`context_setup=0.118 ms`, `parse_runtime=1.418 ms`, `parse_native=0.020 ms`,
+`produce=0.019 ms` and `output_encode=0.012 ms`. Parser initialization now
+dominates the remaining cost. These are instrumented elapsed times, not OS CPU
+measurements. Library-load/evaluation spans also occur inside the independent
+parser; they are not exclusively children of the application bootstrap. Do not
+add overlapping stages or compare their independently computed medians as sums.
+
+The focused run passes formatting, clippy with warnings denied, 39 ordinary
+Rust tests, 25 harness self-checks and all 63 balanced profiles. Artifact
+`single-node-39717747810-1` preserves samples and public logs for 30 days.
+All six jobs pass in
+[39717742648](https://github.com/DSLZL/Sub-Store/actions/runs/39717742648):
+native Linux x64/arm64 and Windows x64, Docker Linux x64/arm64, and the
+unchanged official frontend in headless Chrome.
+The earlier intermediate native run `39713194216` retained a Windows export
+timestamp boundary failure of about 0.6 ms; this optimization does not change
+export clocks or relax that assertion.
+
+These empty-state, localhost single-node observations do not establish full
+imported-subscription throughput, memory savings or release readiness. The
+supplied subscription long test was not repeated. All builds and product tests
+ran in Actions, with no local product execution or artifact extraction.
