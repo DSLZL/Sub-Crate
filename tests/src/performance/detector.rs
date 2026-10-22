@@ -36,7 +36,7 @@ impl Detector{
         }
     }
     async fn forward(&self,path:&str,body:&[u8])->Result<(u16,Vec<u8>)>{let response=self.client.post(format!("http://127.0.0.1:{}{path}",self.meta_port)).header("Content-Type","application/json").body(body.to_vec()).send().await?;check(response.status().is_success(),"fixture")?;Ok((200,response.bytes().await?.to_vec()))}
-    async fn handle(&self,socket:TcpStream,identity:Option<Arc<AtomicBool>>){
+    fn handle(&self,socket:TcpStream,identity:Option<Arc<AtomicBool>>)->std::pin::Pin<Box<dyn std::future::Future<Output=()>+Send+'_>>{Box::pin(async move{
         let(mut reader,mut writer)=socket.into_split();let result=async{
             let mut reader=BufReader::new(&mut reader);let mut line=Vec::new();let read=tokio::time::timeout(Duration::from_secs(30),reader.read_until(b'\n',&mut line)).await??;check(read>0&&line.len()<1048576,"fixture")?;
             let first=std::str::from_utf8(&line)?;let fields=first.split_whitespace().collect::<Vec<_>>();check(fields.len()==3,"fixture")?;let method=fields[0].to_owned();let path=fields[1].to_owned();let mut length=0_usize;let mut total=line.len();
@@ -44,7 +44,7 @@ impl Detector{
             check(length<=128*1024*1024,"fixture")?;let mut body=vec![0;length];tokio::time::timeout(Duration::from_secs(30),reader.read_exact(&mut body)).await??;self.response(&method,&path,&body,identity.as_deref()).await
         }.await;
         let(status,body)=result.unwrap_or((500,vec![]));let header=format!("HTTP/1.1 {status} OK\r\nContent-Length: {}\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n",body.len());let _=writer.write_all(header.as_bytes()).await;let _=writer.write_all(&body).await;let _=writer.shutdown().await;
-    }
+    })}
     async fn serve(self,listener:TcpListener)->Result{loop{let(socket,_)=listener.accept().await?;let detector=self.clone();tokio::spawn(async move{detector.handle(socket,None).await;});}}
 }
 pub fn run(directory:PathBuf,port:u16,meta_port:u16)->Result{

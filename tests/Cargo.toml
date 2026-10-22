@@ -36,3 +36,7 @@ path = "frontend.rs"
 [[test]]
 name = "docker"
 path = "docker.rs"
+
+[[test]]
+name = "performance"
+path = "performance.rs"
