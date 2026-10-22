@@ -17,6 +17,12 @@ pub struct Api {
     next: Cell<usize>,
     is_reference: bool,
 }
+pub fn files(api: &Api) -> Result<[Vec<u8>; 2]> {
+    Ok([
+        std::fs::read(api.state.join("sub-store.json"))?,
+        std::fs::read(api.state.join("root.json"))?,
+    ])
+}
 impl Api {
     pub fn start(
         backend: &Backend,

@@ -1,6 +1,6 @@
 use crate::{
     Result,
-    api::{self, Api},
+    api::{self, Api, files},
     fixture::quote,
     json, process, raw_http, reference, require,
     server::{self, Backend},
@@ -9,12 +9,6 @@ use crate::{
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::Path, process::Command, time::Duration};
 
-fn files(api: &Api) -> Result<[Vec<u8>; 2]> {
-    Ok([
-        std::fs::read(api.state.join("sub-store.json"))?,
-        std::fs::read(api.state.join("root.json"))?,
-    ])
-}
 struct Edge<'a> {
     api: &'a Api,
     observed: Vec<Value>,

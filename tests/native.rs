@@ -25,6 +25,18 @@ fn settings_numeric_coercion_recipient_validation_order_and_failed_writes() -> R
 fn crud_typed_references_null_records_raw_buffers_restart_and_node_rollback() -> Result {
     sub_store_tests::edges::crud_lifecycle(&process::scratch("service-crud-edges")?)
 }
+#[test]
+fn backup_import_export_codecs_calendars_atomic_restore_scalar_settings_and_node_rollback() -> Result {
+    sub_store_tests::persistence::backups(&process::scratch("service-backup-edges")?)
+}
+#[test]
+fn noisy_base64_legacy_migration_preserves_numeric_order_processors_and_original_snapshot() -> Result {
+    sub_store_tests::persistence::migration(&process::scratch("service-migration")?)
+}
+#[test]
+fn unicode_json_and_utf16_keep_lone_surrogates_markers_restart_and_node_rollback() -> Result {
+    sub_store_tests::unicode::run(&process::scratch("service-unicode")?)
+}
 
 #[test]
 fn frozen_node_unit_suite() -> Result {

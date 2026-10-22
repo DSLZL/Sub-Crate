@@ -18,6 +18,7 @@ pub mod notices;
 #[cfg(test)]
 mod notices_tests;
 pub mod notifications;
+pub mod persistence;
 pub mod probe;
 pub mod process;
 pub mod providers;
@@ -29,6 +30,7 @@ pub mod service;
 pub mod sharing;
 pub mod static_files;
 pub mod upstream;
+pub mod unicode;
 
 use std::path::PathBuf;
 

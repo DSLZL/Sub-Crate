@@ -77,6 +77,7 @@ impl Requests<'_> {
         let mut record = reply.evidence();
         record["request"] = json!({"spec":spec,"headers":headers,"body_base64":base64::engine::general_purpose::STANDARD.encode(body),"chunk_sizes":chunks.map(|size|body.chunks(size).map(<[u8]>::len).collect::<Vec<_>>())});
         record["state"] = state.clone();
+        record["root"] = self.api.stored("root.json")?;
         record["files_before_base64"] = json!(
             before
                 .iter()
@@ -139,8 +140,8 @@ impl Requests<'_> {
                 .map(|value| (key.to_string(), json!(value)))
         })
         .collect::<serde_json::Map<_, _>>();
-        self.observed.push(json!({"method":method,"path":path,"status":status,"headers":compared,"body_base64":base64::engine::general_purpose::STANDARD.encode(&reply.body),"state":state}));
-        if status < 400 && !reply.body.is_empty() {
+        self.observed.push(json!({"method":method,"path":path,"status":status,"headers":compared,"body_base64":base64::engine::general_purpose::STANDARD.encode(&reply.body),"state":state,"root":record["root"]}));
+        if (status < 400 || spec["json_error"] == true) && !reply.body.is_empty() {
             json::parse(std::str::from_utf8(&reply.body)?)
         } else {
             Ok(Value::Null)
