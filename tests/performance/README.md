@@ -1895,3 +1895,246 @@ Native packaging, delivered-binary HTTP/state/restart/rollback checks and
 JavaScript/reference checks pass. This does not establish the cause of the
 previous unreproduced Windows sharing timeout; its failed evidence and the
 original timeouts remain unchanged.
+
+
+## 2026-10-22: conversion environment reuse and the direct bridge
+
+[Performance run 39774769592](https://github.com/DSLZL/Sub-Store/actions/runs/39774769592)
+passes at candidate `af08b0649c4d2f2814fe38ce6943b1397f5e1c14`.
+This compares original Node `9cc6b5fac966993364ae33da8797f446bbf7f571`,
+previous Rust `9c19111bae2af2654caa339151e4eabd12b586bb` and the candidate
+on the same ubuntu-24.04 runner with the existing pinned tools and public fixtures.
+The release binary SHA-256 values in that run are:
+
+- Candidate: `3b8bf15faded89b92ee274427a117e0b17f271f14a51dc5a5ac5c8bc229236bd`.
+- Previous Rust: `93b345d05cbbd13f0fa6ba70055c39fa2e6fc5a111f0a2c7366f5e5a6f21499b`.
+
+Only direct parse requests with JS-falsy download reuse a worker-local synchronous
+QuickJS context. Idle retention is bounded by available CPU parallelism and one
+context per worker. Each request still decodes, parses, runs the common producer
+and serializes its own result. The private parser clears its last normalized text;
+errors, panic, pending jobs and worker exit destroy/release retained environments.
+Full scripts/downloads keep fresh contexts and their existing background drain.
+The direct path removes dynamic method lookup, argument arrays and Promise wrapping;
+it still uses the existing native parser, value codec and common producer.
+There is no result cache, new dependency, production option or frontend change.
+
+All 48 fixture P50 values improve against previous Rust in both connection modes.
+The median of the 48 candidate/previous ratios is 0.6230 for new connections
+(37.7% lower) and 0.5315 for keep-alive (46.9% lower).
+New-connection P50 is below Node in 48/48; keep-alive is below Node in 47/48.
+The exception is socks5 TLS URI: 0.110 ms versus Node 0.106 ms, still below
+previous Rust 0.230 ms. Reused pure parsing is below Node in 48/48 and fresh
+parsing in 47/48. This task changes environment/bridge overhead; small changes
+in the unchanged pure parser measurements are not attributed to a new parsing algorithm.
+
+These are same-run comparisons. Absolute values from earlier runners are not
+interchangeable with this run. Pure values are medians of seven block means;
+HTTP P50/P95 use 210 checked responses per fixture/backend/connection mode.
+Every row converts one node to JSON/internal. Original/newline inputs alternate.
+Coverage includes all 29 pinned Clash types and Surge external, not all possible
+protocol fields, output formats or traffic behavior.
+
+In the HTTP columns, values are Node / previous Rust / candidate, in ms.
+Pure reused/fresh pairs are in us per call.
+
+| Case | Protocol / input | Node pure | Previous Rust reused / fresh | Candidate reused / fresh | New HTTP P50 N/P/R | Keep-alive P50 N/P/R |
+|---|---|---:|---:|---:|---:|---:|
+| ss_uri | ss / URI | 7.415 | 2.722 / 2.750 | 2.785 / 2.808 | 0.402 / 0.306 / 0.232 | 0.305 / 0.250 / 0.116 |
+| vmess_ws | vmess / URI | 21.539 | 5.662 / 5.579 | 5.700 / 5.658 | 0.515 / 0.326 / 0.228 | 0.366 / 0.277 / 0.153 |
+| vless_ws | vless / URI | 17.761 | 4.681 / 4.673 | 4.567 / 4.632 | 0.441 / 0.379 / 0.256 | 0.211 / 0.255 / 0.154 |
+| trojan | trojan / URI | 29.242 | 2.655 / 2.640 | 2.710 / 2.741 | 0.302 / 0.295 / 0.245 | 0.202 / 0.213 / 0.116 |
+| hysteria2 | hysteria2 / URI | 27.266 | 2.830 / 2.823 | 2.844 / 2.827 | 0.434 / 0.356 / 0.279 | 0.329 / 0.213 / 0.135 |
+| surge_ss | ss / Surge | 74.741 | 4.066 / 4.060 | 4.026 / 3.965 | 0.553 / 0.316 / 0.231 | 0.406 / 0.232 / 0.133 |
+| qx_ss | ss / QX | 156.289 | 3.601 / 3.605 | 3.638 / 3.633 | 0.663 / 0.299 / 0.189 | 0.582 / 0.214 / 0.116 |
+| clash_json | ss / Clash JSON | 55.179 | 6.710 / 43.815 | 6.330 / 44.493 | 0.341 / 0.409 / 0.189 | 0.249 / 0.308 / 0.140 |
+| clash_yaml | ss / Clash YAML | 119.187 | 9.829 / 47.177 | 9.606 / 48.488 | 0.672 / 0.415 / 0.311 | 0.459 / 0.309 / 0.138 |
+| clash_zerotier | zerotier / Clash JSON | 49.197 | 5.512 / 42.682 | 5.268 / 43.478 | 0.348 / 0.393 / 0.231 | 0.343 / 0.252 / 0.132 |
+| clash_shadowquic | shadowquic / Clash JSON | 53.732 | 6.199 / 44.880 | 5.918 / 45.394 | 0.454 / 0.418 / 0.213 | 0.243 / 0.297 / 0.148 |
+| clash_gost_relay | gost-relay / Clash JSON | 52.968 | 6.209 / 43.524 | 5.821 / 44.706 | 0.355 / 0.398 / 0.220 | 0.245 / 0.258 / 0.121 |
+| clash_openvpn | openvpn / Clash JSON | 54.146 | 6.504 / 45.171 | 6.271 / 45.265 | 0.456 / 0.422 / 0.247 | 0.257 / 0.247 / 0.136 |
+| clash_tailscale | tailscale / Clash JSON | 52.888 | 6.138 / 43.622 | 5.767 / 44.297 | 0.366 / 0.362 / 0.233 | 0.362 / 0.300 / 0.142 |
+| clash_easytier | easytier / Clash JSON | 57.137 | 7.441 / 45.042 | 7.082 / 47.214 | 0.343 / 0.429 / 0.240 | 0.352 / 0.248 / 0.147 |
+| clash_trusttunnel | trusttunnel / Clash JSON | 54.788 | 6.653 / 43.935 | 6.304 / 44.165 | 0.450 / 0.413 / 0.242 | 0.234 / 0.251 / 0.132 |
+| clash_h2_connect | h2-connect / Clash JSON | 53.965 | 6.479 / 43.769 | 6.325 / 44.848 | 0.311 / 0.327 / 0.185 | 0.229 / 0.252 / 0.118 |
+| clash_naive | naive / Clash JSON | 50.970 | 6.045 / 43.354 | 5.830 / 44.028 | 0.323 / 0.383 / 0.260 | 0.220 / 0.266 / 0.142 |
+| clash_anytls | anytls / Clash JSON | 50.547 | 5.930 / 43.054 | 5.677 / 44.209 | 0.316 / 0.414 / 0.243 | 0.320 / 0.323 / 0.137 |
+| clash_mieru | mieru / Clash JSON | 52.498 | 6.314 / 43.391 | 6.109 / 44.595 | 0.446 / 0.436 / 0.248 | 0.343 / 0.248 / 0.141 |
+| clash_masque | masque / Clash JSON | 53.616 | 6.310 / 43.254 | 6.142 / 44.078 | 0.327 / 0.341 / 0.207 | 0.221 / 0.270 / 0.136 |
+| clash_masque_surge | masque-surge / Clash JSON | 54.762 | 6.429 / 43.502 | 6.187 / 44.221 | 0.323 / 0.413 / 0.249 | 0.325 / 0.321 / 0.139 |
+| clash_sudoku | sudoku / Clash JSON | 48.178 | 5.370 / 42.522 | 5.123 / 43.331 | 0.305 / 0.321 / 0.243 | 0.329 / 0.261 / 0.132 |
+| clash_juicity | juicity / Clash JSON | 56.738 | 6.669 / 43.917 | 6.334 / 44.459 | 0.430 / 0.398 / 0.245 | 0.221 / 0.321 / 0.184 |
+| clash_ssr | ssr / Clash JSON | 57.974 | 6.909 / 44.012 | 6.547 / 45.583 | 0.333 / 0.431 / 0.198 | 0.330 / 0.348 / 0.194 |
+| clash_vmess | vmess / Clash JSON | 68.033 | 11.179 / 48.929 | 10.566 / 48.659 | 0.473 / 0.445 / 0.325 | 0.341 / 0.327 / 0.166 |
+| clash_socks5 | socks5 / Clash JSON | 54.241 | 6.760 / 44.443 | 6.438 / 45.301 | 0.308 / 0.414 / 0.299 | 0.320 / 0.298 / 0.184 |
+| clash_http | http / Clash JSON | 52.349 | 6.376 / 43.569 | 6.108 / 43.946 | 0.428 / 0.360 / 0.199 | 0.308 / 0.299 / 0.130 |
+| clash_snell | snell / Clash JSON | 49.522 | 5.820 / 43.466 | 5.523 / 43.620 | 0.319 / 0.422 / 0.236 | 0.220 / 0.295 / 0.139 |
+| clash_trojan | trojan / Clash JSON | 50.525 | 6.288 / 43.854 | 6.011 / 43.853 | 0.447 / 0.351 / 0.313 | 0.314 / 0.239 / 0.137 |
+| clash_tuic | tuic / Clash JSON | 55.057 | 7.150 / 43.958 | 6.575 / 44.446 | 0.437 / 0.356 / 0.233 | 0.323 / 0.248 / 0.132 |
+| clash_vless | vless / Clash JSON | 65.881 | 10.386 / 48.209 | 9.597 / 47.835 | 0.326 / 0.433 / 0.221 | 0.228 / 0.314 / 0.129 |
+| clash_hysteria | hysteria / Clash JSON | 55.421 | 7.112 / 44.779 | 6.948 / 45.620 | 0.301 / 0.391 / 0.188 | 0.323 / 0.241 / 0.150 |
+| clash_hysteria2 | hysteria2 / Clash JSON | 57.574 | 7.033 / 46.161 | 6.868 / 46.769 | 0.312 / 0.343 / 0.309 | 0.330 / 0.247 / 0.144 |
+| clash_wireguard | wireguard / Clash JSON | 66.988 | 8.813 / 46.431 | 8.178 / 46.320 | 0.345 / 0.446 / 0.279 | 0.343 / 0.262 / 0.145 |
+| clash_ssh | ssh / Clash JSON | 49.923 | 5.762 / 42.873 | 5.455 / 43.810 | 0.316 / 0.418 / 0.240 | 0.209 / 0.309 / 0.141 |
+| clash_direct | direct / Clash JSON | 39.216 | 3.615 / 40.418 | 3.460 / 41.353 | 0.280 / 0.403 / 0.185 | 0.302 / 0.287 / 0.126 |
+| surge_external | external / Surge | 90.994 | 3.737 / 3.746 | 3.751 / 3.742 | 0.542 / 0.388 / 0.247 | 0.316 / 0.203 / 0.194 |
+| ssr_uri | ssr / URI | 12.053 | 2.721 / 2.714 | 2.846 / 2.854 | 0.246 / 0.305 / 0.186 | 0.245 / 0.242 / 0.131 |
+| tuic_uri | tuic / URI | 19.125 | 2.254 / 2.268 | 2.304 / 2.346 | 0.264 / 0.310 / 0.187 | 0.158 / 0.251 / 0.117 |
+| wireguard_uri | wireguard / URI | 22.231 | 2.720 / 2.720 | 2.723 / 2.731 | 0.279 / 0.414 / 0.274 | 0.179 / 0.248 / 0.157 |
+| hysteria_uri | hysteria / URI | 24.193 | 2.168 / 2.161 | 2.191 / 2.211 | 0.275 / 0.361 / 0.246 | 0.172 / 0.247 / 0.139 |
+| anytls_uri | anytls / URI | 34.419 | 3.920 / 3.935 | 3.866 / 3.909 | 0.442 / 0.322 / 0.306 | 0.194 / 0.311 / 0.123 |
+| http_uri | http / URI | 1.708 | 1.632 / 1.637 | 1.691 / 1.635 | 0.212 / 0.293 / 0.185 | 0.141 / 0.199 / 0.127 |
+| https_uri | http / URI | 1.898 | 1.808 / 1.819 | 1.794 / 1.812 | 0.342 / 0.355 / 0.289 | 0.119 / 0.205 / 0.114 |
+| socks5_uri | socks5 / URI | 1.783 | 1.675 / 1.688 | 1.644 / 1.695 | 0.231 / 0.311 / 0.190 | 0.206 / 0.224 / 0.126 |
+| socks5_tls_uri | socks5 / URI | 1.913 | 1.839 / 1.826 | 1.795 / 1.822 | 0.334 / 0.345 / 0.237 | 0.106 / 0.230 / 0.110 |
+| socks_uri | socks5 / URI | 4.941 | 1.550 / 1.564 | 1.587 / 1.590 | 0.348 / 0.356 / 0.221 | 0.129 / 0.274 / 0.123 |
+
+P95 uses the same Node / previous Rust / candidate order (ms).
+
+| Case | New HTTP P95 N/P/R | Keep-alive P95 N/P/R |
+|---|---:|---:|
+| ss_uri | 0.556 / 0.363 / 0.262 | 0.476 / 0.309 / 0.140 |
+| vmess_ws | 0.702 / 0.448 / 0.294 | 0.966 / 1.045 / 0.190 |
+| vless_ws | 0.507 / 0.440 / 0.287 | 0.347 / 0.322 / 0.223 |
+| trojan | 0.448 / 0.380 / 0.309 | 0.331 / 0.288 / 0.191 |
+| hysteria2 | 0.474 / 0.397 / 0.313 | 0.374 / 0.267 / 0.166 |
+| surge_ss | 0.684 / 0.405 / 0.347 | 0.543 / 0.316 / 0.212 |
+| qx_ss | 0.797 / 0.388 / 0.250 | 0.688 / 0.299 / 0.164 |
+| clash_json | 0.536 / 0.495 / 0.314 | 0.396 / 0.391 / 0.220 |
+| clash_yaml | 0.869 / 0.514 / 0.339 | 0.666 / 0.412 / 0.168 |
+| clash_zerotier | 0.487 / 0.474 / 0.263 | 0.403 / 0.322 / 0.169 |
+| clash_shadowquic | 0.483 / 0.474 / 0.330 | 0.400 / 0.381 / 0.203 |
+| clash_gost_relay | 0.487 / 0.480 / 0.281 | 0.331 / 0.320 / 0.145 |
+| clash_openvpn | 0.495 / 0.483 / 0.283 | 0.308 / 0.303 / 0.163 |
+| clash_tailscale | 0.517 / 0.465 / 0.275 | 0.410 / 0.373 / 0.178 |
+| clash_easytier | 0.503 / 0.491 / 0.280 | 0.387 / 0.296 / 0.177 |
+| clash_trusttunnel | 0.493 / 0.466 / 0.299 | 0.361 / 0.420 / 0.167 |
+| clash_h2_connect | 0.375 / 0.376 / 0.214 | 0.351 / 0.356 / 0.146 |
+| clash_naive | 0.414 / 0.482 / 0.290 | 0.263 / 0.339 / 0.169 |
+| clash_anytls | 0.405 / 0.495 / 0.274 | 0.358 / 0.392 / 0.173 |
+| clash_mieru | 0.479 / 0.497 / 0.278 | 0.380 / 0.298 / 0.170 |
+| clash_masque | 0.378 / 0.402 / 0.280 | 0.264 / 0.371 / 0.168 |
+| clash_masque_surge | 0.469 / 0.494 / 0.278 | 0.380 / 0.397 / 0.177 |
+| clash_sudoku | 0.351 / 0.377 / 0.269 | 0.528 / 0.357 / 0.159 |
+| clash_juicity | 0.527 / 0.488 / 0.313 | 0.366 / 0.411 / 0.215 |
+| clash_ssr | 0.465 / 0.531 / 0.331 | 0.370 / 0.396 / 0.223 |
+| clash_vmess | 0.553 / 0.546 / 0.356 | 0.381 / 0.411 / 0.230 |
+| clash_socks5 | 0.463 / 0.476 / 0.324 | 0.342 / 0.354 / 0.210 |
+| clash_http | 0.486 / 0.462 / 0.320 | 0.341 / 0.395 / 0.152 |
+| clash_snell | 0.462 / 0.479 / 0.267 | 0.339 / 0.352 / 0.206 |
+| clash_trojan | 0.485 / 0.397 / 0.347 | 0.353 / 0.285 / 0.196 |
+| clash_tuic | 0.466 / 0.495 / 0.262 | 0.350 / 0.370 / 0.155 |
+| clash_vless | 0.469 / 0.522 / 0.309 | 0.290 / 0.377 / 0.161 |
+| clash_hysteria | 0.338 / 0.458 / 0.225 | 0.345 / 0.320 / 0.215 |
+| clash_hysteria2 | 0.447 / 0.408 / 0.341 | 0.951 / 0.535 / 0.705 |
+| clash_wireguard | 0.499 / 0.503 / 0.318 | 0.379 / 0.344 / 0.175 |
+| clash_ssh | 0.497 / 0.516 / 0.281 | 0.399 / 0.428 / 0.180 |
+| clash_direct | 0.374 / 0.486 / 0.260 | 0.339 / 0.362 / 0.159 |
+| surge_external | 0.579 / 0.475 / 0.286 | 0.853 / 0.870 / 0.626 |
+| ssr_uri | 0.397 / 0.399 / 0.220 | 0.296 / 0.312 / 0.207 |
+| tuic_uri | 0.304 / 0.400 / 0.227 | 0.221 / 0.313 / 0.146 |
+| wireguard_uri | 0.427 / 0.492 / 0.311 | 0.300 / 0.341 / 0.184 |
+| hysteria_uri | 0.420 / 0.456 / 0.278 | 0.289 / 0.359 / 0.205 |
+| anytls_uri | 0.473 / 0.418 / 0.340 | 0.271 / 0.368 / 0.160 |
+| http_uri | 0.310 / 0.347 / 0.242 | 0.247 / 0.262 / 0.202 |
+| https_uri | 0.372 / 0.421 / 0.318 | 0.232 / 0.290 / 0.140 |
+| socks5_uri | 0.375 / 0.426 / 0.257 | 0.238 / 0.300 / 0.164 |
+| socks5_tls_uri | 0.380 / 0.401 / 0.304 | 0.212 / 0.288 / 0.147 |
+| socks_uri | 0.376 / 0.425 / 0.294 | 0.253 / 0.328 / 0.149 |
+
+The pooled keep-alive P95 for Clash Hysteria2 is a reviewed exception:
+0.705 ms versus previous Rust 0.535 ms (Node 0.951 ms). Its P50 improves
+from 0.247 to 0.144 ms. This run does not establish the cause or persistence
+of the tail increase; it is retained as an unresolved timing limitation,
+not described as a P95 improvement. Other 47 keep-alive P95 rows and all
+48 new-connection P95 rows are below previous Rust. No timing assertion was relaxed.
+
+First conversion after server readiness, one observation per backend; not a cold-start distribution.
+| Backend | Case | First HTTP ms |
+|---|---|---:|
+| node | ss_uri | 5.646 |
+| rust_baseline | ss_uri | 1.335 |
+| rust | ss_uri | 1.230 |
+
+Separate load cells: 384 changing requests over all 48 fixtures per block, three blocks.
+New HTTP connections; load/allocator/worker churn is included. RSS is retained process memory, not a JS heap leak measurement.
+| Backend | Clients | Block | P50 ms | P95 ms | Requests/s | CPU ms/request | End RSS MiB | Settled RSS MiB |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| node | 1 | 0 | 0.462 | 0.615 | 2087.3 | 0.312 | 252.56 | 252.56 |
+| rust_baseline | 1 | 0 | 0.378 | 0.519 | 2397.3 | 0.260 | 13.66 | 13.66 |
+| rust | 1 | 0 | 0.231 | 0.267 | 3931.5 | 0.130 | 13.05 | 13.05 |
+| rust | 1 | 1 | 0.236 | 0.304 | 3773.1 | 0.130 | 13.05 | 13.05 |
+| rust_baseline | 1 | 1 | 0.415 | 0.458 | 2296.0 | 0.312 | 13.66 | 13.66 |
+| node | 1 | 1 | 0.344 | 0.525 | 2542.4 | 0.286 | 252.94 | 252.94 |
+| node | 1 | 2 | 0.448 | 0.606 | 2104.3 | 0.313 | 254.33 | 254.33 |
+| rust_baseline | 1 | 2 | 0.391 | 0.515 | 2346.1 | 0.313 | 13.68 | 13.68 |
+| rust | 1 | 2 | 0.263 | 0.302 | 3457.4 | 0.130 | 13.05 | 13.05 |
+| node | 8 | 0 | 2.245 | 3.130 | 3335.1 | 0.286 | 254.74 | 254.74 |
+| rust_baseline | 8 | 0 | 2.358 | 4.174 | 2952.0 | 0.365 | 16.37 | 16.37 |
+| rust | 8 | 0 | 1.973 | 3.249 | 3791.8 | 0.208 | 15.13 | 15.13 |
+| rust | 8 | 1 | 2.081 | 3.564 | 3593.2 | 0.234 | 15.23 | 15.23 |
+| rust_baseline | 8 | 1 | 2.388 | 4.095 | 3094.4 | 0.391 | 16.47 | 16.47 |
+| node | 8 | 1 | 2.128 | 2.731 | 3655.9 | 0.286 | 255.15 | 255.15 |
+| node | 8 | 2 | 2.184 | 2.970 | 3480.5 | 0.286 | 256.58 | 256.58 |
+| rust_baseline | 8 | 2 | 2.769 | 8.311 | 2276.8 | 0.443 | 16.55 | 16.55 |
+| rust | 8 | 2 | 2.147 | 3.491 | 3479.6 | 0.234 | 16.18 | 16.18 |
+
+Across the separate changing-input load cells, median requests/s are
+3773.1 / 2346.1 / 2104.3 for candidate / previous Rust / Node with one client,
+and 3593.2 / 2952.0 / 3480.5 with eight clients. With eight clients the median
+server CPU is 0.234 / 0.391 / 0.286 ms per request. These cells include the
+Python HTTP driver and worker/allocator churn; they are not single-client
+latency samples or a claim that server capacity is saturated. CPU counters
+have OS sampling precision.
+
+Candidate settled RSS stays 13.05 MiB through the three one-client load blocks
+and reaches 15.13, 15.23, 16.18 MiB in the eight-client blocks. Previous Rust
+reaches 16.55 MiB and Node 256.58 MiB. The finite RSS increase under concurrency
+does not identify a JS leak or establish long-uptime memory stability. The
+focused test separately bounds outer-engine post-GC growth to 64 KiB after
+2048 changing conversions; parser source-text cleanup and idle-count bounds
+are checked independently.
+
+Separate profiler-on results prove 336/336 measured requests reused and retained
+an environment, with zero repeated application/bootstrap or generic-parser setup
+and zero environment destruction in those warm cells. Each request still records
+one parse, native parse and producer call. The two warmup requests per fixture
+are separate; the first conversion records an actual miss. Its instrumented
+runtime/context/bootstrap costs are 60.020 / 138.859 / 398.008 us; this single
+cold observation is not a startup distribution. Profiled times never enter the
+ordinary latency tables and are elapsed time, not OS CPU.
+
+| Case | Queue us | Worker lifetime us | Bootstrap us | Native parse us | Produce us | Teardown us | Response ready us | Client HTTP us |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| ss_uri | 10.567 | 76.235 | 0.000 | 7.982 | 9.875 | 0.000 | 155.083 | 311.779 |
+| surge_ss | 10.086 | 73.641 | 0.000 | 14.532 | 9.625 | 0.000 | 155.865 | 308.253 |
+| qx_ss | 10.146 | 69.655 | 0.000 | 13.070 | 9.454 | 0.000 | 151.467 | 296.556 |
+| clash_json | 9.826 | 74.303 | 0.000 | 14.061 | 9.164 | 0.000 | 161.653 | 310.487 |
+| clash_wireguard | 10.056 | 105.339 | 0.000 | 17.827 | 23.625 | 0.000 | 203.445 | 351.568 |
+| http_uri | 9.084 | 62.124 | 0.000 | 4.176 | 8.102 | 0.000 | 139.680 | 274.423 |
+
+Worker lifetime includes queueing and cleanup; the pure route returns after that
+cleanup/retention decision. Response-ready time ends before socket transmission.
+Intervals overlap and must not be added or subtracted as independent CPU costs.
+Projection/decode remains present in the common value bridge: for SS/Surge/QX,
+profiled project/decode active times are approximately 9/4, 5/3, 5/3 us.
+This change does not claim to remove every JS representation or bridge operation.
+
+Formatting, Clippy, 48 ordinary release Rust tests (four ignored drivers),
+28 performance self-checks, 66 parser preflight responses, 60,480 timed HTTP
+responses and the separate 6,912 load responses pass. Correctness is checked
+for every measured response. The 336 warm profile pairs and first-use/warmup
+pairs also pass strict lifecycle/privacy/completion checks. All compilation,
+formatting, tests and measurements ran in Actions. Only Git/GitHub metadata and
+plaintext logs were inspected locally; no test binary or artifact was downloaded.
+This task does not repeat the private subscription long test or claim release readiness.
+
+[Compatibility run 39774769529](https://github.com/DSLZL/Sub-Store/actions/runs/39774769529)
+also passes at the exact same candidate source: all six jobs succeed (native
+Linux x64/arm64, native Windows x64, Docker x64/arm64 and unchanged frontend).
+The native jobs pass 43 harness self-checks, 48 binary unit tests plus three
+library tests, the delivered-package HTTP/state/restart/rollback suite, JS probe
+and all 826 Node reference unit tests. Existing timeouts remain unchanged.
+The supplied-subscription long test, macOS/Android and long-uptime memory behavior
+are outside this acceptance; a pass does not establish the cause of the earlier
+unreproduced Windows sharing timeout.
