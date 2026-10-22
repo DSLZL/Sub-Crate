@@ -1,4 +1,5 @@
 pub mod json;
+pub mod http;
 pub mod process;
 
 use std::path::PathBuf;
