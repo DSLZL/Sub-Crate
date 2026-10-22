@@ -26,13 +26,14 @@ jobs:
       run:
         shell: bash
     env:
-      CARGO_TARGET_DIR: ${{ runner.temp }}/sub-store-frontend-build
       TEST_FRONTEND: ${{ github.workspace }}/.compat-frontend
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Keep compiler output on the runner
+        run: echo "CARGO_TARGET_DIR=$RUNNER_TEMP/sub-store-frontend-build" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: sub-store-org/Sub-Store-Front-End
@@ -130,7 +131,6 @@ jobs:
       run:
         shell: bash
     env:
-      CARGO_TARGET_DIR: ${{ runner.temp }}/sub-store-docker-tests
       TEST_DOCKER_IMAGE: sub-store-nextest:${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.target }}
       TEST_DOCKER_PROBE_IMAGE: sub-store-nextest-probe:${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.target }}
     steps:
@@ -138,6 +138,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Keep compiler output on the runner
+        run: echo "CARGO_TARGET_DIR=$RUNNER_TEMP/sub-store-docker-tests" >> "$GITHUB_ENV"
       - uses: ./.github/actions/node-reference
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
