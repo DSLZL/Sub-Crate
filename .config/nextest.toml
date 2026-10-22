@@ -29,3 +29,15 @@ inherits = "ci"
 
 [profile.acceptance.junit]
 path = "junit-acceptance.xml"
+
+[profile.delivery]
+inherits = "ci"
+
+[profile.delivery.junit]
+path = "junit-delivery.xml"
+
+[profile.production]
+inherits = "ci"
+
+[profile.production.junit]
+path = "junit-production.xml"

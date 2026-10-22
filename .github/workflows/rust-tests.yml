@@ -18,6 +18,8 @@ jobs:
         runner: [ubuntu-24.04, ubuntu-24.04-arm, windows-2025]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
+    env:
+      RUSTFLAGS: ${{ matrix.runner == 'windows-2025' && '-C target-feature=+crt-static' || '' }}
     defaults:
       run:
         shell: bash
@@ -33,7 +35,9 @@ jobs:
           node-version: 24.16.0
           package-manager-cache: false
       - name: Install fixed Rust toolchain
-        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+          rustup override set 1.98.0
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
         with:
           tool: nextest@0.9.149
@@ -71,6 +75,7 @@ jobs:
       - name: Build Rust service on runner
         run: cargo +1.98.0 build --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust --example script_probe --example collect_notices
       - name: Execute migrated native contracts
+        id: native
         run: |
           suffix=""
           if [[ "$RUNNER_OS" == "Windows" ]]; then suffix=".exe"; fi
@@ -78,7 +83,16 @@ jobs:
           export TEST_RUST_BINARY="$CARGO_TARGET_DIR/release/sub-store-rust$suffix"
           export TEST_PROBE_BINARY="$CARGO_TARGET_DIR/release/examples/script_probe$suffix"
           export TEST_NODE="$(node -p 'process.execPath')"
-          cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --test native --config-file .config/nextest.toml --profile acceptance
+          cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --test native --config-file .config/nextest.toml --profile delivery -E 'test(=native_delivery)'
+      - name: Run actual contracts against extracted delivery
+        env:
+          TEST_RUST_BINARY: ${{ steps.native.outputs.binary }}
+        run: |
+          suffix=""
+          if [[ "$RUNNER_OS" == "Windows" ]]; then suffix=".exe"; fi
+          export TEST_PROBE_BINARY="$CARGO_TARGET_DIR/release/examples/script_probe$suffix"
+          export TEST_NODE="$(node -p 'process.execPath')"
+          cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --test native --config-file .config/nextest.toml --profile acceptance -E 'not test(=native_delivery)'
       - name: Preserve small source formatting patch separately
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -95,6 +109,8 @@ jobs:
           path: |
             ${{ runner.temp }}/sub-store-test-build/nextest/ci/junit.xml
             ${{ runner.temp }}/sub-store-test-build/nextest/acceptance/junit-acceptance.xml
+            ${{ runner.temp }}/sub-store-test-build/nextest/delivery/junit-delivery.xml
+            ${{ runner.temp }}/sub-store-native-delivery-*
             ${{ runner.temp }}/sub-store-reference-*
             ${{ runner.temp }}/sub-store-state-parity-*
             ${{ runner.temp }}/sub-store-script-probe-*

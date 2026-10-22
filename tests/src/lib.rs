@@ -11,6 +11,7 @@ pub mod server;
 pub mod reference;
 pub mod mmdb;
 pub mod probe;
+pub mod distribution;
 #[cfg(test)]
 mod notices_tests;
 

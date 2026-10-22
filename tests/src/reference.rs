@@ -16,13 +16,19 @@ pub fn verify(output: &Path) -> Result<Value> {
 
 pub fn unit(output: &Path) -> Result {
     let mut report=verify(output)?;
+    let state=output.join("state"); std::fs::create_dir(&state)?;
+    let environment=server::environment(&state);
     let loader=if cfg!(windows) { crate::compat().join("register.cjs").to_string_lossy().into_owned() } else { "@babel/register".to_owned() };
-    let result=process::run(Command::new(node()).arg(crate::root().join("backend/node_modules/mocha/bin/_mocha")).args(["src/test/**/*.spec.js","--require",&loader,"--require"]).arg(crate::compat().join("unit-progress.cjs")).args(["--recursive","--reporter","json"]).current_dir(crate::root().join("backend")),output,"mocha",Duration::from_secs(900))?;
+    let mut command=Command::new(node());
+    for (key,_) in std::env::vars_os() { if !environment.contains_key(&key) { command.env_remove(key); } }
+    command.envs(environment).arg(crate::root().join("backend/node_modules/mocha/bin/_mocha")).args(["src/test/**/*.spec.js","--require",&loader,"--require"]).arg(crate::compat().join("unit-progress.cjs")).args(["--recursive","--reporter","json"]).current_dir(crate::root().join("backend"));
+    let result=process::run(&mut command,output,"mocha",Duration::from_secs(900))?;
     let start=regex::Regex::new(r#"\{\s*"stats"\s*:"#)?.find(&result.stdout).ok_or("Mocha JSON result missing; inspect preserved progress logs")?.start();
     let mut stream=serde_json::Deserializer::from_str(&result.stdout[start..]).into_iter::<Value>();
     let mocha=stream.next().ok_or("Empty Mocha JSON result")??;
     report["stats"]=mocha["stats"].clone(); report["pending"]=mocha["pending"].clone(); report["failures"]=mocha["failures"].clone();
     json::write_new(output.join("node-unit.json"),&report)?;
+    for failure in mocha["failures"].as_array().ok_or("Missing Mocha failures")?.iter().take(5) { eprintln!("Node failure {}: {}",failure["fullTitle"],failure["err"]["message"]); }
     require(result.success() && mocha["stats"]["tests"]==826 && mocha["pending"].as_array().is_some_and(Vec::is_empty) && mocha["failures"].as_array().is_some_and(Vec::is_empty),format!("Frozen Node suite expected 826 passing tests: tests={}, pending={}, failures={}, process_success={}",mocha["stats"]["tests"],mocha["stats"]["pending"],mocha["stats"]["failures"],result.success()))
 }
 
