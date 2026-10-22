@@ -321,8 +321,15 @@ pub fn run(output: &Path) -> Result {
                             .count()
                             > completions)
                     })?;
-                    api.send(&json!({"method":"PATCH","path":"/api/artifact/global-local","body":{"upload":true}}),200)?;
-                    log(&api, "[SYNC CRON] * * * * * * error:")?;
+                    let response = api.send(&json!({"method":"PATCH","path":"/api/artifact/global-local","body":{"upload":true}}),200)?;
+                    json::check(&response["data"]["upload"], &json!(true), false)?;
+                    json::check(&api.durable()?["artifacts"][0]["upload"], &json!(true), false)?;
+                    log(&api, "[SYNC CRON] * * * * * * error:").map_err(|error| {
+                        format!(
+                            "{error}; durable artifacts: {:?}",
+                            api.durable().map(|state| state["artifacts"].clone())
+                        )
+                    })?;
                     api.send(&json!({"method":"PATCH","path":"/api/artifact/global-local","body":{"upload":false}}),200)?;
                     let before = api.durable()?["artifacts"][0]["updated"]
                         .as_u64()
