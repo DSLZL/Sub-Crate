@@ -121,6 +121,7 @@ pub(super) fn run(input: &Value) -> Result<Value, Error> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::conversion_message;
     use super::*;
     use serde_json::json;
 
@@ -144,6 +145,7 @@ mod tests {
                 });
                 execute(context, &input(name))
             })
+            .map_err(conversion_message)
             .unwrap();
             assert_eq!(result[0]["name"], name);
         }
@@ -160,6 +162,7 @@ mod tests {
             });
             execute(context, &input("recovered"))
         })
+        .map_err(conversion_message)
         .unwrap();
         with_environment(&slot, |context| {
             context.with(|ctx| {
@@ -168,6 +171,7 @@ mod tests {
             });
             Ok(json!(true))
         })
+        .map_err(conversion_message)
         .unwrap();
         assert!(slot.borrow().is_none());
         assert!(
@@ -182,7 +186,9 @@ mod tests {
         let reservations: Vec<_> = (0..idle_limit())
             .map(|_| Idle::reserve().unwrap())
             .collect();
-        with_environment(&slot, |context| execute(context, &input("overflow"))).unwrap();
+        with_environment(&slot, |context| execute(context, &input("overflow")))
+            .map_err(conversion_message)
+            .unwrap();
         assert!(slot.borrow().is_none());
         assert!(Idle::reserve().is_none());
         drop(reservations);
@@ -195,7 +201,10 @@ mod tests {
                 std::thread::spawn(move || {
                     for iteration in 0..8 {
                         let name = format!("worker-{index}-{iteration}");
-                        assert_eq!(run(&input(&name)).unwrap()[0]["name"], name);
+                        assert_eq!(
+                            run(&input(&name)).map_err(conversion_message).unwrap()[0]["name"],
+                            name
+                        );
                     }
                     barrier.wait();
                     barrier.wait();
@@ -213,7 +222,7 @@ mod tests {
 
     #[tokio::test]
     async fn direct_bridge_matches_fresh_dynamic_calls_and_isolates_script_mutations() {
-        let context = create().unwrap();
+        let context = create().map_err(conversion_message).unwrap();
         let cases: Value =
             serde_json::from_str(include_str!("../../tests/performance/single-node.json")).unwrap();
         let mut inputs = Vec::new();
@@ -262,7 +271,9 @@ mod tests {
                 })
                 .await;
             assert_eq!(
-                execute(&context, &self::input("clean")).unwrap()[0]["name"],
+                execute(&context, &self::input("clean"))
+                    .map_err(conversion_message)
+                    .unwrap()[0]["name"],
                 "clean"
             );
             runtime.idle().await;
@@ -270,7 +281,9 @@ mod tests {
         context.runtime().run_gc();
         let before = context.runtime().memory_usage().memory_used_size;
         for index in 0..2048 {
-            let output = execute(&context, &input(&index.to_string())).unwrap();
+            let output = execute(&context, &input(&index.to_string()))
+                .map_err(conversion_message)
+                .unwrap();
             assert_eq!(output[0]["name"], index.to_string());
         }
         context.runtime().run_gc();

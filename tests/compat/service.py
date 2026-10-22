@@ -763,7 +763,7 @@ def sharing_contracts(binary, node, environment, baseline, root, output, report,
         report[f"native_{mode}_sharing_count_and_state_checked"] = True
 
 
-def direct_conversion_reuse(url, state, output, name):
+def direct_conversion_reuse(url, state, output, name, *, contaminate=False):
     """Changing requests, a failed conversion and concurrent callers share no results/state."""
     before = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")}
 
@@ -778,8 +778,22 @@ def direct_conversion_reuse(url, state, output, name):
             assert body["data"]["par_res"][0]["name"] == f"reuse-{index}", body
         return {"status": response["status"], "body": body}
 
-    observed = [convert(index, client) for index, client in enumerate(
-        ("JSON", "URI", "missing-target", "JSON", "Surge", "JSON"))]
+    observed = [convert(0)]
+    if contaminate:
+        dirty = request(url, {"method": "POST", "path": "/api/preview/sub", "body": {
+            "name": "conversion-isolation", "source": "local", "content": "http://proxy.example:80#script",
+            "process": [{"type": "Script Operator", "args": {"content": """
+function operator(proxies) {
+  Object.prototype.conversionPolluted = true;
+  globalThis.conversionMarker = true;
+  ProxyUtils.parse = () => [];
+  proxies[0].pollutionObserved = ({}).conversionPolluted;
+  return proxies;
+}
+"""}}]}})
+        assert dirty["status"] == 200 and json.loads(dirty["body"])["data"]["processed"][0]["pollutionObserved"] is True, dirty
+    observed += [convert(index, client) for index, client in enumerate(
+        ("URI", "missing-target", "JSON", "Surge", "JSON"), 1)]
     with ThreadPoolExecutor(max_workers=8) as pool:
         observed += list(pool.map(convert, range(100, 228)))
     assert before == {key: (state / key).read_bytes() for key in before}, "Direct conversion changed durable state"
@@ -2612,7 +2626,7 @@ def main():
                 report["phases"].append({"name": label, "cases": len(results), "requests": sum(len(case["steps"]) for case in results)})
                 conversion_concurrency[kind] = script_concurrency(url, state, output, label)
                 conversion_background[kind] = script_download_background(url, state, upstream, output, label)
-                conversion_direct[kind] = direct_conversion_reuse(url, state, output, label)
+                conversion_direct[kind] = direct_conversion_reuse(url, state, output, label, contaminate=kind == "rust")
                 conversion_state[kind] = {key: json.loads((state / key).read_text(encoding="utf-8")) for key in ("sub-store.json", "root.json")}
             before = (state / "sub-store.json").read_bytes()
             label += "-restart"

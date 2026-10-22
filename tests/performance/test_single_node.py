@@ -15,7 +15,8 @@ if os.environ.get("GITHUB_ACTIONS") != "true":
 class Profiles(unittest.TestCase):
     def test_conversion_lifecycle_rejects_false_reuse_and_incomplete_cleanup(self):
         def event(stages):
-            return [{"rows": [{"stage": stage, "calls": 1} for stage in stages]}]
+            return [{"rows": [{"stage": stage, "calls": 1}
+                              for stage in [*stages, "parse", "parse_native", "produce"]]}]
         reused = ["worker_queue", "conversion_reuse", "conversion_cleanup", "conversion_retain"]
         created = ["worker_queue", "conversion_miss", "runtime_setup", "context_setup",
                    "bootstrap", "conversion_cleanup", "conversion_retain"]

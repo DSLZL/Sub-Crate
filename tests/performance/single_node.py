@@ -239,6 +239,7 @@ def conversion_lifecycle(events):
         assert counts["worker_queue"] == counts["conversion_cleanup"] == 1
         assert counts["conversion_miss"] + counts["conversion_reuse"] == 1
         assert counts["conversion_retain"] + counts["runtime_teardown"] == 1
+        assert counts["parse"] == counts["parse_native"] == counts["produce"] == 1
         for stage in ("runtime_setup", "context_setup", "bootstrap"):
             assert counts[stage] == counts["conversion_miss"], "false reuse or missing initialization"
         assert not any(counts[stage] for stage in ("executor_setup", "state_snapshot", "bootstrap_state_encode"))
