@@ -1254,12 +1254,19 @@ pub async fn run(
         let mut sender = Some(sender);
         let result = (|| {
             let setup = profile::span("executor_setup");
-            let executor = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
+            let executor = if conversion_only {
+                None
+            } else {
+                Some(
+                    tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .map_err(|error| conversion::Error::Legacy(error.to_string()))?,
+                )
+            };
             drop(setup);
-            executor.block_on(async {
+            let foreground = background.clone();
+            let execute = async {
                 let state = profile::span("state_snapshot");
                 let (cache, root) = {
                     let store = store
@@ -1450,7 +1457,13 @@ pub async fn run(
                 // Optimistic refreshes keep their context after the HTTP reply.
                 runtime.idle().await;
                 Ok::<_, conversion::Error>(())
-            })
+            };
+            match executor {
+                Some(executor) => executor.block_on(execute),
+                // This job has no I/O or user callbacks; poll it on the same
+                // blocking worker without constructing another Tokio runtime.
+                None => foreground.block_on(execute),
+            }
         })();
         if let Some(sender) = sender {
             session.finish(false);
