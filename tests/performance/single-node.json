@@ -1,38 +1,290 @@
 [
   {
     "id": "ss_uri",
-    "raw": "ss://YWVzLTEyOC1nY206c2VjcmV0@ss.example.com:8388#%E8%8A%82%E7%82%B9%F0%9F%99%82"
+    "raw": "ss://YWVzLTEyOC1nY206c2VjcmV0@ss.example.com:8388#%E8%8A%82%E7%82%B9%F0%9F%99%82",
+    "protocol": "ss",
+    "format": "URI"
   },
   {
     "id": "vmess_ws",
-    "raw": "vmess://eyJ2IjoiMiIsInBzIjoiVk1lc3Pwn5mCIiwiYWRkIjoidm0uZXhhbXBsZSIsInBvcnQiOiI0NDMiLCJpZCI6IjExMTExMTExLTExMTEtNDExMS04MTExLTExMTExMTExMTExMSIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0Ijoid3MiLCJob3N0IjoiY2RuLmV4YW1wbGUiLCJwYXRoIjoiL3dzIiwidGxzIjoidGxzIn0="
+    "raw": "vmess://eyJ2IjoiMiIsInBzIjoiVk1lc3Pwn5mCIiwiYWRkIjoidm0uZXhhbXBsZSIsInBvcnQiOiI0NDMiLCJpZCI6IjExMTExMTExLTExMTEtNDExMS04MTExLTExMTExMTExMTExMSIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0Ijoid3MiLCJob3N0IjoiY2RuLmV4YW1wbGUiLCJwYXRoIjoiL3dzIiwidGxzIjoidGxzIn0=",
+    "protocol": "vmess",
+    "format": "URI"
   },
   {
     "id": "vless_ws",
-    "raw": "vless://11111111-1111-4111-8111-111111111111@v.example:443?type=ws&security=tls&host=cdn.example&path=%2Fws#VLESS"
+    "raw": "vless://11111111-1111-4111-8111-111111111111@v.example:443?type=ws&security=tls&host=cdn.example&path=%2Fws#VLESS",
+    "protocol": "vless",
+    "format": "URI"
   },
   {
     "id": "trojan",
-    "raw": "trojan://secret@tr.example:443?allowInsecure=1#Trojan"
+    "raw": "trojan://secret@tr.example:443?allowInsecure=1#Trojan",
+    "protocol": "trojan",
+    "format": "URI"
   },
   {
     "id": "hysteria2",
-    "raw": "hysteria2://secret@hy.example:443?obfs=salamander&obfs-password=mask#HY2"
+    "raw": "hysteria2://secret@hy.example:443?obfs=salamander&obfs-password=mask#HY2",
+    "protocol": "hysteria2",
+    "format": "URI"
   },
   {
     "id": "surge_ss",
-    "raw": "Surge = ss, ss.example.com, 8388, encrypt-method=aes-128-gcm, password=secret, udp-relay=true"
+    "raw": "Surge = ss, ss.example.com, 8388, encrypt-method=aes-128-gcm, password=secret, udp-relay=true",
+    "protocol": "ss",
+    "format": "Surge"
   },
   {
     "id": "qx_ss",
-    "raw": "shadowsocks=ss.example.com:8388,method=aes-128-gcm,password=secret,udp-relay=true,tag=QX"
+    "raw": "shadowsocks=ss.example.com:8388,method=aes-128-gcm,password=secret,udp-relay=true,tag=QX",
+    "protocol": "ss",
+    "format": "QX"
   },
   {
     "id": "clash_json",
-    "raw": "{\"type\":\"ss\",\"name\":\"节点🙂\",\"server\":\"ss.example.com\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"secret\",\"udp\":true,\"skip-cert-verify\":false}"
+    "raw": "{\"type\":\"ss\",\"name\":\"节点🙂\",\"server\":\"ss.example.com\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"secret\",\"udp\":true,\"skip-cert-verify\":false}",
+    "protocol": "ss",
+    "format": "Clash JSON"
   },
   {
     "id": "clash_yaml",
-    "raw": "proxies:\n  - {\"type\":\"ss\",\"name\":\"节点🙂\",\"server\":\"ss.example.com\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"secret\",\"udp\":true,\"skip-cert-verify\":false}"
+    "raw": "proxies:\n  - {\"type\":\"ss\",\"name\":\"节点🙂\",\"server\":\"ss.example.com\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"secret\",\"udp\":true,\"skip-cert-verify\":false}",
+    "protocol": "ss",
+    "format": "Clash YAML"
+  },
+  {
+    "id": "clash_zerotier",
+    "raw": "{\"type\":\"zerotier\",\"name\":\"zerotier🙂\",\"server\":\"zerotier.example\",\"port\":443,\"network-id\":\"8056c2e21c000001\"}",
+    "protocol": "zerotier",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_shadowquic",
+    "raw": "{\"type\":\"shadowquic\",\"name\":\"shadowquic🙂\",\"server\":\"shadowquic.example\",\"port\":443,\"password\":\"secret\",\"sni\":\"edge.example\"}",
+    "protocol": "shadowquic",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_gost_relay",
+    "raw": "{\"type\":\"gost-relay\",\"name\":\"gost-relay🙂\",\"server\":\"gostrelay.example\",\"port\":443,\"username\":\"user\",\"password\":\"secret\",\"udp\":true}",
+    "protocol": "gost-relay",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_openvpn",
+    "raw": "{\"type\":\"openvpn\",\"name\":\"openvpn🙂\",\"server\":\"openvpn.example\",\"port\":443,\"username\":\"user\",\"password\":\"secret\",\"protocol\":\"udp\"}",
+    "protocol": "openvpn",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_tailscale",
+    "raw": "{\"type\":\"tailscale\",\"name\":\"tailscale🙂\",\"server\":\"tailscale.example\",\"port\":443,\"auth-key\":\"public-fixture-token\",\"hostname\":\"fixture\"}",
+    "protocol": "tailscale",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_easytier",
+    "raw": "{\"type\":\"easytier\",\"name\":\"easytier🙂\",\"server\":\"easytier.example\",\"port\":443,\"network-name\":\"fixture\",\"network-secret\":\"secret\",\"peers\":[\"tcp://peer.example:11010\"]}",
+    "protocol": "easytier",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_trusttunnel",
+    "raw": "{\"type\":\"trusttunnel\",\"name\":\"trusttunnel🙂\",\"server\":\"trusttunnel.example\",\"port\":443,\"username\":\"user\",\"password\":\"secret\",\"sni\":\"edge.example\"}",
+    "protocol": "trusttunnel",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_h2_connect",
+    "raw": "{\"type\":\"h2-connect\",\"name\":\"h2-connect🙂\",\"server\":\"h2connect.example\",\"port\":443,\"username\":\"user\",\"password\":\"secret\",\"sni\":\"edge.example\"}",
+    "protocol": "h2-connect",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_naive",
+    "raw": "{\"type\":\"naive\",\"name\":\"naive🙂\",\"server\":\"naive.example\",\"port\":443,\"username\":\"user\",\"password\":\"secret\"}",
+    "protocol": "naive",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_anytls",
+    "raw": "{\"type\":\"anytls\",\"name\":\"anytls🙂\",\"server\":\"anytls.example\",\"port\":443,\"password\":\"secret\",\"sni\":\"edge.example\"}",
+    "protocol": "anytls",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_mieru",
+    "raw": "{\"type\":\"mieru\",\"name\":\"mieru🙂\",\"server\":\"mieru.example\",\"port\":443,\"username\":\"user\",\"password\":\"secret\",\"transport\":\"TCP\"}",
+    "protocol": "mieru",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_masque",
+    "raw": "{\"type\":\"masque\",\"name\":\"masque🙂\",\"server\":\"masque.example\",\"port\":443,\"username\":\"user\",\"password\":\"secret\",\"sni\":\"edge.example\"}",
+    "protocol": "masque",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_masque_surge",
+    "raw": "{\"type\":\"masque-surge\",\"name\":\"masque-surge🙂\",\"server\":\"masquesurge.example\",\"port\":443,\"username\":\"user\",\"password\":\"secret\",\"sni\":\"edge.example\"}",
+    "protocol": "masque-surge",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_sudoku",
+    "raw": "{\"type\":\"sudoku\",\"name\":\"sudoku🙂\",\"server\":\"sudoku.example\",\"port\":443,\"password\":\"secret\"}",
+    "protocol": "sudoku",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_juicity",
+    "raw": "{\"type\":\"juicity\",\"name\":\"juicity🙂\",\"server\":\"juicity.example\",\"port\":443,\"uuid\":\"11111111-1111-4111-8111-111111111111\",\"password\":\"secret\",\"sni\":\"edge.example\"}",
+    "protocol": "juicity",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_ssr",
+    "raw": "{\"type\":\"ssr\",\"name\":\"ssr🙂\",\"server\":\"ssr.example\",\"port\":443,\"cipher\":\"aes-128-cfb\",\"password\":\"secret\",\"protocol\":\"auth_aes128_md5\",\"obfs\":\"tls1.2_ticket_auth\"}",
+    "protocol": "ssr",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_vmess",
+    "raw": "{\"type\":\"vmess\",\"name\":\"vmess🙂\",\"server\":\"vmess.example\",\"port\":443,\"uuid\":\"11111111-1111-4111-8111-111111111111\",\"tls\":true,\"network\":\"ws\",\"ws-opts\":{\"path\":\"/ws\",\"headers\":{\"Host\":\"cdn.example\"}},\"alterId\":0,\"cipher\":\"auto\"}",
+    "protocol": "vmess",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_socks5",
+    "raw": "{\"type\":\"socks5\",\"name\":\"socks5🙂\",\"server\":\"socks5.example\",\"port\":443,\"username\":\"user\",\"password\":\"secret\",\"tls\":false,\"udp\":true}",
+    "protocol": "socks5",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_http",
+    "raw": "{\"type\":\"http\",\"name\":\"http🙂\",\"server\":\"http.example\",\"port\":443,\"username\":\"user\",\"password\":\"secret\",\"tls\":true}",
+    "protocol": "http",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_snell",
+    "raw": "{\"type\":\"snell\",\"name\":\"snell🙂\",\"server\":\"snell.example\",\"port\":443,\"psk\":\"secret\",\"version\":4}",
+    "protocol": "snell",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_trojan",
+    "raw": "{\"type\":\"trojan\",\"name\":\"trojan🙂\",\"server\":\"trojan.example\",\"port\":443,\"password\":\"secret\",\"sni\":\"edge.example\"}",
+    "protocol": "trojan",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_tuic",
+    "raw": "{\"type\":\"tuic\",\"name\":\"tuic🙂\",\"server\":\"tuic.example\",\"port\":443,\"uuid\":\"11111111-1111-4111-8111-111111111111\",\"password\":\"secret\",\"congestion-controller\":\"bbr\"}",
+    "protocol": "tuic",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_vless",
+    "raw": "{\"type\":\"vless\",\"name\":\"vless🙂\",\"server\":\"vless.example\",\"port\":443,\"uuid\":\"11111111-1111-4111-8111-111111111111\",\"tls\":true,\"network\":\"ws\",\"ws-opts\":{\"path\":\"/ws\",\"headers\":{\"Host\":\"cdn.example\"}}}",
+    "protocol": "vless",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_hysteria",
+    "raw": "{\"type\":\"hysteria\",\"name\":\"hysteria🙂\",\"server\":\"hysteria.example\",\"port\":443,\"auth-str\":\"secret\",\"up\":20,\"down\":100,\"protocol\":\"udp\"}",
+    "protocol": "hysteria",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_hysteria2",
+    "raw": "{\"type\":\"hysteria2\",\"name\":\"hysteria2🙂\",\"server\":\"hysteria2.example\",\"port\":443,\"password\":\"secret\",\"obfs\":\"salamander\",\"obfs-password\":\"mask\"}",
+    "protocol": "hysteria2",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_wireguard",
+    "raw": "{\"type\":\"wireguard\",\"name\":\"wireguard🙂\",\"server\":\"wireguard.example\",\"port\":443,\"ip\":\"172.16.0.2\",\"ip-cidr\":32,\"private-key\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"public-key\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",\"mtu\":1420,\"udp\":true}",
+    "protocol": "wireguard",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_ssh",
+    "raw": "{\"type\":\"ssh\",\"name\":\"ssh🙂\",\"server\":\"ssh.example\",\"port\":443,\"username\":\"user\",\"password\":\"secret\"}",
+    "protocol": "ssh",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "clash_direct",
+    "raw": "{\"type\":\"direct\",\"name\":\"direct🙂\"}",
+    "protocol": "direct",
+    "format": "Clash JSON"
+  },
+  {
+    "id": "surge_external",
+    "raw": "External = external, exec=\"/usr/bin/ssh\", local-port=1080, args=\"-N\"",
+    "protocol": "external",
+    "format": "Surge"
+  },
+  {
+    "id": "ssr_uri",
+    "raw": "ssr://c3NyLmV4YW1wbGU6NDQzOm9yaWdpbjphZXMtMTI4LWNmYjpwbGFpbjpjMlZqY21WMC8/cmVtYXJrcz1VMU5TJmdyb3VwPVptbDRkSFZ5WlE9PQ==",
+    "protocol": "ssr",
+    "format": "URI"
+  },
+  {
+    "id": "tuic_uri",
+    "raw": "tuic://11111111-1111-4111-8111-111111111111:secret@tuic.example:443?congestion_control=bbr&alpn=h3#TUIC",
+    "protocol": "tuic",
+    "format": "URI"
+  },
+  {
+    "id": "wireguard_uri",
+    "raw": "wireguard://AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA%3D@wg.example:51820?publickey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA%3D&address=172.16.0.2%2F32&mtu=1420#WireGuard",
+    "protocol": "wireguard",
+    "format": "URI"
+  },
+  {
+    "id": "hysteria_uri",
+    "raw": "hysteria://hy.example:443?auth=secret&upmbps=20&downmbps=100&peer=edge.example#HY1",
+    "protocol": "hysteria",
+    "format": "URI"
+  },
+  {
+    "id": "anytls_uri",
+    "raw": "anytls://secret@anytls.example:443?security=tls&sni=edge.example#AnyTLS",
+    "protocol": "anytls",
+    "format": "URI"
+  },
+  {
+    "id": "http_uri",
+    "raw": "http://user:secret@http.example:8080#HTTP",
+    "protocol": "http",
+    "format": "URI"
+  },
+  {
+    "id": "https_uri",
+    "raw": "https://user:secret@http.example:443#HTTPS",
+    "protocol": "http",
+    "format": "URI"
+  },
+  {
+    "id": "socks5_uri",
+    "raw": "socks5://user:secret@socks.example:1080#SOCKS5",
+    "protocol": "socks5",
+    "format": "URI"
+  },
+  {
+    "id": "socks5_tls_uri",
+    "raw": "socks5+tls://user:secret@socks.example:443#SOCKS5TLS",
+    "protocol": "socks5",
+    "format": "URI"
+  },
+  {
+    "id": "socks_uri",
+    "raw": "socks://dXNlcjpzZWNyZXQ=@socks.example:1080#SOCKS",
+    "protocol": "socks5",
+    "format": "URI"
   }
 ]

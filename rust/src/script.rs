@@ -1100,13 +1100,7 @@ async fn process_response<'js>(
 fn initialize<'js>(ctx: &Ctx<'js>, job: Job, conversion_only: bool) -> rquickjs::Result<()> {
     crate::js_values::initialize(ctx)?;
     script_io::set_executor(ctx, job.background.clone())?;
-    let encode = profile::span("bootstrap_state_encode");
-    let (cache, root) = {
-        let baseline = job.baseline.borrow();
-        (codec::stringify(&baseline.0), codec::stringify(&baseline.1))
-    };
-    drop(encode);
-    ctx.store_userdata(job)
+    ctx.store_userdata(job.clone())
         .map_err(|_| Exception::throw_message(ctx, "Script job already borrowed"))?;
     let globals = ctx.globals();
     // This JSON-only route cannot invoke downloads or user scripts.
@@ -1125,6 +1119,12 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job, conversion_only: bool) -> rquickjs:
         globals.set("ProxyUtils", utils)?;
         return Ok(());
     }
+    let encode = profile::span("bootstrap_state_encode");
+    let (cache, root) = {
+        let baseline = job.baseline.borrow();
+        (codec::stringify(&baseline.0), codec::stringify(&baseline.1))
+    };
+    drop(encode);
     globals.set("__hostWait", Func::from(Async(wait)))?;
     globals.set("__hostTimer", Func::from(script_io::timer))?;
     globals.set("__hostCancelTimer", Func::from(script_io::cancel_timer))?;
@@ -1249,8 +1249,9 @@ pub async fn run(
     let conversion_only = operation == "parse" && !crate::state::truthy(&input["download"]);
     let operation = operation.to_owned();
     let (sender, receiver) = tokio::sync::oneshot::channel();
+    let queued = std::time::Instant::now();
     let worker = tokio::task::spawn_blocking(move || {
-        let session = profile::Session::start(&operation);
+        let session = profile::Session::start(&operation, queued);
         let mut sender = Some(sender);
         let result = (|| {
             let setup = profile::span("executor_setup");
@@ -1268,7 +1269,9 @@ pub async fn run(
             let foreground = background.clone();
             let execute = async {
                 let state = profile::span("state_snapshot");
-                let (cache, root) = {
+                let (cache, root) = if conversion_only {
+                    (Value::Null, Value::Null)
+                } else {
                     let store = store
                         .lock()
                         .map_err(|_| conversion::Error::Legacy("State lock poisoned".to_owned()))?;
@@ -1450,13 +1453,19 @@ pub async fn run(
                     }),
                 )
                 .await;
-                session.finish(result.is_ok());
+                let success = result.is_ok();
+                if !conversion_only {
+                    session.finish(success);
+                }
                 if let Some(sender) = sender.take() {
                     let _ = sender.send(result);
                 }
+                let _teardown = profile::span("runtime_teardown");
                 // Optimistic refreshes keep their context after the HTTP reply.
                 runtime.idle().await;
-                Ok::<_, conversion::Error>(())
+                drop(context);
+                drop(runtime);
+                Ok::<_, conversion::Error>(success)
             };
             match executor {
                 Some(executor) => executor.block_on(execute),
@@ -1471,6 +1480,8 @@ pub async fn run(
                 conversion::Error::Legacy("Script job produced no result".to_owned())
             });
             let _ = sender.send(Err(error));
+        } else if conversion_only {
+            session.finish(result.unwrap_or(false));
         }
     });
     match receiver.await {
