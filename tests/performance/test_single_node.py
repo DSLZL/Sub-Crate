@@ -13,6 +13,19 @@ if os.environ.get("GITHUB_ACTIONS") != "true":
 
 
 class Profiles(unittest.TestCase):
+    def test_inspection_reads_nested_artifact_layout_and_rejects_ambiguous_metrics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            results = root / "single-node-results"
+            results.mkdir()
+            (results / "metrics.json").write_text('{"http": []}')
+            with patch("sys.argv", ["single_node.py", "--inspect", str(root)]), patch("builtins.print") as output:
+                s.main()
+                self.assertIn("TAIL_SOURCE ", output.call_args.args[0])
+                (root / "metrics.json").write_text('{"http": []}')
+                with self.assertRaises(AssertionError):
+                    s.main()
+
     def test_tail_statistics_pool_requests_and_preserve_round_and_sample_identity(self):
         rows = [{"case": "clash_hysteria2", "mode": "keep_alive", "variant": "rust", "block": 0,
                  "round": index, "ns": [value] * 95 + [value * 10] * 5}

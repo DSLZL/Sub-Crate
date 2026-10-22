@@ -471,7 +471,9 @@ def main():
         parser.add_argument("--" + name, type=lambda value: Path(value).resolve())
     args = parser.parse_args()
     if args.inspect:
-        print(tail_summary(json.loads(args.inspect.read_bytes())), flush=True)
+        matches = list(args.inspect.rglob("metrics.json")) if args.inspect.is_dir() else [args.inspect]
+        assert len(matches) == 1, "expected one metrics file in the public-fixture artifact"
+        print(tail_summary(json.loads(matches[0].read_bytes())), flush=True)
         return
     assert all(getattr(args, name) is not None for name in
                ("original", "rust", "rust_baseline", "rust_test", "rust_baseline_test", "scratch", "output"))

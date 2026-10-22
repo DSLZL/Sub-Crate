@@ -43,7 +43,7 @@ jobs:
           "$RUNNER_TEMP/single-node-venv/bin/pip" install --require-hashes --only-binary=:all: -r tests/performance/requirements.txt
           "$RUNNER_TEMP/single-node-venv/bin/python" -m unittest discover -s tests/performance -p 'test_*.py'
           "$RUNNER_TEMP/single-node-venv/bin/python" tests/performance/single_node.py \
-            --inspect "$RUNNER_TEMP/single-node-inspect/metrics.json"
+            --inspect "$RUNNER_TEMP/single-node-inspect"
   compare:
     if: inputs.inspect_run == '' || github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04
