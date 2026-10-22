@@ -1330,3 +1330,71 @@ These empty-state, localhost single-node observations do not establish full
 imported-subscription throughput, memory savings or release readiness. The
 supplied subscription long test was not repeated. All builds and product tests
 ran in Actions, with no local product execution or artifact extraction.
+
+### Lazy generic-parser initialization (2026-10-22)
+
+[39728781380](https://github.com/DSLZL/Sub-Store/actions/runs/39728781380)
+passes at `ef44869c214ee669ec0af9a3cada7a54b5a7e6c7`, comparing the pinned
+Node original, previous Rust `87a105287588c4dc9526a9313889615d2856fbbe`, and
+the candidate on one Ubuntu x64 runner. Use this run's paired values; absolute
+latencies differ from the earlier runner. Separate output directories and
+recorded distinct binary hashes prevent baseline/candidate build reuse.
+
+The private generic parser now creates its context on first use and loads the
+existing JSON5/YAML bundle only when a fallback or YAML dump needs it. The five
+URI fixtures create neither. The existing fast paths for strict JSON and
+ordinary subscription YAML retain actual QuickJS JSON semantics without eagerly
+loading the generic bundle. Fallback precedence, typed values, error recovery and
+per-job isolation are unchanged.
+No live runtime, context or transformed result is shared between requests.
+
+Median HTTP milliseconds per request, with profiling disabled:
+
+| Input | Node | Previous Rust | Candidate Rust |
+|---|---:|---:|---:|
+| SS URI | 0.484 | 1.472 | 0.435 |
+| VMess WS | 0.506 | 1.500 | 0.443 |
+| VLESS WS | 0.311 | 1.450 | 0.423 |
+| Trojan | 0.321 | 1.472 | 0.504 |
+| Hysteria2 | 0.306 | 1.479 | 0.429 |
+| Surge SS | 0.576 | 1.596 | 1.606 |
+| QX SS | 0.728 | 1.576 | 1.566 |
+| Clash JSON | 0.460 | 1.495 | 0.555 |
+| Single-node Clash YAML | 0.643 | 1.509 | 0.540 |
+
+Seven formats improve by about 63–71% against previous Rust. SS, VMess and
+Clash YAML have lower medians than Node in this run; the other formats do not.
+Surge/QX medians are essentially unchanged. Their profiles still show one
+generic context initialization (0.140–0.141 ms) and one bundle evaluation
+(0.748–0.751 ms) per request. On the first classic-format line,
+`conversion::parse` still attempts `clash::Parser::line` before `classic::parse`;
+preserving that precedence retains bundle loading on this path. The five URI
+profiles assert zero generic contexts; those five plus Clash JSON/YAML assert
+zero generic bundle initializations.
+
+Fresh-parser URI calls take 3.603–7.723 us; their parser objects no longer create
+an unused engine. Reused-parser medians remain 3.574–69.108 us. The candidate
+SS profile reports `context_setup=0.062 ms`, `bootstrap=0.106 ms`,
+`parse_native=0.012 ms` and `job=0.157 ms`; overlapping active elapsed stages
+are not OS CPU measurements. Tail latency does not improve uniformly: Surge
+HTTP P95 is 1.948 ms for previous Rust and 2.563 ms for the candidate, while
+SS is 1.533 ms and 0.548 ms. These samples do not establish a tail-latency win.
+
+All 5,670 timed responses, 51 public Surge preflight responses and 63 separate
+balanced profiles pass, along with formatting, clippy, 40 ordinary Rust tests
+and 25 harness self-checks. The earlier formatting failures at `57ee5a57`
+(runs `39722969899` and `39722969874`) remain evidence and supply no accepted
+performance samples. Artifacts remain on Actions for 30 days; none was
+extracted locally. The supplied-subscription long test was not repeated, and
+this single-node measurement does not establish memory savings or release
+readiness.
+
+The separate compatibility run is
+[39728781382](https://github.com/DSLZL/Sub-Store/actions/runs/39728781382),
+at the same candidate source. Native Linux x64/arm64, Docker Linux x64/arm64,
+and the unchanged official frontend in headless Chrome passed. Windows x64
+passed formatting and its lint/test/release-build step, but its delivered-service
+HTTP/state/restart/rollback step was still running at the last successful
+status read. Subsequent GitHub API requests returned connection EOF errors;
+the final Windows result is NOT VERIFIED. This record does not claim all six
+compatibility jobs passed.
