@@ -406,11 +406,6 @@ pub(crate) fn initialize_ip<'js>(utils: &Object<'js>) -> rquickjs::Result<()> {
             }),
         )?;
     }
-    Ok(())
-}
-
-pub fn initialize<'js>(ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs::Result<()> {
-    initialize_ip(utils)?;
     utils.set(
         "isIP",
         Func::from(|ctx: Ctx<'js>, value: Opt<Value<'js>>| {
@@ -421,6 +416,11 @@ pub fn initialize<'js>(ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs::Result<
             )
         }),
     )?;
+    Ok(())
+}
+
+pub fn initialize<'js>(ctx: &Ctx<'js>, utils: &Object<'js>) -> rquickjs::Result<()> {
+    initialize_ip(utils)?;
     utils.set(
         "isValidUUID",
         Func::from(|ctx: Ctx<'js>, value: Opt<Value<'js>>| {
