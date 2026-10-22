@@ -170,10 +170,12 @@ mod tests {
         })
         .unwrap();
         assert!(slot.borrow().is_none());
-        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _ = with_environment(&slot, |_| panic!("conversion unwind"));
-        }))
-        .is_err());
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = with_environment(&slot, |_| panic!("conversion unwind"));
+            }))
+            .is_err()
+        );
         assert!(slot.borrow().is_none());
         assert_eq!(IDLE.load(Ordering::Relaxed), 0);
 
@@ -237,7 +239,8 @@ mod tests {
                     initialize_conversion(&ctx).unwrap();
                     let result = async {
                         let input = ctx.json_parse(codec::stringify(&input))?;
-                        let result = crate::script_http::parse(&Js::new(ctx.clone()), input).await?;
+                        let result =
+                            crate::script_http::parse(&Js::new(ctx.clone()), input).await?;
                         serialized(&ctx, result)
                     }
                     .await;

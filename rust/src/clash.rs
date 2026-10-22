@@ -547,7 +547,11 @@ mod tests {
         parser.clear_request();
         assert!(parser.preprocessed.borrow().is_none());
         parser.context().ok().unwrap().with(|ctx| {
-            assert!(ctx.globals().get::<_, bool>("retainedLibraryMarker").unwrap());
+            assert!(
+                ctx.globals()
+                    .get::<_, bool>("retainedLibraryMarker")
+                    .unwrap()
+            );
         });
         assert_eq!(parser.preprocess(raw).unwrap(), expected);
     }

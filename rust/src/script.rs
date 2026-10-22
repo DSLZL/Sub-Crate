@@ -479,7 +479,10 @@ async fn wait(milliseconds: u64) {
     tokio::time::sleep(Duration::from_millis(milliseconds)).await;
 }
 
-pub(crate) fn native_parse<'js>(ctx: Ctx<'js>, raw: JsValue<'js>) -> rquickjs::Result<JsValue<'js>> {
+pub(crate) fn native_parse<'js>(
+    ctx: Ctx<'js>,
+    raw: JsValue<'js>,
+) -> rquickjs::Result<JsValue<'js>> {
     let _parse = profile::span("parse");
     if !raw.is_string() {
         return Err(Exception::throw_type(&ctx, "raw.split is not a function"));
