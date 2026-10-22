@@ -1,0 +1,25 @@
+[profile.ci]
+fail-fast = false
+retries = 0
+
+[profile.ci.junit]
+path = "junit.xml"
+
+[test-groups]
+browser = { max-threads = 1 }
+containers = { max-threads = 1 }
+
+[[profile.ci.overrides]]
+filter = 'test(frontend::)'
+test-group = 'browser'
+
+[[profile.ci.overrides]]
+filter = 'test(docker::)'
+test-group = 'containers'
+
+[profile.benchmark]
+inherits = "ci"
+test-threads = 1
+
+[profile.benchmark.junit]
+path = "junit.xml"

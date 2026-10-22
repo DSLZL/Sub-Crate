@@ -1,0 +1,62 @@
+name: Rust test harness migration
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [test/nextest-migration]
+    paths: [tests/Cargo.toml, tests/Cargo.lock, tests/src/**, .config/nextest.toml, .github/workflows/rust-tests.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  self-checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, windows-2025]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_TARGET_DIR: ${{ runner.temp }}/sub-store-test-build
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install fixed Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
+        with:
+          tool: nextest@0.9.149
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ runner.temp }}/sub-store-test-build
+          key: nextest-harness-${{ matrix.runner }}-1.98.0-${{ hashFiles('tests/Cargo.toml', 'tests/Cargo.lock') }}
+      - name: Resolve lockfile on runner and preserve formatting patch
+        run: |
+          cargo +1.98.0 generate-lockfile --manifest-path tests/Cargo.toml
+          cargo +1.98.0 fmt --manifest-path tests/Cargo.toml --all
+          git diff --binary -- tests/src > "$RUNNER_TEMP/harness-format.patch"
+          cp tests/Cargo.lock "$RUNNER_TEMP/harness-Cargo.lock"
+      - name: Clippy, inventory and nextest self-checks
+        run: |
+          cargo +1.98.0 clippy --manifest-path tests/Cargo.toml --locked --all-targets -- -D warnings
+          cargo +1.98.0 nextest list --manifest-path tests/Cargo.toml --locked --config-file .config/nextest.toml
+          cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --config-file .config/nextest.toml --profile ci
+      - name: Preserve test reports and small source patches
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: rust-harness-${{ matrix.runner }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/harness-Cargo.lock
+            ${{ runner.temp }}/harness-format.patch
+            ${{ runner.temp }}/sub-store-test-build/nextest/ci/junit.xml
+          if-no-files-found: warn
+          retention-days: 7
