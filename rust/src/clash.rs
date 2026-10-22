@@ -1,7 +1,10 @@
 use crate::conversion::Error;
 use crate::json as codec;
 use crate::state::truthy;
-use rquickjs::{Array, Context, Ctx, Exception, Function, Object, Runtime, Value as JsValue};
+use rquickjs::{
+    Array, Context, Ctx, Exception, Function, Object, Runtime, Value as JsValue,
+    context::{Intrinsic, intrinsic},
+};
 use serde_json::Value;
 use std::cell::{OnceCell, RefCell};
 
@@ -17,6 +20,24 @@ fn utilities<'js>(ctx: &Ctx<'js>) -> rquickjs::Result<Object<'js>> {
         return Ok(utilities.clone());
     }
     let _setup = crate::profile::span("parse_utilities_init");
+    let regexp: JsValue = globals.get("RegExp")?;
+    if regexp.is_undefined() {
+        // SAFETY: This private parser context has no caller scripts. Add each
+        // omitted intrinsic once, retaining the existing JSON/MapSet objects.
+        unsafe {
+            <(
+                intrinsic::Date,
+                intrinsic::RegExpCompiler,
+                intrinsic::RegExp,
+                intrinsic::Proxy,
+                intrinsic::TypedArrays,
+                intrinsic::Promise,
+                intrinsic::Performance,
+                intrinsic::WeakRef,
+                intrinsic::DOMException,
+            )>::add_intrinsic(ctx.as_raw());
+        }
+    }
     crate::script_bytecode::UTILITIES.eval(ctx)?;
     globals.get("SubStoreUtilities")
 }
@@ -192,7 +213,10 @@ impl Parser {
         // Native URI paths do not need JSON5/YAML or a second JS runtime.
         let _setup = crate::profile::span("parse_context_init");
         let runtime = Runtime::new().map_err(|error| Error::Legacy(error.to_string()))?;
-        let context = Context::full(&runtime).map_err(|error| Error::Legacy(error.to_string()))?;
+        let context = Context::custom::<(intrinsic::Eval, intrinsic::Json, intrinsic::MapSet)>(
+            &runtime,
+        )
+        .map_err(|error| Error::Legacy(error.to_string()))?;
         context.with(|ctx| {
             crate::js_values::initialize(&ctx).map_err(|error| Error::Legacy(error.to_string()))
         })?;
@@ -602,6 +626,24 @@ mod tests {
     #[test]
     fn strict_json_and_fallbacks_retain_ecmascript_values() {
         let parser = Parser::new().ok().unwrap();
+        let oracle = Parser::new().ok().unwrap();
+        let runtime = Runtime::new().unwrap();
+        let full = Context::full(&runtime).unwrap();
+        full.with(|ctx| crate::js_values::initialize(&ctx).unwrap());
+        oracle.context.set(full).ok().unwrap();
+        parser.context().ok().unwrap().with(|ctx| {
+            assert!(
+                ctx.eval::<bool, _>(
+                    r#"typeof RegExp === 'undefined' && typeof Date === 'undefined'
+                        && typeof Uint8Array === 'undefined'"#,
+                )
+                .unwrap()
+            );
+            ctx.eval::<(), _>(
+                "globalThis.originalJSON = JSON; globalThis.originalWeakMap = WeakMap",
+            )
+            .unwrap();
+        });
         for raw in [
             r#"{"type":"ss","extra":{"n":9007199254740993,"zero":-0,"overflow":1e400,"key":null,"2":"two","1":"one","false":false,"empty":[]},"password":0}"#,
             r#"{"type":"ss","name":"\ud800\ue000\udc00","extra":{"__proto__":{"safe":true},"constructor":0,"literal":"😀"}}"#,
@@ -610,9 +652,19 @@ mod tests {
         ] {
             assert_eq!(
                 parser.line(raw).ok().unwrap().unwrap(),
-                legacy_line(&parser, raw)
+                legacy_line(&oracle, raw)
             );
         }
+        parser.context().ok().unwrap().with(|ctx| {
+            assert!(
+                ctx.eval::<bool, _>(
+                    r#"JSON === originalJSON && WeakMap === originalWeakMap
+                        && typeof RegExp === 'function' && typeof Date === 'function'
+                        && typeof Uint8Array === 'function' && typeof Promise === 'function'"#,
+                )
+                .unwrap()
+            );
+        });
         for raw in ["not a node", "{", r#"{"type":"unknown"}"#, "null"] {
             assert!(parser.line(raw).ok().unwrap().is_none());
         }

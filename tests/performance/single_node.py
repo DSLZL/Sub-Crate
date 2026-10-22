@@ -242,7 +242,7 @@ def main():
               "cases": [case["id"] for case in cases], "pure": [], "http": [], "profiles": [], "status": "running"}
     assert b.command(["git", "rev-parse", "HEAD"], args.original).decode().strip() == b.ORIGINAL
     report["rust_baseline"] = b.command(["git", "rev-parse", "HEAD"], args.rust_baseline).decode().strip()
-    assert report["rust_baseline"] == "1cf6c2b175cee2773b25ce700b52d7ef7b2ed05e"
+    assert report["rust_baseline"] == "7d034cd522778241f49b902dec61f18634f00862"
     report["binary_sha256"] = {kind: hashlib.sha256((root / "rust/target/release/sub-store-rust").read_bytes()).hexdigest()
                                for kind, root in (("rust", args.rust), ("rust_baseline", args.rust_baseline))}
     assert len(set(report["binary_sha256"].values())) == 2, "candidate and baseline must be distinct binaries"
