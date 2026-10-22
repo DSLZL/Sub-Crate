@@ -8,7 +8,7 @@ use std::time::Instant;
 #[ignore = "single-node comparison in GitHub Actions"]
 fn compare() {
     assert_eq!(std::env::var("GITHUB_ACTIONS").as_deref(), Ok("true"));
-    assert!(!cfg!(debug_assertions), "release benchmark required");
+    assert!(!black_box(cfg!(debug_assertions)), "release benchmark required");
     let fixtures: Vec<Value> = serde_json::from_str(
         &std::fs::read_to_string(std::env::var("SINGLE_NODE_FIXTURES").unwrap()).unwrap(),
     )
