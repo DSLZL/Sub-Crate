@@ -7,6 +7,7 @@ import math
 import os
 from pathlib import Path
 import platform
+import re
 import select
 import statistics
 import subprocess
@@ -84,6 +85,7 @@ def pure(args, suite, fixtures, cases, report):
     with workers(args, suite, fixtures) as running:
         for index, case in enumerate(cases):
             expected = running["node"].call(index, 1000, warmup=10000)["outputs"]
+            assert expected[0][0]["type"] == case["protocol"], f"{case['id']}: unexpected protocol"
             counts = {}
             for variant in VARIANTS:
                 worker = running["node" if variant == "node" else "rust"]
@@ -171,7 +173,7 @@ def profiles(args, suite, cases, report):
                 assert b.api(server[0], "proxy/parse", "POST", payload) == expected
             events = b.pipeline_profiles(directory / "server.log", offset, operation="other", processor=False)
             assert len(events) == BLOCKS
-            if case["id"] in ("ss_uri", "vmess_ws", "vless_ws", "trojan", "hysteria2", "surge_ss", "qx_ss"):
+            if case["format"] in ("URI", "Surge", "QX"):
                 assert all(row["stage"] != "parse_context_init" for event in events for row in event["rows"]), \
                     f"{case['id']}: native parsing initialized the generic engine"
             assert all(row["stage"] != "parse_utilities_init" for event in events for row in event["rows"]), \
@@ -184,8 +186,10 @@ def summary(report):
              "Pure: median of seven block means, us/call. HTTP: median of 210 requests, ms/request.",
              "Equivalent original/newline inputs alternate; no last-input preprocessing cache hits.",
              "HTTP includes JSON production and transport, starts with empty application state.",
-             "", "| Format | Node pure us | Rust reused parser us | Rust new parser us | Node HTTP ms | Previous Rust HTTP ms | Rust HTTP ms |",
-             "|---|---:|---:|---:|---:|---:|---:|"]
+             f"Coverage: {len(report['cases'])} fixtures, including all {len(report['clash_types'])} pinned Clash node types and Surge external.",
+             "This measures configuration parsing/conversion, not network traffic through those protocols.",
+             "", "| Case | Protocol | Input | Node pure us | Rust reused parser us | Rust new parser us | Node HTTP ms | Previous Rust HTTP ms | Rust HTTP ms |",
+             "|---|---|---|---:|---:|---:|---:|---:|---:|"]
     for case in report["cases"]:
         values = []
         for variant in VARIANTS:
@@ -194,7 +198,9 @@ def summary(report):
         for variant in ("node", "rust_baseline", "rust"):
             samples = [sample for row in report["http"] if row["case"] == case and row["variant"] == variant for sample in row["ns"]]
             values.append(statistics.median(samples) / 1_000_000)
-        lines.append("| " + case + " | " + " | ".join(f"{value:.3f}" for value in values) + " |")
+        info = report["case_info"][case]
+        lines.append("| " + case + " | " + info["protocol"] + " | " + info["format"] + " | " +
+                     " | ".join(f"{value:.3f}" for value in values) + " |")
     if report["profiles"]:
         groups = {group["case"]: group["events"] for group in report["profiles"]}
         lines += ["", "Separate Rust profiles: median active ms over seven requests per format.",
@@ -237,8 +243,18 @@ def main():
     fixture = Path(__file__).with_name("single-node.json").resolve()
     cases = json.loads(fixture.read_bytes())
     assert len({case["id"] for case in cases}) == len(cases)
+    source = (args.original / "backend/src/core/proxy-utils/parsers/index.js").read_text()
+    inventory = re.search(r"function Clash_All\(\).*?!\[(.*?)\]\.includes\(proxy\.type\)", source, re.S)
+    assert inventory, "pinned Clash protocol inventory not found"
+    clash_types = re.findall(r"'([^']+)'", inventory[1])
+    covered = {json.loads(case["raw"])["type"] for case in cases if case["format"] == "Clash JSON"}
+    assert covered == set(clash_types), f"protocol coverage: missing={set(clash_types) - covered}, extra={covered - set(clash_types)}"
+    assert {case["protocol"] for case in cases} == covered | {"external"}
+    assert any(case["protocol"] == "external" and case["format"] == "Surge" for case in cases)
     report = {"version": 1, "original": b.ORIGINAL, "rust": b.command(["git", "rev-parse", "HEAD"], args.rust).decode().strip(),
               "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(), "machine": platform.machine(),
+              "clash_types": clash_types,
+              "case_info": {case["id"]: {key: case[key] for key in ("protocol", "format")} for case in cases},
               "cases": [case["id"] for case in cases], "pure": [], "http": [], "profiles": [], "status": "running"}
     assert b.command(["git", "rev-parse", "HEAD"], args.original).decode().strip() == b.ORIGINAL
     report["rust_baseline"] = b.command(["git", "rev-parse", "HEAD"], args.rust_baseline).decode().strip()
