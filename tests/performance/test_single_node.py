@@ -13,6 +13,21 @@ if os.environ.get("GITHUB_ACTIONS") != "true":
 
 
 class Profiles(unittest.TestCase):
+    def test_conversion_lifecycle_rejects_false_reuse_and_incomplete_cleanup(self):
+        def event(stages):
+            return [{"rows": [{"stage": stage, "calls": 1} for stage in stages]}]
+        reused = ["worker_queue", "conversion_reuse", "conversion_cleanup", "conversion_retain"]
+        created = ["worker_queue", "conversion_miss", "runtime_setup", "context_setup",
+                   "bootstrap", "conversion_cleanup", "conversion_retain"]
+        for valid in (reused, created, [*reused[:-1], "runtime_teardown"]):
+            s.conversion_lifecycle(event(valid))
+        for invalid in ([*reused, "bootstrap"], reused[:-1], reused[1:],
+                        [stage for stage in reused if stage != "conversion_cleanup"],
+                        [*reused, "conversion_miss"], [*reused, "bootstrap_state_encode"],
+                        [stage for stage in created if stage != "context_setup"]):
+            with self.subTest(stages=invalid), self.assertRaises(AssertionError):
+                s.conversion_lifecycle(event(invalid))
+
     def test_waits_for_teardown_and_rejects_extra_or_private_http_events(self):
         row = {"id": 0, "parent": None, "stage": "runtime_teardown", "index": None,
                "calls": 1, "wall_ns": 10, "active_ns": 10, "self_ns": 10, "max_wall_ns": 10}

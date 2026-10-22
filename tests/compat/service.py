@@ -763,6 +763,31 @@ def sharing_contracts(binary, node, environment, baseline, root, output, report,
         report[f"native_{mode}_sharing_count_and_state_checked"] = True
 
 
+def direct_conversion_reuse(url, state, output, name):
+    """Changing requests, a failed conversion and concurrent callers share no results/state."""
+    before = {key: (state / key).read_bytes() for key in ("sub-store.json", "root.json")}
+
+    def convert(index, client="JSON"):
+        step = {"method": "POST", "path": "/api/proxy/parse", "body": {
+            "data": f"http://user:pass@proxy.example:8080#reuse-{index}",
+            "client": client, "type": "internal", "download": False}}
+        response = request(url, step)
+        assert response["status"] == (500 if client == "missing-target" else 200), response
+        body = json.loads(response["body"])
+        if client == "JSON":
+            assert body["data"]["par_res"][0]["name"] == f"reuse-{index}", body
+        return {"status": response["status"], "body": body}
+
+    observed = [convert(index, client) for index, client in enumerate(
+        ("JSON", "URI", "missing-target", "JSON", "Surge", "JSON"))]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        observed += list(pool.map(convert, range(100, 228)))
+    assert before == {key: (state / key).read_bytes() for key in before}, "Direct conversion changed durable state"
+    (output / f"{name}-direct-conversion.json").write_text(
+        json.dumps(observed, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return observed
+
+
 def script_concurrency(url, state, output, name):
     """A pending script must observe and preserve a concurrent ordinary write."""
     step = {"method": "POST", "path": "/api/preview/sub", "body": {
@@ -2552,6 +2577,7 @@ def main():
         conversion_responses = {}
         conversion_concurrency = {}
         conversion_background = {}
+        conversion_direct = {}
         # Cache identities include the source URL; both services need the same upstream origin.
         conversion_upstream_port = 0
         conversion_upstream_origins = {}
@@ -2586,6 +2612,7 @@ def main():
                 report["phases"].append({"name": label, "cases": len(results), "requests": sum(len(case["steps"]) for case in results)})
                 conversion_concurrency[kind] = script_concurrency(url, state, output, label)
                 conversion_background[kind] = script_download_background(url, state, upstream, output, label)
+                conversion_direct[kind] = direct_conversion_reuse(url, state, output, label)
                 conversion_state[kind] = {key: json.loads((state / key).read_text(encoding="utf-8")) for key in ("sub-store.json", "root.json")}
             before = (state / "sub-store.json").read_bytes()
             label += "-restart"
@@ -2603,6 +2630,8 @@ def main():
         check_json(conversion_state["rust"], conversion_state["node"])
         check_json(conversion_concurrency["rust"], conversion_concurrency["node"])
         check_json(conversion_background["rust"], conversion_background["node"])
+        check_json(conversion_direct["rust"], conversion_direct["node"])
+        report["direct_conversion_reuse_recovery_and_concurrency_checked"] = True
         report["native_script_background_refresh_and_state_checked"] = True
         report["native_script_concurrency_and_state_checked"] = True
         report["native_local_ss_conversion_checked"] = True

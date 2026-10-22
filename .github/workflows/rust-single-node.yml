@@ -32,7 +32,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: 274a4ff1f63fdbe997dda0e0dcb99daf68135d06
+          ref: 9c19111bae2af2654caa339151e4eabd12b586bb
           path: .performance/rust-baseline
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
