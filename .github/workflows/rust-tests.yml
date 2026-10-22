@@ -1,6 +1,7 @@
 name: Rust test harness migration
 
 on:
+  workflow_call:
   workflow_dispatch:
   push:
     branches: [test/nextest-migration]

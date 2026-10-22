@@ -2,6 +2,11 @@ name: Rust service and compatibility
 
 on:
   workflow_dispatch:
+    inputs:
+      harness_only:
+        description: Run the Rust harness migration self-checks
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths: [rust/**, tests/compat/**, .github/actions/node-reference/**, .github/workflows/rust-compat-native.yml]
@@ -10,7 +15,12 @@ permissions:
   contents: read
 
 jobs:
+  harness-self-checks:
+    if: inputs.harness_only
+    uses: ./.github/workflows/rust-tests.yml
+
   native-baseline:
+    if: ${{ !inputs.harness_only }}
     name: Native ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
@@ -124,6 +134,7 @@ jobs:
           retention-days: 30
 
   frontend-baseline:
+    if: ${{ !inputs.harness_only }}
     name: Unchanged frontend (headless Chrome)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -214,6 +225,7 @@ jobs:
           retention-days: 30
 
   docker-baseline:
+    if: ${{ !inputs.harness_only }}
     name: Docker ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
