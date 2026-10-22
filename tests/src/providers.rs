@@ -19,8 +19,18 @@ pub struct ScriptGist {
 }
 
 impl ScriptGist {
-    pub fn restore(&self,snapshot:&Value)->Result {
-        *self.stores.lock().unwrap()=(snapshot["github"].as_object().ok_or("Invalid Github fixture store")?.clone(),snapshot["gitlab"].as_object().ok_or("Invalid Gitlab fixture store")?.clone());Ok(())
+    pub fn restore(&self, snapshot: &Value) -> Result {
+        *self.stores.lock().unwrap() = (
+            snapshot["github"]
+                .as_object()
+                .ok_or("Invalid Github fixture store")?
+                .clone(),
+            snapshot["gitlab"]
+                .as_object()
+                .ok_or("Invalid Gitlab fixture store")?
+                .clone(),
+        );
+        Ok(())
     }
     pub fn snapshot(&self) -> Value {
         let stores = self.stores.lock().unwrap();

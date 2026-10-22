@@ -1,15 +1,67 @@
-use crate::{Result,api::{self,Api},contracts,json,reference,require,server::{self,Backend},service,static_files,upstream::Upstream};
-use serde_json::{Value,json};
+use crate::{
+    Result,
+    api::{self, Api},
+    contracts, json, reference, require,
+    server::{self, Backend},
+    service, static_files,
+    upstream::Upstream,
+};
+use serde_json::{Value, json};
 use std::path::Path;
 
-fn empty(baseline:&Value,settings:Value)->Value {let mut document=baseline.clone();document["settings"]=settings;for field in ["subs","collections","files","artifacts","tokens","archives"] {document[field]=json!([]);}document}
+fn empty(baseline: &Value, settings: Value) -> Value {
+    let mut document = baseline.clone();
+    document["settings"] = settings;
+    for field in [
+        "subs",
+        "collections",
+        "files",
+        "artifacts",
+        "tokens",
+        "archives",
+    ] {
+        document[field] = json!([]);
+    }
+    document
+}
 
-pub fn log_callers(output:&Path)->Result {
-    reference::verify(output)?;let (baseline,root)=service::baseline(output)?;let mut port=0;let mut paired=Vec::new();
-    for (kind,backend) in [("node",Backend::Node(reference::node())),("rust",service::target()?)] {
-        let label=format!("{kind}-business-logs");let upstream=Upstream::new(port)?;port=reqwest::Url::parse(upstream.url())?.port().ok_or("Missing upstream port")?;let mut document=empty(&baseline,json!({"logsMaxCount":1000}));document["modules"]=json!([]);let mut root=root.clone();root["sub-store-logs"]=json!("[]");let (state,environment)=service::seed(output,&label,&document,&root)?;let api=Api::start(&backend,&environment,&state,output,&label)?;
-        api.send(&json!({"method":"POST","path":"/api/preview/sub?target=JSON","body":{"name":"log-warmup","source":"local","content":"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture","process":[{"type":"Script Operator","args":{"content":format!("async function operator(proxies){{await $substore.http.get({});return proxies;}}",json::stringify(&json!(format!("{}/host/text",upstream.url()))))}}]}}),200)?;api.send(&json!({"path":"/api/logs?limit=1000"}),200)?;api.send(&json!({"method":"DELETE","path":"/api/logs"}),200)?;json::check(&api.data(&json!({"path":"/api/logs?limit=1000"}))?["logs"],&json!([]),false)?;require(upstream.fixture.snapshot().iter().any(|entry|entry["method"]=="GET"&&entry["path"]=="/host/text"),"Log warmup did not use actual HTTP")?;
-        let steps=json!([
+pub fn log_callers(output: &Path) -> Result {
+    reference::verify(output)?;
+    let (baseline, root) = service::baseline(output)?;
+    let mut port = 0;
+    let mut paired = Vec::new();
+    for (kind, backend) in [
+        ("node", Backend::Node(reference::node())),
+        ("rust", service::target()?),
+    ] {
+        let label = format!("{kind}-business-logs");
+        let upstream = Upstream::new(port)?;
+        port = reqwest::Url::parse(upstream.url())?
+            .port()
+            .ok_or("Missing upstream port")?;
+        let mut document = empty(&baseline, json!({"logsMaxCount":1000}));
+        document["modules"] = json!([]);
+        let mut root = root.clone();
+        root["sub-store-logs"] = json!("[]");
+        let (state, environment) = service::seed(output, &label, &document, &root)?;
+        let api = Api::start(&backend, &environment, &state, output, &label)?;
+        api.send(&json!({"method":"POST","path":"/api/preview/sub?target=JSON","body":{"name":"log-warmup","source":"local","content":"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture","process":[{"type":"Script Operator","args":{"content":format!("async function operator(proxies){{await $substore.http.get({});return proxies;}}",json::stringify(&json!(format!("{}/host/text",upstream.url()))))}}]}}),200)?;
+        api.send(&json!({"path":"/api/logs?limit=1000"}), 200)?;
+        api.send(&json!({"method":"DELETE","path":"/api/logs"}), 200)?;
+        json::check(
+            &api.data(&json!({"path":"/api/logs?limit=1000"}))?["logs"],
+            &json!([]),
+            false,
+        )?;
+        require(
+            upstream
+                .fixture
+                .snapshot()
+                .iter()
+                .any(|entry| entry["method"] == "GET" && entry["path"] == "/host/text"),
+            "Log warmup did not use actual HTTP",
+        )?;
+        let steps = json!([
             {"method":"POST","path":"/api/subs","body":{"name":"log-sub","source":"local","content":""}},{"method":"PATCH","path":"/api/sub/log-sub","body":{"displayName":"日志🙂"}},
             {"method":"POST","path":"/api/collections","body":{"name":"log-col","subscriptions":["log-sub"]}},{"method":"PATCH","path":"/api/collection/log-col","body":{"displayName":"组合🙂"}},
             {"method":"POST","path":"/api/files","body":{"name":"log-file","source":"local","content":"fixture"}},{"method":"PATCH","path":"/api/file/log-file","body":{"displayName":"文件🙂"}},
@@ -19,64 +71,449 @@ pub fn log_callers(output:&Path)->Result {
             {"path":"/api/sync/artifact/log-missing","status":404},{"method":"PATCH","path":"/api/settings","body":{"gistDownloadTokenStrategy":"invalid"},"status":500},
             {"method":"PATCH","path":"/api/settings","body":{"gistToken":"helper-token","githubApiUrl":format!("{}/host/gist/github",upstream.url())}},{"path":"/api/utils/backup?action=upload"},{"path":"/api/utils/backup?action=download"}
         ]);
-        for step in steps.as_array().unwrap() {api.send(step,step["status"].as_u64().map(|status|status as u16).unwrap_or(if step["method"]=="POST" {201} else {200}))?;}
-        let entries=api.data(&json!({"path":"/api/logs?limit=1000"}))?["logs"].as_array().ok_or("Missing business logs")?.clone();require(entries.len()>=25,"Missing business log callers")?;let comparable=entries.iter().map(|entry|json!({"level":entry["level"],"message":entry["message"]})).collect::<Vec<_>>();json::write_new(output.join(format!("{label}.json")),&json!({"logs":entries,"upstream":upstream.fixture.snapshot()}))?;paired.push(comparable);upstream.fixture.healthy()?;
-    }json::check(&json!(paired[0]),&json!(paired[1]),false)
-}
-pub fn utilities_sync(output:&Path)->Result {
-    reference::verify(output)?;let (baseline,root)=service::baseline(output)?;
-    for suite in ["utilities-core","sync-core"] {
-        let mut port=0;let mut paired=Vec::new();let mut states=Vec::new();let mut caches=Vec::new();
-        for (kind,backend) in [("node",Backend::Node(reference::node())),("rust",service::target()?)] {
-            let label=format!("{kind}-{suite}");let upstream=Upstream::new(port)?;port=reqwest::Url::parse(upstream.url())?.port().ok_or("Missing upstream port")?;
-            let (state,mut environment)=service::seed(output,&label,&empty(&baseline,json!({})),&root)?;
-            if suite=="utilities-core" {for key in ["HTTP_PROXY","http_proxy","HTTPS_PROXY","https_proxy"] {server::set(&mut environment,key,upstream.url());}for key in ["ALL_PROXY","all_proxy"] {server::set(&mut environment,key,"");}for key in ["NO_PROXY","no_proxy"] {server::set(&mut environment,key,"127.0.0.1,localhost");}}
-            let api=Api::start(&backend,&environment,&state,output,&label)?;let lower=service::clock(false);let cases=contracts::check(&api.http,&api.listener.url,&state,&contracts::cases(suite)?,Some(&upstream),&output.join(format!("{label}.json")))?;let upper=service::clock(true);
-            if suite=="sync-core" {service::captured_clocks(&cases,lower,upper)?;}
-            else {
-                let cached=api.stored("root.json")?;let mut values=json!({});
-                for (key,ttl) in [("sub-store-cached-resource",3600000),("sub-store-cached-headers-resource",60000)] {let entries=json::parse(cached[key].as_str().ok_or("Missing persisted cache")?)?;let entries=entries.as_object().ok_or("Invalid persisted cache")?;require(!entries.is_empty(),"Real download/flow did not persist cache")?;let mut data=json!({});for (id,entry) in entries {let object=entry.as_object().ok_or("Invalid cache entry")?;require(object.len()==2&&object.contains_key("time")&&object.contains_key("data"),"Cache entry fields changed")?;let time=entry["time"].as_i64().ok_or("Cache clock must be integer")?;require((lower/1000*1000+ttl..=(upper/1000+1)*1000+ttl).contains(&time),"Cache TTL outside actual request clock bounds")?;data[id]=entry["data"].clone();}values[key]=data;}
-                caches.push(values);let before=std::fs::read(state.join("sub-store.json"))?;json::check(&api.send(&json!({"path":"/api/utils/refresh"}),200)?,&json!({"status":"success"}),false)?;require(std::fs::read(state.join("sub-store.json"))?==before,"Cache refresh changed durable application state")?;
-                let mut expected=cached.clone();for key in ["sub-store-cached-resource","sub-store-cached-headers-resource","sub-store-cached-script-resource"] {expected[key]=json!("{}");}let cleared=api.stored("root.json")?;json::check(&cleared,&expected,false)?;json::write_new(output.join(format!("{label}-cache-refresh.json")),&json!({"earliest_ms":lower/1000*1000,"latest_ms":(upper/1000+1)*1000,"cached_root":cached,"cleared_root":cleared}))?;
-                let metadata=api.response(&json!({"path":"/api/utils/env"}))?;let alias=api.response(&json!({"path":"/"}))?;require(metadata["status"]==200&&alias["status"]==200&&metadata["body"]==alias["body"]&&metadata["headers"]["content-type"]==alias["headers"]["content-type"],"Root environment alias differs")?;
-                if kind=="rust" {json::check(&json::parse(metadata["body"].as_str().ok_or("Missing metadata body")?)?["data"]["meta"]["rust"],&json!({"version":"0.1.0","milestone":"M5","complete":true}),false)?;}
-            }
-            states.push(json!({"sub-store.json":api.durable()?,"root.json":api.stored("root.json")?}));
-            if suite=="sync-core"&&kind=="rust" {let fixture=json::read(crate::compat().join("fixtures/http-cases.json"))?;let required=fixture.as_array().ok_or("Invalid HTTP fixtures")?.iter().filter(|case|case["id"]=="Y03-restore-without-token-stays-alive").cloned().collect::<Vec<_>>();require(required.len()==1,"Missing approved RF02 scenario")?;contracts::check(&api.http,&api.listener.url,&state,&required,Some(&upstream),&output.join(format!("{label}-approved-rf02.json")))?;}
-            paired.push(cases);upstream.fixture.healthy()?;
+        for step in steps.as_array().unwrap() {
+            api.send(
+                step,
+                step["status"]
+                    .as_u64()
+                    .map(|status| status as u16)
+                    .unwrap_or(if step["method"] == "POST" { 201 } else { 200 }),
+            )?;
         }
-        service::compare_cases(&paired[0],&paired[1],suite=="utilities-core")?;json::check(&states[0],&states[1],false)?;if suite=="utilities-core" {json::check(&caches[0],&caches[1],false)?;}
-    }Ok(())
+        let entries = api.data(&json!({"path":"/api/logs?limit=1000"}))?["logs"]
+            .as_array()
+            .ok_or("Missing business logs")?
+            .clone();
+        require(entries.len() >= 25, "Missing business log callers")?;
+        let comparable = entries
+            .iter()
+            .map(|entry| json!({"level":entry["level"],"message":entry["message"]}))
+            .collect::<Vec<_>>();
+        json::write_new(
+            output.join(format!("{label}.json")),
+            &json!({"logs":entries,"upstream":upstream.fixture.snapshot()}),
+        )?;
+        paired.push(comparable);
+        upstream.fixture.healthy()?;
+    }
+    json::check(&json!(paired[0]), &json!(paired[1]), false)
+}
+pub fn utilities_sync(output: &Path) -> Result {
+    reference::verify(output)?;
+    let (baseline, root) = service::baseline(output)?;
+    for suite in ["utilities-core", "sync-core"] {
+        let mut port = 0;
+        let mut paired = Vec::new();
+        let mut states = Vec::new();
+        let mut caches = Vec::new();
+        for (kind, backend) in [
+            ("node", Backend::Node(reference::node())),
+            ("rust", service::target()?),
+        ] {
+            let label = format!("{kind}-{suite}");
+            let upstream = Upstream::new(port)?;
+            port = reqwest::Url::parse(upstream.url())?
+                .port()
+                .ok_or("Missing upstream port")?;
+            let (state, mut environment) =
+                service::seed(output, &label, &empty(&baseline, json!({})), &root)?;
+            if suite == "utilities-core" {
+                for key in ["HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"] {
+                    server::set(&mut environment, key, upstream.url());
+                }
+                for key in ["ALL_PROXY", "all_proxy"] {
+                    server::set(&mut environment, key, "");
+                }
+                for key in ["NO_PROXY", "no_proxy"] {
+                    server::set(&mut environment, key, "127.0.0.1,localhost");
+                }
+            }
+            let api = Api::start(&backend, &environment, &state, output, &label)?;
+            let lower = service::clock(false);
+            let cases = contracts::check(
+                &api.http,
+                &api.listener.url,
+                &state,
+                &contracts::cases(suite)?,
+                Some(&upstream),
+                &output.join(format!("{label}.json")),
+            )?;
+            let upper = service::clock(true);
+            if suite == "sync-core" {
+                service::captured_clocks(&cases, lower, upper)?;
+            } else {
+                let cached = api.stored("root.json")?;
+                let mut values = json!({});
+                for (key, ttl) in [
+                    ("sub-store-cached-resource", 3600000),
+                    ("sub-store-cached-headers-resource", 60000),
+                ] {
+                    let entries =
+                        json::parse(cached[key].as_str().ok_or("Missing persisted cache")?)?;
+                    let entries = entries.as_object().ok_or("Invalid persisted cache")?;
+                    require(
+                        !entries.is_empty(),
+                        "Real download/flow did not persist cache",
+                    )?;
+                    let mut data = json!({});
+                    for (id, entry) in entries {
+                        let object = entry.as_object().ok_or("Invalid cache entry")?;
+                        require(
+                            object.len() == 2
+                                && object.contains_key("time")
+                                && object.contains_key("data"),
+                            "Cache entry fields changed",
+                        )?;
+                        let time = entry["time"]
+                            .as_i64()
+                            .ok_or("Cache clock must be integer")?;
+                        require(
+                            (lower / 1000 * 1000 + ttl..=(upper / 1000 + 1) * 1000 + ttl)
+                                .contains(&time),
+                            "Cache TTL outside actual request clock bounds",
+                        )?;
+                        data[id] = entry["data"].clone();
+                    }
+                    values[key] = data;
+                }
+                caches.push(values);
+                let before = std::fs::read(state.join("sub-store.json"))?;
+                json::check(
+                    &api.send(&json!({"path":"/api/utils/refresh"}), 200)?,
+                    &json!({"status":"success"}),
+                    false,
+                )?;
+                require(
+                    std::fs::read(state.join("sub-store.json"))? == before,
+                    "Cache refresh changed durable application state",
+                )?;
+                let mut expected = cached.clone();
+                for key in [
+                    "sub-store-cached-resource",
+                    "sub-store-cached-headers-resource",
+                    "sub-store-cached-script-resource",
+                ] {
+                    expected[key] = json!("{}");
+                }
+                let cleared = api.stored("root.json")?;
+                json::check(&cleared, &expected, false)?;
+                json::write_new(
+                    output.join(format!("{label}-cache-refresh.json")),
+                    &json!({"earliest_ms":lower/1000*1000,"latest_ms":(upper/1000+1)*1000,"cached_root":cached,"cleared_root":cleared}),
+                )?;
+                let metadata = api.response(&json!({"path":"/api/utils/env"}))?;
+                let alias = api.response(&json!({"path":"/"}))?;
+                require(
+                    metadata["status"] == 200
+                        && alias["status"] == 200
+                        && metadata["body"] == alias["body"]
+                        && metadata["headers"]["content-type"] == alias["headers"]["content-type"],
+                    "Root environment alias differs",
+                )?;
+                if kind == "rust" {
+                    json::check(
+                        &json::parse(metadata["body"].as_str().ok_or("Missing metadata body")?)?["data"]
+                            ["meta"]["rust"],
+                        &json!({"version":"0.1.0","milestone":"M5","complete":true}),
+                        false,
+                    )?;
+                }
+            }
+            states.push(
+                json!({"sub-store.json":api.durable()?,"root.json":api.stored("root.json")?}),
+            );
+            if suite == "sync-core" && kind == "rust" {
+                let fixture = json::read(crate::compat().join("fixtures/http-cases.json"))?;
+                let required = fixture
+                    .as_array()
+                    .ok_or("Invalid HTTP fixtures")?
+                    .iter()
+                    .filter(|case| case["id"] == "Y03-restore-without-token-stays-alive")
+                    .cloned()
+                    .collect::<Vec<_>>();
+                require(required.len() == 1, "Missing approved RF02 scenario")?;
+                contracts::check(
+                    &api.http,
+                    &api.listener.url,
+                    &state,
+                    &required,
+                    Some(&upstream),
+                    &output.join(format!("{label}-approved-rf02.json")),
+                )?;
+            }
+            paired.push(cases);
+            upstream.fixture.healthy()?;
+        }
+        service::compare_cases(&paired[0], &paired[1], suite == "utilities-core")?;
+        json::check(&states[0], &states[1], false)?;
+        if suite == "utilities-core" {
+            json::check(&caches[0], &caches[1], false)?;
+        }
+    }
+    Ok(())
 }
 
-pub fn archives(output:&Path)->Result {
-    reference::verify(output)?;let (baseline,root)=service::baseline(output)?;let mut paired=Vec::new();let mut final_states=Vec::new();
-    for (kind,backend) in [("node",Backend::Node(reference::node())),("rust",service::target()?)] {
-        let label=format!("{kind}-archives");let (state,mut environment)=service::seed(output,&label,&empty(&baseline,json!({})),&root)?;static_files::prepare(&state.join("frontend"))?;server::set(&mut environment,"SUB_STORE_BACKEND_MERGE","true");server::set(&mut environment,"SUB_STORE_FRONTEND_PATH",state.join("frontend"));
-        let api=Api::start(&backend,&environment,&state,output,&label)?;let lower=service::clock(false);let cases=contracts::check(&api.http,&api.listener.url,&state,&contracts::cases("archive-core")?,None,&output.join(format!("{label}.json")))?;service::captured_clocks(&cases,lower,service::clock(true))?;paired.push(cases);
-        let original=json!({"name":"restart-owned","source":"local","content":"archive restart🙂\n","unknown":{"nil":null,"zero":0,"flag":false}});api.send(&json!({"method":"POST","path":"/api/files","body":original}),201)?;let deleting=json!({"method":"DELETE","path":"/api/file/restart-owned?mode=archive"});if kind=="rust" {api::denied_write(&api,&deleting,"/api/storage","sub-store.json","STATE_WRITE_FAILED")?;}api.send(&deleting,200)?;
-        let entry=api.data(&json!({"path":"/api/archives"}))?.as_array().ok_or("Missing archive list")?.iter().find(|entry|entry["name"]=="restart-owned").ok_or("Missing restart archive")?.clone();let restoring=json!({"method":"POST","path":format!("/api/archives/{}/restore",entry["id"].as_str().ok_or("Missing archive ID")?)});if kind=="rust" {api::denied_write(&api,&restoring,"/api/storage","sub-store.json","STATE_WRITE_FAILED")?;}drop(api);
-        let api=Api::start(&backend,&environment,&state,output,&format!("{label}-restart"))?;let before=[std::fs::read(state.join("sub-store.json"))?,std::fs::read(state.join("root.json"))?];json::check(&api.send(&json!({"path":format!("/api/archives/{}",entry["id"].as_str().unwrap())}),200)?,&json!({"status":"success","data":entry}),false)?;require(before==[std::fs::read(state.join("sub-store.json"))?,std::fs::read(state.join("root.json"))?],"Archive read changed durable state")?;
-        let restored=api::concurrent(&api.listener.url,&[restoring.clone(),restoring])?;json::write_new(output.join(format!("{label}-concurrent-restore.json")),&json!(restored))?;let mut statuses=restored.iter().map(|response|response["status"].as_u64().ok_or("Missing restore status")).collect::<std::result::Result<Vec<_>,_>>()?;statuses.sort();require(statuses==[200,404],"Concurrent restore must succeed exactly once")?;let successful=restored.iter().find(|response|response["status"]==200).ok_or("Missing successful restore")?;json::check(&json::parse(successful["body"].as_str().ok_or("Missing restored body")?)?,&json!({"status":"success","data":original}),false)?;
-        api.send(&json!({"method":"DELETE","path":"/api/file/restart-owned?mode=permanent"}),200)?;final_states.push(json!({"sub-store.json":api.durable()?,"root.json":api.stored("root.json")?}));
+pub fn archives(output: &Path) -> Result {
+    reference::verify(output)?;
+    let (baseline, root) = service::baseline(output)?;
+    let mut paired = Vec::new();
+    let mut final_states = Vec::new();
+    for (kind, backend) in [
+        ("node", Backend::Node(reference::node())),
+        ("rust", service::target()?),
+    ] {
+        let label = format!("{kind}-archives");
+        let (state, mut environment) =
+            service::seed(output, &label, &empty(&baseline, json!({})), &root)?;
+        static_files::prepare(&state.join("frontend"))?;
+        server::set(&mut environment, "SUB_STORE_BACKEND_MERGE", "true");
+        server::set(
+            &mut environment,
+            "SUB_STORE_FRONTEND_PATH",
+            state.join("frontend"),
+        );
+        let api = Api::start(&backend, &environment, &state, output, &label)?;
+        let lower = service::clock(false);
+        let cases = contracts::check(
+            &api.http,
+            &api.listener.url,
+            &state,
+            &contracts::cases("archive-core")?,
+            None,
+            &output.join(format!("{label}.json")),
+        )?;
+        service::captured_clocks(&cases, lower, service::clock(true))?;
+        paired.push(cases);
+        let original = json!({"name":"restart-owned","source":"local","content":"archive restart🙂\n","unknown":{"nil":null,"zero":0,"flag":false}});
+        api.send(
+            &json!({"method":"POST","path":"/api/files","body":original}),
+            201,
+        )?;
+        let deleting = json!({"method":"DELETE","path":"/api/file/restart-owned?mode=archive"});
+        if kind == "rust" {
+            api::denied_write(
+                &api,
+                &deleting,
+                "/api/storage",
+                "sub-store.json",
+                "STATE_WRITE_FAILED",
+            )?;
+        }
+        api.send(&deleting, 200)?;
+        let entry = api
+            .data(&json!({"path":"/api/archives"}))?
+            .as_array()
+            .ok_or("Missing archive list")?
+            .iter()
+            .find(|entry| entry["name"] == "restart-owned")
+            .ok_or("Missing restart archive")?
+            .clone();
+        let restoring = json!({"method":"POST","path":format!("/api/archives/{}/restore",entry["id"].as_str().ok_or("Missing archive ID")?)});
+        if kind == "rust" {
+            api::denied_write(
+                &api,
+                &restoring,
+                "/api/storage",
+                "sub-store.json",
+                "STATE_WRITE_FAILED",
+            )?;
+        }
+        drop(api);
+        let api = Api::start(
+            &backend,
+            &environment,
+            &state,
+            output,
+            &format!("{label}-restart"),
+        )?;
+        let before = [
+            std::fs::read(state.join("sub-store.json"))?,
+            std::fs::read(state.join("root.json"))?,
+        ];
+        json::check(
+            &api.send(
+                &json!({"path":format!("/api/archives/{}",entry["id"].as_str().unwrap())}),
+                200,
+            )?,
+            &json!({"status":"success","data":entry}),
+            false,
+        )?;
+        require(
+            before
+                == [
+                    std::fs::read(state.join("sub-store.json"))?,
+                    std::fs::read(state.join("root.json"))?,
+                ],
+            "Archive read changed durable state",
+        )?;
+        let restored = api::concurrent(&api.listener.url, &[restoring.clone(), restoring])?;
+        json::write_new(
+            output.join(format!("{label}-concurrent-restore.json")),
+            &json!(restored),
+        )?;
+        let mut statuses = restored
+            .iter()
+            .map(|response| response["status"].as_u64().ok_or("Missing restore status"))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        statuses.sort();
+        require(
+            statuses == [200, 404],
+            "Concurrent restore must succeed exactly once",
+        )?;
+        let successful = restored
+            .iter()
+            .find(|response| response["status"] == 200)
+            .ok_or("Missing successful restore")?;
+        json::check(
+            &json::parse(successful["body"].as_str().ok_or("Missing restored body")?)?,
+            &json!({"status":"success","data":original}),
+            false,
+        )?;
+        api.send(
+            &json!({"method":"DELETE","path":"/api/file/restart-owned?mode=permanent"}),
+            200,
+        )?;
+        final_states
+            .push(json!({"sub-store.json":api.durable()?,"root.json":api.stored("root.json")?}));
     }
-    service::compare_cases(&paired[0],&paired[1],false)?;json::check(&final_states[0],&final_states[1],false)
+    service::compare_cases(&paired[0], &paired[1], false)?;
+    json::check(&final_states[0], &final_states[1], false)
 }
 
-pub fn logs(output:&Path)->Result {
-    let id=regex::Regex::new(r"\A[0-9]+-[a-z0-9]+\z")?;
-    reference::verify(output)?;let (baseline,root)=service::baseline(output)?;
-    let seeded=json!([null,{"id":"invalid"},{"id":"noise","time":0,"level":"info","message":"[sub-store] INFO: URI Parser is activated!"},{"id":"a","time":1,"level":"log","message":"fixture-static-Alpha"},{"id":"b","time":2,"level":"warn","message":"fixture-static-Beta"},{"id":"c","time":3,"level":"debug","message":"fixture-static-Gamma"},{"id":"d","time":4,"level":"error","message":"[scope] ERROR: fixture-static-Delta","extra":false}]);
-    let mut paired=Vec::new();let mut final_states=Vec::new();
-    let script=|content:&str|json!({"method":"POST","path":"/api/preview/sub?target=JSON","body":{"name":"log-check","source":"local","content":"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture","process":[{"type":"Script Operator","args":{"content":content}}]}});
-    for (kind,backend) in [("node",Backend::Node(reference::node())),("rust",service::target()?)] {
-        let label=format!("{kind}-logs");let mut root=root.clone();root["sub-store-logs"]=seeded.clone();let (state,environment)=service::seed(output,&label,&empty(&baseline,json!({"logsMaxCount":0})),&root)?;let api=Api::start(&backend,&environment,&state,output,&label)?;
-        paired.push(contracts::check(&api.http,&api.listener.url,&state,&contracts::cases("logs-core")?,None,&output.join(format!("{label}.json")))?);final_states.push(json!({"sub-store.json":api.durable()?,"root.json":api.stored("root.json")?}));api.send(&json!({"method":"PATCH","path":"/api/settings","body":{"logsMaxCount":100}}),200)?;
-        let lower=service::clock(false);api.send(&script(r#"function operator(proxies){const circular={};circular.self=circular;console.info('fixture-format',{zero:0,flag:false,nil:null},undefined,null,circular);console.warn('[ custom ] fixture-scoped');console.error('[scope] iNfO: fixture-preserve');console.debug('fixture-debug');$substore.debug=true;$substore.log('fixture-host-debug');$substore.debug=false;$substore.log('fixture-host-hidden');$substore.info('fixture-host-info');$substore.warn('fixture-host-warn');$substore.error('fixture-host-error');console.log('Sub-Store -- v2.42.4');console.log('URI Parser is activated!');const logs=JSON.parse($substore.read('#sub-store-logs'));if(!logs.some(entry=>entry.message.includes('fixture-host-info')))throw new Error('live root logs are stale');return proxies;}"#),200)?;let upper=service::clock(true);
-        let selected=api.data(&json!({"path":"/api/logs?keyword=fixture-"}))?["logs"].as_array().ok_or("Missing selected logs")?.clone();let expected=[("[unknown] INFO: fixture-format {\"zero\":0,\"flag\":false,\"nil\":null} undefined null [object Object]","info"),("[custom] WARN: fixture-scoped","warn"),("[scope] iNfO: fixture-preserve","error"),("[unknown] DEBUG: fixture-debug","debug"),("[sub-store] LOG: fixture-host-debug","log"),("[sub-store] INFO: fixture-host-info","log"),("[sub-store] WARN: fixture-host-warn","log"),("[sub-store] ERROR: fixture-host-error","log")];require(selected.len()==expected.len(),"Missing or extra captured logs")?;
-        for (message,level) in expected {require(selected.iter().filter(|entry|entry["message"]==message&&entry["level"]==level).count()==1,"Captured log level/message mismatch")?;}for entry in &selected {require(entry["time"].as_i64().is_some_and(|time|(lower..=upper).contains(&time))&&entry["id"].as_str().is_some_and(|value|id.is_match(value)),"Invalid log timestamp or ID")?;}
-        if kind=="rust" {let steps=(0..8).map(|index|script(&format!("function operator(proxies){{console.log('fixture-concurrent-{index}');return proxies;}}"))).collect::<Vec<_>>();let responses=api::concurrent(&api.listener.url,&steps)?;require(responses.iter().all(|response|response["status"]==200),"Concurrent log script failed")?;json::write_new(output.join(format!("{label}-concurrent.json")),&json!(responses))?;let entries=api.data(&json!({"path":"/api/logs?keyword=fixture-concurrent-"}))?["logs"].clone();let mut messages=entries.as_array().ok_or("Missing concurrent logs")?.iter().map(|entry|entry["message"].as_str().ok_or("Missing log message")).collect::<std::result::Result<Vec<_>,_>>()?;messages.sort();let expected=(0..8).map(|index|format!("[unknown] LOG: fixture-concurrent-{index}")).collect::<Vec<_>>();require(messages==expected,"Concurrent log entries lost or duplicated")?;api::denied_write(&api,&json!({"method":"DELETE","path":"/api/logs"}),"/api/logs?keyword=fixture-concurrent-","root.json","FAILED_TO_CLEAR_LOGS")?;json::check(&api.data(&json!({"path":"/api/logs?keyword=fixture-concurrent-"}))?["logs"],&entries,false)?;}
-        let persisted=api.data(&json!({"path":"/api/logs?keyword=fixture-host-"}))?;drop(api);let api=Api::start(&backend,&environment,&state,output,&format!("{label}-restart"))?;json::check(&api.data(&json!({"path":"/api/logs?keyword=fixture-host-"}))?,&persisted,false)?;
+pub fn logs(output: &Path) -> Result {
+    let id = regex::Regex::new(r"\A[0-9]+-[a-z0-9]+\z")?;
+    reference::verify(output)?;
+    let (baseline, root) = service::baseline(output)?;
+    let seeded = json!([null,{"id":"invalid"},{"id":"noise","time":0,"level":"info","message":"[sub-store] INFO: URI Parser is activated!"},{"id":"a","time":1,"level":"log","message":"fixture-static-Alpha"},{"id":"b","time":2,"level":"warn","message":"fixture-static-Beta"},{"id":"c","time":3,"level":"debug","message":"fixture-static-Gamma"},{"id":"d","time":4,"level":"error","message":"[scope] ERROR: fixture-static-Delta","extra":false}]);
+    let mut paired = Vec::new();
+    let mut final_states = Vec::new();
+    let script = |content: &str| json!({"method":"POST","path":"/api/preview/sub?target=JSON","body":{"name":"log-check","source":"local","content":"ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture","process":[{"type":"Script Operator","args":{"content":content}}]}});
+    for (kind, backend) in [
+        ("node", Backend::Node(reference::node())),
+        ("rust", service::target()?),
+    ] {
+        let label = format!("{kind}-logs");
+        let mut root = root.clone();
+        root["sub-store-logs"] = seeded.clone();
+        let (state, environment) = service::seed(
+            output,
+            &label,
+            &empty(&baseline, json!({"logsMaxCount":0})),
+            &root,
+        )?;
+        let api = Api::start(&backend, &environment, &state, output, &label)?;
+        paired.push(contracts::check(
+            &api.http,
+            &api.listener.url,
+            &state,
+            &contracts::cases("logs-core")?,
+            None,
+            &output.join(format!("{label}.json")),
+        )?);
+        final_states
+            .push(json!({"sub-store.json":api.durable()?,"root.json":api.stored("root.json")?}));
+        api.send(
+            &json!({"method":"PATCH","path":"/api/settings","body":{"logsMaxCount":100}}),
+            200,
+        )?;
+        let lower = service::clock(false);
+        api.send(&script(r#"function operator(proxies){const circular={};circular.self=circular;console.info('fixture-format',{zero:0,flag:false,nil:null},undefined,null,circular);console.warn('[ custom ] fixture-scoped');console.error('[scope] iNfO: fixture-preserve');console.debug('fixture-debug');$substore.debug=true;$substore.log('fixture-host-debug');$substore.debug=false;$substore.log('fixture-host-hidden');$substore.info('fixture-host-info');$substore.warn('fixture-host-warn');$substore.error('fixture-host-error');console.log('Sub-Store -- v2.42.4');console.log('URI Parser is activated!');const logs=JSON.parse($substore.read('#sub-store-logs'));if(!logs.some(entry=>entry.message.includes('fixture-host-info')))throw new Error('live root logs are stale');return proxies;}"#),200)?;
+        let upper = service::clock(true);
+        let selected = api.data(&json!({"path":"/api/logs?keyword=fixture-"}))?["logs"]
+            .as_array()
+            .ok_or("Missing selected logs")?
+            .clone();
+        let expected = [
+            (
+                "[unknown] INFO: fixture-format {\"zero\":0,\"flag\":false,\"nil\":null} undefined null [object Object]",
+                "info",
+            ),
+            ("[custom] WARN: fixture-scoped", "warn"),
+            ("[scope] iNfO: fixture-preserve", "error"),
+            ("[unknown] DEBUG: fixture-debug", "debug"),
+            ("[sub-store] LOG: fixture-host-debug", "log"),
+            ("[sub-store] INFO: fixture-host-info", "log"),
+            ("[sub-store] WARN: fixture-host-warn", "log"),
+            ("[sub-store] ERROR: fixture-host-error", "log"),
+        ];
+        require(
+            selected.len() == expected.len(),
+            "Missing or extra captured logs",
+        )?;
+        for (message, level) in expected {
+            require(
+                selected
+                    .iter()
+                    .filter(|entry| entry["message"] == message && entry["level"] == level)
+                    .count()
+                    == 1,
+                "Captured log level/message mismatch",
+            )?;
+        }
+        for entry in &selected {
+            require(
+                entry["time"]
+                    .as_i64()
+                    .is_some_and(|time| (lower..=upper).contains(&time))
+                    && entry["id"].as_str().is_some_and(|value| id.is_match(value)),
+                "Invalid log timestamp or ID",
+            )?;
+        }
+        if kind == "rust" {
+            let steps=(0..8).map(|index|script(&format!("function operator(proxies){{console.log('fixture-concurrent-{index}');return proxies;}}"))).collect::<Vec<_>>();
+            let responses = api::concurrent(&api.listener.url, &steps)?;
+            require(
+                responses.iter().all(|response| response["status"] == 200),
+                "Concurrent log script failed",
+            )?;
+            json::write_new(
+                output.join(format!("{label}-concurrent.json")),
+                &json!(responses),
+            )?;
+            let entries =
+                api.data(&json!({"path":"/api/logs?keyword=fixture-concurrent-"}))?["logs"].clone();
+            let mut messages = entries
+                .as_array()
+                .ok_or("Missing concurrent logs")?
+                .iter()
+                .map(|entry| entry["message"].as_str().ok_or("Missing log message"))
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            messages.sort();
+            let expected = (0..8)
+                .map(|index| format!("[unknown] LOG: fixture-concurrent-{index}"))
+                .collect::<Vec<_>>();
+            require(
+                messages == expected,
+                "Concurrent log entries lost or duplicated",
+            )?;
+            api::denied_write(
+                &api,
+                &json!({"method":"DELETE","path":"/api/logs"}),
+                "/api/logs?keyword=fixture-concurrent-",
+                "root.json",
+                "FAILED_TO_CLEAR_LOGS",
+            )?;
+            json::check(
+                &api.data(&json!({"path":"/api/logs?keyword=fixture-concurrent-"}))?["logs"],
+                &entries,
+                false,
+            )?;
+        }
+        let persisted = api.data(&json!({"path":"/api/logs?keyword=fixture-host-"}))?;
+        drop(api);
+        let api = Api::start(
+            &backend,
+            &environment,
+            &state,
+            output,
+            &format!("{label}-restart"),
+        )?;
+        json::check(
+            &api.data(&json!({"path":"/api/logs?keyword=fixture-host-"}))?,
+            &persisted,
+            false,
+        )?;
     }
-    service::compare_cases(&paired[0],&paired[1],false)?;json::check(&final_states[0],&final_states[1],false)
+    service::compare_cases(&paired[0], &paired[1], false)?;
+    json::check(&final_states[0], &final_states[1], false)
 }

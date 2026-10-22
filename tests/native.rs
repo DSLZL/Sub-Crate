@@ -17,8 +17,14 @@ fn native_delivery() -> Result {
     Ok(())
 }
 
-#[test] fn settings_numeric_coercion_recipient_validation_order_and_failed_writes()->Result {sub_store_tests::edges::settings_and_keys(&process::scratch("service-settings-keys")?)}
-#[test] fn crud_typed_references_null_records_raw_buffers_restart_and_node_rollback()->Result {sub_store_tests::edges::crud_lifecycle(&process::scratch("service-crud-edges")?)}
+#[test]
+fn settings_numeric_coercion_recipient_validation_order_and_failed_writes() -> Result {
+    sub_store_tests::edges::settings_and_keys(&process::scratch("service-settings-keys")?)
+}
+#[test]
+fn crud_typed_references_null_records_raw_buffers_restart_and_node_rollback() -> Result {
+    sub_store_tests::edges::crud_lifecycle(&process::scratch("service-crud-edges")?)
+}
 
 #[test]
 fn frozen_node_unit_suite() -> Result {
@@ -68,12 +74,31 @@ fn actual_schedules_cover_overlap_updates_disable_delete_sync_backup_mmdb_and_st
     sub_store_tests::scheduling::run(&process::scratch("service-scheduling")?)
 }
 
-#[test] fn actual_utilities_and_sync_preserve_wire_cache_ttl_state_and_rf02() -> Result { sub_store_tests::business::utilities_sync(&process::scratch("service-utilities-sync")?) }
-#[test] fn archive_lifecycle_preserves_restart_atomic_restore_and_write_failures() -> Result { sub_store_tests::business::archives(&process::scratch("service-archives")?) }
-#[test] fn logs_preserve_typed_seed_capture_filter_retention_restart_and_failed_clear() -> Result { sub_store_tests::business::logs(&process::scratch("service-logs")?) }
-#[test] fn notifications_preserve_provider_templates_get_bodies_parallel_delivery_and_recovery() -> Result { sub_store_tests::notifications::run(&process::scratch("service-notifications")?) }
-#[test] fn business_resource_sync_settings_and_backup_log_callers_are_exercised() -> Result { sub_store_tests::business::log_callers(&process::scratch("service-business-logs")?) }
-#[test] fn merged_and_standalone_shares_preserve_token_concurrency_encryption_and_failed_writes() -> Result { sub_store_tests::sharing::run(&process::scratch("service-sharing")?) }
+#[test]
+fn actual_utilities_and_sync_preserve_wire_cache_ttl_state_and_rf02() -> Result {
+    sub_store_tests::business::utilities_sync(&process::scratch("service-utilities-sync")?)
+}
+#[test]
+fn archive_lifecycle_preserves_restart_atomic_restore_and_write_failures() -> Result {
+    sub_store_tests::business::archives(&process::scratch("service-archives")?)
+}
+#[test]
+fn logs_preserve_typed_seed_capture_filter_retention_restart_and_failed_clear() -> Result {
+    sub_store_tests::business::logs(&process::scratch("service-logs")?)
+}
+#[test]
+fn notifications_preserve_provider_templates_get_bodies_parallel_delivery_and_recovery() -> Result {
+    sub_store_tests::notifications::run(&process::scratch("service-notifications")?)
+}
+#[test]
+fn business_resource_sync_settings_and_backup_log_callers_are_exercised() -> Result {
+    sub_store_tests::business::log_callers(&process::scratch("service-business-logs")?)
+}
+#[test]
+fn merged_and_standalone_shares_preserve_token_concurrency_encryption_and_failed_writes() -> Result
+{
+    sub_store_tests::sharing::run(&process::scratch("service-sharing")?)
+}
 
 #[test]
 fn rust_and_node_preserve_shared_state_restart_write_failure_and_rollback() -> Result {

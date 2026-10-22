@@ -64,7 +64,16 @@ impl Http {
         let headers: BTreeMap<_, _> = response
             .headers()
             .iter()
-            .map(|(key, value)| (key.as_str().to_owned(), value.as_bytes().iter().map(|byte|char::from(*byte)).collect::<String>()))
+            .map(|(key, value)| {
+                (
+                    key.as_str().to_owned(),
+                    value
+                        .as_bytes()
+                        .iter()
+                        .map(|byte| char::from(*byte))
+                        .collect::<String>(),
+                )
+            })
             .collect();
         let body = String::from_utf8(response.bytes()?.to_vec())?;
         Ok(json!({"status":status,"headers":headers,"body":body}))
@@ -132,8 +141,20 @@ mod tests {
     #[test]
     fn response_headers_preserve_latin1_wire_bytes() {
         use std::io::Write;
-        let fixture=crate::fixture::Fixture::raw(0,|_,_,stream| {stream.write_all(b"HTTP/1.0 200 OK\r\nX-Legacy-Byte: \xe9\r\nContent-Length: 2\r\n\r\n{}")?;Ok(())}).unwrap();
-        let response=Http::new(Duration::from_secs(2)).unwrap().request(&fixture.origin,&json!({"path":"/"})).unwrap();assert_eq!(response["headers"]["x-legacy-byte"],"é");assert_eq!(response["body"],"{}");fixture.healthy().unwrap();
+        let fixture = crate::fixture::Fixture::raw(0, |_, _, stream| {
+            stream.write_all(
+                b"HTTP/1.0 200 OK\r\nX-Legacy-Byte: \xe9\r\nContent-Length: 2\r\n\r\n{}",
+            )?;
+            Ok(())
+        })
+        .unwrap();
+        let response = Http::new(Duration::from_secs(2))
+            .unwrap()
+            .request(&fixture.origin, &json!({"path":"/"}))
+            .unwrap();
+        assert_eq!(response["headers"]["x-legacy-byte"], "é");
+        assert_eq!(response["body"], "{}");
+        fixture.healthy().unwrap();
     }
     use std::io::{Read, Write};
     use std::net::TcpListener;
