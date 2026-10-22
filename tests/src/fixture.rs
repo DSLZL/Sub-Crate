@@ -131,7 +131,7 @@ impl Reply {
         self.headers.push((key.into(), value.into()));
         self
     }
-    fn write(&self, stream: &mut TcpStream, head: bool) -> Result {
+    pub fn write(&self, stream: &mut TcpStream, head: bool) -> Result {
         let status = reqwest::StatusCode::from_u16(self.status)?;
         write!(
             stream,
@@ -169,6 +169,18 @@ impl Fixture {
         port: u16,
         handler: impl Fn(&Request, &str) -> Result<Reply> + Send + Sync + 'static,
     ) -> Result<Self> {
+        Self::raw(port,move |request,origin,stream| {
+            let reply=handler(request,origin)?;
+            // Timeout/cancellation fixtures intentionally close before the response.
+            let _=reply.write(stream,request.method=="HEAD");
+            Ok(())
+        })
+    }
+
+    pub fn raw(
+        port:u16,
+        handler: impl Fn(&Request,&str,&mut TcpStream)->Result + Send + Sync + 'static,
+    )->Result<Self> {
         actions_only();
         let listener = TcpListener::bind(("127.0.0.1", port))?;
         listener.set_nonblocking(true)?;
@@ -200,9 +212,7 @@ impl Fixture {
                                 stream.set_write_timeout(Some(Duration::from_secs(5)))?;
                                 if let Some(request) = Request::read(&mut stream)? {
                                     recorded.lock().unwrap().push(request.record.clone());
-                                    let reply = handler(&request, &url)?;
-                                    // Timeout/cancellation fixtures intentionally close before the response.
-                                    let _ = reply.write(&mut stream, request.method == "HEAD");
+                                    handler(&request, &url,&mut stream)?;
                                 }
                                 Ok(())
                             })();

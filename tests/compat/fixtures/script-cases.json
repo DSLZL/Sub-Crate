@@ -139,5 +139,35 @@
     "PC122-artifact-internal-file-download",
     "PC123-artifact-errors-and-recovery",
     "PC124-artifact-pending-reentry-and-persistence"
+  ],
+  "age": [
+    "AG01-encoding-utf8-views-fatal-stream-and-bom",
+    "AG02-stream-backpressure-cancel-and-errors",
+    "AG03-response-bodies-once-offsets-and-errors",
+    "AG04-system-random-quota-types-and-views",
+    "AG05-generate-x25519-and-hybrid-derive-and-normalize",
+    "AG06-armor-roundtrip-unicode-view-and-chunk-boundary",
+    "AG07-non-armor-preserves-types-and-identity",
+    "AG08-validation-wrong-keys-tampering-and-recovery",
+    "AG09-secret-redaction-and-empty-config",
+    "AG10-public-age-in-actual-async-script-operator",
+    "AG11-missing-runtime-diagnostics-before-crypto"
+  ],
+  "download": [
+    "DL01-defaults-unicode-raw-and-regular-cache",
+    "DL02-settings-headers-and-fragment-arguments",
+    "DL03-github-proxy-pattern-and-invalid-regex",
+    "DL04-native-local-utf8-empty-and-read-errors",
+    "DL05-internal-modules-typed-content-and-missing-sources",
+    "DL06-cache-ttl-inclusive-expiry-and-bypass",
+    "DL07-cache-threshold-and-custom-cache-write-eligibility",
+    "DL08-optimistic-cache-awaited-refresh-and-error-fallback",
+    "DL09-flow-header-cache-ttl-and-validation-bypass",
+    "DL10-status-empty-timeout-and-queue-recovery",
+    "DL11-both-age-types-raw-cache-key-precedence-and-redaction",
+    "DL12-public-helpers-in-async-script-and-persisted-values",
+    "DL13-binary-status-redirect-limits-and-existing-file-retention",
+    "DL14-binary-stream-visible-before-finish-and-partial-on-error",
+    "DL15-binary-filesystem-errors-and-recovery"
   ]
 }

@@ -12,6 +12,8 @@ pub mod reference;
 pub mod mmdb;
 pub mod probe;
 pub mod distribution;
+pub mod age;
+pub mod download;
 #[cfg(test)]
 mod notices_tests;
 

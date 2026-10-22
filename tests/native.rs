@@ -31,6 +31,18 @@ fn shared_native_script_host_processors_dns_mmdb_wire_state_and_resume() -> Resu
 }
 
 #[test]
+fn fresh_age_processes_cross_decrypt_both_key_types_and_preserve_artifacts() -> Result {
+    let binary=PathBuf::from(std::env::var_os("TEST_PROBE_BINARY").ok_or("Missing actual Rust probe executable")?).canonicalize()?;
+    sub_store_tests::age::run(&process::scratch("age-probe")?,&binary)
+}
+
+#[test]
+fn downloads_preserve_exact_wire_cache_stream_bytes_files_and_resume() -> Result {
+    let binary=PathBuf::from(std::env::var_os("TEST_PROBE_BINARY").ok_or("Missing actual Rust probe executable")?).canonicalize()?;
+    sub_store_tests::download::run(&process::scratch("download-probe")?,&binary)
+}
+
+#[test]
 fn rust_and_node_preserve_shared_state_restart_write_failure_and_rollback() -> Result {
     let output = process::scratch("state-parity")?;
     reference::verify(&output)?;
