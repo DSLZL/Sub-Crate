@@ -12,7 +12,6 @@ logs/
 /rust/target/
 /tests/target/
 node_modules/
-__pycache__/
 /.performance/
 /.compat-frontend/
 /.compat-delivery/
