@@ -17,6 +17,7 @@ pub mod download;
 pub mod api;
 pub mod service;
 pub mod backup;
+pub mod scheduling;
 #[cfg(test)]
 mod notices_tests;
 

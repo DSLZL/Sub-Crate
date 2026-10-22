@@ -479,7 +479,7 @@ pub fn patch_gists(store: &mut Value, request: &Request, origin: &str) -> Result
 pub fn require_complete(results: &[Value]) -> Result {
     require(
         !results.is_empty() && results.iter().all(|case| case["status"] == "passed"),
-        format!("Ordered contract suite failed: {}", results.iter().find(|case| case["status"] != "passed").map(crate::json::stringify).unwrap_or_else(|| "empty suite".into())),
+        format!("Ordered contract suite failed: {}", results.iter().find(|case| case["status"] != "passed").map(|case|crate::json::stringify(&json!({"id":case["id"],"status":case["status"],"error":case["error"],"completed_steps":case["steps"].as_array().map(Vec::len)}))).unwrap_or_else(|| "empty suite".into())),
     )
 }
 

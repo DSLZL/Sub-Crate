@@ -10,8 +10,10 @@ use sub_store_tests::{
 
 #[test]
 fn native_delivery() -> Result {
-    let binary=PathBuf::from(std::env::var_os("TEST_RUST_BINARY").ok_or("Missing release binary")?).canonicalize()?;
-    sub_store_tests::distribution::native(&process::scratch("native-delivery")?,&binary)?;
+    let binary =
+        PathBuf::from(std::env::var_os("TEST_RUST_BINARY").ok_or("Missing release binary")?)
+            .canonicalize()?;
+    sub_store_tests::distribution::native(&process::scratch("native-delivery")?, &binary)?;
     Ok(())
 }
 
@@ -32,14 +34,20 @@ fn shared_native_script_host_processors_dns_mmdb_wire_state_and_resume() -> Resu
 
 #[test]
 fn fresh_age_processes_cross_decrypt_both_key_types_and_preserve_artifacts() -> Result {
-    let binary=PathBuf::from(std::env::var_os("TEST_PROBE_BINARY").ok_or("Missing actual Rust probe executable")?).canonicalize()?;
-    sub_store_tests::age::run(&process::scratch("age-probe")?,&binary)
+    let binary = PathBuf::from(
+        std::env::var_os("TEST_PROBE_BINARY").ok_or("Missing actual Rust probe executable")?,
+    )
+    .canonicalize()?;
+    sub_store_tests::age::run(&process::scratch("age-probe")?, &binary)
 }
 
 #[test]
 fn downloads_preserve_exact_wire_cache_stream_bytes_files_and_resume() -> Result {
-    let binary=PathBuf::from(std::env::var_os("TEST_PROBE_BINARY").ok_or("Missing actual Rust probe executable")?).canonicalize()?;
-    sub_store_tests::download::run(&process::scratch("download-probe")?,&binary)
+    let binary = PathBuf::from(
+        std::env::var_os("TEST_PROBE_BINARY").ok_or("Missing actual Rust probe executable")?,
+    )
+    .canonicalize()?;
+    sub_store_tests::download::run(&process::scratch("download-probe")?, &binary)
 }
 
 #[test]
@@ -50,6 +58,11 @@ fn conversion_business_contracts_clocks_restarts_isolation_and_concurrency() -> 
 #[test]
 fn services_cross_decrypt_existing_age_backups_and_rollback_corruption() -> Result {
     sub_store_tests::backup::age_interop(&process::scratch("service-backup-age")?)
+}
+
+#[test]
+fn actual_schedules_cover_overlap_updates_disable_delete_sync_backup_mmdb_and_startup() -> Result {
+    sub_store_tests::scheduling::run(&process::scratch("service-scheduling")?)
 }
 
 #[test]

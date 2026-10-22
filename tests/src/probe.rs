@@ -324,7 +324,18 @@ pub fn shared(output: &Path) -> Result {
                 let checked = (|| -> Result {
                     require(
                         result.success(),
-                        format!("Script probe {label} failed or timed out: {}",result.stderr.chars().rev().take(5000).collect::<String>().chars().rev().collect::<String>()),
+                        format!(
+                            "Script probe {label} failed or timed out: {}",
+                            result
+                                .stderr
+                                .chars()
+                                .rev()
+                                .take(5000)
+                                .collect::<String>()
+                                .chars()
+                                .rev()
+                                .collect::<String>()
+                        ),
                     )?;
                     if suite == "processor" {
                         check_progress(&progress, resume)?;
