@@ -390,13 +390,16 @@ pub fn check_state(result: &Value, persisted: &Value) -> Result {
 }
 fn execute(
     kind: &str,
-    binary: &Path,
+    binary: &crate::script_target::Target,
     state: &Path,
     url: &str,
     args: &[&str],
     output: &Path,
     label: &str,
 ) -> Result<process::Completed> {
+    let mut environment = server::environment(state);
+    server::set(&mut environment, "SUB_STORE_COMPAT_STATE_DIR", state);
+    server::set(&mut environment, "SUB_STORE_COMPAT_UPSTREAM", url);
     let mut command = if kind == "node" {
         let mut command = Command::new(reference::node());
         command
@@ -405,11 +408,8 @@ fn execute(
             .arg(crate::compat().join("download-reference.cjs"));
         command
     } else {
-        Command::new(binary)
+        binary.command(&environment)?
     };
-    let mut environment = server::environment(state);
-    server::set(&mut environment, "SUB_STORE_COMPAT_STATE_DIR", state);
-    server::set(&mut environment, "SUB_STORE_COMPAT_UPSTREAM", url);
     command
         .args(args)
         .env_clear()
@@ -419,15 +419,15 @@ fn execute(
         } else {
             crate::root()
         });
-    process::run_direct(
+    if kind == "node" { process::run_direct(
         &mut command,
         output,
         label,
         Duration::from_secs(60),
         "Direct download process ownership allows watchdog cleanup on Windows",
-    )
+    ) } else { binary.run(&mut command, output, label) }
 }
-pub fn run(output: &Path, binary: &Path) -> Result {
+pub fn run(output: &Path, binary: &crate::script_target::Target) -> Result {
     let prepare = output.join("download-prepare-state");
     std::fs::create_dir(&prepare)?;
     require(

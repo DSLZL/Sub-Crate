@@ -2,7 +2,7 @@ use crate::{
     Result, dns, json, mmdb, process, providers, reference, require, server, upstream::Upstream,
 };
 use serde_json::{Value, json};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
@@ -201,11 +201,7 @@ pub fn check_processor_requests(requests: &[Value]) -> Result {
 
 pub fn shared(output: &Path) -> Result {
     reference::verify(output)?;
-    let executable = PathBuf::from(
-        std::env::var_os("TEST_PROBE_BINARY")
-            .ok_or("Missing actual Rust script probe executable")?,
-    )
-    .canonicalize()?;
+    let executable = crate::script_target::Target::from_env()?;
     let upstream = Upstream::new(0)?;
     let dns = dns::ControlledDns::new()?;
     for suite in ["host", "processor"] {
@@ -275,7 +271,7 @@ pub fn shared(output: &Path) -> Result {
                     }
                     command
                 } else {
-                    let mut command = Command::new(&executable);
+                    let mut command = executable.command(&environment)?;
                     if suite == "host" {
                         if resume {
                             command.arg("--host-resume");
@@ -302,13 +298,13 @@ pub fn shared(output: &Path) -> Result {
                     dns.connections().len(),
                     dns.errors().len(),
                 );
-                let result = process::run_direct(
+                let result = if kind == "node" { process::run_direct(
                     &mut command,
                     output,
                     &label,
                     Duration::from_secs(60),
                     "Direct native ownership allows the watchdog to kill the evaluated host on Windows",
-                )?;
+                )? } else { executable.run(&mut command, output, &label)? };
                 dns.wait_for_idle()?;
                 let requests = upstream.fixture.since(offset);
                 let dns_requests = dns.requests()[dns_offset..].to_vec();

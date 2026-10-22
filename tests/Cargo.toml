@@ -28,3 +28,7 @@ path = "native.rs"
 [[test]]
 name = "frontend"
 path = "frontend.rs"
+
+[[test]]
+name = "docker"
+path = "docker.rs"

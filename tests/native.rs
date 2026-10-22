@@ -77,19 +77,13 @@ fn shared_native_script_host_processors_dns_mmdb_wire_state_and_resume() -> Resu
 
 #[test]
 fn fresh_age_processes_cross_decrypt_both_key_types_and_preserve_artifacts() -> Result {
-    let binary = PathBuf::from(
-        std::env::var_os("TEST_PROBE_BINARY").ok_or("Missing actual Rust probe executable")?,
-    )
-    .canonicalize()?;
+    let binary = sub_store_tests::script_target::Target::from_env()?;
     sub_store_tests::age::run(&process::scratch("age-probe")?, &binary)
 }
 
 #[test]
 fn downloads_preserve_exact_wire_cache_stream_bytes_files_and_resume() -> Result {
-    let binary = PathBuf::from(
-        std::env::var_os("TEST_PROBE_BINARY").ok_or("Missing actual Rust probe executable")?,
-    )
-    .canonicalize()?;
+    let binary = sub_store_tests::script_target::Target::from_env()?;
     sub_store_tests::download::run(&process::scratch("download-probe")?, &binary)
 }
 
@@ -138,16 +132,13 @@ fn merged_and_standalone_shares_preserve_token_concurrency_encryption_and_failed
 fn rust_and_node_preserve_shared_state_restart_write_failure_and_rollback() -> Result {
     let output = process::scratch("state-parity")?;
     reference::verify(&output)?;
-    let binary =
-        PathBuf::from(std::env::var_os("TEST_RUST_BINARY").ok_or("Missing delivered Rust binary")?)
-            .canonicalize()?;
     let http = Http::new(Duration::from_secs(5))?;
     let cases = contracts::cases("service-state")?;
     let restart = contracts::cases("restart")?;
     let mut final_states = Vec::new();
     for (kind, backend) in [
         ("node", Backend::Node(reference::node())),
-        ("rust", Backend::Rust(binary.clone())),
+        ("rust", sub_store_tests::service::target()?),
     ] {
         let state = output.join(format!("{kind}-state"));
         std::fs::create_dir(&state)?;

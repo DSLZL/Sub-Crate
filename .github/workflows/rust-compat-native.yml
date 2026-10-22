@@ -15,130 +15,8 @@ permissions:
   contents: read
 
 jobs:
-  harness-self-checks:
-    if: inputs.harness_only
+  native:
     uses: ./.github/workflows/rust-tests.yml
-
-  native-baseline:
-    if: ${{ !inputs.harness_only }}
-    name: Native ${{ matrix.target }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: linux-x64
-            runner: ubuntu-24.04
-            unit-mode: unit
-            rustflags: ''
-            cargo_args: ''
-            binary: rust/target/release/sub-store-rust
-          - target: linux-arm64
-            runner: ubuntu-24.04-arm
-            unit-mode: unit
-            rustflags: ''
-            cargo_args: ''
-            binary: rust/target/release/sub-store-rust
-          - target: windows-x64
-            runner: windows-2025
-            unit-mode: unit-windows
-            rustflags: '-C target-feature=+crt-static'
-            cargo_args: '--target x86_64-pc-windows-msvc'
-            binary: rust/target/x86_64-pc-windows-msvc/release/sub-store-rust.exe
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: ./.github/actions/node-reference
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24.16.0
-          package-manager-cache: false
-      - name: Install locked development dependencies
-        run: |
-          npm install --global pnpm@11.0.9
-          pnpm --dir backend install --frozen-lockfile
-          pnpm --dir tests/compat install --frozen-lockfile
-          node tests/compat/build-native-utilities.cjs
-      - name: Install Rust toolchain
-        run: |
-          rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
-          rustup override set 1.98.0
-      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
-        with:
-          tool: nextest@0.9.149
-      - name: Runner self-checks
-        run: python -m unittest discover -s tests/compat -p test_runner.py
-      - name: Rust service formatting (preserve CI formatting output)
-        run: |
-          mkdir -p tests/compat/evidence/service-format
-          cargo fmt --manifest-path rust/Cargo.toml --all
-          cp -R rust/src tests/compat/evidence/service-format/src
-          git diff --exit-code -- rust
-      - name: Rust service lint, tests and release binary
-        id: service-build
-        if: ${{ !cancelled() }}
-        env:
-          RUSTFLAGS: ${{ matrix.rustflags }}
-        run: |
-          mkdir -p tests/compat/evidence/service-build
-          cargo clippy --manifest-path rust/Cargo.toml --locked --all-targets ${{ matrix.cargo_args }} -- -D warnings 2>&1 | tee tests/compat/evidence/service-build/clippy.log
-          cargo nextest list --manifest-path rust/Cargo.toml --locked --all-targets ${{ matrix.cargo_args }} --config-file .config/nextest.toml 2>&1 | tee tests/compat/evidence/service-build/inventory.log
-          cargo nextest run --manifest-path rust/Cargo.toml --locked --all-targets ${{ matrix.cargo_args }} --config-file .config/nextest.toml --profile production 2>&1 | tee tests/compat/evidence/service-build/tests.log
-          cp rust/target/nextest/production/junit-production.xml tests/compat/evidence/service-build/
-          cargo build --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust ${{ matrix.cargo_args }} 2>&1 | tee tests/compat/evidence/service-build/release.log
-      - name: Attribute parsing and node conversion CPU in release mode
-        if: ${{ !cancelled() && steps.service-build.outcome == 'success' && matrix.target == 'linux-x64' }}
-        run: |
-          cargo nextest run --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust --config-file .config/nextest.toml --profile cpu-parse --run-ignored only -E 'test(=clash::tests::profile_structured_subscription)' --success-output immediate 2>&1 | tee tests/compat/evidence/service-build/parse-profile.log
-          cp rust/target/nextest/cpu-parse/junit-cpu-parse.xml tests/compat/evidence/service-build/
-          cargo nextest run --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust --config-file .config/nextest.toml --profile cpu-conversion --run-ignored only -E 'test(=script_conversion::tests::profile_node_production)' --success-output immediate 2>&1 | tee tests/compat/evidence/service-build/conversion-profile.log
-          cp rust/target/nextest/cpu-conversion/junit-cpu-conversion.xml tests/compat/evidence/service-build/
-      - name: Package and verify the native delivery
-        id: service-package
-        if: ${{ !cancelled() && steps.service-build.outcome == 'success' }}
-        env:
-          RUSTFLAGS: ${{ matrix.rustflags }}
-        run: |
-          python tests/compat/distribution.py --target "${{ matrix.target }}" \
-            --binary "${{ matrix.binary }}" \
-            --output "$RUNNER_TEMP/sub-store-native-distribution"
-      - name: Actual delivered Rust binary HTTP, state, restart and rollback contracts
-        if: ${{ !cancelled() && steps.service-package.outcome == 'success' }}
-        run: python tests/compat/service.py --node "$(node -p 'process.execPath')" --binary "${{ steps.service-package.outputs.binary }}"
-      - name: Preserve runnable native archive, notices and provenance
-        if: ${{ !cancelled() && steps.service-package.outcome == 'success' }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: m5-distribution-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ steps.service-package.outputs.publish }}
-          if-no-files-found: error
-          retention-days: 30
-      - name: Build general JS helpers
-        if: ${{ !cancelled() }}
-        run: python tests/compat/reference.py --node "$(node -p 'process.execPath')" --mode helpers
-      - name: Native Rust JS probe
-        if: ${{ !cancelled() }}
-        run: python tests/compat/probe.py --node "$(node -p 'process.execPath')"
-      - name: Node HTTP contract slice
-        if: ${{ !cancelled() }}
-        run: python tests/compat/reference.py --node "$(node -p 'process.execPath')" --mode contracts
-      - name: Node unit suite including reference regressions
-        if: ${{ !cancelled() }}
-        run: python tests/compat/reference.py --node "$(node -p 'process.execPath')" --mode ${{ matrix.unit-mode }}
-      - name: Preserve platform evidence, including failures
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: m1-native-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: tests/compat/evidence/
-          if-no-files-found: error
-          retention-days: 30
 
   frontend-baseline:
     name: Unchanged frontend (nextest and headless Chrome)
@@ -148,7 +26,7 @@ jobs:
       run:
         shell: bash
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/.compat-build/frontend
+      CARGO_TARGET_DIR: ${{ runner.temp }}/sub-store-frontend-build
       TEST_FRONTEND: ${{ github.workspace }}/.compat-frontend
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -178,7 +56,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            .compat-build/frontend
+            ${{ runner.temp }}/sub-store-frontend-build
           key: nextest-frontend-1.98.0-${{ hashFiles('tests/Cargo.toml', 'tests/Cargo.lock', 'rust/Cargo.lock') }}
           restore-keys: nextest-frontend-1.98.0-
       - name: Install locked frontend and reference dependencies
@@ -235,11 +113,11 @@ jobs:
             ${{ runner.temp }}/sub-store-native-delivery-*
           if-no-files-found: warn
           retention-days: 30
-  docker-baseline:
+  docker:
     if: ${{ !inputs.harness_only }}
     name: Docker ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: 55
     strategy:
       fail-fast: false
       matrix:
@@ -251,6 +129,10 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      CARGO_TARGET_DIR: ${{ runner.temp }}/sub-store-docker-tests
+      TEST_DOCKER_IMAGE: sub-store-nextest:${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.target }}
+      TEST_DOCKER_PROBE_IMAGE: sub-store-nextest-probe:${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.target }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -261,34 +143,71 @@ jobs:
         with:
           node-version: 24.16.0
           package-manager-cache: false
-      - name: Install locked oracle dependencies
+      - name: Install fixed toolchain
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+          rustup override set 1.98.0
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
+        with:
+          tool: nextest@0.9.149
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ runner.temp }}/sub-store-docker-tests
+          key: nextest-docker-${{ matrix.target }}-1.98.0-${{ hashFiles('tests/Cargo.toml', 'tests/Cargo.lock') }}
+          restore-keys: nextest-docker-${{ matrix.target }}-1.98.0-
+      - name: Prepare frozen reference and script probe inputs
         run: |
           npm install --global pnpm@11.0.9
           pnpm --dir backend install --frozen-lockfile
           pnpm --dir tests/compat install --frozen-lockfile
           node tests/compat/build-native-utilities.cjs
-      - name: Runner self-checks
-        run: python -m unittest discover -s tests/compat -p test_runner.py
-      - name: Build general JS helpers
-        run: python tests/compat/reference.py --node "$(node -p 'process.execPath')" --mode helpers
-      - name: Container release binary, HTTP, persistence and restart contracts
-        run: python tests/compat/probe.py --node "$(node -p 'process.execPath')" --docker
-      - name: Actual Node-free Rust service container contracts
-        id: docker-service
-        if: ${{ !cancelled() }}
-        run: python tests/compat/service.py --node "$(node -p 'process.execPath')" --docker
-      - name: Deliver the saved and reloaded production image
+          node tests/compat/build-helpers.cjs
+          (cd backend && node bundle-esbuild.js)
+          echo "TEST_NODE=$(node -p 'process.execPath')" >> "$GITHUB_ENV"
+      - name: Rust harness checks
+        run: |
+          cargo +1.98.0 fmt --manifest-path tests/Cargo.toml --all
+          cargo +1.98.0 clippy --manifest-path tests/Cargo.toml --locked --all-targets -- -D warnings
+          cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --lib --config-file .config/nextest.toml --profile ci
+      - name: Build actual Node-free images on the native runner
+        run: |
+          docker build --file tests/compat/Probe.Dockerfile --tag "$TEST_DOCKER_PROBE_IMAGE" .
+          docker build --file rust/Dockerfile --tag "$TEST_DOCKER_IMAGE" .
+      - name: Package save extract and reload production image
+        id: docker-package
+        run: cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --test docker --config-file .config/nextest.toml --profile delivery -E 'test(=docker::delivery)'
+      - name: Verify native probe image
+        run: cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --test docker --config-file .config/nextest.toml --profile docker-images -E 'test(=docker::probe_image_matches_native_runner)'
+      - name: Actual delivered containers scripts wire state restarts and rollback
+        run: cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --test native --config-file .config/nextest.toml --profile acceptance -E 'not (test(=native_delivery) or test(=corrupt_native_startups_and_restore_journals_exit_without_resetting_either_file) or test(=frozen_node_unit_suite) or test(=frozen_node_http_suites))'
+      - name: Clean only containers owned by this runner job
+        if: always()
+        run: |
+          docker ps -aq --filter "ancestor=$TEST_DOCKER_IMAGE" --filter 'name=nextest-' | xargs --no-run-if-empty docker rm --force
+          docker ps -aq --filter "ancestor=$TEST_DOCKER_PROBE_IMAGE" --filter 'name=nextest-probe-' | xargs --no-run-if-empty docker rm --force
+      - name: Deliver saved and reloaded production image
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: m5-distribution-docker-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ steps.docker-service.outputs.publish }}/
+          path: ${{ steps.docker-package.outputs.publish }}
           if-no-files-found: error
           retention-days: 30
-      - name: Preserve container evidence, including failures
+      - name: Preserve container reports including failures
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: m1-docker-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: tests/compat/evidence/
-          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/sub-store-docker-tests/nextest/
+            ${{ runner.temp }}/sub-store-docker-delivery-*
+            ${{ runner.temp }}/sub-store-docker-probe-image-*
+            ${{ runner.temp }}/sub-store-state-parity-*
+            ${{ runner.temp }}/sub-store-script-probe-*
+            ${{ runner.temp }}/sub-store-age-probe-*
+            ${{ runner.temp }}/sub-store-download-probe-*
+            ${{ runner.temp }}/sub-store-service-*
+          if-no-files-found: warn
           retention-days: 30

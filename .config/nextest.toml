@@ -40,6 +40,12 @@ inherits = "ci"
 [profile.delivery.junit]
 path = "junit-delivery.xml"
 
+[profile.docker-images]
+inherits = "ci"
+
+[profile.docker-images.junit]
+path = "junit-docker-images.xml"
+
 [profile.production]
 inherits = "ci"
 

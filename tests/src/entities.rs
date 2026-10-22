@@ -25,7 +25,7 @@ impl Entities<'_>{
             let captures=regex::Regex::new(r#"^attachment; filename="(.*)_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.json"$"#)?.captures(disposition).ok_or("Invalid entity export filename")?;
             persistence::filename(&reply.value()?,&unquote(&captures[1])?,lower,upper,&jiff::tz::TimeZone::system())?;
         }
-        if let Some(origin)=headers.get("Origin").filter(|origin|!origin.is_empty()){if status!=403{require(reply.headers.get("access-control-allow-origin")==Some(origin),"API CORS origin changed")?;}}
+        if let Some(origin)=headers.get("Origin").filter(|origin|!origin.is_empty())&&status!=403{require(reply.headers.get("access-control-allow-origin")==Some(origin),"API CORS origin changed")?;}
         self.observed.push(json!({"method":method,"path":path,"status":status,"headers":reply.headers.iter().filter(|(key,_)|HEADERS.contains(&key.as_str())).collect::<BTreeMap<_,_>>(),"body_base64":STANDARD.encode(&reply.body),"state":self.api.durable()?}));
         Ok(reply)
     }

@@ -554,6 +554,36 @@ pub fn native(output: &Path, binary: &Path) -> Result<PathBuf> {
     Ok(delivered)
 }
 
+pub fn docker(output: &Path, image: &str) -> Result {
+    let (target,triple,architecture)=match(std::env::consts::OS,std::env::consts::ARCH){("linux","x86_64")=>("linux-x64","x86_64-unknown-linux-gnu","amd64"),("linux","aarch64")=>("linux-arm64","aarch64-unknown-linux-gnu","arm64"),_=>return Err("Docker delivery requires a native Linux runner".into())};
+    require(image.starts_with("sub-store-nextest:"),"Refusing to replace an image not owned by this acceptance run")?;
+    let command=|args:&[&str],label:&str,timeout:u64|->Result<String>{Ok(process::checked(Command::new("docker").args(args).current_dir(crate::root()),output,label,Duration::from_secs(timeout))?.stdout.trim().to_owned())};
+    let inspected=json::parse(&command(&["image","inspect",image],"image-before",120)?)?[0].clone();
+    require(inspected["Os"]=="linux"&&inspected["Architecture"]==architecture,"Wrong delivered image platform")?;
+    let mut source=process::provenance(output)?;source["source_commit"]=source["backend_commit"].clone();source["repository"]=json!(std::env::var("GITHUB_REPOSITORY")?);
+    let inputs=process::checked(Command::new("git").args(["ls-files","--","LICENSE","rust","tests/compat","tests/src","tests/Cargo.toml","tests/Cargo.lock",".config/nextest.toml",".github/actions/node-reference",".github/workflows/rust-compat-native.yml"]).current_dir(crate::root()),output,"docker-build-inputs",Duration::from_secs(30))?.stdout;
+    source["build_input_sha256"]=json!(inputs.lines().map(|path|Ok((path.to_owned(),digest(crate::root().join(path))?))).collect::<Result<BTreeMap<_,_>>>()?);
+    source["cargo_lock_sha256"]=json!(digest(crate::root().join("rust/Cargo.lock"))?);source["workflow_run"]=json!(std::env::var("GITHUB_RUN_ID")?);source["workflow_attempt"]=json!(std::env::var("GITHUB_RUN_ATTEMPT")?);
+    let metadata=process::checked(Command::new("cargo").args(["metadata","--manifest-path","rust/Cargo.toml","--locked","--no-deps","--format-version","1"]).current_dir(crate::root()),output,"docker-package-version",Duration::from_secs(120))?.stdout;
+    let version=json::parse(&metadata)?["packages"][0]["version"].as_str().ok_or("Missing image application version")?.to_owned();source["rust_version"]=json!(version);
+    let payload=output.join(format!("sub-store-rust-{version}-docker-{target}"));std::fs::create_dir(&payload)?;
+    std::fs::copy(crate::root().join("LICENSE"),payload.join("LICENSE"))?;for file in["README.md","ACCEPTANCE.md","Cargo.lock"]{std::fs::copy(crate::root().join("rust").join(file),payload.join(file))?;}
+    let container=command(&["create",image],"notice-container",120)?;
+    require(!container.is_empty()&&container.chars().all(|character|character.is_ascii_hexdigit()),"Invalid created notice container identity")?;
+    let copied=command(&["cp",&format!("{container}:/usr/share/licenses/sub-store"),payload.join("licenses").to_str().ok_or("Invalid notice destination")?],"image-notices",120);
+    let cleaned=command(&["rm",&container],"remove-notice-container",120);copied?;cleaned?;
+    let notices=json::read(payload.join("licenses/third-party.json"))?;let count=notices["crates"].as_array().ok_or("Missing image dependency notices")?.len();
+    require(count>0&&payload.join("licenses/licenses/embedded-utilities/CRON-LICENSE.txt").is_file(),"Incomplete image notices")?;
+    let toolchain=std::fs::read_to_string(payload.join("licenses/toolchain.txt"))?;require(std::fs::read_to_string(payload.join("licenses/target.txt"))?.trim()==triple,"Wrong image compiler target")?;
+    command(&["save","--output",payload.join("image.tar").to_str().ok_or("Invalid image archive")?,image],"image-save",300)?;
+    source["kind"]=json!("rust-docker-distribution");source["target"]=json!(target);source["target_triple"]=json!(triple);source["os"]=json!("linux");source["architecture"]=json!(architecture);source["image_tag"]=json!(image);source["image_id"]=inspected["Id"].clone();source["toolchain"]=json!(toolchain);source["docker_version"]=json!(command(&["version","--format","{{json .}}"],"docker-version",120)?);source["dependency_notice_count"]=json!(count);
+    let(unpacked,mut delivery)=package_payload(&payload,target,&source)?;
+    command(&["image","rm",image],"remove-built-image",120)?;command(&["load","--input",unpacked.join("image.tar").to_str().ok_or("Invalid extracted image archive")?],"image-load",300)?;
+    let loaded=json::parse(&command(&["image","inspect",image],"image-after",120)?)?[0].clone();require(loaded["Id"]==inspected["Id"]&&loaded["Architecture"]==architecture&&loaded["Os"]=="linux","Reloaded image changed identity/platform")?;
+    delivery["saved_image_reloaded"]=json!(true);delivery["reloaded_image_id"]=loaded["Id"].clone();json::write_new(output.join("docker-distribution.json"),&delivery)?;
+    if let Some(path)=std::env::var_os("GITHUB_OUTPUT"){use std::io::Write;writeln!(std::fs::OpenOptions::new().append(true).open(path)?,"publish={}",output.join("publish").display())?;}Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

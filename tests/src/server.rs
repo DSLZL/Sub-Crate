@@ -43,7 +43,7 @@ fn truth(environment: &Environment, key: &str) -> bool {
 pub fn free_port() -> Result<u16> {
     Ok(TcpListener::bind("127.0.0.1:0")?.local_addr()?.port())
 }
-fn docker_user() -> Result<String> {
+pub(crate) fn docker_user() -> Result<String> {
     #[cfg(unix)]
     {
         Ok(format!("{}:{}", unsafe { libc::getuid() }, unsafe {

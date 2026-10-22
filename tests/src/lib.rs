@@ -28,6 +28,7 @@ pub mod providers;
 pub mod raw_http;
 pub mod reference;
 pub mod scheduling;
+pub mod script_target;
 pub mod server;
 pub mod service;
 pub mod sharing;

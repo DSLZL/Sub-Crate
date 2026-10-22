@@ -171,7 +171,7 @@ impl Resources<'_>{
     }
 }
 pub fn run(output:&Path)->Result{
-    reference::verify(output)?;let backup=json::read(crate::compat().join("fixtures/frontend-backup.json"))?;let root=json!({"opaque":{"text":"cache🙂","zero":0,"flag":false},"sub-store-cached-resource":"{}"});
+    reference::verify(output)?;let backup=json::read(crate::compat().join("fixtures/frontend-backup.json"))?;let root=crate::persistence::root_fixture();
     for(mode,mount,prefix,merged)in[("merged-prefix","/backend","true",true),("merged-root","/","true",true),("prefixed","/backend","true",false),("unprefixed","/gateway","",false),("root","/","true",false),("static-only","","",false)]{
         let mut paired=Vec::new();
         for(kind,backend)in[("node",Backend::Node(reference::node())),("rust",service::target()?)]{

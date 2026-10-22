@@ -46,7 +46,7 @@ pub fn check_run(result: &Value, progress: &Value, full: bool, directions: &[&st
     json::check(&result["verified"], &json!(expected), false)
 }
 
-pub fn run(output: &Path, executable: &Path) -> Result {
+pub fn run(output: &Path, executable: &crate::script_target::Target) -> Result {
     let stages = [
         ("node-age-generate", "node", "full", None, None, vec![]),
         (
@@ -106,7 +106,7 @@ pub fn run(output: &Path, executable: &Path) -> Result {
                 .arg(crate::compat().join("age-reference.cjs"));
             command
         } else {
-            let mut command = Command::new(executable);
+            let mut command = executable.command(&environment)?;
             command.arg("--age");
             command
         };
@@ -118,13 +118,13 @@ pub fn run(output: &Path, executable: &Path) -> Result {
             } else {
                 crate::root()
             });
-        let result = process::run_direct(
+        let result = if kind == "node" { process::run_direct(
             &mut command,
             output,
             name,
             Duration::from_secs(60),
             "Direct age process ownership allows watchdog cleanup on Windows",
-        )?;
+        )? } else { executable.run(&mut command, output, name)? };
         require(
             result.success(),
             format!("{name} failed: {}", result.stderr),
