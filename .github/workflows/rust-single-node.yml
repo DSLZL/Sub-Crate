@@ -51,6 +51,7 @@ jobs:
           restore-keys: subscription-performance-linux-x64-rust-1.98.0-
       - name: Build and check exact source
         run: |
+          "$RUNNER_TEMP/single-node-venv/bin/python" -m unittest discover -s tests/performance -p 'test_*.py'
           (cd .performance/original/backend && node bundle-esbuild.js)
           cargo +1.98.0 fmt --manifest-path .performance/rust/rust/Cargo.toml --all -- --check
           cargo +1.98.0 clippy --manifest-path .performance/rust/rust/Cargo.toml --locked --all-targets -- -D warnings

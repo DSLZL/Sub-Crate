@@ -114,6 +114,7 @@ def endpoint(args, suite, cases, report):
                         for suffix in ("", "\n")]
             expected = b.api(origins["node"], "proxy/parse", "POST", payloads[0])
             assert len(expected["par_res"]) == 1
+            suite.expected_outputs[case["id"]] = expected
             for kind in origins:
                 for index in range(20):
                     assert b.api(origins[kind], "proxy/parse", "POST", payloads[index % 2]) == expected
@@ -128,6 +129,24 @@ def endpoint(args, suite, cases, report):
                         assert body["status"] == "success" and body["data"] == expected
                     report["http"].append({"case": case["id"], "variant": kind, "block": block, "ns": samples})
             print("single-node HTTP complete: " + case["id"], flush=True)
+
+
+def profiles(args, suite, cases, report):
+    # Timed endpoint samples above retain default profiling-off behavior.
+    args.profile_pipeline = True
+    directory = suite.directory("profile-rust")
+    with suite.server("rust_repeat", directory, clone=False) as server:
+        for case in cases:
+            payload = {"data": case["raw"], "client": "JSON", "type": "internal"}
+            expected = suite.expected_outputs[case["id"]]
+            for _ in range(2):
+                assert b.api(server[0], "proxy/parse", "POST", payload) == expected
+            offset = (directory / "server.log").stat().st_size
+            for _ in range(BLOCKS):
+                assert b.api(server[0], "proxy/parse", "POST", payload) == expected
+            events = b.pipeline_profiles(directory / "server.log", offset, operation="other", processor=False)
+            assert len(events) == BLOCKS
+            report["profiles"].append({"case": case["id"], "events": events})
 
 
 def summary(report):
@@ -146,6 +165,16 @@ def summary(report):
             samples = [sample for row in report["http"] if row["case"] == case and row["variant"] == variant for sample in row["ns"]]
             values.append(statistics.median(samples) / 1_000_000)
         lines.append("| " + case + " | " + " | ".join(f"{value:.3f}" for value in values) + " |")
+    if report["profiles"]:
+        events = report["profiles"][0]["events"]
+        lines += ["", "Separate Rust SS-URI profile: median active ms over seven requests.",
+                  "Profiler-on samples do not enter the latency table. Parent/child stages overlap; active time is not OS CPU time.",
+                  "", "| Stage | Median active ms |", "|---|---:|"]
+        for stage in ("executor_setup", "state_snapshot", "runtime_setup", "context_setup", "job", "bootstrap",
+                      "bootstrap_load", "bootstrap_eval", "bootstrap_state_encode", "bootstrap_state_parse",
+                      "parse_runtime", "parse_native", "produce", "output_encode"):
+            samples = [sum(row["active_ns"] for row in event["rows"] if row["stage"] == stage) / 1e6 for event in events]
+            lines.append(f"| {stage} | {statistics.median(samples):.3f} |")
     return "\n".join(lines) + "\n"
 
 
@@ -165,16 +194,25 @@ def main():
     assert len({case["id"] for case in cases}) == len(cases)
     report = {"version": 1, "original": b.ORIGINAL, "rust": b.command(["git", "rev-parse", "HEAD"], args.rust).decode().strip(),
               "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(), "machine": platform.machine(),
-              "cases": [case["id"] for case in cases], "pure": [], "http": [], "status": "running"}
+              "cases": [case["id"] for case in cases], "pure": [], "http": [], "profiles": [], "status": "running"}
     assert b.command(["git", "rev-parse", "HEAD"], args.original).decode().strip() == b.ORIGINAL
     suite = b.Suite(args, {})
     try:
         pure(args, suite, fixture, cases, report)
         endpoint(args, suite, cases, report)
+        profiles(args, suite, cases, report)
         report["status"] = "passed"
         text = summary(report)
         (args.output / "summary.md").write_text(text)
         print(text, flush=True)
+        for case in report["cases"]:
+            samples = {variant: [round(row["elapsed_ns"] / row["iterations"] / 1000, 3)
+                                for row in report["pure"] if row["case"] == case and row["variant"] == variant]
+                       for variant in VARIANTS}
+            samples["http_p95_ms"] = {variant: sorted(value / 1e6 for row in report["http"]
+                                                   if row["case"] == case and row["variant"] == variant for value in row["ns"])[math.ceil(BLOCKS * HTTP_REQUESTS * .95) - 1]
+                                      for variant in ("node", "rust")}
+            print("SINGLE_NODE_SAMPLES " + json.dumps({"case": case, **samples}), flush=True)
     except Exception:
         report["status"] = "failed"
         raise
