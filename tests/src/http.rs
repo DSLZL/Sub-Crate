@@ -170,4 +170,23 @@ mod tests {
         assert_eq!(result["status"], 307);
         worker.join().unwrap();
     }
+
+    #[test]
+    fn early_rejection_receives_complete_json_body_without_retry() {
+        use std::io::{BufRead,BufReader};
+        crate::actions_only();
+        let listener=TcpListener::bind("127.0.0.1:0").unwrap(); let origin=format!("http://{}",listener.local_addr().unwrap());
+        let worker=std::thread::spawn(move || {
+            let (mut stream,_)=listener.accept().unwrap(); stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            let mut input=BufReader::new(stream.try_clone().unwrap()); let mut line=String::new(); input.read_line(&mut line).unwrap(); assert!(line.starts_with("POST /api/settings HTTP/1.1"));
+            let mut length=None;
+            loop { line.clear(); input.read_line(&mut line).unwrap(); if line=="\r\n" { break; } if let Some((key,value))=line.split_once(':') && key.eq_ignore_ascii_case("Content-Length") { length=Some(value.trim().parse::<usize>().unwrap()); } }
+            stream.write_all(b"HTTP/1.0 403 Forbidden\r\nConnection: close\r\nContent-Length: 23\r\n\r\nCORS origin not allowed").unwrap();
+            stream.shutdown(std::net::Shutdown::Write).unwrap();
+            let mut body=vec![0;length.unwrap()]; input.read_exact(&mut body).unwrap(); assert_eq!(body,br#"{"mustNotCommit": true}"#);
+            listener.set_nonblocking(true).unwrap(); assert!(listener.accept().is_err());
+        });
+        let response=Http::new(Duration::from_secs(5)).unwrap().request(&origin,&json!({"path":"/api/settings","method":"POST","headers":{"Origin":"https://denied.invalid"},"body":{"mustNotCommit":true}}));
+        worker.join().unwrap(); assert_eq!(response.unwrap()["status"],403);
+    }
 }

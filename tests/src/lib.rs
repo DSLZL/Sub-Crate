@@ -9,6 +9,7 @@ pub mod contracts;
 pub mod notices;
 pub mod server;
 pub mod reference;
+pub mod mmdb;
 #[cfg(test)]
 mod notices_tests;
 

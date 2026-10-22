@@ -17,7 +17,7 @@ jobs:
       matrix:
         runner: [ubuntu-24.04, ubuntu-24.04-arm, windows-2025]
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash
@@ -44,6 +44,7 @@ jobs:
             ~/.cargo/git
             ${{ runner.temp }}/sub-store-test-build
           key: nextest-harness-${{ matrix.runner }}-1.98.0-${{ hashFiles('tests/Cargo.toml', 'tests/Cargo.lock') }}
+          restore-keys: nextest-harness-${{ matrix.runner }}-1.98.0-
       - name: Preserve runner formatting patch during migration
         run: |
           cargo +1.98.0 fmt --manifest-path tests/Cargo.toml --all

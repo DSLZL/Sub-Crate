@@ -154,4 +154,38 @@ mod tests {
         actions_only();
         assert_eq!(sha256(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
     }
+
+    #[test]
+    fn command_evidence_keeps_arguments_working_directory_and_partial_timeout_output() {
+        let directory=scratch("command-evidence").unwrap();
+        let completed=run(Command::new(crate::reference::node()).args(["-e","console.log('partial output');setTimeout(()=>{},10000)"]).current_dir(&directory),&directory,"timeout",Duration::from_secs(1)).unwrap();
+        assert!(completed.timed_out && !completed.success()); assert!(completed.stdout.contains("partial output"));
+        let evidence=crate::json::read(directory.join("timeout.command.json")).unwrap();
+        assert_eq!(evidence["timed_out"],true); assert_eq!(evidence["cwd"].as_str().unwrap(),directory.to_str().unwrap());
+        assert!(evidence["argv"].as_array().unwrap().iter().any(|argument| argument=="console.log('partial output');setTimeout(()=>{},10000)"));
+    }
+
+    #[test]
+    fn command_evidence_handles_unavailable_rtk() {
+        let directory=scratch("without-rtk").unwrap();
+        let executable=std::env::current_exe().unwrap();
+        let completed=run(Command::new(&executable).arg("--list").env("PATH","").current_dir(&directory),&directory,"direct",Duration::from_secs(10)).unwrap();
+        assert!(completed.success());
+        let evidence=crate::json::read(directory.join("direct.command.json")).unwrap();
+        assert_eq!(evidence["argv"],json!([executable,"--list"]));
+        assert_eq!(evidence["rtk_exception"],"RTK unavailable on this runner");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn command_evidence_records_the_actual_rtk_proxy_arguments() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory=scratch("with-rtk").unwrap(); let rtk=directory.join("rtk");
+        std::fs::write(&rtk,"#!/bin/sh\n[ \"$1\" = proxy ] || exit 97\nshift\nexec \"$@\"\n").unwrap(); std::fs::set_permissions(&rtk,std::fs::Permissions::from_mode(0o755)).unwrap();
+        let executable=std::env::current_exe().unwrap();
+        let completed=run(Command::new(&executable).arg("--list").env("PATH",&directory).current_dir(&directory),&directory,"wrapped",Duration::from_secs(10)).unwrap();
+        assert!(completed.success());
+        let evidence=crate::json::read(directory.join("wrapped.command.json")).unwrap();
+        assert_eq!(evidence["argv"],json!([rtk,"proxy",executable,"--list"])); assert!(evidence["rtk_exception"].is_null());
+    }
 }
