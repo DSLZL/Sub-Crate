@@ -192,7 +192,7 @@ def summary(report):
                   "", "| Stage | Median active ms |", "|---|---:|"]
         for stage in ("executor_setup", "state_snapshot", "runtime_setup", "context_setup", "job", "bootstrap",
                       "bootstrap_load", "bootstrap_eval", "bootstrap_state_encode", "bootstrap_state_parse",
-                      "parse_runtime", "parse_native", "produce", "output_encode"):
+                      "parse_runtime", "parse_context_init", "parse_native", "produce", "output_encode"):
             samples = [sum(row["active_ns"] for row in event["rows"] if row["stage"] == stage) / 1e6 for event in events]
             lines.append(f"| {stage} | {statistics.median(samples):.3f} |")
     return "\n".join(lines) + "\n"
@@ -217,7 +217,7 @@ def main():
               "cases": [case["id"] for case in cases], "pure": [], "http": [], "profiles": [], "status": "running"}
     assert b.command(["git", "rev-parse", "HEAD"], args.original).decode().strip() == b.ORIGINAL
     report["rust_baseline"] = b.command(["git", "rev-parse", "HEAD"], args.rust_baseline).decode().strip()
-    assert report["rust_baseline"] == "bfae5be4ff67a7bfc9be70ea838e28dce5c0bf02"
+    assert report["rust_baseline"] == "87a105287588c4dc9526a9313889615d2856fbbe"
     report["binary_sha256"] = {kind: hashlib.sha256((root / "rust/target/release/sub-store-rust").read_bytes()).hexdigest()
                                for kind, root in (("rust", args.rust), ("rust_baseline", args.rust_baseline))}
     assert len(set(report["binary_sha256"].values())) == 2, "candidate and baseline must be distinct binaries"
