@@ -5,6 +5,7 @@ use crate::{
 use rquickjs::{
     Array, AsyncContext, AsyncRuntime, Ctx, Exception, Function, JsLifetime, Object, Promise,
     Value as JsValue,
+    context::intrinsic,
     function::Args,
     object::Accessor,
     prelude::{Async, Func, Opt, Rest, This},
@@ -1096,7 +1097,7 @@ async fn process_response<'js>(
     Ok(output)
 }
 
-fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
+fn initialize<'js>(ctx: &Ctx<'js>, job: Job, conversion_only: bool) -> rquickjs::Result<()> {
     crate::js_values::initialize(ctx)?;
     script_io::set_executor(ctx, job.background.clone())?;
     let encode = profile::span("bootstrap_state_encode");
@@ -1108,6 +1109,22 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     ctx.store_userdata(job)
         .map_err(|_| Exception::throw_message(ctx, "Script job already borrowed"))?;
     let globals = ctx.globals();
+    // This JSON-only route cannot invoke downloads or user scripts.
+    if conversion_only {
+        globals.set("SubStoreScriptUtilities", Object::new(ctx.clone())?)?;
+        globals.set("__hostLog", Func::from(console_log))?;
+        crate::script_bytecode::BOOTSTRAP.eval(ctx)?;
+        let utils = Object::new(ctx.clone())?;
+        utils.set("parse", Func::from(native_parse))?;
+        utils.set("produce", Func::from(crate::script_conversion::produce))?;
+        crate::script_helpers::initialize_ip(&utils)?;
+        utils.set(
+            "getRandomPort",
+            Func::from(crate::script_helpers::random_port),
+        )?;
+        globals.set("ProxyUtils", utils)?;
+        return Ok(());
+    }
     globals.set("__hostWait", Func::from(Async(wait)))?;
     globals.set("__hostTimer", Func::from(script_io::timer))?;
     globals.set("__hostCancelTimer", Func::from(script_io::cancel_timer))?;
@@ -1203,12 +1220,33 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     crate::script_pipeline::initialize(ctx)
 }
 
+async fn application_context(
+    runtime: &AsyncRuntime,
+    conversion_only: bool,
+) -> rquickjs::Result<AsyncContext> {
+    if conversion_only {
+        // No user scripts run here; retain every intrinsic used by parse/produce.
+        AsyncContext::custom::<(
+            intrinsic::Eval,
+            intrinsic::RegExpCompiler,
+            intrinsic::RegExp,
+            intrinsic::Json,
+            intrinsic::MapSet,
+            intrinsic::Promise,
+        )>(runtime)
+        .await
+    } else {
+        AsyncContext::full(runtime).await
+    }
+}
+
 pub async fn run(
     store: Arc<Mutex<Store>>,
     operation: &str,
     input: Value,
 ) -> Result<Value, conversion::Error> {
     let background = tokio::runtime::Handle::current();
+    let conversion_only = operation == "parse" && !crate::state::truthy(&input["download"]);
     let operation = operation.to_owned();
     let (sender, receiver) = tokio::sync::oneshot::channel();
     let worker = tokio::task::spawn_blocking(move || {
@@ -1216,12 +1254,19 @@ pub async fn run(
         let mut sender = Some(sender);
         let result = (|| {
             let setup = profile::span("executor_setup");
-            let executor = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
+            let executor = if conversion_only {
+                None
+            } else {
+                Some(
+                    tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .map_err(|error| conversion::Error::Legacy(error.to_string()))?,
+                )
+            };
             drop(setup);
-            executor.block_on(async {
+            let foreground = background.clone();
+            let execute = async {
                 let state = profile::span("state_snapshot");
                 let (cache, root) = {
                     let store = store
@@ -1245,16 +1290,20 @@ pub async fn run(
                 let runtime = AsyncRuntime::new()
                     .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
                 drop(setup);
-                let context = profile::measure("context_setup", None, AsyncContext::full(&runtime))
-                    .await
-                    .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
+                let context = profile::measure(
+                    "context_setup",
+                    None,
+                    application_context(&runtime, conversion_only),
+                )
+                .await
+                .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
                 let result = profile::measure(
                     "job",
                     None,
                     context.async_with(async |ctx| {
                         let result = async {
                             let bootstrap = profile::span("bootstrap");
-                            initialize(&ctx, job)?;
+                            initialize(&ctx, job, conversion_only)?;
                             drop(bootstrap);
                             let js = Js::new(ctx.clone());
                             let decode = profile::span("input_decode");
@@ -1408,7 +1457,13 @@ pub async fn run(
                 // Optimistic refreshes keep their context after the HTTP reply.
                 runtime.idle().await;
                 Ok::<_, conversion::Error>(())
-            })
+            };
+            match executor {
+                Some(executor) => executor.block_on(execute),
+                // This job has no I/O or user callbacks; poll it on the same
+                // blocking worker without constructing another Tokio runtime.
+                None => foreground.block_on(execute),
+            }
         })();
         if let Some(sender) = sender {
             session.finish(false);
@@ -1427,6 +1482,60 @@ pub async fn run(
             Err(conversion::Error::Legacy(
                 "Script job ended without a result".to_owned(),
             ))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn conversion_context_preserves_language_operations_and_isolation() {
+        for conversion_only in [true, true, false] {
+            let runtime = AsyncRuntime::new().unwrap();
+            let context = application_context(&runtime, conversion_only)
+                .await
+                .unwrap();
+            context
+                .async_with(async |ctx| {
+                    crate::js_values::initialize(&ctx).unwrap();
+                    ctx.globals()
+                        .set("SubStoreScriptUtilities", Object::new(ctx.clone()).unwrap())
+                        .unwrap();
+                    crate::script_bytecode::BOOTSTRAP.eval(&ctx).unwrap();
+                    assert!(
+                        ctx.eval::<bool, _>(
+                            r#"typeof __language === 'object' && typeof Promise === 'function'
+                                && typeof RegExp === 'function' && typeof Map === 'function'
+                                && typeof WeakMap === 'function'"#,
+                        )
+                        .unwrap()
+                    );
+                    assert_eq!(
+                        ctx.eval::<bool, _>("typeof Uint8Array === 'undefined'").unwrap(),
+                        conversion_only,
+                    );
+                    assert_eq!(
+                        ctx.eval::<String, _>(
+                            r#"JSON.stringify([
+                            __language.jsonParse('{"2":2,"1":1,"n":9007199254740993}'),
+                            'abc123'.match(__language.regex('\\d+', ''))[0],
+                            __language.iterable(new Set([1,1,2])),
+                            __nativeValues.project({zero:-0,overflow:Infinity}),
+                            typeof globalThis.previousJob
+                        ])"#,
+                        )
+                        .unwrap(),
+                        r#"[{"1":1,"2":2,"n":9007199254740992},"123",[1,2],["{\"zero\":0,\"overflow\":null}","[[[\"zero\"],\"-0\"],[[\"overflow\"],\"Infinity\"]]"],"undefined"]"#,
+                    );
+                    ctx.eval::<(), _>(
+                        "globalThis.previousJob = true; __language.text = () => 'changed'",
+                    )
+                    .unwrap();
+                })
+                .await;
+            runtime.idle().await;
         }
     }
 }

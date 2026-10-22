@@ -2539,6 +2539,12 @@ def main():
         baseline_root = json.loads((output / "node-state/root.json").read_text(encoding="utf-8"))
         _, conversion_cases = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "conversion-local")
         isolate_age_requests(conversion_cases)
+        parse_case = next(case for case in conversion_cases if case["id"] == "P01-output-json")
+        for index, download in enumerate((None, False, 0, "")):
+            step = json.loads(json.dumps(parse_case["steps"][0]))
+            step["body"]["download"] = download
+            conversion_cases.append({"id": f"parse-falsy-download-{index}",
+                                     "source": parse_case["source"], "steps": [step]})
         _, business_cases = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "business-local")
         conversion_cases += business_cases
         _, conversion_restart = load_cases(HERE / "manifest.json", HERE / "fixtures/http-cases.json", "conversion-local-restart")

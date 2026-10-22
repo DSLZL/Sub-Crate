@@ -17,6 +17,10 @@ impl Script {
     }
 
     pub(crate) fn eval(&self, ctx: &Ctx<'_>) -> rquickjs::Result<()> {
+        self.eval_value(ctx).map(|_| ())
+    }
+
+    pub(crate) fn eval_value<'js>(&self, ctx: &Ctx<'js>) -> rquickjs::Result<Value<'js>> {
         let raw = ctx.as_raw().as_ptr();
         let compiled = if let Some(bytes) = self.bytecode.get() {
             let _load = profile::span("bootstrap_load");
@@ -83,9 +87,8 @@ impl Script {
             owned(
                 ctx,
                 qjs::JS_EvalFunction(raw, qjs::JS_DupValue(raw, compiled.as_raw())),
-            )?;
+            )
         }
-        Ok(())
     }
 }
 
@@ -105,6 +108,7 @@ pub(crate) static SCRIPT_UTILITIES: Script =
 pub(crate) static HASH: Script = Script::new(include_bytes!("../vendor/hash-utilities.js"));
 pub(crate) static URL: Script = Script::new(include_bytes!("../vendor/url-utilities.js"));
 pub(crate) static BOOTSTRAP: Script = Script::new(include_bytes!("script-bootstrap.js"));
+pub(crate) static VALUES: Script = Script::new(include_bytes!("js-values.js"));
 pub(crate) static PRIMITIVES: Script = Script::new(include_bytes!("script-primitives.js"));
 pub(crate) static WEB: Script = Script::new(include_bytes!("../vendor/web-utilities.js"));
 pub(crate) static WEB_BINDINGS: Script = Script::new(include_bytes!("script-web.js"));
@@ -139,6 +143,27 @@ mod tests {
                 script.eval(&ctx).unwrap();
                 assert_eq!(ctx.eval::<String, _>(inspect).unwrap(), expected);
                 ctx.eval::<(), _>("counter = 1000; lexical = -1000; bump = null;")
+                    .unwrap();
+            });
+        }
+        assert!(script.bytecode.get().is_some());
+    }
+
+    #[test]
+    fn bytecode_recreates_returned_objects_and_functions_in_independent_runtimes() {
+        let script = Script::new(b"({count:0,next(){return ++this.count;}})");
+        for _ in 0..3 {
+            let runtime = Runtime::new().unwrap();
+            let context = Context::full(&runtime).unwrap();
+            context.with(|ctx| {
+                let value = script.eval_value(&ctx).unwrap();
+                ctx.globals().set("returned", value).unwrap();
+                assert_eq!(
+                    ctx.eval::<String, _>("JSON.stringify([returned.next(),returned.next()])")
+                        .unwrap(),
+                    "[1,2]"
+                );
+                ctx.eval::<(), _>("returned.count = 1000; returned.next = null;")
                     .unwrap();
             });
         }

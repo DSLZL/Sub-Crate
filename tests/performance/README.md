@@ -1254,3 +1254,393 @@ formatting failure `39701116768`, supply no accepted performance numbers.
 Artifacts `single-node-39701402820-1` and `single-node-39702044025-1` retain the
 public samples and runner logs for 30 days. No local product execution or
 artifact extraction was used.
+
+### Direct parse bootstrap specialization (2026-10-22)
+
+The accepted same-runner comparison is
+[39717747810](https://github.com/DSLZL/Sub-Store/actions/runs/39717747810),
+source `87a105287588c4dc9526a9313889615d2856fbbe`. It compares the pinned
+original, Rust `bfae5be4ff67a7bfc9be70ea838e28dce5c0bf02`, and the candidate
+on one Ubuntu x64 runner. Baseline and candidate have separate Cargo output
+directories and distinct binary hashes, recorded in `metrics.json` and the log.
+The earlier shared-output comparison `39713194124` is not accepted: its final
+candidate service build reused existing release output. It supplies no speedup
+evidence. The isolated intermediate comparison `39713856286` measured a
+36.0–38.1% reduction before the final specialization below.
+
+Only direct `parse` jobs with a JavaScript-falsy `download` use the smaller
+environment. They still execute the existing value bridge, language operations,
+native parser and producer, IP predicates and random-port helper. Each request
+retains its own engine/context/parser and normal state handling. Downloads and
+every script-capable operation retain complete initialization. No transformed
+node, live engine, callback or response is shared between requests.
+
+The final driver also checks the existing public Surge fixture's 16 lines
+individually and as one mixed input on all three backends: 51 untimed
+correctness requests. This caught a missing `isIP` binding for AnyTLS with
+`sni=off`; the final candidate reuses the original predicate. The native service
+suite additionally compares `download=null/false/0/""` with the original.
+Failed setup runs `39715021242` and `39716332827`, the Surge failure in
+`39715004018`, and its focused reproduction `39716867675` remain historical
+evidence; none contributes accepted candidate latency samples.
+
+Timed HTTP methodology remains seven blocks of 30 requests for each of nine
+formats and three backends, alternating equivalent raw/newline inputs. All
+5,670 timed responses match the original. Profiling stays disabled for these
+requests. Median milliseconds per request:
+
+| Input | Node | Previous Rust | Candidate Rust |
+|---|---:|---:|---:|
+| SS URI | 0.609 | 15.303 | 2.267 |
+| VMess WS | 0.635 | 15.358 | 2.301 |
+| VLESS WS | 0.602 | 15.261 | 2.292 |
+| Trojan | 0.569 | 15.432 | 2.270 |
+| Hysteria2 | 0.616 | 15.224 | 2.269 |
+| Surge SS | 0.798 | 15.035 | 2.440 |
+| QX SS | 1.085 | 15.045 | 2.436 |
+| Clash JSON | 0.693 | 14.942 | 2.277 |
+| Single-node Clash YAML | 0.954 | 15.054 | 2.287 |
+
+The candidate reduces these HTTP medians by 83.77–85.29%, or 6.16–6.80x.
+It remains 2.25–3.99x slower than Node on this endpoint. SS P95 is
+`0.883 / 20.003 / 2.455 ms` for Node/previous Rust/candidate. Pure parsing
+algorithms are unchanged; the candidate's reused-parser medians still favor
+Rust by 1.14–13.04x on these fixtures.
+
+The separate candidate SS profile reports median active `bootstrap=0.192 ms`,
+`context_setup=0.118 ms`, `parse_runtime=1.418 ms`, `parse_native=0.020 ms`,
+`produce=0.019 ms` and `output_encode=0.012 ms`. Parser initialization now
+dominates the remaining cost. These are instrumented elapsed times, not OS CPU
+measurements. Library-load/evaluation spans also occur inside the independent
+parser; they are not exclusively children of the application bootstrap. Do not
+add overlapping stages or compare their independently computed medians as sums.
+
+The focused run passes formatting, clippy with warnings denied, 39 ordinary
+Rust tests, 25 harness self-checks and all 63 balanced profiles. Artifact
+`single-node-39717747810-1` preserves samples and public logs for 30 days.
+All six jobs pass in
+[39717742648](https://github.com/DSLZL/Sub-Store/actions/runs/39717742648):
+native Linux x64/arm64 and Windows x64, Docker Linux x64/arm64, and the
+unchanged official frontend in headless Chrome.
+The earlier intermediate native run `39713194216` retained a Windows export
+timestamp boundary failure of about 0.6 ms; this optimization does not change
+export clocks or relax that assertion.
+
+These empty-state, localhost single-node observations do not establish full
+imported-subscription throughput, memory savings or release readiness. The
+supplied subscription long test was not repeated. All builds and product tests
+ran in Actions, with no local product execution or artifact extraction.
+
+### Lazy generic-parser initialization (2026-10-22)
+
+[39728781380](https://github.com/DSLZL/Sub-Store/actions/runs/39728781380)
+passes at `ef44869c214ee669ec0af9a3cada7a54b5a7e6c7`, comparing the pinned
+Node original, previous Rust `87a105287588c4dc9526a9313889615d2856fbbe`, and
+the candidate on one Ubuntu x64 runner. Use this run's paired values; absolute
+latencies differ from the earlier runner. Separate output directories and
+recorded distinct binary hashes prevent baseline/candidate build reuse.
+
+The private generic parser now creates its context on first use and loads the
+existing JSON5/YAML bundle only when a fallback or YAML dump needs it. The five
+URI fixtures create neither. The existing fast paths for strict JSON and
+ordinary subscription YAML retain actual QuickJS JSON semantics without eagerly
+loading the generic bundle. Fallback precedence, typed values, error recovery and
+per-job isolation are unchanged.
+No live runtime, context or transformed result is shared between requests.
+
+Median HTTP milliseconds per request, with profiling disabled:
+
+| Input | Node | Previous Rust | Candidate Rust |
+|---|---:|---:|---:|
+| SS URI | 0.484 | 1.472 | 0.435 |
+| VMess WS | 0.506 | 1.500 | 0.443 |
+| VLESS WS | 0.311 | 1.450 | 0.423 |
+| Trojan | 0.321 | 1.472 | 0.504 |
+| Hysteria2 | 0.306 | 1.479 | 0.429 |
+| Surge SS | 0.576 | 1.596 | 1.606 |
+| QX SS | 0.728 | 1.576 | 1.566 |
+| Clash JSON | 0.460 | 1.495 | 0.555 |
+| Single-node Clash YAML | 0.643 | 1.509 | 0.540 |
+
+Seven formats improve by about 63–71% against previous Rust. SS, VMess and
+Clash YAML have lower medians than Node in this run; the other formats do not.
+Surge/QX medians are essentially unchanged. Their profiles still show one
+generic context initialization (0.140–0.141 ms) and one bundle evaluation
+(0.748–0.751 ms) per request. On the first classic-format line,
+`conversion::parse` still attempts `clash::Parser::line` before `classic::parse`;
+preserving that precedence retains bundle loading on this path. The five URI
+profiles assert zero generic contexts; those five plus Clash JSON/YAML assert
+zero generic bundle initializations.
+
+Fresh-parser URI calls take 3.603–7.723 us; their parser objects no longer create
+an unused engine. Reused-parser medians remain 3.574–69.108 us. The candidate
+SS profile reports `context_setup=0.062 ms`, `bootstrap=0.106 ms`,
+`parse_native=0.012 ms` and `job=0.157 ms`; overlapping active elapsed stages
+are not OS CPU measurements. Tail latency does not improve uniformly: Surge
+HTTP P95 is 1.948 ms for previous Rust and 2.563 ms for the candidate, while
+SS is 1.533 ms and 0.548 ms. These samples do not establish a tail-latency win.
+
+All 5,670 timed responses, 51 public Surge preflight responses and 63 separate
+balanced profiles pass, along with formatting, clippy, 40 ordinary Rust tests
+and 25 harness self-checks. The earlier formatting failures at `57ee5a57`
+(runs `39722969899` and `39722969874`) remain evidence and supply no accepted
+performance samples. Artifacts remain on Actions for 30 days; none was
+extracted locally. The supplied-subscription long test was not repeated, and
+this single-node measurement does not establish memory savings or release
+readiness.
+
+All six jobs pass in the separate compatibility run
+[39728781382](https://github.com/DSLZL/Sub-Store/actions/runs/39728781382),
+at the same candidate source. Native Linux x64/arm64, Docker Linux x64/arm64,
+Windows x64 and the unchanged official frontend in headless Chrome passed.
+The final Windows result was confirmed after the earlier GitHub connection EOF
+errors cleared; its HTTP/state/restart/rollback checks passed.
+
+### Surge/QX scalar probes before generic initialization (2026-10-22)
+
+[39735798119](https://github.com/DSLZL/Sub-Store/actions/runs/39735798119)
+passes at `1cf6c2b175cee2773b25ce700b52d7ef7b2ed05e`, comparing the pinned
+Node original, Rust `ef44869c214ee669ec0af9a3cada7a54b5a7e6c7`, and the
+candidate on one Ubuntu x64 runner. Baseline and candidate use separate build
+directories and have distinct binary hashes. Compare these paired observations;
+absolute times from the earlier run came from a different runner.
+
+Before starting the generic engine, `clash::Parser::line` reuses the existing
+conservative YAML reader to reject confirmed scalar strings without an object
+delimiter. Ordinary Surge/QX lines then reach the existing classic parser
+without creating a generic context or loading its libraries. JSON/JSON5 objects,
+tagged YAML and ambiguous inputs retain the previous fallback order. Nothing
+changes in the five URI parser routes. Every request retains its private
+application context; no live engine or converted result is reused.
+
+Median uninstrumented HTTP milliseconds per request:
+
+| Input | Node | Previous Rust | Candidate Rust |
+|---|---:|---:|---:|
+| SS URI | 0.569 | 0.767 | 0.815 |
+| VMess WS | 0.672 | 0.877 | 0.873 |
+| VLESS WS | 0.673 | 0.864 | 0.773 |
+| Trojan | 0.708 | 0.749 | 0.710 |
+| Hysteria2 | 0.453 | 0.731 | 0.836 |
+| Surge SS | 0.768 | 2.573 | 0.712 |
+| QX SS | 1.164 | 2.570 | 0.843 |
+| Clash JSON | 0.592 | 1.154 | 1.015 |
+| Single-node Clash YAML | 1.054 | 1.171 | 1.013 |
+
+Surge/QX HTTP medians fall by 72.3%/67.2% against previous Rust and by
+7.3%/27.6% against Node. Their HTTP P95 values are respectively
+`1.024 / 2.762 / 0.870 ms` and `1.477 / 2.795 / 0.944 ms` for
+Node/previous Rust/candidate. These focused gains do not establish a speedup
+for every input: several other formats still have higher HTTP medians than
+Node, and unchanged URI routes fluctuate against previous Rust in this run.
+
+Pure parsing remains separate from HTTP. Fresh-parser Surge/QX calls take
+`6.972 / 6.858 us`, against Node's `126.092 / 267.710 us`, or 18.09x/39.04x
+faster. Reused-parser candidate medians are `6.977 / 6.906 us`. Those ratios
+must not be presented as request-level speedups.
+
+The separate Surge/QX profiles report median active `context_setup=0.107 /
+0.112 ms`, `bootstrap=0.176 / 0.176 ms`, `parse_scalar_probe=0.014 /
+0.013 ms`, `parse_native=0.031 / 0.029 ms` and `produce=0.019 / 0.019 ms`.
+The probe is nested within parsing. Parent/child stages overlap; independent
+medians cannot be added, and these are elapsed active spans, not OS CPU time.
+Application initialization remains a larger cost than native parsing. The
+native producer still requires the script layer's filtering, preparation and
+JavaScript value semantics; bypassing that layer is not a verified substitute.
+
+All 5,670 timed responses, 66 untimed public correctness responses and 63
+balanced profiles pass. The additional preflight cases cover ignored strings,
+minimal YAML, a comment-prefixed JSON5 object and a QX name resembling YAML.
+All seven native-format profiles assert zero generic contexts; all nine
+fixtures assert zero generic library initializations. Formatting, clippy,
+41 ordinary Rust tests and 25 harness self-checks also pass. Samples and logs
+remain in Actions; no artifacts were downloaded or extracted locally. The
+supplied-subscription long test was not repeated, and this localhost
+single-node comparison does not establish memory savings or release readiness.
+
+All six jobs also pass in
+[39735798237](https://github.com/DSLZL/Sub-Store/actions/runs/39735798237)
+at the same source: native Linux x64/arm64 and Windows x64, Docker Linux
+x64/arm64, and the unchanged official frontend in headless Chrome.
+
+### Reuse compilation of the JS value bridge (2026-10-22)
+
+[39740799145](https://github.com/DSLZL/Sub-Store/actions/runs/39740799145)
+passes at `7d034cd522778241f49b902dec61f18634f00862`, comparing the pinned
+Node original and Rust `1cf6c2b175cee2773b25ce700b52d7ef7b2ed05e` with the
+candidate on one Ubuntu x64 runner. Separate build directories and distinct
+binary hashes are recorded as before. Use these paired observations, rather
+than comparing absolute times between runners.
+
+Application bootstrap already reused compiled fixed libraries, but the value
+bridge still compiled its inline expression on every initialization. Its
+unchanged source now uses the existing private, immutable bytecode cache.
+`Script::eval_value` returns the newly evaluated object in the current context;
+`js_values::initialize` installs it at the same global property. Each engine
+still constructs fresh functions and objects. The first use in a process still
+compiles and serializes the source. No user script, live context, converted node
+or mutable bridge is cached.
+
+Median uninstrumented HTTP milliseconds per request:
+
+| Input | Node | Previous Rust | Candidate Rust |
+|---|---:|---:|---:|
+| SS URI | 0.590 | 0.801 | 0.630 |
+| VMess WS | 0.737 | 0.817 | 0.670 |
+| VLESS WS | 0.622 | 0.825 | 0.677 |
+| Trojan | 0.558 | 0.770 | 0.645 |
+| Hysteria2 | 0.575 | 0.790 | 0.658 |
+| Surge SS | 0.874 | 0.806 | 0.651 |
+| QX SS | 1.206 | 0.811 | 0.668 |
+| Clash JSON | 0.655 | 1.069 | 0.796 |
+| Single-node Clash YAML | 1.044 | 1.080 | 0.806 |
+
+All nine HTTP medians fall by 16.2–25.5% against previous Rust. Surge/QX fall
+by 19.2%/17.6% against previous Rust and 25.5%/44.6% against Node. VMess and
+Clash YAML also have lower medians than Node; the other five fixtures do not.
+These are fixture medians, not a universal throughput or tail-latency claim.
+Pure parser algorithms are unchanged. Candidate fresh-parser Surge/QX medians
+are `7.711 / 7.676 us`; Clash JSON/YAML are `133.873 / 138.895 us`.
+
+Separate Surge/QX profiles report median active `bootstrap_values=0.015 /
+0.014 ms`, `bootstrap=0.064 / 0.063 ms`, `context_setup=0.111 / 0.108 ms`,
+`job=0.170 / 0.164 ms`, `parse_native=0.035 / 0.033 ms` and
+`produce=0.018 / 0.017 ms`. Context creation is now the largest reported
+fixed setup stage. These active elapsed spans do not isolate all HTTP transport
+or scheduling costs, and are not OS CPU time. Nested stages overlap and their
+independently computed medians must not be added.
+
+Formatting, clippy, 42 ordinary Rust tests, 25 harness self-checks, all 66 public
+preflight responses, 5,670 timed responses and 63 balanced profiles pass. The
+new returned-object test verifies independent mutable objects and methods
+across runtimes after bytecode loads; the existing number, cycle, getter,
+exception and concurrent-context checks remain in place. All seven native
+fixtures still initialize no generic context, and all nine load no generic
+library bundle. Builds, product execution and measurements ran only in Actions;
+no artifacts were downloaded or extracted locally. The supplied-subscription
+long test was not repeated; cold-process latency was not measured in this run.
+
+All six jobs pass in
+[39740799201](https://github.com/DSLZL/Sub-Store/actions/runs/39740799201)
+at the same source: native Linux x64/arm64 and Windows x64, Docker Linux
+x64/arm64, and the unchanged official frontend in headless Chrome. The Windows
+HTTP/state/restart/rollback, Rust JS and original Node regression steps passed.
+
+### Initialize conversion and parser intrinsics on demand (2026-10-22)
+
+The first accepted measurement is
+[39747263963](https://github.com/DSLZL/Sub-Store/actions/runs/39747263963)
+at `81707dbc696b22c5197657f9c18e21a88364eea4`. It compares the pinned Node
+original, Rust `7d034cd522778241f49b902dec61f18634f00862` and the candidate
+on one runner, with separate build directories and distinct binary hashes.
+The earlier `74475486` attempt
+[39746997402](https://github.com/DSLZL/Sub-Store/actions/runs/39746997402)
+stopped at two rustfmt differences before measurements; the format-only fix is
+included in `81707dbc`. Its superseded compatibility run was cancelled.
+
+Direct HTTP conversion now creates only base objects, Eval, RegExpCompiler,
+RegExp, Json, MapSet and Promise. Downloading and all other application jobs
+retain the full context. The separate generic parser starts with base objects,
+Eval, Json and MapSet, then adds all omitted intrinsics before loading its fixed
+JSON5/YAML library. Strict JSON still uses actual QuickJS parsing and the existing
+lossless value bridge. No user script can mutate the private parser's globals;
+existing JSON/MapSet identities survive fallback initialization. Fresh contexts,
+numeric semantics, ordering and fallback precedence remain unchanged.
+
+In this first paired run all nine HTTP medians improve by approximately 5–14%
+against previous Rust. Fresh-parser Clash JSON is `95.566 us` against Node's
+`104.844 us`; all nine candidate fresh-parser fixture medians are below Node.
+Separate SS/Surge/QX profiles report application context active medians
+`0.076 / 0.068 / 0.069 ms`; generic Clash JSON/YAML context medians are
+`0.077 / 0.078 ms`. These are active elapsed spans, not CPU measurements, and
+do not isolate all transport or scheduling costs. They are not paired component
+speedup estimates against profiles recorded on a different runner.
+
+Formatting, clippy, 43 ordinary Rust tests, 25 harness self-checks, 66 public
+preflight responses, 5,670 timed responses and 63 balanced profiles pass.
+The strict JSON/JSON5/YAML differential check now uses a separate full-context
+oracle; the new application-context test checks language operations and isolation
+in fresh reduced/full engines. Five compatibility jobs passed at `81707dbc` in
+[39747198498](https://github.com/DSLZL/Sub-Store/actions/runs/39747198498);
+the remaining Windows job was cancelled when the next candidate started, so
+this run is not a complete six-job acceptance.
+
+`401595abaa1001f88162f9e7f2305f849435b913` additionally avoids constructing
+another Tokio executor for the same direct-conversion route. The existing
+Tokio handle polls its future on the blocking worker; the per-job QuickJS
+runtime/context, parser, state snapshot, response delivery and runtime drain
+are retained. Downloading and other operations keep their per-job executor.
+If this route gains I/O or user callbacks, restore the full executor and
+intrinsics before exposing the new behavior.
+
+[39748733206](https://github.com/DSLZL/Sub-Store/actions/runs/39748733206)
+passes at that source with the same pinned Node and previous Rust sources.
+The following are same-run medians; do not use the earlier runner's absolute
+values to estimate the executor change alone.
+
+| Input | Node pure us | Rust reused-parser us | Rust fresh-parser us | Node HTTP ms | Previous Rust HTTP ms | Candidate HTTP ms |
+|---|---:|---:|---:|---:|---:|---:|
+| SS URI | 15.310 | 6.629 | 6.655 | 0.673 | 0.674 | 0.606 |
+| VMess WS | 42.942 | 13.442 | 13.551 | 0.667 | 0.713 | 0.641 |
+| VLESS WS | 33.889 | 11.076 | 11.174 | 0.557 | 0.710 | 0.641 |
+| Trojan | 54.560 | 6.360 | 6.353 | 0.640 | 0.677 | 0.616 |
+| Hysteria2 | 52.011 | 6.930 | 6.940 | 0.616 | 0.682 | 0.611 |
+| Surge SS | 166.868 | 8.224 | 8.197 | 0.837 | 0.683 | 0.621 |
+| QX SS | 337.841 | 8.274 | 8.283 | 1.081 | 0.684 | 0.621 |
+| Clash JSON | 105.659 | 15.191 | 94.119 | 0.649 | 0.828 | 0.719 |
+| Single-node Clash YAML | 258.222 | 20.416 | 100.276 | 1.027 | 0.841 | 0.751 |
+
+All nine candidate HTTP medians are 9.0–13.2% below previous Rust. Seven are
+below Node; VLESS WS and Clash JSON remain 15.1% and 10.8% above Node. All nine
+fresh-parser medians are below Node. This resolves the measured fresh-parser
+Clash JSON disadvantage, while leaving two complete HTTP median gaps explicit.
+The finite 210-request candidate P95 for each fixture is below both other
+backends in this run; this does not establish general tail-latency performance.
+
+Separate SS/Surge/QX profiles round executor setup to `0.000 ms` and report
+application context active medians `0.069 / 0.069 / 0.067 ms`, bootstrap
+`0.058 / 0.059 / 0.058 ms`, native parsing `0.017 / 0.028 / 0.028 ms` and
+production `0.016 / 0.017 / 0.017 ms`. Generic Clash JSON/YAML context medians
+are both `0.079 ms`. Every native-format profile has zero generic contexts,
+and all nine fixtures load no generic library bundle. The profile does not
+fully attribute HTTP transport, worker-queue delay or post-response teardown.
+Nested spans overlap; active elapsed time is not OS CPU time.
+
+Formatting, clippy, 43 ordinary Rust tests, 25 harness self-checks, all 66 public
+preflight responses, 5,670 timed responses and 63 balanced profiles pass again.
+The measured candidate/baseline SHA256 values are distinct. All compilation,
+product execution, tests and measurements ran in Actions; no artifacts were
+downloaded or extracted locally. Neither the supplied-subscription long test
+nor cold-process latency was measured in these two runs. No memory, universal
+protocol, throughput or release-readiness claim follows from these fixtures.
+
+
+The compatibility matrix at the final source is
+[39748732183](https://github.com/DSLZL/Sub-Store/actions/runs/39748732183).
+Attempt 1 passed Linux x64/arm64, both Docker architectures and the unchanged
+frontend. Windows passed formatting, lint, 43 Rust tests, packaging and its
+native JavaScript checks, but the service contract runner timed out at step 7
+of `T02-merged-share-count-and-origin`: standalone frontend
+`POST /share/file/merged-share?token=limited`. Subsequent ordered share cases
+were not run. This non-GET error path does not execute the conversion job.
+The original five-second timeout and failed evidence remain unchanged.
+
+The separate, temporary-branch diagnostic
+[39752607561](https://github.com/DSLZL/Sub-Store/actions/runs/39752607561)
+inspected the retained failure and ran the exact delivered Windows executable
+(SHA256 `1eaa389a38158d5a4c0ec6cf74b2bf02b030924355c199e9defb896aa1332cc2`)
+on a fresh Windows Actions runner. Two fresh non-production processes returned
+the first non-GET sharing error in approximately 87 ms and 43 ms. Neither
+reproduced the five-second timeout. This does not establish the original cause;
+no production error handling, stack formatting or contract timeout was changed.
+The diagnostic downloaded artifacts only inside Actions, with no local
+artifact download, extraction, build or product execution.
+
+Attempt 2 reran only the Windows job at the unchanged `401595ab` source.
+[Windows job 119736564310](https://github.com/DSLZL/Sub-Store/actions/runs/39748732183/job/119736564310)
+passed its actual-binary HTTP/state/restart/rollback contracts, native Rust JS
+probe, Node HTTP contracts and Node regression suite. With the original five
+successful jobs retained, the matrix now has six successful jobs. The first
+Windows timeout remains a retained, unreproduced failure with an unconfirmed
+cause; this rerun is not evidence that an error-path defect was fixed. The
+temporary diagnostic branch and local plaintext workflow drafts were removed.

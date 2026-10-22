@@ -30,6 +30,11 @@ jobs:
           ref: ${{ github.sha }}
           path: .performance/rust
           persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: 7d034cd522778241f49b902dec61f18634f00862
+          path: .performance/rust-baseline
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24.16.0
@@ -51,21 +56,24 @@ jobs:
           restore-keys: subscription-performance-linux-x64-rust-1.98.0-
       - name: Build and check exact source
         run: |
+          cargo +1.98.0 fmt --manifest-path .performance/rust/rust/Cargo.toml --all -- --check
           "$RUNNER_TEMP/single-node-venv/bin/python" -m unittest discover -s tests/performance -p 'test_*.py'
           (cd .performance/original/backend && node bundle-esbuild.js)
-          cargo +1.98.0 fmt --manifest-path .performance/rust/rust/Cargo.toml --all -- --check
+          cargo +1.98.0 build --manifest-path .performance/rust-baseline/rust/Cargo.toml --locked --release --bin sub-store-rust
           cargo +1.98.0 clippy --manifest-path .performance/rust/rust/Cargo.toml --locked --all-targets -- -D warnings
           cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust
           cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust --no-run --message-format=json > "$RUNNER_TEMP/single-node-build.jsonl"
           cargo +1.98.0 build --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust
           git -C .performance/original diff --exit-code
           git -C .performance/rust diff --exit-code
+          git -C .performance/rust-baseline diff --exit-code
       - name: Compare pure parsing, parser setup and actual HTTP requests
         run: |
           test_binary=$("$RUNNER_TEMP/single-node-venv/bin/python" -c 'import json,sys; rows=[json.loads(line) for line in open(sys.argv[1])]; matches=[row["executable"] for row in rows if row.get("reason")=="compiler-artifact" and row.get("profile",{}).get("test") and row.get("executable")]; assert len(matches)==1; print(matches[0])' "$RUNNER_TEMP/single-node-build.jsonl")
           "$RUNNER_TEMP/single-node-venv/bin/python" tests/performance/single_node.py \
             --original "$GITHUB_WORKSPACE/.performance/original" \
             --rust "$GITHUB_WORKSPACE/.performance/rust" --rust-test "$test_binary" \
+            --rust-baseline "$GITHUB_WORKSPACE/.performance/rust-baseline" \
             --scratch "$RUNNER_TEMP/single-node-scratch" --output "$RUNNER_TEMP/single-node-results"
           cat "$RUNNER_TEMP/single-node-results/summary.md" >> "$GITHUB_STEP_SUMMARY"
       - name: Preserve measurements and public-fixture failure logs

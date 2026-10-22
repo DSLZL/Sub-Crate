@@ -63,7 +63,7 @@ PUBLIC_STRINGS = set(COMPARISON_KINDS + CASES) | ERRORS | {
 PUBLIC_STRINGS.update(SHARDS)
 PROFILE_STAGES = set("""
 executor_setup state_snapshot runtime_setup context_setup job bootstrap input_decode execute output_encode
-bootstrap_compile bootstrap_load bootstrap_eval
+bootstrap_compile bootstrap_load bootstrap_eval bootstrap_values
 bootstrap_state_encode bootstrap_state_parse
 sources pipeline_parse pipeline_process pipeline_produce pipeline_utility process processor
 script_operator script_filter useless_filter region_filter regex_filter type_filter conditional_filter
@@ -71,7 +71,7 @@ quick_setting_operator flag_operator sort_operator regex_sort_operator regex_ren
 handle_duplicate_operator add_proxies_operator resolve_domain_operator unknown_processor
 builtin_prepare builtin_apply script_load script_prepare script_compile script_bind script_call script_await script_fallback
 response_transformer response_normalize
-input_clone clone_stringify clone_parse parse parse_runtime parse_native parse_preprocess parse_nodes
+input_clone clone_stringify clone_parse parse parse_runtime parse_context_init parse_utilities_init parse_scalar_probe parse_native parse_preprocess parse_nodes
 produce produce_validate produce_filter filter_callback produce_prepare prepare_callback produce_collect
 produce_project_nodes produce_project_options produce_reconcile produce_native produce_decode
 value_project project_stringify project_extract project_parse project_restore value_stringify
