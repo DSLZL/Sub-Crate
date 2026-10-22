@@ -2138,3 +2138,134 @@ and all 826 Node reference unit tests. Existing timeouts remain unchanged.
 The supplied-subscription long test, macOS/Android and long-uptime memory behavior
 are outside this acceptance; a pass does not establish the cause of the earlier
 unreproduced Windows sharing timeout.
+
+## 2026-10-22: supplied-subscription long run and Hy2 tail diagnosis
+
+[Long run 39781070691](https://github.com/DSLZL/Sub-Store/actions/runs/39781070691)
+passes all 35 same-runner pairs and 70 cells. The aggregation rejects missing
+pairs and unequal controlled output/work. It includes 812 timed controlled requests
+and two separately reported real-detector requests, excluding warmups/imports.
+[Runner-side report inspection 39782788702](https://github.com/DSLZL/Sub-Store/actions/runs/39782788702)
+reads the immutable sanitized metrics without repeating preparation.
+
+Candidate Rust is the accepted `af08b0649c4d2f2814fe38ce6943b1397f5e1c14`,
+original Node remains `9cc6b5fac966993364ae33da8797f446bbf7f571`,
+and the unmodified frontend remains `4bd7b0acbe65466b933ccea14fc61dbebe036ead`.
+The driver dispatch source is `56132f012ad345866b899dd1259490c4cdae29b5`.
+Candidate binary SHA-256 is
+`3b8bf15faded89b92ee274427a117e0b17f271f14a51dc5a5ac5c8bc229236bd`.
+The workflow and driver's old Rust pin were updated together; no product code
+changed in this follow-up.
+
+The unchanged supplied file is imported through the official frontend file picker
+five times per backend, with reload/editor/restart validation. Sources are fetched
+once through Node before preprocessing, then authenticated encrypted inputs and
+UI-created seeds are shared to independent runners. Of 22 remote source slots,
+21 are nonempty and one is empty/failed; this observation is preserved equally
+on both backends, alongside the local source. Per-runner replay checks all 23
+ordered source texts. The existing five-site stress script removes maintenance
+batch caps while retaining filters, processing, probe retries/timeouts and
+publication. It adds no conversion-result cache or processor bypass.
+
+Each block runs Node and Rust on the same runner, alternating backend order.
+The following medians pool requests; the ratio is Node median / Rust median,
+which differs from the paired block geometric estimate in metrics.json.
+The `pre_health` group has one block; cold has ten one-request blocks, so no
+cold P95 is claimed.
+
+| Case | Clients | Requests Node / Rust | Node P50 s | Rust P50 s | P50 ratio | Node / Rust CPU s per request | Node / Rust peak RSS MiB |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| parse | 1 | 60 / 60 | 3.944 | 0.874 | 4.51 | 5.641 / 0.970 | 634.8 / 154.6 |
+| pre_health | 1 | 20 / 20 | 4.893 | 1.456 | 3.36 | 6.786 / 1.543 | 641.9 / 147.3 |
+| cold | 1 | 10 / 10 | 9.817 | 8.016 | 1.22 | 9.818 / 5.048 | 677.2 / 288.7 |
+| warm | 1 | 100 / 100 | 5.192 | 2.324 | 2.23 | 6.870 / 2.234 | 1215.9 / 309.3 |
+| no_publisher | 1 | 60 / 60 | 4.218 | 1.513 | 2.79 | 6.454 / 1.662 | 1224.3 / 243.1 |
+| pressure | 1 | 13 / 29 | 5.124 | 2.282 | 2.25 | 6.336 / 2.133 | 1120.0 / 422.8 |
+| pressure | 2 | 16 / 54 | 8.254 | 2.541 | 3.25 | 6.264 / 2.096 | 1222.0 / 648.1 |
+| pressure | 4 | 22 / 64 | 17.196 | 4.364 | 3.94 | 6.652 / 3.484 | 1116.4 / 784.7 |
+| pressure | 8 | 34 / 80 | 27.965 | 8.743 | 3.20 | 6.246 / 3.431 | 1264.5 / 1336.8 |
+
+Controlled parse output is 5,960 nodes; processed/full output is 2,986 nodes
+on both backends. Full warm P95 is 5.456 s for Node and 2.409 s for Rust.
+At eight pressure clients, throughput is 0.218 versus 1.006 requests/s
+(Rust / Node = 4.62), while peak Rust RSS is 1,336.8 versus 1,264.5 MiB:
+5.7% higher despite lower CPU/request. Retained RSS after settling is
+1,103.6 versus 1,222.5 MiB. This finite run does not establish a long-uptime
+memory bound; the concurrent peak remains an optimization target.
+
+The separate real HTTP-META/Mihomo smoke pair returns 1,021 and 1,159 nodes
+for Node and Rust. Those live probe outcomes differ and each backend has only
+one observation, so their 18.986 s and 16.694 s are not a valid speedup claim.
+No controlled estimates include that pair. Remote source contents also differ
+from older runs; comparisons with historical absolute times are invalid.
+
+### Hy2: retained old evidence and enlarged repeat
+
+[Inspection 39782204253](https://github.com/DSLZL/Sub-Store/actions/runs/39782204253)
+reads the original 39774769592 artifact on an Actions runner. Its 210-request
+Clash Hy2 keep-alive P95 increase (0.535 -> 0.705 ms) is real in that sample,
+but concentrated in local batches. All original samples remain included:
+
+| Block (one based) | Node P50 / P95 ms | Previous Rust P50 / P95 ms | Candidate P50 / P95 ms |
+|---:|---:|---:|---:|
+| 1 | 0.334 / 0.374 | 0.248 / 0.286 | 0.189 / 0.224 |
+| 2 | 0.225 / 0.394 | 0.254 / 0.389 | 0.189 / 0.214 |
+| 3 | 0.332 / 0.717 | 0.243 / 0.543 | 0.539 / 1.042 |
+| 4 | 0.788 / 1.169 | 0.272 / 1.306 | 0.144 / 0.670 |
+| 5 | 0.346 / 0.956 | 0.241 / 0.281 | 0.123 / 0.178 |
+| 6 | 0.326 / 0.368 | 0.241 / 0.321 | 0.121 / 0.139 |
+| 7 | 0.326 / 0.357 | 0.241 / 0.301 | 0.123 / 0.191 |
+
+Candidate block 3 is broadly slower, rather than a single slow node parse:
+its median is 0.539 ms, compared with 0.121-0.189 ms in its other blocks.
+Node and previous Rust also have nearby slow batches. This supports a local
+measurement/scheduling disturbance as an explanation, but those timed
+requests had no corresponding profiles; the exact historical trigger cannot
+be assigned to OS scheduling, GC, or an environment miss from these data.
+
+[Focused repeat 39781818295](https://github.com/DSLZL/Sub-Store/actions/runs/39781818295)
+uses three fresh server rounds, seven balanced 200-request blocks per round
+and alternating equivalent original/newline inputs. It measures both connection
+modes for Clash Hy2, Hy2 URI and a Clash SS control: 75,600 timed responses,
+all checked against Node, plus 3,000 separate profile-on responses.
+The previous Rust source remains `9c19111bae2af2654caa339151e4eabd12b586bb`.
+Driver/candidate checkout is `666938d60d60d4e8837bc230ef8487e9d77b0151`;
+the exact candidate and previous binary hashes match the old accepted run.
+Only the workload/sampling changes, so no product fix is credited for the
+changed distribution.
+
+| Case | Connection | Requests per backend | Node P50 / P95 ms | Previous Rust P50 / P95 ms | Candidate P50 / P95 ms |
+|---|---|---:|---:|---:|---:|
+| clash_hysteria2 | keep_alive | 4,200 | 0.233 / 0.360 | 0.292 / 0.335 | 0.146 / 0.197 |
+| clash_hysteria2 | new_connection | 4,200 | 0.442 / 0.501 | 0.346 / 0.446 | 0.250 / 0.318 |
+| hysteria2 | keep_alive | 4,200 | 0.245 / 0.366 | 0.221 / 0.273 | 0.139 / 0.192 |
+| hysteria2 | new_connection | 4,200 | 0.418 / 0.554 | 0.305 / 0.434 | 0.244 / 0.313 |
+| clash_json | keep_alive | 4,200 | 0.243 / 0.378 | 0.249 / 0.311 | 0.143 / 0.205 |
+| clash_json | new_connection | 4,200 | 0.379 / 0.508 | 0.340 / 0.430 | 0.231 / 0.270 |
+
+Clash Hy2 keep-alive P95 is 41.3% lower than previous Rust and 45.2% lower
+than Node in the enlarged repeat. This is not zero jitter: candidate round 2,
+block 1 still has 0.885 ms P95; its overall maximum is 1.243 ms versus
+previous Rust's 1.117 ms and Node's 4.370 ms. No outliers are removed.
+The regression in the original pooled P95 is not a sustained Hy2 parsing
+slowdown in the repeat, and isolated latency spikes remain observable.
+
+For the separate 1,000 Clash Hy2 keep-alive profile pairs, all environments
+are reused/retained, with zero misses/teardowns. P95 values are 10.986 us
+queue, 16.524 us native parse, 9.875 us production, 81.076 us worker lifetime,
+169.884 us server response ready and 269.903 us client request. The slowest
+paired client request is 361.710 us: its worker is 94.756 us, queue 12.553 us
+and native parse 19.940 us. These profiles include instrumentation and report
+writing, and do not enter the timed table. They do not reproduce or explain
+the exact historical 0.705 ms P95 spike.
+
+Current runner self-checks pass all 31 tests, including nested artifact discovery,
+pooled percentiles and exact slow-request/profile pairing. The focused run also
+passes formatting, Clippy and all 48 ordinary release Rust tests (four ignored
+drivers). An initial inspection failed because the artifact contains nested
+result/log directories; `1eaea49f516bcceb39cec0af381780553c486120` fixes
+discovery and rejects ambiguous metrics. The failed inspection and original
+timing artifacts are retained. Product/frontend code and the accepted binary
+remain unchanged, so native/frontend/Docker compatibility is not rerun here.
+All builds, tests, artifact extraction and measurements execute in Actions;
+local inspection uses only Git/GitHub metadata and sanitized plaintext logs.
