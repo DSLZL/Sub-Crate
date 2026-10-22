@@ -1481,7 +1481,9 @@ mod tests {
     async fn conversion_context_preserves_language_operations_and_isolation() {
         for conversion_only in [true, true, false] {
             let runtime = AsyncRuntime::new().unwrap();
-            let context = application_context(&runtime, conversion_only).await.unwrap();
+            let context = application_context(&runtime, conversion_only)
+                .await
+                .unwrap();
             context
                 .async_with(async |ctx| {
                     crate::js_values::initialize(&ctx).unwrap();

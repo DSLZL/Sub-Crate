@@ -213,10 +213,9 @@ impl Parser {
         // Native URI paths do not need JSON5/YAML or a second JS runtime.
         let _setup = crate::profile::span("parse_context_init");
         let runtime = Runtime::new().map_err(|error| Error::Legacy(error.to_string()))?;
-        let context = Context::custom::<(intrinsic::Eval, intrinsic::Json, intrinsic::MapSet)>(
-            &runtime,
-        )
-        .map_err(|error| Error::Legacy(error.to_string()))?;
+        let context =
+            Context::custom::<(intrinsic::Eval, intrinsic::Json, intrinsic::MapSet)>(&runtime)
+                .map_err(|error| Error::Legacy(error.to_string()))?;
         context.with(|ctx| {
             crate::js_values::initialize(&ctx).map_err(|error| Error::Legacy(error.to_string()))
         })?;
