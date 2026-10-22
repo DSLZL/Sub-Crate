@@ -306,7 +306,21 @@ pub fn run(output: &Path) -> Result {
                         api.durable()?["artifacts"][1].get("updated").is_none(),
                         "Global cron ran an independently scheduled artifact",
                     )?;
-                    log(&api, "[SYNC CRON] * * * * * * finished")?;
+                    let finished = "[SYNC CRON] * * * * * * finished";
+                    let completions = api
+                        .messages()?
+                        .iter()
+                        .filter(|message| message.contains(finished))
+                        .count();
+                    // A historical completion can leave a current sync saving its old snapshot.
+                    api::wait(|| {
+                        Ok(api
+                            .messages()?
+                            .iter()
+                            .filter(|message| message.contains(finished))
+                            .count()
+                            > completions)
+                    })?;
                     api.send(&json!({"method":"PATCH","path":"/api/artifact/global-local","body":{"upload":true}}),200)?;
                     log(&api, "[SYNC CRON] * * * * * * error:")?;
                     api.send(&json!({"method":"PATCH","path":"/api/artifact/global-local","body":{"upload":false}}),200)?;
