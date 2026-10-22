@@ -199,6 +199,10 @@ pub(crate) fn short_ids(raw: &str) -> String {
 }
 
 impl Parser {
+    pub(crate) fn clear_request(&self) {
+        self.preprocessed.borrow_mut().take();
+    }
+
     pub fn new() -> Result<Self, Error> {
         Ok(Self {
             context: OnceCell::new(),
@@ -530,6 +534,23 @@ impl Parser {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn request_cleanup_retains_libraries_without_retaining_source_text() {
+        let parser = Parser::new().ok().unwrap();
+        let raw = "proxies: [{type: ss, name: request, password: secret}]";
+        let expected = parser.preprocess(raw).unwrap();
+        assert!(parser.preprocessed.borrow().is_some());
+        parser.context().ok().unwrap().with(|ctx| {
+            ctx.globals().set("retainedLibraryMarker", true).unwrap();
+        });
+        parser.clear_request();
+        assert!(parser.preprocessed.borrow().is_none());
+        parser.context().ok().unwrap().with(|ctx| {
+            assert!(ctx.globals().get::<_, bool>("retainedLibraryMarker").unwrap());
+        });
+        assert_eq!(parser.preprocess(raw).unwrap(), expected);
+    }
 
     #[test]
     fn native_uri_parsing_defers_the_generic_runtime() {

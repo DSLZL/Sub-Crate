@@ -18,17 +18,26 @@ use std::{
     time::Duration,
 };
 
+#[path = "script_conversion_runtime.rs"]
+mod conversion_runtime;
+
+type ConversionIntrinsics = (
+    intrinsic::Eval,
+    intrinsic::RegExpCompiler,
+    intrinsic::RegExp,
+    intrinsic::Json,
+    intrinsic::MapSet,
+    intrinsic::Promise,
+);
+
 #[derive(Clone)]
 struct Job {
     store: Arc<Mutex<Store>>,
     baseline: Rc<RefCell<(Value, Value)>>,
-    parser: Rc<RefCell<Option<Rc<crate::clash::Parser>>>>,
     background: tokio::runtime::Handle,
 }
 
 // Job has no handles or borrows tied to the application context's lifetime.
-// Its optional parser owns a separate runtime/context and exchanges owned data
-// only. It is created and dropped on this job's blocking worker.
 unsafe impl<'js> JsLifetime<'js> for Job {
     type Changed<'to> = Job;
 }
@@ -39,13 +48,21 @@ fn job(ctx: &Ctx<'_>) -> rquickjs::Result<Job> {
         .ok_or_else(|| Exception::throw_message(ctx, "Missing script job"))
 }
 
+struct ParserState(Rc<crate::clash::Parser>);
+
+// The parser owns an independent engine and exchanges owned values only.
+unsafe impl<'js> JsLifetime<'js> for ParserState {
+    type Changed<'to> = ParserState;
+}
+
 pub(crate) fn parser(ctx: &Ctx<'_>) -> Result<Rc<crate::clash::Parser>, conversion::Error> {
-    let job = job(ctx).map_err(|error| conversion::Error::Legacy(message(ctx, error)))?;
-    let mut parser = job.parser.borrow_mut();
-    if parser.is_none() {
-        *parser = Some(Rc::new(crate::clash::Parser::new()?));
+    if let Some(parser) = ctx.userdata::<ParserState>() {
+        return Ok(Rc::clone(&parser.0));
     }
-    Ok(Rc::clone(parser.as_ref().unwrap()))
+    let parser = Rc::new(crate::clash::Parser::new()?);
+    ctx.store_userdata(ParserState(Rc::clone(&parser)))
+        .map_err(|_| conversion::Error::Legacy("Parser already borrowed".to_owned()))?;
+    Ok(parser)
 }
 
 pub(crate) fn message(ctx: &Ctx<'_>, error: rquickjs::Error) -> String {
@@ -462,7 +479,7 @@ async fn wait(milliseconds: u64) {
     tokio::time::sleep(Duration::from_millis(milliseconds)).await;
 }
 
-fn native_parse<'js>(ctx: Ctx<'js>, raw: JsValue<'js>) -> rquickjs::Result<JsValue<'js>> {
+pub(crate) fn native_parse<'js>(ctx: Ctx<'js>, raw: JsValue<'js>) -> rquickjs::Result<JsValue<'js>> {
     let _parse = profile::span("parse");
     if !raw.is_string() {
         return Err(Exception::throw_type(&ctx, "raw.split is not a function"));
@@ -476,7 +493,7 @@ fn native_parse<'js>(ctx: Ctx<'js>, raw: JsValue<'js>) -> rquickjs::Result<JsVal
     let proxies = conversion::parse(&raw, Some(&parser))
         .map_err(|error| js.error(&conversion_message(error)))?;
     drop(native);
-    crate::js_values::decode(&js.ctx, &json!(proxies))
+    crate::js_values::decode(&js.ctx, &Value::Array(proxies))
 }
 
 fn conversion_message(error: conversion::Error) -> String {
@@ -1097,28 +1114,29 @@ async fn process_response<'js>(
     Ok(output)
 }
 
-fn initialize<'js>(ctx: &Ctx<'js>, job: Job, conversion_only: bool) -> rquickjs::Result<()> {
+fn initialize_conversion(ctx: &Ctx<'_>) -> rquickjs::Result<()> {
+    crate::js_values::initialize(ctx)?;
+    let globals = ctx.globals();
+    globals.set("SubStoreScriptUtilities", Object::new(ctx.clone())?)?;
+    globals.set("__hostLog", Func::from(console_log))?;
+    crate::script_bytecode::BOOTSTRAP.eval(ctx)?;
+    let utils = Object::new(ctx.clone())?;
+    utils.set("parse", Func::from(native_parse))?;
+    utils.set("produce", Func::from(crate::script_conversion::produce))?;
+    crate::script_helpers::initialize_ip(&utils)?;
+    utils.set(
+        "getRandomPort",
+        Func::from(crate::script_helpers::random_port),
+    )?;
+    globals.set("ProxyUtils", utils)
+}
+
+fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     crate::js_values::initialize(ctx)?;
     script_io::set_executor(ctx, job.background.clone())?;
     ctx.store_userdata(job.clone())
         .map_err(|_| Exception::throw_message(ctx, "Script job already borrowed"))?;
     let globals = ctx.globals();
-    // This JSON-only route cannot invoke downloads or user scripts.
-    if conversion_only {
-        globals.set("SubStoreScriptUtilities", Object::new(ctx.clone())?)?;
-        globals.set("__hostLog", Func::from(console_log))?;
-        crate::script_bytecode::BOOTSTRAP.eval(ctx)?;
-        let utils = Object::new(ctx.clone())?;
-        utils.set("parse", Func::from(native_parse))?;
-        utils.set("produce", Func::from(crate::script_conversion::produce))?;
-        crate::script_helpers::initialize_ip(&utils)?;
-        utils.set(
-            "getRandomPort",
-            Func::from(crate::script_helpers::random_port),
-        )?;
-        globals.set("ProxyUtils", utils)?;
-        return Ok(());
-    }
     let encode = profile::span("bootstrap_state_encode");
     let (cache, root) = {
         let baseline = job.baseline.borrow();
@@ -1226,15 +1244,7 @@ async fn application_context(
 ) -> rquickjs::Result<AsyncContext> {
     if conversion_only {
         // No user scripts run here; retain every intrinsic used by parse/produce.
-        AsyncContext::custom::<(
-            intrinsic::Eval,
-            intrinsic::RegExpCompiler,
-            intrinsic::RegExp,
-            intrinsic::Json,
-            intrinsic::MapSet,
-            intrinsic::Promise,
-        )>(runtime)
-        .await
+        AsyncContext::custom::<ConversionIntrinsics>(runtime).await
     } else {
         AsyncContext::full(runtime).await
     }
@@ -1245,33 +1255,35 @@ pub async fn run(
     operation: &str,
     input: Value,
 ) -> Result<Value, conversion::Error> {
+    let queued = std::time::Instant::now();
+    if operation == "parse" && !crate::state::truthy(&input["download"]) {
+        return tokio::task::spawn_blocking(move || {
+            let session = profile::Session::start("parse", queued);
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                conversion_runtime::run(&input)
+            }));
+            session.finish(result.as_ref().is_ok_and(|result| result.is_ok()));
+            result.unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+        })
+        .await
+        .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
+    }
     let background = tokio::runtime::Handle::current();
-    let conversion_only = operation == "parse" && !crate::state::truthy(&input["download"]);
     let operation = operation.to_owned();
     let (sender, receiver) = tokio::sync::oneshot::channel();
-    let queued = std::time::Instant::now();
     let worker = tokio::task::spawn_blocking(move || {
         let session = profile::Session::start(&operation, queued);
         let mut sender = Some(sender);
         let result = (|| {
             let setup = profile::span("executor_setup");
-            let executor = if conversion_only {
-                None
-            } else {
-                Some(
-                    tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .map_err(|error| conversion::Error::Legacy(error.to_string()))?,
-                )
-            };
+            let executor = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
             drop(setup);
-            let foreground = background.clone();
             let execute = async {
                 let state = profile::span("state_snapshot");
-                let (cache, root) = if conversion_only {
-                    (Value::Null, Value::Null)
-                } else {
+                let (cache, root) = {
                     let store = store
                         .lock()
                         .map_err(|_| conversion::Error::Legacy("State lock poisoned".to_owned()))?;
@@ -1286,27 +1298,23 @@ pub async fn run(
                 let job = Job {
                     store,
                     baseline: Rc::new(RefCell::new((cache, root))),
-                    parser: Rc::new(RefCell::new(None)),
                     background,
                 };
                 let setup = profile::span("runtime_setup");
                 let runtime = AsyncRuntime::new()
                     .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
                 drop(setup);
-                let context = profile::measure(
-                    "context_setup",
-                    None,
-                    application_context(&runtime, conversion_only),
-                )
-                .await
-                .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
+                let context =
+                    profile::measure("context_setup", None, application_context(&runtime, false))
+                        .await
+                        .map_err(|error| conversion::Error::Legacy(error.to_string()))?;
                 let result = profile::measure(
                     "job",
                     None,
                     context.async_with(async |ctx| {
                         let result = async {
                             let bootstrap = profile::span("bootstrap");
-                            initialize(&ctx, job, conversion_only)?;
+                            initialize(&ctx, job)?;
                             drop(bootstrap);
                             let js = Js::new(ctx.clone());
                             let decode = profile::span("input_decode");
@@ -1454,9 +1462,7 @@ pub async fn run(
                 )
                 .await;
                 let success = result.is_ok();
-                if !conversion_only {
-                    session.finish(success);
-                }
+                session.finish(success);
                 if let Some(sender) = sender.take() {
                     let _ = sender.send(result);
                 }
@@ -1467,12 +1473,7 @@ pub async fn run(
                 drop(runtime);
                 Ok::<_, conversion::Error>(success)
             };
-            match executor {
-                Some(executor) => executor.block_on(execute),
-                // This job has no I/O or user callbacks; poll it on the same
-                // blocking worker without constructing another Tokio runtime.
-                None => foreground.block_on(execute),
-            }
+            executor.block_on(execute)
         })();
         if let Some(sender) = sender {
             session.finish(false);
@@ -1480,8 +1481,6 @@ pub async fn run(
                 conversion::Error::Legacy("Script job produced no result".to_owned())
             });
             let _ = sender.send(Err(error));
-        } else if conversion_only {
-            session.finish(result.unwrap_or(false));
         }
     });
     match receiver.await {

@@ -1,7 +1,7 @@
 //! Download output stages share the live script context with source processing.
 use crate::{js_language::Js, script, script_network as network, script_pipeline as pipeline};
 use pipeline::{find, object, optional, read, utility};
-use rquickjs::Value;
+use rquickjs::{Value, prelude::Opt};
 
 pub(crate) async fn node_info<'js>(
     js: &Js<'js>,
@@ -783,25 +783,41 @@ pub(crate) async fn file<'js>(
     .await
 }
 
+fn parse_argument<'js>(
+    js: &Js<'js>,
+    fields: &Value<'js>,
+    key: &str,
+    fallback: &str,
+) -> rquickjs::Result<Value<'js>> {
+    let value = js.get(fields, key)?;
+    if value.is_null() || value.is_undefined() {
+        js.get(fields, fallback)
+    } else {
+        Ok(value)
+    }
+}
+
+pub(crate) fn parse_direct<'js>(js: &Js<'js>, fields: Value<'js>) -> rquickjs::Result<Value<'js>> {
+    let raw = parse_argument(js, &fields, "data", "content")?;
+    let parsed = script::native_parse(js.ctx.clone(), raw)?;
+    crate::script_conversion::produce(
+        js.ctx.clone(),
+        parsed,
+        parse_argument(js, &fields, "client", "platform")?,
+        Opt(Some(js.get(&fields, "type")?)),
+        Opt(Some(js.get(&fields, "produce")?)),
+    )
+}
+
 pub(crate) async fn parse<'js>(js: &Js<'js>, fields: Value<'js>) -> rquickjs::Result<Value<'js>> {
     let download = js.get(&fields, "download")?;
     let raw = if js.truthy(&download)? {
         utility(js, "download", js.call("iterable", (download,))?).await?
     } else {
-        let data = js.get(&fields, "data")?;
-        if data.is_null() || data.is_undefined() {
-            js.get(&fields, "content")?
-        } else {
-            data
-        }
+        parse_argument(js, &fields, "data", "content")?
     };
     let parsed = utility(js, "parse", vec![raw]).await?;
-    let client = js.get(&fields, "client")?;
-    let client = if client.is_null() || client.is_undefined() {
-        js.get(&fields, "platform")?
-    } else {
-        client
-    };
+    let client = parse_argument(js, &fields, "client", "platform")?;
     utility(
         js,
         "produce",
