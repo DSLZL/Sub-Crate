@@ -141,25 +141,43 @@ def endpoint(args, suite, cases, report):
                 else:
                     assert body == expected, f"public parser input {index}, {kind}: output mismatch"
         print(f"single-node public parser preflight complete: inputs={len(probe_inputs)}, backends={len(origins)}", flush=True)
+        connections = {}
+        for kind, origin in origins.items():
+            parsed = b.urlsplit(origin)
+            connections[kind] = b.HTTPConnection(parsed.hostname, parsed.port, timeout=30)
+            stack.callback(connections[kind].close)
         for case in cases:
             payloads = [{"data": case["raw"] + suffix, "client": "JSON", "type": "internal"}
                         for suffix in ("", "\n")]
             expected = b.api(origins["node"], "proxy/parse", "POST", payloads[0])
             assert len(expected["par_res"]) == 1
             suite.expected_outputs[case["id"]] = expected
-            for kind in origins:
-                for index in range(20):
-                    assert b.api(origins[kind], "proxy/parse", "POST", payloads[index % 2]) == expected
-            for block in range(BLOCKS):
-                for kind in (tuple(origins) if block % 2 == 0 else tuple(origins)[::-1]):
-                    samples = []
-                    for index in range(HTTP_REQUESTS):
-                        began = time.perf_counter_ns()
-                        response = b.http(origins[kind] + "/backend/api/proxy/parse", "POST", payloads[index % 2])
-                        samples.append(time.perf_counter_ns() - began)
-                        body = json.loads(response)
-                        assert body["status"] == "success" and body["data"] == expected
-                    report["http"].append({"case": case["id"], "variant": kind, "block": block, "ns": samples})
+            for mode in ("new_connection", "keep_alive"):
+                def request(kind, index):
+                    if mode == "new_connection":
+                        return b.http(origins[kind] + "/backend/api/proxy/parse", "POST", payloads[index % 2])
+                    connection = connections[kind]
+                    previous = connection.sock
+                    connection.request("POST", "/backend/api/proxy/parse", b.encoded(payloads[index % 2]),
+                                       {"Content-Type": "application/json"})
+                    response = connection.getresponse()
+                    body = response.read()
+                    assert response.status == 200 and connection.sock is not None
+                    assert previous is None or connection.sock is previous, "keep-alive connection was replaced"
+                    return body
+                for kind in origins:
+                    for index in range(20):
+                        assert json.loads(request(kind, index)) == {"status": "success", "data": expected}
+                for block in range(BLOCKS):
+                    for kind in (tuple(origins) if block % 2 == 0 else tuple(origins)[::-1]):
+                        samples = []
+                        for index in range(HTTP_REQUESTS):
+                            began = time.perf_counter_ns()
+                            response = request(kind, index)
+                            samples.append(time.perf_counter_ns() - began)
+                            assert json.loads(response) == {"status": "success", "data": expected}
+                        report["http"].append({"case": case["id"], "variant": kind, "mode": mode,
+                                               "block": block, "ns": samples})
             print("single-node HTTP complete: " + case["id"], flush=True)
 
 
@@ -222,7 +240,7 @@ def summary(report):
     lines = ["Single-node parsing; one node per function call or HTTP request.",
              "Pure: median of seven block means, us/call. HTTP: median of 210 requests, ms/request.",
              "Equivalent original/newline inputs alternate; no last-input preprocessing cache hits.",
-             "HTTP includes JSON production and transport, starts with empty application state.",
+             "HTTP includes JSON production and transport, starts with empty application state; the first table opens a connection per request.",
              f"Coverage: {len(report['cases'])} fixtures, including all {len(report['clash_types'])} pinned Clash node types and Surge external.",
              "This measures configuration parsing/conversion, not network traffic through those protocols.",
              "", "| Case | Protocol | Input | Node pure us | Previous Rust reused us | Previous Rust fresh us | Rust reused us | Rust fresh us | Node HTTP ms | Previous Rust HTTP ms | Rust HTTP ms |",
@@ -233,11 +251,20 @@ def summary(report):
             rows = [row for row in report["pure"] if row["case"] == case and row["variant"] == variant]
             values.append(statistics.median(row["elapsed_ns"] / row["iterations"] / 1000 for row in rows))
         for variant in ("node", "rust_baseline", "rust"):
-            samples = [sample for row in report["http"] if row["case"] == case and row["variant"] == variant for sample in row["ns"]]
+            samples = [sample for row in report["http"] if row["case"] == case and row["variant"] == variant
+                       and row["mode"] == "new_connection" for sample in row["ns"]]
             values.append(statistics.median(samples) / 1_000_000)
         info = report["case_info"][case]
         lines.append("| " + case + " | " + info["protocol"] + " | " + info["format"] + " | " +
                      " | ".join(f"{value:.3f}" for value in values) + " |")
+    lines += ["", "Reused HTTP connections; same full endpoint, seven blocks of 30 requests per backend.",
+              "Connection identity is checked; no pipeline or result cache is bypassed.",
+              "| Case | Node HTTP ms | Previous Rust HTTP ms | Rust HTTP ms |", "|---|---:|---:|---:|"]
+    for case in report["cases"]:
+        values = [statistics.median(sample for row in report["http"] if row["case"] == case and row["variant"] == variant
+                                    and row["mode"] == "keep_alive" for sample in row["ns"]) / 1e6
+                  for variant in ("node", "rust_baseline", "rust")]
+        lines.append("| " + case + " | " + " | ".join(f"{value:.3f}" for value in values) + " |")
     if report["profiles"]:
         groups = {group["case"]: group["events"] for group in report["profiles"]}
         lines += ["", "Separate Rust profiles: median active ms over seven requests per format.",
@@ -329,8 +356,13 @@ def main():
                                 for row in report["pure"] if row["case"] == case and row["variant"] == variant]
                        for variant in VARIANTS}
             samples["http_p95_ms"] = {variant: sorted(value / 1e6 for row in report["http"]
-                                                   if row["case"] == case and row["variant"] == variant for value in row["ns"])[math.ceil(BLOCKS * HTTP_REQUESTS * .95) - 1]
+                                                   if row["case"] == case and row["variant"] == variant
+                                                   and row["mode"] == "new_connection" for value in row["ns"])[math.ceil(BLOCKS * HTTP_REQUESTS * .95) - 1]
                                       for variant in ("node", "rust_baseline", "rust")}
+            samples["keep_alive_p95_ms"] = {variant: sorted(value / 1e6 for row in report["http"]
+                                                         if row["case"] == case and row["variant"] == variant
+                                                         and row["mode"] == "keep_alive" for value in row["ns"])[math.ceil(BLOCKS * HTTP_REQUESTS * .95) - 1]
+                                            for variant in ("node", "rust_baseline", "rust")}
             print("SINGLE_NODE_SAMPLES " + json.dumps({"case": case, **samples}), flush=True)
     except Exception:
         report["status"] = "failed"

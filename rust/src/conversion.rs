@@ -3785,7 +3785,10 @@ mod tests {
         let expected = json!({"name":"节点😀","type":"http","tls":true,
             "server":"2001:db8::1","port":443,"username":"u@ser","password":"p:word","udp":true});
         for raw in [raw.to_owned(), format!("{raw}\n"), STANDARD.encode(raw)] {
-            assert_eq!(parse(&json!(raw), None).ok().unwrap(), vec![expected.clone()]);
+            assert_eq!(
+                parse(&json!(raw), None).ok().unwrap(),
+                vec![expected.clone()]
+            );
         }
         for name in [vec![0x61, 0xe000, 0x62], vec![0xd800, 0xe000, 0xdc00]] {
             let prefix = "http://h.example:80#".encode_utf16();
