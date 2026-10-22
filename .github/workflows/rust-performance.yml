@@ -182,6 +182,7 @@ jobs:
             cargo +1.98.0 nextest run --manifest-path ".performance/$checkout/rust/Cargo.toml" --target-dir "$GITHUB_WORKSPACE/.performance/$checkout/rust/target" --locked --release --bin sub-store-rust --config-file .config/nextest.toml --profile "$profile" --run-ignored only -E 'test(=script_conversion::tests::profile_node_production)' --success-output immediate
           done
       - name: Install headless Chromium
+        timeout-minutes: 15
         run: agent-browser install --with-deps
       - name: Import unchanged file, capture source text and seal private inputs
         env:

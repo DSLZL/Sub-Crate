@@ -298,12 +298,8 @@ fn endpoint(suite: &mut Suite, cases: &[Value], report: &mut Value, tail: bool) 
             .unwrap()
             .push(json!({"variant":kind,"case":cases[0]["id"],"ns":elapsed}));
     }
-    let fixtures =
-        read(Path::new(env!("CARGO_MANIFEST_DIR")).join("compat/fixtures/http-cases.json"))?;
-    let source = fixtures
-        .as_array()
-        .ok_or("HTTP fixture list missing")?
-        .iter()
+    let source = crate::contracts::cases("conversion-local")?
+        .into_iter()
         .find(|case| case["id"] == "P02-input-surge-native")
         .ok_or("Surge preflight missing")?["steps"][0]["body"]
         .clone();
@@ -531,11 +527,9 @@ fn profiles(suite: &mut Suite, cases: &[Value], report: &mut Value, tail: bool) 
         let expected = &suite.expected[case["id"].as_str().unwrap()];
         let offset = std::fs::metadata(path)?.len();
         for _ in 0..2 {
-            check(
-                transport::api(&app.origin, "proxy/parse", "POST", Some(&payload(case, 0)))?
-                    == *expected,
-                "output_mismatch",
-            )?;
+            let actual =
+                transport::api(&app.origin, "proxy/parse", "POST", Some(&payload(case, 0)))?;
+            crate::json::check(&actual, expected, false)?;
         }
         let (warmup, _) = complete_profiles(path, offset, 2, Duration::from_secs(30))?;
         conversion_lifecycle(&warmup)?;
