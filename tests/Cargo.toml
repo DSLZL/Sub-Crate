@@ -24,3 +24,7 @@ path = "src/lib.rs"
 [[test]]
 name = "native"
 path = "native.rs"
+
+[[test]]
+name = "frontend"
+path = "frontend.rs"

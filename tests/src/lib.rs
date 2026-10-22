@@ -26,6 +26,7 @@ pub mod browser;
 pub mod frontend;
 pub mod raw_http;
 pub mod edges;
+pub mod media;
 #[cfg(test)]
 mod notices_tests;
 
