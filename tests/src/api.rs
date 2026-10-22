@@ -32,6 +32,9 @@ pub fn concurrent(url:&str,steps:&[Value])->Result<Vec<Value>> {
 
 pub fn denied_write(api:&Api,step:&Value,read:&str,file:&str,code:&str)->Result {
     let before=api.response(&json!({"path":read}))?;let saved=api.state.join(format!("saved-{file}"));let path=api.state.join(file);std::fs::rename(&path,&saved)?;std::fs::create_dir(&path)?;
-    let checked=(||->Result {let rejected=api.send(step,500)?;require(rejected["error"]["code"]==code,"Unexpected write failure code")?;let after=api.response(&json!({"path":read}))?;json::check(&json::parse(before["body"].as_str().ok_or("Missing pre-failure state")?)?,&json::parse(after["body"].as_str().ok_or("Missing post-failure state")?)?,false)})();
-    std::fs::remove_dir(&path)?;std::fs::rename(saved,path)?;checked
+    let compare=||->Result {let after=api.response(&json!({"path":read}))?;json::check(&json::parse(before["body"].as_str().ok_or("Missing pre-failure state")?)?,&json::parse(after["body"].as_str().ok_or("Missing post-failure state")?)?,false)};
+    let checked=(||->Result {let rejected=api.send(step,500)?;require(rejected["error"]["code"]==code,"Unexpected write failure code")?;if file!="root.json" {compare()?;}Ok(())})();
+    std::fs::remove_dir(&path)?;std::fs::rename(saved,path)?;checked?;
+    // Log reads use root.json too, so restore the fixture before checking retained entries.
+    compare()
 }

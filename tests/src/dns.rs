@@ -624,7 +624,7 @@ pub fn check_native(
     errors: &[String],
 ) -> Result {
     use serde_json::{Value, json};
-    require(errors.is_empty(), "Controlled DNS fixture failed")?;
+    require(errors.is_empty(), format!("Controlled DNS fixture failed: {errors:?}"))?;
     require(
         connections.iter().all(|item| {
             ["transport", "handshake", "server_name"]

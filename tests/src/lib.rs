@@ -21,6 +21,7 @@ pub mod scheduling;
 pub mod static_files;
 pub mod business;
 pub mod notifications;
+pub mod sharing;
 #[cfg(test)]
 mod notices_tests;
 

@@ -70,6 +70,7 @@ fn actual_schedules_cover_overlap_updates_disable_delete_sync_backup_mmdb_and_st
 #[test] fn logs_preserve_typed_seed_capture_filter_retention_restart_and_failed_clear() -> Result { sub_store_tests::business::logs(&process::scratch("service-logs")?) }
 #[test] fn notifications_preserve_provider_templates_get_bodies_parallel_delivery_and_recovery() -> Result { sub_store_tests::notifications::run(&process::scratch("service-notifications")?) }
 #[test] fn business_resource_sync_settings_and_backup_log_callers_are_exercised() -> Result { sub_store_tests::business::log_callers(&process::scratch("service-business-logs")?) }
+#[test] fn merged_and_standalone_shares_preserve_token_concurrency_encryption_and_failed_writes() -> Result { sub_store_tests::sharing::run(&process::scratch("service-sharing")?) }
 
 #[test]
 fn rust_and_node_preserve_shared_state_restart_write_failure_and_rollback() -> Result {

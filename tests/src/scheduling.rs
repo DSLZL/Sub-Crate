@@ -5,14 +5,14 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
-fn log(api:&Api,text:&str)->Result {api::wait(||Ok(api.messages()?.iter().any(|message|message.contains(text))))}
+fn log(api:&Api,text:&str)->Result {api::wait(||Ok(api.messages()?.iter().any(|message|message.contains(text)))).map_err(|error|format!("{error}; waiting for {text:?}; logs: {:?}",api.messages()).into())}
 fn sleep(milliseconds:u64) {std::thread::sleep(Duration::from_millis(milliseconds));}
 pub fn run(output:&Path)->Result {
     reference::verify(output)?;let (baseline,root)=service::baseline(output)?;
     process::checked(Command::new(reference::node()).arg(crate::compat().join("cron-calendar.cjs")).current_dir(crate::root()),output,"cron-calendar",Duration::from_secs(120))?;
     for mode in ["artifact","overlap","global","produce","upload","download","mmdb","startup-plain","startup-base64","legacy"] {
         for (kind,backend) in [("node",Backend::Node(reference::node())),("rust",service::target()?)] {
-            let label=format!("{kind}-schedule-{mode}");let upstream=Upstream::new(0)?;let mut document=baseline.clone();document["settings"]=json!({"logsMaxCount":1000});for field in ["subs","collections","files","artifacts","tokens","archives","modules"] {document[field]=json!([]);}
+            let label=format!("{kind}-schedule-{mode}");eprintln!("Schedule {label}");let upstream=Upstream::new(0)?;let mut document=baseline.clone();document["settings"]=json!({"logsMaxCount":1000});for field in ["subs","collections","files","artifacts","tokens","archives","modules"] {document[field]=json!([]);}
             let mut restored=document.clone();let mut root=root.clone();root["sub-store-logs"]=json!("[]");
             if ["upload","download"].contains(&mode) {document["settings"]["gistToken"]=json!("helper-token");document["settings"]["githubApiUrl"]=json!(format!("{}/host/gist/github",upstream.url()));if mode=="download" {restored=document.clone();restored["files"]=json!([api::file("cron-restored",None)]);upstream.state.script_gist.restore(&json!({"github":{"g1":{"description":"Auto Generated Sub-Store Backup","public":false,"files":{"Sub-Store":{"content":base64::engine::general_purpose::STANDARD.encode(json::stringify(&restored))}}}},"gitlab":{}}))?;}}
             if ["global","legacy"].contains(&mode) {document["files"]=json!([api::file("global-source",None),api::file("independent-source",None)]);document["artifacts"]=json!([{"name":"global-local","type":"file","source":"global-source","sync":true,"upload":false},{"name":"independent","type":"file","source":"independent-source","sync":true,"upload":false,"cron":"0 0 0 1 jan *"}]);}
