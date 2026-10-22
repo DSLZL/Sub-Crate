@@ -19,7 +19,7 @@ pub struct Counters {
     pub identity: u64,
 }
 #[cfg(target_os = "linux")]
-pub fn counters(pid: u32) -> Result<Counters> {
+fn process_counters(pid: u32, include_io: bool) -> Result<Counters> {
     let base = std::path::PathBuf::from(format!("/proc/{pid}"));
     let stat = std::fs::read_to_string(base.join("stat"))?;
     let fields = stat
@@ -41,28 +41,49 @@ pub fn counters(pid: u32) -> Result<Counters> {
         .map(str::parse::<u64>)
         .transpose()?
         .map_or(0, |value| value * 1024);
-    let io = std::fs::read_to_string(base.join("io"))?;
-    let io_number = |name: &str| -> Result<u64> {
-        Ok(io
-            .lines()
-            .find_map(|line| line.strip_prefix(name))
-            .ok_or("Missing process IO counter")?
-            .trim()
-            .parse()?)
+    let (read, written) = if include_io {
+        let io = std::fs::read_to_string(base.join("io"))?;
+        let number = |name: &str| -> Result<u64> {
+            Ok(io
+                .lines()
+                .find_map(|line| line.strip_prefix(name))
+                .ok_or("Missing process IO counter")?
+                .trim()
+                .parse()?)
+        };
+        (number("read_bytes:")?, number("write_bytes:")?)
+    } else {
+        (0, 0)
     };
     Ok(Counters {
         cpu: (number(11)? + number(12)?) as f64 / ticks as f64,
         waited_cpu: (number(13)? + number(14)?) as f64 / ticks as f64,
         rss: number(21)? * pages as u64,
         peak,
-        read: io_number("read_bytes:")?,
-        written: io_number("write_bytes:")?,
+        read,
+        written,
         identity: number(19)?,
     })
 }
 #[cfg(not(target_os = "linux"))]
-pub fn counters(_pid: u32) -> Result<Counters> {
+fn process_counters(_pid: u32, _include_io: bool) -> Result<Counters> {
     Err("Performance resource accounting requires Linux".into())
+}
+pub fn counters(pid: u32) -> Result<Counters> {
+    process_counters(pid, true)
+}
+fn process_gone(error: &std::io::Error) -> bool {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        return true;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        error.raw_os_error() == Some(libc::ESRCH)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -70,7 +91,7 @@ fn descendants(pid: u32) -> Result<Vec<u32>> {
     let path = format!("/proc/{pid}/task/{pid}/children");
     let children = match std::fs::read_to_string(path) {
         Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) if process_gone(&error) => return Ok(Vec::new()),
         Err(error) => return Err(error.into()),
     };
     let mut found = Vec::new();
@@ -89,11 +110,12 @@ fn auxiliary(pid: Option<u32>) -> Result<(f64, u64)> {
     let Some(pid) = pid else {
         return Ok((0.0, 0));
     };
-    let parent = counters(pid)?;
+    // Detector descendants need CPU/RSS only; their IO files can require ptrace access.
+    let parent = process_counters(pid, false)?;
     let mut cpu = parent.cpu + parent.waited_cpu;
     let mut rss = parent.rss;
     for child in descendants(pid)? {
-        match counters(child) {
+        match process_counters(child, false) {
             Ok(child) => {
                 cpu += child.cpu;
                 rss += child.rss;
@@ -101,7 +123,7 @@ fn auxiliary(pid: Option<u32>) -> Result<(f64, u64)> {
             Err(error)
                 if error
                     .downcast_ref::<std::io::Error>()
-                    .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) => {}
+                    .is_some_and(process_gone) => {}
             Err(error) => return Err(error),
         }
     }
@@ -316,6 +338,13 @@ mod tests {
     #[ignore = "owned child for the Linux resource-accounting self-check"]
     fn meter_child() -> Result {
         crate::actions_only();
+        #[cfg(target_os = "linux")]
+        if std::env::var("PERF_METER_PROTECTED").as_deref() == Ok("1") {
+            check(
+                unsafe { libc::prctl(libc::PR_SET_DUMPABLE, 0, 0, 0, 0) } == 0,
+                "resource",
+            )?;
+        }
         let root = std::path::PathBuf::from(
             std::env::var_os("PERF_METER_STATE").ok_or("Missing meter child state")?,
         );
@@ -336,6 +365,47 @@ mod tests {
         }
         std::fs::write(root.join("done"), count.to_string())?;
         wait("stop")
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn detector_sampling_requires_cpu_and_rss_without_reading_protected_io() -> Result {
+        assert!(process_gone(&std::io::Error::from_raw_os_error(libc::ESRCH)));
+        assert!(!process_gone(&std::io::Error::from_raw_os_error(libc::EACCES)));
+        let root = crate::process::scratch("protected-detector-meter")?;
+        let mut child = crate::process::Running::spawn(
+            std::process::Command::new(std::env::current_exe()?)
+                .args([
+                    "--exact",
+                    "performance::resources::tests::meter_child",
+                    "--ignored",
+                    "--nocapture",
+                ])
+                .env("PERF_METER_STATE", &root)
+                .env("PERF_METER_PROTECTED", "1"),
+            &root,
+            "protected-child",
+        )?;
+        let wait = |name: &str| -> Result {
+            let started = Instant::now();
+            while !root.join(name).is_file() {
+                check(started.elapsed() < Duration::from_secs(10), "timeout")?;
+                thread::sleep(Duration::from_millis(5));
+            }
+            Ok(())
+        };
+        wait("ready")?;
+        assert!(counters(child.child.id()).is_err());
+        let meter = Meter::start(std::process::id(), None, Some(child.child.id()))?;
+        std::fs::write(root.join("go"), b"go")?;
+        wait("done")?;
+        let result = meter.finish(1)?;
+        check(
+            result["detector_cpu_s"].as_f64().unwrap() > 0.1
+                && result["detector_rss_peak_bytes"].as_u64().unwrap() > 1048576,
+            "resource",
+        )?;
+        std::fs::write(root.join("stop"), b"stop")?;
+        check(child.wait(Duration::from_secs(5))?.0.success(), "resource")
     }
     #[cfg(target_os = "linux")]
     #[test]

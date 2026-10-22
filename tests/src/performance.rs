@@ -65,7 +65,11 @@ pub fn check(condition: bool, code: &'static str) -> Result {
 pub fn failure(error: &(dyn std::error::Error + Send + Sync + 'static)) -> Value {
     match error.downcast_ref::<Failure>() {
         Some(error) => json!({"failure":error.code,"failure_observations":error.observations}),
-        None => json!({"failure":"unexpected"}),
+        None => json!({"failure":"unexpected","failure_observations":{
+            "io_error":error.is::<std::io::Error>(),
+            "os_error":error.downcast_ref::<std::io::Error>().and_then(std::io::Error::raw_os_error),
+            "json_error":error.is::<serde_json::Error>()
+        }}),
     }
 }
 pub fn canonical(value: &Value) -> Vec<u8> {
@@ -608,6 +612,22 @@ pub fn conversion_lifecycle(events: &[Value]) -> Result {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unexpected_failures_reveal_only_error_categories_and_numeric_os_codes() -> Result {
+        let private = "provider=https://private.invalid/?password=secret";
+        let error = std::io::Error::other(private);
+        let result = failure(&error);
+        assert_eq!(result["failure_observations"]["io_error"], true);
+        assert!(!result.to_string().contains(private));
+        let result = failure(&std::io::Error::from_raw_os_error(13));
+        assert_eq!(result["failure_observations"]["os_error"], 13);
+        public(&result, &BTreeSet::new())?;
+        let error = serde_json::from_str::<Value>(private).unwrap_err();
+        let result = failure(&error);
+        assert_eq!(result["failure_observations"]["json_error"], true);
+        assert!(!result.to_string().contains(private));
+        public(&result, &BTreeSet::new())
+    }
     #[test]
     fn equivalence_retains_credentials_metadata_order_nested_latency_and_hopping_bounds() -> Result
     {
