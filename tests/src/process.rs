@@ -52,8 +52,14 @@ impl Running {
         if let Some(status) = self.child.try_wait()? {
             return Ok(status);
         }
-        self.child.kill()?;
-        Ok(self.child.wait()?)
+        #[cfg(unix)]
+        {
+            // Own the listener directly so its PID and termination status remain reliable.
+            unsafe { libc::kill(self.child.id() as libc::pid_t, libc::SIGTERM); }
+            Ok(self.wait(Duration::from_secs(5))?.0)
+        }
+        #[cfg(not(unix))]
+        { self.child.kill()?; Ok(self.child.wait()?) }
     }
 }
 
@@ -77,6 +83,15 @@ impl Completed {
 }
 
 pub fn run(command: &mut Command, output: &Path, label: &str, timeout: Duration) -> Result<Completed> {
+    let rtk=find_program("rtk", command);
+    let mut wrapper;
+    let command=if let Some(rtk)=rtk {
+        wrapper=Command::new(rtk); wrapper.arg("proxy").arg(command.get_program()).args(command.get_args());
+        if let Some(cwd)=command.get_current_dir() { wrapper.current_dir(cwd); }
+        for (key,value) in command.get_envs() { if let Some(value)=value { wrapper.env(key,value); } else { wrapper.env_remove(key); } }
+        &mut wrapper
+    } else { command };
+    let wrapped=std::path::Path::new(command.get_program()).file_stem().is_some_and(|name| name=="rtk");
     let argv: Vec<_> = std::iter::once(command.get_program()).chain(command.get_args()).map(|value| value.to_string_lossy().into_owned()).collect();
     let cwd = command.get_current_dir().map(|path| path.to_string_lossy().into_owned());
     let started = jiff::Timestamp::now().to_string();
@@ -84,9 +99,16 @@ pub fn run(command: &mut Command, output: &Path, label: &str, timeout: Duration)
     let (status, timed_out) = process.wait(timeout)?;
     crate::json::write_new(output.join(format!("{label}.command.json")), &json!({
         "argv":argv, "cwd":cwd, "started":started, "finished":jiff::Timestamp::now().to_string(),
-        "exit_code":status.code(), "timed_out":timed_out
+        "exit_code":status.code(), "timed_out":timed_out,
+        "rtk_exception":if wrapped { None } else { Some("RTK unavailable on this runner") }
     }))?;
-    Ok(Completed { status, timed_out, stdout:std::fs::read_to_string(&process.stdout)?, stderr:std::fs::read_to_string(&process.stderr)? })
+    Ok(Completed { status, timed_out, stdout:String::from_utf8_lossy(&std::fs::read(&process.stdout)?).into_owned(), stderr:String::from_utf8_lossy(&std::fs::read(&process.stderr)?).into_owned() })
+}
+
+fn find_program(name: &str, command: &Command) -> Option<PathBuf> {
+    let override_path=command.get_envs().find(|(key,_)| key.eq_ignore_ascii_case("PATH"));
+    let path=match override_path { Some((_,path))=>path?.to_owned(),None=>std::env::var_os("PATH")? };
+    std::env::split_paths(&path).map(|directory| directory.join(if cfg!(windows) { format!("{name}.exe") } else { name.to_owned() })).find(|path| path.is_file())
 }
 
 pub fn checked(command: &mut Command, output: &Path, label: &str, timeout: Duration) -> Result<Completed> {

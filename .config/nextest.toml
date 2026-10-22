@@ -23,3 +23,9 @@ test-threads = 1
 
 [profile.benchmark.junit]
 path = "junit.xml"
+
+[profile.acceptance]
+inherits = "ci"
+
+[profile.acceptance.junit]
+path = "junit-acceptance.xml"

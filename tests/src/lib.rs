@@ -7,6 +7,10 @@ pub mod dns;
 pub mod upstream;
 pub mod contracts;
 pub mod notices;
+pub mod server;
+pub mod reference;
+#[cfg(test)]
+mod notices_tests;
 
 use std::path::PathBuf;
 

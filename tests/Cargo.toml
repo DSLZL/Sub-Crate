@@ -19,3 +19,7 @@ tokio = { version = "1", features = ["macros", "rt", "time", "net", "io-util", "
 
 [lib]
 path = "src/lib.rs"
+
+[[test]]
+name = "native"
+path = "native.rs"
