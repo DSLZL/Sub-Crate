@@ -124,7 +124,13 @@ pub fn aggregate(
         } else {
             valid = false;
         }
-        valid &= worker["status"] == "passed" && cells.iter().all(|row| row["status"] == "passed");
+        valid &= worker["status"] == "passed"
+            && cells.iter().all(|row| {
+                row["status"] == "passed"
+                    && row["output_sha256"].as_str().is_some_and(|value| {
+                        value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+                    })
+            });
         report["samples"]
             .as_array_mut()
             .unwrap()
@@ -603,6 +609,7 @@ mod tests {
             "replay",
             "binary",
             "output",
+            "both-outputs-missing",
             "failed",
             "cell",
             "empty",
@@ -617,6 +624,11 @@ mod tests {
                 "replay" => broken[0].1["replay"][1]["matching_sources"] = json!(22),
                 "binary" => broken[0].1["provenance"]["harness_sha"] = json!("d".repeat(40)),
                 "output" => broken[0].1["samples"][1]["output_sha256"] = json!("d".repeat(64)),
+                "both-outputs-missing" => {
+                    for cell in broken[0].1["samples"].as_array_mut().unwrap() {
+                        cell.as_object_mut().unwrap().remove("output_sha256");
+                    }
+                }
                 "failed" => broken[0].1["samples"][1]["status"] = json!("failed"),
                 "cell" => broken[0].1["samples"][1]["block"] = json!(99),
                 _ => broken[0].1["samples"] = json!([]),

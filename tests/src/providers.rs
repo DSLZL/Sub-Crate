@@ -497,9 +497,31 @@ pub fn require_complete(results: &[Value]) -> Result {
 mod tests {
     use super::*;
     #[test]
-    fn gist_state_rejects_missing_files_failed_operation_writes_extra_fields_and_wrong_types() -> Result {
-        let state=json!({"github":{"g1":{"description":"other","public":false,"files":{"other":{"content":"other"}}},"g2":{"description":"helper","public":false,"files":{"real":{"content":"restored"}}}},"gitlab":{"s1":{"title":"snippet","visibility":"private","files":{"real":{"content":"restored"}}}}});check_gist_state(&state)?;
-        for mutation in ["missing","changed","extra","visibility","type"]{let mut actual=state.clone();match mutation{"missing"=>{actual["github"]["g2"]["files"].as_object_mut().unwrap().remove("real");},"changed"=>actual["gitlab"]["s1"]["files"]["real"]["content"]=json!("failed write"),"extra"=>actual["github"]["g2"]["files"]["keep"]=json!({"content":"placeholder"}),"visibility"=>actual["github"]["g2"]["public"]=json!(true),_=>actual["github"]["g2"]["public"]=json!(0)}assert!(check_gist_state(&actual).is_err());}Ok(())
+    fn gist_state_rejects_missing_files_failed_operation_writes_extra_fields_and_wrong_types()
+    -> Result {
+        let state = json!({"github":{"g1":{"description":"other","public":false,"files":{"other":{"content":"other"}}},"g2":{"description":"helper","public":false,"files":{"real":{"content":"restored"}}}},"gitlab":{"s1":{"title":"snippet","visibility":"private","files":{"real":{"content":"restored"}}}}});
+        check_gist_state(&state)?;
+        for mutation in ["missing", "changed", "extra", "visibility", "type"] {
+            let mut actual = state.clone();
+            match mutation {
+                "missing" => {
+                    actual["github"]["g2"]["files"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("real");
+                }
+                "changed" => {
+                    actual["gitlab"]["s1"]["files"]["real"]["content"] = json!("failed write")
+                }
+                "extra" => {
+                    actual["github"]["g2"]["files"]["keep"] = json!({"content":"placeholder"})
+                }
+                "visibility" => actual["github"]["g2"]["public"] = json!(true),
+                _ => actual["github"]["g2"]["public"] = json!(0),
+            }
+            assert!(check_gist_state(&actual).is_err());
+        }
+        Ok(())
     }
     #[test]
     fn gist_wire_rejects_changed_auth_bytes_order_and_missing_requests() {

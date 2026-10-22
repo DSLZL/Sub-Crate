@@ -53,17 +53,6 @@ pub struct Upstream {
     pub fixture: Fixture,
     pub state: Arc<State>,
 }
-
-#[cfg(test)]
-mod proxy_tests {
-    use super::*;
-    #[test]
-    fn node_info_proxy_replies_locally_and_rejects_other_authorities() -> Result {
-        use std::{io::{Read,Write},net::TcpStream};let upstream=Upstream::new(0)?;
-        for(target,status,expected)in[("http://ip-api.com/json/2001%3Adb8%3A%3A1?lang=zh-CN",200,json!({"status":"success","query":"2001:db8::1","countryCode":"US","city":"fixture-city","lat":0,"mobile":false})),("http://other.invalid/",502,json!({"message":"Fixture proxy forbids this authority"}))]{let url=reqwest::Url::parse(upstream.url())?;let mut socket=TcpStream::connect(("127.0.0.1",url.port().unwrap()))?;socket.set_read_timeout(Some(Duration::from_secs(3)))?;write!(socket,"GET {target} HTTP/1.1\r\nHost: fixture\r\nConnection: close\r\n\r\n")?;let mut raw=Vec::new();socket.read_to_end(&mut raw)?;let response=crate::raw_http::decode(&raw,false)?;assert_eq!(response.status,status);assert_eq!(json::parse(std::str::from_utf8(&response.body)?)?,expected);}
-        assert_eq!(upstream.requests().iter().map(|row|row["path"].clone()).collect::<Vec<_>>(),vec![json!("http://ip-api.com/json/2001%3Adb8%3A%3A1?lang=zh-CN"),json!("http://other.invalid/")]);upstream.fixture.healthy()
-    }
-}
 impl Upstream {
     pub fn new(port: u16) -> Result<Self> {
         let state = Arc::new(State {
@@ -448,5 +437,55 @@ impl State {
             }
             _ => Reply::new(404, "unexpected host request"),
         })
+    }
+}
+
+#[cfg(test)]
+mod proxy_tests {
+    use super::*;
+    #[test]
+    fn node_info_proxy_replies_locally_and_rejects_other_authorities() -> Result {
+        use std::{
+            io::{Read, Write},
+            net::TcpStream,
+        };
+        let upstream = Upstream::new(0)?;
+        for (target, status, expected) in [
+            (
+                "http://ip-api.com/json/2001%3Adb8%3A%3A1?lang=zh-CN",
+                200,
+                json!({"status":"success","query":"2001:db8::1","countryCode":"US","city":"fixture-city","lat":0,"mobile":false}),
+            ),
+            (
+                "http://other.invalid/",
+                502,
+                json!({"message":"Fixture proxy forbids this authority"}),
+            ),
+        ] {
+            let url = reqwest::Url::parse(upstream.url())?;
+            let mut socket = TcpStream::connect(("127.0.0.1", url.port().unwrap()))?;
+            socket.set_read_timeout(Some(Duration::from_secs(3)))?;
+            write!(
+                socket,
+                "GET {target} HTTP/1.1\r\nHost: fixture\r\nConnection: close\r\n\r\n"
+            )?;
+            let mut raw = Vec::new();
+            socket.read_to_end(&mut raw)?;
+            let response = crate::raw_http::decode(&raw, false)?;
+            assert_eq!(response.status, status);
+            assert_eq!(json::parse(std::str::from_utf8(&response.body)?)?, expected);
+        }
+        assert_eq!(
+            upstream
+                .requests()
+                .iter()
+                .map(|row| row["path"].clone())
+                .collect::<Vec<_>>(),
+            vec![
+                json!("http://ip-api.com/json/2001%3Adb8%3A%3A1?lang=zh-CN"),
+                json!("http://other.invalid/")
+            ]
+        );
+        upstream.fixture.healthy()
     }
 }

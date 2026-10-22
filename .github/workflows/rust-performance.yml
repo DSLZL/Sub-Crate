@@ -223,16 +223,22 @@ jobs:
       - name: Show sanitized report
         if: always()
         run: if test -f "$RUNNER_TEMP/subscription-performance-public/summary.md"; then cat "$RUNNER_TEMP/subscription-performance-public/summary.md"; fi
-      - name: Preserve sanitized preparation and JUnit, including failures
+      - name: Preserve preparation JUnit
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: nextest-private-prepare-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/sub-store-nextest-build/nextest/
+            .performance/rust/rust/target/nextest/
+            .performance/rust-baseline/rust/target/nextest/
+          if-no-files-found: warn
+      - name: Preserve sanitized preparation, including failures
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: subscription-performance-prepare-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/subscription-performance-public/
-            ${{ runner.temp }}/sub-store-nextest-build/nextest/
-            .performance/rust/rust/target/nextest/
-            .performance/rust-baseline/rust/target/nextest/
+          path: ${{ runner.temp }}/subscription-performance-public/
           if-no-files-found: warn
           retention-days: 30
 
@@ -308,14 +314,19 @@ jobs:
           if [[ "$PERF_DIAGNOSTIC" == health ]]; then export PERF_BASELINE="$GITHUB_WORKSPACE/.performance/rust-baseline"; fi
           export TEST_NODE="$(node -p 'process.execPath')"
           cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --release --test performance --config-file .config/nextest.toml --profile perf-pair -E 'test(=subscription_pair)' --success-output immediate
-      - name: Preserve sanitized pair and JUnit, including failures
+      - name: Preserve pair JUnit
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: nextest-private-pair-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sub-store-nextest-build/nextest/
+          if-no-files-found: warn
+      - name: Preserve sanitized pair, including failures
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: subscription-performance-shard-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/subscription-performance-public/
-            ${{ runner.temp }}/sub-store-nextest-build/nextest/
+          path: ${{ runner.temp }}/subscription-performance-public/
           if-no-files-found: warn
           retention-days: 30
 
@@ -347,13 +358,18 @@ jobs:
         run: |
           cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --release --test performance --config-file .config/nextest.toml --profile perf-aggregate -E 'test(=subscription_aggregate)' --success-output immediate
           cat "$PERF_PUBLIC/summary.md" >> "$GITHUB_STEP_SUMMARY"
-      - name: Preserve sanitized aggregate and JUnit, including failures
+      - name: Preserve aggregate JUnit
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: nextest-private-aggregate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sub-store-nextest-build/nextest/
+          if-no-files-found: warn
+      - name: Preserve sanitized aggregate, including failures
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: subscription-performance-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/subscription-performance-public/
-            ${{ runner.temp }}/sub-store-nextest-build/nextest/
+          path: ${{ runner.temp }}/subscription-performance-public/
           if-no-files-found: warn
           retention-days: 30

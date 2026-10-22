@@ -551,9 +551,14 @@ mod tests {
     #[test]
     fn slow_client_samples_retain_their_server_worker_and_stage_pairing() -> Result {
         let events = [(50, 1), (500, 400)].map(|(wall, queue)| {
-            let rows = [("worker_queue", queue), ("parse_native", 10), ("produce", 5),
-                ("conversion_reuse", 1), ("conversion_retain", 1)]
-                .map(|(stage, time)| json!({"stage":stage,"wall_ns":time,"calls":1}));
+            let rows = [
+                ("worker_queue", queue),
+                ("parse_native", 10),
+                ("produce", 5),
+                ("conversion_reuse", 1),
+                ("conversion_retain", 1),
+            ]
+            .map(|(stage, time)| json!({"stage":stage,"wall_ns":time,"calls":1}));
             json!({"wall_ns":wall,"rows":rows})
         });
         let group = json!({"case":"clash_hysteria2","events":events,"client_ns":[100,1000],"server_ns":[90,900]});
