@@ -43,6 +43,9 @@ mod script_sync;
 mod script_tokens;
 mod settings;
 mod singbox_output;
+#[cfg(test)]
+#[path = "../../tests/performance/single_node.rs"]
+mod single_node_profile;
 mod sort;
 mod state;
 mod surge;

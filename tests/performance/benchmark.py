@@ -128,7 +128,7 @@ def public(value):
         raise Failure("privacy")
 
 
-def pipeline_profiles(path, offset):
+def pipeline_profiles(path, offset, *, operation="download_sub", processor=True):
     """Read only opt-in numeric events, never publish surrounding private logs."""
     reports = []
     with path.open("rb") as source:
@@ -142,7 +142,7 @@ def pipeline_profiles(path, offset):
                 raise Failure("resource") from error
             public(report)
             require(set(report) == {"version", "job", "operation", "success", "wall_ns", "dropped", "open_scopes", "unfinished_spans", "rows"}, "resource")
-            require(report["version"] == 1 and report["operation"] == "download_sub" and report["success"] is True, "resource")
+            require(report["version"] == 1 and report["operation"] == operation and report["success"] is True, "resource")
             require(report["dropped"] == report["open_scopes"] == report["unfinished_spans"] == 0, "resource")
             rows = report["rows"]
             require(isinstance(rows, list) and 0 < len(rows) <= 2048, "resource")
@@ -153,7 +153,8 @@ def pipeline_profiles(path, offset):
                 require(all(type(row[key]) is int and row[key] >= 0 for key in ("calls", "wall_ns", "active_ns", "self_ns", "max_wall_ns")), "resource")
                 require(row["calls"] > 0 and row["self_ns"] <= row["active_ns"] <= row["wall_ns"] and row["max_wall_ns"] <= row["wall_ns"], "resource")
             require(sum(row["self_ns"] for row in rows) == sum(row["active_ns"] for row in rows if row["parent"] is None), "resource")
-            require(any(row["stage"] == "processor" for row in rows), "resource")
+            if processor:
+                require(any(row["stage"] == "processor" for row in rows), "resource")
             reports.append(report)
     return reports
 
