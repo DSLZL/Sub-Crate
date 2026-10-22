@@ -843,14 +843,17 @@ fn reference_graphs(edge: &mut Edge, kind: &str) -> Result {
     )?;
     json::check(&edge.get("/api/storage")?, &restored, false)
 }
-pub fn crud_lifecycle(output: &Path) -> Result {
-    reference::verify(output)?;
+pub fn seed_document() -> Value {
     let unknown = json!({"zero":0,"flag":false,"text":"保留🙂\r\n"});
     let sources = json!(["1", "01", 1, true, 0, false, null, ["1"], [1], [0], [], {}]);
     let sources = sources.as_array().unwrap();
     let mut artifacts=sources.iter().enumerate().map(|(index,value)|json!({"name":format!("sub-{index}"),"type":"subscription","source":value})).collect::<Vec<_>>();
     artifacts.extend([json!("1"),json!(1),json!(true),json!([1])].iter().enumerate().map(|(index,value)|json!({"name":format!("col-{index}"),"type":"collection","source":value})));
-    let seed = json!({"schemaVersion":"2.0","settings":{},"rules":[],"modules":[],"tokens":[],"archives":[],"subs":[{"name":"1","subscriptions":["reserved"],"unknown":unknown},{"name":"0","subscriptions":["reserved"],"unknown":unknown}],"collections":[{"name":"refs","subscriptions":["1","1","0","0",1,0]},{"name":"1","subscriptions":[]}],"artifacts":artifacts,"files":sources.iter().enumerate().map(|(index,value)|json!({"name":format!("sub-{index}"),"sourceType":"subscription","sourceName":value})).collect::<Vec<_>>(),"opaque":unknown});
+    json!({"schemaVersion":"2.0","settings":{},"rules":[],"modules":[],"tokens":[],"archives":[],"subs":[{"name":"1","subscriptions":["reserved"],"unknown":unknown},{"name":"0","subscriptions":["reserved"],"unknown":unknown}],"collections":[{"name":"refs","subscriptions":["1","1","0","0",1,0]},{"name":"1","subscriptions":[]}],"artifacts":artifacts,"files":sources.iter().enumerate().map(|(index,value)|json!({"name":format!("sub-{index}"),"sourceType":"subscription","sourceName":value})).collect::<Vec<_>>(),"opaque":unknown})
+}
+pub fn crud_lifecycle(output: &Path) -> Result {
+    reference::verify(output)?;
+    let seed = seed_document();
     let mut paired = Vec::new();
     let mut final_states = Vec::new();
     let mut rust_state = None;

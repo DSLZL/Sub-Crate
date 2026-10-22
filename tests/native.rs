@@ -39,6 +39,22 @@ fn noisy_base64_legacy_migration_preserves_numeric_order_processors_and_original
 fn unicode_json_and_utf16_keep_lone_surrogates_markers_restart_and_node_rollback() -> Result {
     sub_store_tests::unicode::run(&process::scratch("service-unicode")?)
 }
+#[test]
+fn live_raw_buffers_keep_identity_across_failed_writes_restore_restart_and_node_rollback() -> Result {
+    sub_store_tests::buffers::run(&process::scratch("service-buffers")?)
+}
+#[test]
+fn runtime_proxy_header_limits_listener_prefix_cors_and_json_limits_preserve_contracts() -> Result {
+    sub_store_tests::configuration::run(&process::scratch("service-configuration")?)
+}
+#[test]
+fn diagnostic_envelopes_native_frames_reasons_and_failed_state_match_all_environment_modes() -> Result {
+    sub_store_tests::configuration::diagnostics(&process::scratch("service-diagnostics")?)
+}
+#[test]
+fn corrupt_native_startups_and_restore_journals_exit_without_resetting_either_file() -> Result {
+    sub_store_tests::configuration::rejected_startups(&process::scratch("service-rejected-startups")?)
+}
 
 #[test]
 fn frozen_node_unit_suite() -> Result {

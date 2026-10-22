@@ -272,7 +272,7 @@ pub fn run(output: &Path) -> Result {
         ("rust", service::target()?),
     ] {
         let label = format!("{kind}-unicode");
-        let mut document = json::read(crate::compat().join("fixtures/frontend-backup.json"))?;
+        let mut document = crate::edges::seed_document();
         document["subs"] = json!([]);
         document["collections"] = json!([]);
         document["settings"] = json::parse(r#""A中🙂\ue000d800\ud800""#)?;
