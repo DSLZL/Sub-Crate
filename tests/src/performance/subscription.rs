@@ -421,7 +421,7 @@ pub fn inspect() -> Result {
     let samples = report["samples"]
         .as_array()
         .ok_or("Inspected samples missing")?;
-    let groups = samples
+    let measured = samples
         .iter()
         .filter(|row| {
             row["latencies_s"]
@@ -431,17 +431,21 @@ pub fn inspect() -> Result {
                     .iter()
                     .all(|key| row.get(key).is_some())
         })
+        .collect::<Vec<_>>();
+    let groups = measured
+        .iter()
         .map(|row| {
-            (
-                row["case"].as_str().unwrap_or("failed"),
-                row["kind"].as_str().unwrap_or("failed"),
-                row["concurrency"].as_u64().unwrap_or(0),
-            )
+            Ok((
+                row["case"].as_str().ok_or("Case missing")?,
+                row["kind"].as_str().ok_or("Backend missing")?,
+                row["concurrency"].as_u64().ok_or("Concurrency missing")?,
+            ))
         })
-        .collect::<BTreeSet<_>>();
+        .collect::<Result<BTreeSet<_>>>()?;
     for (case, kind, clients) in groups {
-        let rows = samples
+        let rows = measured
             .iter()
+            .copied()
             .filter(|row| {
                 row["case"] == case
                     && row["kind"] == kind
@@ -454,7 +458,8 @@ pub fn inspect() -> Result {
             .flat_map(|row| row["latencies_s"].as_array().into_iter().flatten())
             .filter_map(Value::as_f64)
             .collect::<Vec<_>>();
-        let mut summary = distribution(&times)?;
+        let stats = distribution(&times)?;
+        let mut summary = json!({"requests":stats["n"],"median_s":stats["median"],"p95_s":stats["p95"]});
         summary["case"] = json!(case);
         summary["kind"] = json!(kind);
         summary["clients"] = json!(clients);
@@ -473,8 +478,19 @@ pub fn inspect() -> Result {
                 .sum::<f64>()
                 / times.len() as f64
         );
-        for key in ["rss_peak_bytes", "rss_end_bytes", "rss_settled_bytes"] {
-            summary[key] = json!(rows.iter().filter_map(|row| row[key].as_u64()).max());
+        for (source, output) in [
+            ("rss_peak_bytes", "rss_peak_mib"),
+            ("rss_end_bytes", "rss_end_mib"),
+            ("rss_settled_bytes", "rss_settled_mib"),
+        ] {
+            let peak = rows
+                .iter()
+                .map(|row| row[source].as_u64().ok_or("RSS bytes missing"))
+                .collect::<std::result::Result<Vec<_>, _>>()?
+                .into_iter()
+                .max()
+                .ok_or("RSS samples missing")?;
+            summary[output] = json!(peak as f64 / 1048576.0);
         }
         summary["output_counts"] = json!(
             rows.iter()
