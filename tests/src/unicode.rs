@@ -275,7 +275,8 @@ pub fn run(output: &Path) -> Result {
         document["collections"] = json!([]);
         document["settings"] = json::parse(r#""A中🙂\ue000d800\ud800""#)?;
         document["unknown"] = json::parse(r#"{"\udfff":"\ud800","literal":"\ue000d800"}"#)?;
-        let root = json!({"opaque":{"text":"cache🙂","zero":0,"flag":false},"sub-store-cached-resource":"{}","unicodeRoot":document["unknown"]});
+        let mut root = crate::persistence::root_fixture();
+        root["unicodeRoot"] = document["unknown"].clone();
         let (state, mut env) = service::seed(output, &label, &document, &root)?;
         server::set(&mut env, "NODE_ENV", "production");
         let mut observed = Vec::new();

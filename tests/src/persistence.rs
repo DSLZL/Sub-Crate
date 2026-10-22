@@ -19,6 +19,14 @@ const CACHES: [&str; 3] = [
     "sub-store-cached-script-resource",
 ];
 
+pub fn root_fixture() -> Value {
+    let mut root=json!({"opaque":{"text":"根缓存🙂\r\n","zero":0,"flag":false,"nil":null},"sub-store":"previous backup"});
+    for cache in CACHES {
+        root[cache]=json!(json::stringify(&json!({"fixture":{"time":4102444800000_i64,"data":"cached"}})));
+    }
+    root
+}
+
 fn truth(value: &Value) -> bool {
     match value {
         Value::Null => false,
@@ -514,12 +522,7 @@ fn settings_reads(api: &Api, expected: &Value) -> Result<Vec<Value>> {
 pub fn backups(output: &Path) -> Result {
     reference::verify(output)?;
     let backup = json::read(crate::compat().join("fixtures/frontend-backup.json"))?;
-    let mut root = json!({"opaque":{"text":"根缓存🙂\r\n","zero":0,"flag":false,"nil":null},"sub-store":"previous backup"});
-    for cache in CACHES {
-        root[cache] = json!(json::stringify(
-            &json!({"fixture":{"time":4102444800000_i64,"data":"cached"}})
-        ));
-    }
+    let root = root_fixture();
     for (zone_name, zone) in [
         ("local", jiff::tz::TimeZone::system()),
         ("Asia/Tokyo", jiff::tz::TimeZone::get("Asia/Tokyo")?),

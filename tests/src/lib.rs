@@ -10,6 +10,7 @@ pub mod distribution;
 pub mod dns;
 pub mod download;
 pub mod edges;
+pub mod entities;
 pub mod fixture;
 pub mod frontend;
 pub mod http;

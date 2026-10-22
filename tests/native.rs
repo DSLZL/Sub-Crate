@@ -55,6 +55,10 @@ fn diagnostic_envelopes_native_frames_reasons_and_failed_state_match_all_environ
 fn corrupt_native_startups_and_restore_journals_exit_without_resetting_either_file() -> Result {
     sub_store_tests::configuration::rejected_startups(&process::scratch("service-rejected-startups")?)
 }
+#[test]
+fn merged_and_standalone_static_ranges_validators_api_methods_queries_and_forwarded_bodies() -> Result {
+    sub_store_tests::static_files::run(&process::scratch("service-static-http")?)
+}
 
 #[test]
 fn frozen_node_unit_suite() -> Result {

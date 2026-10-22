@@ -10,7 +10,7 @@ impl Buffers<'_>{
         let mut spec=json!({"method":method,"path":path,"status":status,"media":if raw.is_some(){"application/octet-stream"}else{"application/json"},"json_error":!html,"parser_error":html});
         if status<400{spec["json_error"]=json!(false);}
         let parsed=self.requests.send(raw.unwrap_or(&encoded),spec)?;
-        let record=self.requests.observed.last_mut().ok_or("Missing buffer response evidence")?;record["phase"]=json!(self.phase);
+        let record=self.requests.observed.last_mut().ok_or("Missing buffer response evidence")?;record["phase"]=json!(self.phase);record["root"]=self.requests.api.stored("root.json")?;
         if !html{
             if let Some(error)=error{json::check(&parsed["error"],&error,false)?;}
             let bytes=STANDARD.decode(record["body_base64"].as_str().ok_or("Missing buffer response bytes")?)?;
@@ -59,17 +59,17 @@ impl Buffers<'_>{
         json::check(&self.get("/api/storage")?,&self.requests.api.durable()?,false)
     }
 }
-pub fn phase(api:&Api,output:&Path,label:&str,phase:&str,origin:Option<&str>)->Result<Vec<Value>>{
-    let mut test=Buffers{requests:media::Requests{api,output,label,origin,observed:Vec::new()},phase};test.run()?;
+pub fn phase(api:&Api,base:&str,output:&Path,label:&str,phase:&str,origin:Option<&str>)->Result<Vec<Value>>{
+    let mut test=Buffers{requests:media::Requests{api,base,output,label,origin,observed:Vec::new()},phase};test.run()?;
     json::write_new(output.join(format!("{label}.json")),&json!(test.requests.observed))?;Ok(test.requests.observed)
 }
 pub fn run(output:&Path)->Result{
     reference::verify(output)?;let seed=crate::edges::seed_document();let mut paired=Vec::new();let mut rust_state=None;
     for(kind,backend)in[("node",Backend::Node(reference::node())),("rust",service::target()?)]{
         let label=format!("{kind}-buffers");let mut document=seed.clone();document["subs"]=json!([]);document["collections"]=json!([]);
-        let root=json!({"opaque":{"zero":0,"flag":false,"text":"保留🙂\r\n"},"sub-store-cached-resource":"{}"});
+        let mut root=crate::persistence::root_fixture();root["opaque"]=json!({"zero":0,"flag":false,"text":"保留🙂\r\n"});
         let(state,mut env)=service::seed(output,&label,&document,&root)?;server::set(&mut env,"NODE_ENV","production");let api=Api::start(&backend,&env,&state,output,&label)?;
-        let mut observed=phase(&api,output,&format!("{label}-live"),"live",None)?;
+        let mut observed=phase(&api,&api.listener.url,output,&format!("{label}-live"),"live",None)?;
         if kind=="rust"{
             let before=api::files(&api)?;let path=state.join("sub-store.json");let saved=state.join("saved-state.json");std::fs::rename(&path,&saved)?;std::fs::create_dir(&path)?;
             let checked=(||->Result{
@@ -82,15 +82,15 @@ pub fn run(output:&Path)->Result{
             })();std::fs::remove_dir(&path)?;std::fs::rename(saved,path)?;checked?;require(api::files(&api)?==before,"Failed Buffer writes changed either file")?;
             json::write_new(output.join("buffer-write-failure.json"),&json!({"both_files_unchanged":true,"live_identity_preserved":true}))?;
         }
-        observed.extend(phase(&api,output,&format!("{label}-restore"),"restore",None)?);
-        observed.extend(phase(&api,output,&format!("{label}-before-restart"),"live-before-restart",None)?);drop(api);
+        observed.extend(phase(&api,&api.listener.url,output,&format!("{label}-restore"),"restore",None)?);
+        observed.extend(phase(&api,&api.listener.url,output,&format!("{label}-before-restart"),"live-before-restart",None)?);drop(api);
         let api=Api::start(&backend,&env,&state,output,&format!("{label}-restart"))?;
-        observed.extend(phase(&api,output,&format!("{label}-restart"),"stored",None)?);
+        observed.extend(phase(&api,&api.listener.url,output,&format!("{label}-restart"),"stored",None)?);
         if kind=="rust"{rust_state=Some(state);}paired.push(observed);
     }
     json::check(&json!(paired[0]),&json!(paired[1]),false)?;
     let state=output.join("buffers-node-rollback");std::fs::create_dir(&state)?;for file in["sub-store.json","root.json"]{std::fs::copy(rust_state.as_ref().ok_or("Missing Buffer Rust state")?.join(file),state.join(file))?;}
     let mut env=server::environment(&state);server::set(&mut env,"NODE_ENV","production");let api=Api::start(&Backend::Node(reference::node()),&env,&state,output,"buffers-node-rollback")?;
-    let rolled=phase(&api,output,"buffers-node-rollback","stored",None)?;
+    let rolled=phase(&api,&api.listener.url,output,"buffers-node-rollback","stored",None)?;
     json::check(&json!(rolled),&json::read(output.join("rust-buffers-restart.json"))?,false)
 }

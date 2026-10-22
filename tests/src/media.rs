@@ -28,6 +28,7 @@ fn compress(body: &[u8], coding: &str) -> Result<Vec<u8>> {
 }
 pub struct Requests<'a> {
     pub api: &'a Api,
+    pub base: &'a str,
     pub output: &'a Path,
     pub label: &'a str,
     pub origin: Option<&'a str>,
@@ -68,7 +69,7 @@ impl Requests<'_> {
             .map(usize::try_from)
             .transpose()?;
         let reply =
-            raw_http::request(&self.api.listener.url, method, path, &headers, body, chunks)?;
+            raw_http::request(self.base, method, path, &headers, body, chunks)?;
         let after = [
             std::fs::read(self.api.state.join("sub-store.json"))?,
             std::fs::read(self.api.state.join("root.json"))?,
@@ -140,7 +141,7 @@ impl Requests<'_> {
                 .map(|value| (key.to_string(), json!(value)))
         })
         .collect::<serde_json::Map<_, _>>();
-        self.observed.push(json!({"method":method,"path":path,"status":status,"headers":compared,"body_base64":base64::engine::general_purpose::STANDARD.encode(&reply.body),"state":state,"root":record["root"]}));
+        self.observed.push(json!({"method":method,"path":path,"status":status,"headers":compared,"body_base64":base64::engine::general_purpose::STANDARD.encode(&reply.body),"state":state}));
         if (status < 400 || spec["json_error"] == true) && !reply.body.is_empty() {
             json::parse(std::str::from_utf8(&reply.body)?)
         } else {
@@ -148,10 +149,11 @@ impl Requests<'_> {
         }
     }
 }
-pub fn run(api: &Api, output: &Path, label: &str, origin: Option<&str>) -> Result<Vec<Value>> {
+pub fn run(api: &Api, base: &str, output: &Path, label: &str, origin: Option<&str>) -> Result<Vec<Value>> {
     let original = api.durable()?;
     let mut request = Requests {
         api,
+        base,
         output,
         label,
         origin,

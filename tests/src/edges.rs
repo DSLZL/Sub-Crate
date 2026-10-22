@@ -883,6 +883,7 @@ pub fn crud_lifecycle(output: &Path) -> Result {
         reference_graphs(&mut edge, kind)?;
         edge.observed.extend(crate::media::run(
             &api,
+            &api.listener.url,
             output,
             &format!("{label}-body-http"),
             None,

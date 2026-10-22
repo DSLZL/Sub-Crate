@@ -17,6 +17,10 @@ test-group = 'browser'
 filter = 'test(docker::)'
 test-group = 'containers'
 
+[[profile.ci.overrides]]
+filter = 'test(=frozen_node_unit_suite)'
+threads-required = "num-test-threads"
+
 [profile.benchmark]
 inherits = "ci"
 test-threads = 1
