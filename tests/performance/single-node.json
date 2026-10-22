@@ -1,0 +1,38 @@
+[
+  {
+    "id": "ss_uri",
+    "raw": "ss://YWVzLTEyOC1nY206c2VjcmV0@ss.example.com:8388#%E8%8A%82%E7%82%B9%F0%9F%99%82"
+  },
+  {
+    "id": "vmess_ws",
+    "raw": "vmess://eyJ2IjoiMiIsInBzIjoiVk1lc3Pwn5mCIiwiYWRkIjoidm0uZXhhbXBsZSIsInBvcnQiOiI0NDMiLCJpZCI6IjExMTExMTExLTExMTEtNDExMS04MTExLTExMTExMTExMTExMSIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0Ijoid3MiLCJob3N0IjoiY2RuLmV4YW1wbGUiLCJwYXRoIjoiL3dzIiwidGxzIjoidGxzIn0="
+  },
+  {
+    "id": "vless_ws",
+    "raw": "vless://11111111-1111-4111-8111-111111111111@v.example:443?type=ws&security=tls&host=cdn.example&path=%2Fws#VLESS"
+  },
+  {
+    "id": "trojan",
+    "raw": "trojan://secret@tr.example:443?allowInsecure=1#Trojan"
+  },
+  {
+    "id": "hysteria2",
+    "raw": "hysteria2://secret@hy.example:443?obfs=salamander&obfs-password=mask#HY2"
+  },
+  {
+    "id": "surge_ss",
+    "raw": "Surge = ss, ss.example.com, 8388, encrypt-method=aes-128-gcm, password=secret, udp-relay=true"
+  },
+  {
+    "id": "qx_ss",
+    "raw": "shadowsocks=ss.example.com:8388,method=aes-128-gcm,password=secret,udp-relay=true,tag=QX"
+  },
+  {
+    "id": "clash_json",
+    "raw": "{\"type\":\"ss\",\"name\":\"节点🙂\",\"server\":\"ss.example.com\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"secret\",\"udp\":true,\"skip-cert-verify\":false}"
+  },
+  {
+    "id": "clash_yaml",
+    "raw": "proxies:\n  - {\"type\":\"ss\",\"name\":\"节点🙂\",\"server\":\"ss.example.com\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"secret\",\"udp\":true,\"skip-cert-verify\":false}"
+  }
+]
