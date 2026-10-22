@@ -223,7 +223,7 @@ fn pure(
             let mut count = 1_u64;
             for _ in 0..5 {
                 let sample = worker.call(index, count, 2, variant.ends_with("_fresh_parser"))?;
-                check(sample["outputs"] == expected, "output_mismatch")?;
+                crate::json::check(&sample["outputs"], &expected, false)?;
                 let elapsed = sample["elapsed_ns"].as_u64().unwrap();
                 if elapsed >= 125000000 {
                     break;
@@ -246,10 +246,8 @@ fn pure(
                     0,
                     variant.ends_with("_fresh_parser"),
                 )?;
-                check(
-                    sample.as_object_mut().unwrap().remove("outputs") == Some(expected.clone()),
-                    "output_mismatch",
-                )?;
+                crate::json::check(&sample["outputs"], &expected, false)?;
+                sample.as_object_mut().unwrap().remove("outputs");
                 sample["case"] = case["id"].clone();
                 sample["variant"] = json!(variant);
                 sample["block"] = json!(block);
@@ -268,9 +266,10 @@ fn payload(case: &Value, index: usize) -> Value {
 }
 fn validate_response(raw: &[u8], expected: &Value) -> Result {
     let response: Value = serde_json::from_slice(raw)?;
-    check(
-        response == json!({"status":"success","data":expected}),
-        "output_mismatch",
+    crate::json::check(
+        &response,
+        &json!({"status":"success","data":expected}),
+        false,
     )
 }
 fn endpoint(suite: &mut Suite, cases: &[Value], report: &mut Value, tail: bool) -> Result {
@@ -290,7 +289,7 @@ fn endpoint(suite: &mut Suite, cases: &[Value], report: &mut Value, tail: bool) 
         let elapsed = began.elapsed().as_nanos() as u64;
         let body: Value = serde_json::from_slice(&raw)?;
         if let Some(expected) = &first {
-            check(expected == &body, "output_mismatch")?;
+            crate::json::check(&body, expected, false)?;
         } else {
             first = Some(body);
         }
@@ -324,7 +323,7 @@ fn endpoint(suite: &mut Suite, cases: &[Value], report: &mut Value, tail: bool) 
                 Some(&source),
             )?)?;
             if let Some(expected) = &expected {
-                check(expected == &body, "output_mismatch")?;
+                crate::json::check(&body, expected, false)?;
             } else {
                 expected = Some(body);
             }
@@ -790,6 +789,32 @@ pub fn inspect() -> Result {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn parser_output_equality_preserves_json_numbers_types_fields_and_order() -> Result {
+        let expected = json!({"par_res":[{"type":"vmess","port":443,"alterId":0}],"pro_res":[]});
+        let actual = json!({"par_res":[{"type":"vmess","port":443.0,"alterId":0.0}],"pro_res":[]});
+        crate::json::check(&actual, &expected, false)?;
+        validate_response(
+            &canonical(&json!({"status":"success","data":actual})),
+            &expected,
+        )?;
+        for altered in [json!(false), json!("0"), json!(null), json!(1)] {
+            let mut changed = expected.clone();
+            changed["par_res"][0]["alterId"] = altered;
+            assert!(
+                validate_response(
+                    &canonical(&json!({"status":"success","data":changed})),
+                    &expected,
+                )
+                .is_err()
+            );
+        }
+        let mut missing = expected.clone();
+        missing.as_object_mut().unwrap().remove("pro_res");
+        assert!(crate::json::check(&missing, &expected, false).is_err());
+        assert!(crate::json::check(&json!([1, 2]), &json!([2, 1]), false).is_err());
+        Ok(())
+    }
     fn event(stages: &[&str]) -> Value {
         json!({"rows":stages.iter().chain(["parse","parse_native","produce"].iter()).map(|stage|json!({"stage":stage,"calls":1})).collect::<Vec<_>>()})
     }
