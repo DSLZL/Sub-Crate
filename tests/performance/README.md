@@ -1144,3 +1144,113 @@ Actions token, retries only setup I/O failures, retains base64 line wrapping and
 still verifies the pinned SHA-256. The token is excluded from child environments.
 The reader can inspect sanitized preparation failure codes/stack line numbers
 when no aggregate exists. Raw failure messages and private data remain on runners.
+
+### Single-node parsing versus request overhead (2026-10-22)
+
+Two Actions comparisons pass: [39701402820](https://github.com/DSLZL/Sub-Store/actions/runs/39701402820)
+at `30219770797934df8622de2eceb7071d43e71618`, and
+[39702044025](https://github.com/DSLZL/Sub-Store/actions/runs/39702044025)
+at `cbf50eb5e56b1c42a2efdf43ed04d56a11253cb3`. Their production Rust parser and
+service code remain `bfae5be4ff67a7bfc9be70ea838e28dce5c0bf02`; the only Rust
+source addition is a `cfg(test)` entry for the standalone measurement driver.
+The original remains `9cc6b5fac966993364ae33da8797f446bbf7f571`. Each comparison
+runs both engines on the same Ubuntu 24.04 x64 runner with Node 24.16.0 and Rust
+1.98.0 release builds. Absolute differences between the two runners are not an
+optimization gain.
+
+`rust-single-node.yml` runs this focused comparison. `single-node.json` contains
+nine public, synthetic one-node fixtures, including Unicode names. The Node
+worker imports the original build's public `ProxyUtils.parse` export from
+`dist/proxy-utils.esm.mjs`; its console output and installed log-persistence hook
+are disabled only for pure parsing. Rust calls the real `conversion::parse`.
+Each invocation receives one node, rather than dividing a subscription's bulk
+time by its node count. Both workers alternate the original text and an
+equivalent trailing-newline variant, so the last-input YAML preprocessing cache
+cannot bypass work. Parsed values and counts are checked against the original
+outside the timed loop.
+
+Pure measurements use persistent workers, warm-up, adaptive block sizes targeting
+250 ms, seven blocks and alternating variant order. Values below are medians of
+the seven block means. The reused Rust parser retains its context while parsing
+each input again; the fresh-parser column constructs and drops a parser on every
+call. Fresh-parser measurements retain the process's existing library-bytecode
+cache, so they are not cold process startup measurements.
+
+The real endpoint is `POST /backend/api/proxy/parse` with `client=JSON` and
+`type=internal`. It includes parsing, production, application setup, request
+encoding and localhost HTTP transport. Both services start with empty application
+state and default logging, warm up for 20 requests per format, and execute seven
+blocks of 30 individual requests per format/backend. Each full response is
+checked against the original; all 7,560 timed HTTP requests across the two runs
+match. These empty-state single-node requests do not represent the imported
+subscription's full-state workload or its throughput under concurrency. The
+timed endpoints keep profiling disabled.
+
+Latest run, in microseconds per pure parse and milliseconds per HTTP request:
+
+| Input | Node pure us | Rust reused parser us | Rust new parser us | Node HTTP median ms | Rust HTTP median ms |
+|---|---:|---:|---:|---:|---:|
+| SS URI | 7.982 | 4.129 | 1272.326 | 0.482 | 10.054 |
+| VMess WS | 21.861 | 8.162 | 1283.053 | 0.541 | 10.352 |
+| VLESS WS | 19.503 | 6.797 | 1310.752 | 0.359 | 9.967 |
+| Trojan | 31.957 | 4.139 | 1298.415 | 0.464 | 9.930 |
+| Hysteria2 | 29.805 | 4.471 | 1309.676 | 0.455 | 10.164 |
+| Surge SS | 78.871 | 72.950 | 1396.436 | 0.633 | 11.072 |
+| QX SS | 164.350 | 71.875 | 1392.769 | 0.787 | 10.792 |
+| Clash JSON | 59.403 | 8.001 | 1287.859 | 0.506 | 10.447 |
+| Single-node Clash YAML | 125.048 | 10.790 | 1283.154 | 0.717 | 10.290 |
+
+The first run confirms the same direction on every format. Representative
+Node/Rust reused-parser means were SS `10.337 / 5.344 us`, VMess
+`29.349 / 10.895 us`, Surge SS `110.822 / 93.032 us`, and YAML
+`169.964 / 14.218 us`; its HTTP medians span `0.434–0.832 ms` for Node and
+`12.216–12.662 ms` for Rust. Across both runs, reused-parser medians favor Rust
+by approximately `1.08–11.95x`, with a small advantage for Surge SS. In the
+latest run, the seven Surge SS block means range `75.266–84.768 us` for Node
+and `72.674–73.695 us` for Rust. HTTP remains roughly `14–28x` slower on Rust
+in the latest comparison; the SS endpoint P95 is `0.642 ms` for Node versus
+`11.108 ms` for Rust. Raw blocks, iterations and all request latencies remain
+in each run's `metrics.json`; the second run also prints bounded block/P95 data.
+
+The second run then starts a separate instance of the same Rust binary with the
+existing profiler enabled. All nine formats retain exact endpoint output and
+each contributes seven complete, balanced profiles after warm-up, with no lost
+or unfinished scopes. SS URI median active stage durations are:
+
+| Stage | Active ms |
+|---|---:|
+| Tokio executor setup | 0.025 |
+| State snapshot | 0.018 |
+| QuickJS runtime setup | 0.013 |
+| QuickJS context setup | 0.096 |
+| Script job | 9.781 |
+| Application bootstrap | 8.577 |
+| Bootstrap bytecode load, nested | 4.059 |
+| Bootstrap evaluation, nested | 4.641 |
+| State JSON encode, nested | 0.004 |
+| State JSON parse, nested | 0.004 |
+| Parser initialization | 1.041 |
+| Native parsing | 0.036 |
+| Production | 0.020 |
+| Output encoding | 0.011 |
+
+These are instrumented elapsed active times, not OS CPU samples. Parent/child
+durations overlap, and independently computed medians must not be added. They
+do not enter the uninstrumented request table. The `script::run` path creates a
+job, context and application bindings per request; `script::parser` lazily
+constructs the additional parser in that job. Their fixed initialization cost
+dominates one-node HTTP latency. Faster bulk conversion does not remove it.
+Reducing per-request application/bootstrap and parser setup is the next target;
+the measured hot parser already wins on these fixtures. Surge/QX's roughly
+`72–73 us` reused-parser cost remains a separate format-specific opportunity.
+
+Both runs pass formatting, clippy with warnings denied and 39 ordinary Rust
+tests. Four ignored probes include the new interactive driver, which this
+workflow explicitly executes in release mode; the second run also passes all
+25 existing benchmark self-checks. The full frontend/native/Docker acceptance
+matrix is outside this focused measurement. Its earlier product-source evidence
+is retained above. Cancelled setup runs `39700896530` and `39701048608`, and
+formatting failure `39701116768`, supply no accepted performance numbers.
+Artifacts `single-node-39701402820-1` and `single-node-39702044025-1` retain the
+public samples and runner logs for 30 days. No local product execution or
+artifact extraction was used.
