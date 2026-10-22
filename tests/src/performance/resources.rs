@@ -369,8 +369,12 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn detector_sampling_requires_cpu_and_rss_without_reading_protected_io() -> Result {
-        assert!(process_gone(&std::io::Error::from_raw_os_error(libc::ESRCH)));
-        assert!(!process_gone(&std::io::Error::from_raw_os_error(libc::EACCES)));
+        assert!(process_gone(&std::io::Error::from_raw_os_error(
+            libc::ESRCH
+        )));
+        assert!(!process_gone(&std::io::Error::from_raw_os_error(
+            libc::EACCES
+        )));
         let root = crate::process::scratch("protected-detector-meter")?;
         let mut child = crate::process::Running::spawn(
             std::process::Command::new(std::env::current_exe()?)
