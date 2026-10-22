@@ -20,12 +20,12 @@ jobs:
     defaults:
       run:
         shell: bash
-    env:
-      CARGO_TARGET_DIR: ${{ runner.temp }}/sub-store-test-build
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+      - name: Keep compiler output on the runner
+        run: echo "CARGO_TARGET_DIR=$RUNNER_TEMP/sub-store-test-build" >> "$GITHUB_ENV"
       - name: Install fixed Rust toolchain
         run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2

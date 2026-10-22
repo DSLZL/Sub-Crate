@@ -202,7 +202,11 @@ mod tests {
         assert_eq!(cases.iter().map(|case| case["steps"].as_array().unwrap().len()).sum::<usize>(), 1094);
         assert_eq!(manifest["suites"].as_object().unwrap().len(), 22);
         for suite in manifest["suites"].as_object().unwrap().keys() {
-            load_cases(&manifest, &fixtures, suite).unwrap();
+            if suite == "full" {
+                assert!(load_cases(&manifest, &fixtures, suite).unwrap_err().to_string().contains("M1-complete-inventory"));
+            } else {
+                load_cases(&manifest, &fixtures, suite).unwrap();
+            }
         }
     }
 }
