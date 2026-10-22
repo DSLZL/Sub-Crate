@@ -65,7 +65,7 @@ pub fn request(
         fields.insert("Content-Length".into(), body.len().to_string());
     }
     let mut wire = format!(
-        "{method}{}{path} HTTP/1.1\r\n",
+        "{method} {}{path} HTTP/1.1\r\n",
         url.path().trim_end_matches('/')
     )
     .into_bytes();
@@ -198,6 +198,18 @@ pub fn json_bytes(value: &Value) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn raw_request_preserves_method_prefix_body_and_chunked_wire() -> Result {
+        let fixture=crate::fixture::Fixture::new(0,|request,_|{
+            require(request.method=="PUT"&&request.target=="/backend/api/collections"&&request.body==b"\0A\xff","Raw request line, prefix or binary body changed")?;
+            Ok(crate::fixture::Reply::new(200,b"ok".to_vec()))
+        })?;
+        for chunks in [None,Some(2)] {
+            let reply=request(&format!("{}/backend",fixture.origin),"PUT","/api/collections",&BTreeMap::from([("Content-Type".into(),"application/octet-stream".into())]),b"\0A\xff",chunks)?;
+            require(reply.status==200&&reply.body==b"ok","Raw roundtrip failed")?;
+        }
+        fixture.healthy()
+    }
     #[test]
     fn raw_decoder_preserves_chunks_and_rejects_truncation() -> Result {
         let reply=decode(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\n\0A\r\n1\r\n\xff\r\n0\r\n\r\n",false)?;

@@ -29,8 +29,8 @@ pub mod server;
 pub mod service;
 pub mod sharing;
 pub mod static_files;
-pub mod upstream;
 pub mod unicode;
+pub mod upstream;
 
 use std::path::PathBuf;
 

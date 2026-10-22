@@ -101,7 +101,7 @@ pub fn settings_and_keys(output: &Path) -> Result {
             "SUB_STORE_FRONTEND_BACKEND_PATH",
             "/backend",
         );
-        server::set(&mut environment, "NODE_ENV", "production");
+        environment.remove(std::ffi::OsStr::new("NODE_ENV"));
         let api = Api::start(&backend, &environment, &state, output, &label)?;
         let mut edge = Edge {
             api: &api,
@@ -264,7 +264,7 @@ pub fn settings_and_keys(output: &Path) -> Result {
                             && response["headers"]["x-content-type-options"] == "nosniff",
                         format!("Invalid recipient PATCH diagnostics changed ({kind}): {response}"),
                     )?;
-                    sharing::diagnostic(&response, "production", kind, 500, "", true, false)?;
+                    require(response["body"] == "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>[object Object]</pre>\n</body>\n</html>\n", "Recipient object diagnostics changed")?;
                     edge.observed.push(json!({"method":"PATCH","path":path,"body":{"age-public-key":invalid},"html":response["body"],"state":api.durable()?}));
                     let rejected = edge.send(
                         "POST",

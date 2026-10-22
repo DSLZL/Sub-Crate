@@ -103,7 +103,11 @@ fn has(
                 strip_query(actual).is_ok_and(|actual| actual == url)
                     && query.is_none_or(|(key, value)| {
                         reqwest::Url::parse(actual).is_ok_and(|url| {
-                            url.query_pairs().filter(|(name, _)| name == key).map(|(_, value)| value).collect::<Vec<_>>() == [value]
+                            url.query_pairs()
+                                .filter(|(name, _)| name == key)
+                                .map(|(_, value)| value)
+                                .collect::<Vec<_>>()
+                                == [value]
                         })
                     })
             })
