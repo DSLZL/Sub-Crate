@@ -37,6 +37,22 @@ fn hashes(directory: &Path) -> Result<BTreeMap<String, String>> {
         })
         .collect()
 }
+pub fn asset_hashes(directory:&Path)->Result<BTreeMap<String,String>> {files(directory)?.into_iter().map(|path|Ok((path.strip_prefix(directory)?.to_string_lossy().replace('\\',"/"),digest(&path)?))).collect()}
+fn copy_tree(source:&Path,destination:&Path)->Result {for path in files(source)? {let target=destination.join(path.strip_prefix(source)?);std::fs::create_dir_all(target.parent().ok_or("Missing copy parent")?)?;std::fs::copy(path,target)?;}Ok(())}
+
+pub fn frontend(output:&Path)->Result<PathBuf> {
+    let frontend=PathBuf::from(std::env::var_os("TEST_FRONTEND").ok_or("Missing frontend checkout")?).canonicalize()?;let commit=crate::frontend::COMMIT;
+    for (label,args,expected) in [("frontend-commit",vec!["rev-parse","HEAD"],commit),("frontend-source",vec!["diff","--exit-code","HEAD"],"")] {let actual=process::checked(Command::new("git").args(args).current_dir(&frontend),output,label,Duration::from_secs(30))?;require(actual.stdout.trim()==expected,"Frontend source changed")?;}
+    require(frontend.join("dist/index.html").is_file(),"Build unchanged frontend first")?;let mut source=process::provenance(output)?;source["source_commit"]=source["backend_commit"].clone();source["repository"]=json!(std::env::var("GITHUB_REPOSITORY")?);
+    let payload=output.join(format!("sub-store-frontend-{}",&commit[..12]));std::fs::create_dir(&payload)?;copy_tree(&frontend.join("dist"),&payload.join("dist"))?;for file in ["LICENSE","package.json","pnpm-lock.yaml"] {std::fs::copy(frontend.join(file),payload.join(file))?;}for file in ["README.md","ACCEPTANCE.md"] {std::fs::copy(crate::root().join("rust").join(file),payload.join(file))?;}
+    let licenses=process::checked(Command::new("pnpm").args(["licenses","list","--json"]).current_dir(&frontend),output,"frontend-dependency-licenses",Duration::from_secs(120))?;json::write_new(payload.join("third-party.json"),&json::parse(&licenses.stdout)?)?;
+    let mut copied=std::collections::BTreeSet::new();
+    for entry in std::fs::read_dir(frontend.join("node_modules/.pnpm"))? {let directory=entry?.path().join("node_modules");if !directory.is_dir() {continue;}let mut packages=Vec::new();for entry in std::fs::read_dir(directory)? {let entry=entry?;if entry.file_type()?.is_symlink() {continue;}if entry.file_name().to_string_lossy().starts_with('@') {for package in std::fs::read_dir(entry.path())? {let package=package?;if !package.file_type()?.is_symlink() {packages.push(package.path());}}} else {packages.push(entry.path());}}
+        for directory in packages {let file=directory.join("package.json");if !file.is_file()||file.is_symlink() {continue;}let package=json::read(file)?;let label=format!("{}-{}",package["name"].as_str().ok_or("Missing dependency name")?.replace('/',"__"),package["version"].as_str().ok_or("Missing dependency version")?);require(!label.contains("..")&&!label.contains(['/', '\\']),"Invalid dependency notice path")?;if !copied.insert(label.clone()) {continue;}for file in std::fs::read_dir(&directory)? {let file=file?;let name=file.file_name().to_string_lossy().to_uppercase();if file.file_type()?.is_file()&&["LICENSE","COPYING","NOTICE","COPYRIGHT"].iter().any(|prefix|name.starts_with(prefix)) {let destination=payload.join("licenses").join(&label);std::fs::create_dir_all(&destination)?;std::fs::copy(file.path(),destination.join(file.file_name()))?;}}}
+    }
+    let assets=asset_hashes(&frontend.join("dist"))?;source["kind"]=json!("unchanged-frontend-distribution");source["frontend_commit"]=json!(commit);source["assets"]=json!(assets);source["frontend_artifact_sha256"]=json!(process::sha256(json::stringify(&json!(assets)).as_bytes()));source["installed_package_notice_scope"]=json!("Original available notice files from every installed pnpm package; full dependency license report included");let (unpacked,report)=package_payload(&payload,"linux-x64",&source)?;let extracted=unpacked.join("dist");json::check(&json!(asset_hashes(&extracted)?),&json!(assets),false)?;json::write_new(output.join("distribution.json"),&report)?;
+    if let Some(path)=std::env::var_os("GITHUB_OUTPUT") {use std::io::Write;writeln!(std::fs::OpenOptions::new().append(true).open(path)?,"assets={}\npublish={}",extracted.display(),output.join("publish").display())?;}Ok(extracted)
+}
 pub fn write_manifest(directory: &Path, metadata: &Value) -> Result<Value> {
     require(
         !directory.join("manifest.json").exists(),

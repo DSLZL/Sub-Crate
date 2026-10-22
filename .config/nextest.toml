@@ -53,3 +53,15 @@ inherits = "ci"
 
 [profile.cpu-conversion.junit]
 path = "junit-cpu-conversion.xml"
+
+[profile.frontend]
+inherits = "ci"
+
+[profile.frontend.junit]
+path = "junit-frontend.xml"
+
+[profile.frontend-delivery]
+inherits = "ci"
+
+[profile.frontend-delivery.junit]
+path = "junit-frontend-delivery.xml"

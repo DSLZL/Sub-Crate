@@ -22,6 +22,8 @@ pub mod static_files;
 pub mod business;
 pub mod notifications;
 pub mod sharing;
+pub mod browser;
+pub mod frontend;
 #[cfg(test)]
 mod notices_tests;
 

@@ -166,6 +166,12 @@ mod native {
         }
     }
     impl State {
+        fn closed_udp_peer(&self,transport:&str,error:&std::io::Error)->bool {
+            if !cfg!(windows)||error.raw_os_error()!=Some(10054) {return false;}
+            // Windows reports ICMP Port Unreachable after the intentionally late UDP reply.
+            for request in self.requests.lock().unwrap().iter().rev() {let mut request=request.lock().unwrap();if request["transport"]==transport&&request["domain"].as_str().is_some_and(|domain|domain.starts_with("timeout"))&&request.get("windows_icmp_port_unreachable").is_none() {request["windows_icmp_port_unreachable"]=json!(true);return true;}}
+            false
+        }
         fn start(self: &Arc<Self>) -> Active {
             *self.active.lock().unwrap() += 1;
             Active(self.clone())
@@ -376,6 +382,7 @@ mod native {
                                         }
                                     }));
                                 }
+                                Err(error) if state.closed_udp_peer(transport,&error) => (),
                                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                                     std::thread::sleep(Duration::from_millis(2))
                                 }
@@ -492,6 +499,11 @@ mod native {
                 let _ = thread.join();
             }
         }
+    }
+    #[cfg(all(test,windows))]
+    #[test] fn only_one_icmp_error_for_an_intentionally_late_udp_reply_is_expected()->Result {
+        let state=State::default();let error=std::io::Error::from_raw_os_error(10054);require(!state.closed_udp_peer("udp",&error),"Unrelated UDP reset accepted")?;
+        let packet=query_bytes("timeout.fixture",1,None)?;state.record("udp",&packet,&[])?;require(!state.closed_udp_peer("udp6",&error),"Wrong UDP transport accepted")?;require(!state.closed_udp_peer("udp",&std::io::Error::from_raw_os_error(10053)),"Different socket error accepted")?;require(state.closed_udp_peer("udp",&error),"Late UDP reply ICMP not recognized")?;require(!state.closed_udp_peer("udp",&error),"Duplicate ICMP error accepted")
     }
 }
 
