@@ -1,204 +1,31 @@
-<p align="center">
-<img src="https://raw.githubusercontent.com/cc63/ICON/main/Sub-Store.png" alt="Sub-Store" width="100">
-</p>
-<h1 align="center">Sub-Store</h1>
+# Sub-Store Rust
 
-> Advanced Subscription Manager for QX, Loon, Surge, Stash, Egern and Shadowrocket
+A standalone Rust backend for [Sub-Store](https://github.com/sub-store-org/Sub-Store), compatible with the unchanged official [Sub-Store frontend](https://github.com/sub-store-org/Sub-Store-Front-End).
 
-[![Build](https://github.com/sub-store-org/Sub-Store/actions/workflows/main.yml/badge.svg)](https://github.com/sub-store-org/Sub-Store/actions/workflows/main.yml) ![GitHub](https://img.shields.io/github/license/sub-store-org/Sub-Store) ![GitHub issues](https://img.shields.io/github/issues/sub-store-org/Sub-Store) ![GitHub closed pull requests](https://img.shields.io/github/issues-pr-closed-raw/Peng-Ym/Sub-Store) ![Size](https://img.shields.io/github/languages/code-size/sub-store-org/Sub-Store)
-<br>
-<a href="https://trendshift.io/repositories/4572" target="_blank"><img src="https://trendshift.io/api/badge/repositories/4572" alt="sub-store-org%2FSub-Store | Trendshift" height="25"/></a>
-<a href="https://www.buymeacoffee.com/PengYM" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" height="25"/></a></a>
-[![联系推广](https://img.shields.io/badge/%E8%81%94%E7%B3%BB%E6%8E%A8%E5%B9%BF-26A5E4?style=flat&logo=telegram&logoColor=white)](https://t.me/xream_bot)
+[![Compatibility](https://github.com/DSLZL/Sub-Store/actions/workflows/rust-compat-native.yml/badge.svg?branch=main)](https://github.com/DSLZL/Sub-Store/actions/workflows/rust-compat-native.yml)
 
-<table>
-<tbody>
-<tr>
-<td width="180"><a href="https://www.thordata.com/?ls=tg&lk=substore"><img src="./assets/banners/Thordata.png" alt="Thordata" width="150"></a></td>
-<td><a href="https://www.thordata.com/?ls=tg&lk=substore">Thordata</a> ｜面向开发者与出海用户的代理服务，提供<b>住宅、ISP、移动及数据中心代理</b>。支持国家/城市定位、轮换会话与粘性会话，适用于公开网页采集、SEO 监控、接口调试和地区内容测试。新用户 <a href="https://www.thordata.com/?ls=tg&lk=substore">注册</a> 即送 <b>100MB 免费住宅代理</b>，首购使用优惠码<b>【SubStore10】</b>享 9 折优惠。</td>
-</tr>
-<tr>
-<td width="180"><a href="https://api.muteki.site/register?aff=XREAM&promo=XREAM"><img src="./assets/banners/MaruCode.jpg" alt="MaruCode" width="150"></a></td>
-<td><a href="https://api.muteki.site/register?aff=XREAM&promo=XREAM">MaruCode</a> 是一家偶尔做做慈善的小破站 API，自营号池，不搞充值营销套路，主要提供 Codex、Claude Code、GPT Image-2 等主流模型，支持 WebSocket 协议，明码标价(Codex 0.3x, CC 1.5x)，透明汇率(1:1)，<a href="https://api.muteki.site/register?aff=XREAM&promo=XREAM">新用户注册</a> 送 2 刀 💰 <a href="https://images-2.muteki.site">生图工作台 🖼</a></td>
-</tr>
-</tbody>
-</table>
+## Download and deployment
 
-📚 [文档/Doc](https://sub-store-org.github.io/doc) 🆕, [Wiki](https://github.com/sub-store-org/Sub-Store/wiki)
+The [Rust service and compatibility workflow](https://github.com/DSLZL/Sub-Store/actions/workflows/rust-compat-native.yml) delivers tested Linux x64/arm64 and Windows x64 binaries, Linux x64/arm64 Docker image archives, and the unchanged official frontend. Public versions are listed on the [releases page](https://github.com/DSLZL/Sub-Store/releases).
 
-## sub.store Domain Safety Notice
+See [the deployment guide](rust/README.md) for archive selection, environment variables, frontend hosting, Docker startup, data migration and rollback. The runtime needs no Node installation. Use a copy of existing data when migrating, and run only one backend against a writable data directory.
 
-### Statement
+## Compatibility
 
-⚠️ `sub.store` is only the domain used by module-script rewrite MitM rules. It is not a public domain owned by us.
+Subscription conversion, processing, resource management, storage and scheduling have Rust implementations. General JavaScript scripts run in the embedded rquickjs engine with the documented Sub-Store helpers. Node builtins, CommonJS `require`, npm loading and native addons are excluded; choose a script's general JS variant.
 
-### Risk
+The frontend API and existing data formats are retained. The frontend still sees its required `Node` discriminator; Rust metadata identifies the actual implementation. See [the acceptance contract](rust/ACCEPTANCE.md) for the pinned baseline, tested scope and deliberate differences.
 
-If a request does not go through the rewrite, the data will be sent to the public `sub.store` service.
+## Branches
 
-You can map `sub.store` to `127.0.0.1` or another local address to prevent accidental access to the public `sub.store`. However, ordinary users may still send requests to the public `sub.store` after switching or toggling configuration modules.
+- [`main`](https://github.com/DSLZL/Sub-Store/tree/main) contains the Rust backend and its Actions workflows.
+- [`js`](https://github.com/DSLZL/Sub-Store/tree/js) follows the upstream JavaScript backend. The wei/pull GitHub App reads [.github/pull.yml](.github/pull.yml) on the default branch and synchronizes upstream `sub-store-org/Sub-Store:master` into `js` using `hardreset`. Local JS changes should use a separate branch.
+- `backend/` on `main` is the frozen Node reference used by compatibility tests, including the approved reference fixes. Upstream synchronization does not modify this reference or Rust `main`.
 
-1. It could, in theory, redirect users to a fake frontend. This is only a possibility and does not imply that the owner of `sub.store` would do this. Note: The official frontend is `https://sub-store.vercel.app`.
-2. It could receive user data from `sub.store`.
+## Development and validation
 
-This creates a data leakage risk.
+All product builds, tests, browser checks, Docker execution and benchmarks run in GitHub Actions. The compatibility workflow requires all six native, Docker and unchanged frontend jobs. [Performance records](tests/performance/README.md) retain the measured source revisions and limitations.
 
-### Plan
+## License and acknowledgements
 
-After listening to suggestions from the group, we will not switch to a new domain for now. Choosing a new domain is also awkward: it needs to be related, short, and unlikely to be registered by someone else, at least in the short term.
-
-This notice is published only as an announcement. No changes will be made for now.
-
-Example:
-
-```
-[Host]
-sub.store = 127.0.0.1
-```
-
-### CORS Allowlist
-
-Sub-Store also supports a configurable browser CORS allowlist for the backend API. This does not change the module rewrite domain, but it limits which browser origins can read API responses through CORS.
-
-- Node/server deployments use `SUB_STORE_CORS_ALLOWED_ORIGINS`; the default is `https://sub-store.vercel.app,http://substore.stash,https://substore.stash`.
-- Proxy App modules use the `cors` module argument; the default is `https://sub-store.vercel.app,http://substore.stash,https://substore.stash`.
-- Multiple origins can be separated by commas. Origins are matched exactly by scheme, host, and port. Set the value to `*` only when you accept the risk of any website reading the local backend through browser CORS.
-
-## Node push notifications
-
-For Node deployments, `SUB_STORE_PUSH_SERVICE` accepts a Shoutrrr URL or an existing HTTP/HTTPS URL template. Shoutrrr URLs are sent in-process with [shoutrrr-ts](https://github.com/Delusions6515/shoutrrr-ts); a separate `shoutrrr` executable is no longer used or required. HTTP/HTTPS URL templates still use the existing request path and `[推送标题]` / `[推送内容]` placeholders.
-
-The supported Shoutrrr URL families are Generic Webhook (`generic://`, `generic+https://`, `generic+http://`), Bark, Discord, Gotify, Google Chat (`hangouts://` alias), IFTTT, Join, Mattermost, ntfy, OpsGenie, Pushover, Pushbullet, Rocket.Chat, Slack, Microsoft Teams, Telegram, and Zulip. **Matrix (`matrix://`) and SMTP (`smtp://`) are not supported, and there is no fallback to the old executable.** Check existing configurations before upgrading; unsupported URLs produce a notification error instead of sending. See [upstream compatibility details](https://github.com/Delusions6515/shoutrrr-ts/blob/main/COMPATIBILITY.md) for URL options and caveats. Upstream checks use local Go-compatibility fixtures, not verified live delivery to every provider. The backend's tested Node version is in `.node-version`; check the upstream package for its current Node support.
-
-Push URLs may contain secrets: treat `SUB_STORE_PUSH_SERVICE` as privileged configuration. Diagnostics from the Shoutrrr path do not print the configured URL. This change does not alter the HTTP/HTTPS URL template path or its existing logging behavior.
-
-## Core functionalities:
-
-1. Conversion among various formats.
-2. Subscription formatting.
-3. Collect multiple subscriptions in one URL.
-4. Host and modify subscriptions/files
-
-> The following descriptions of features may not be updated in real-time. Please refer to the actual available features for accurate information.
-
-## 1. Subscription Conversion
-
-### Supported Input Formats
-
-[本地节点怎么写/How To Write A Local Node](https://telegram.me/zhetengsha/824)
-
-> ⚠️ Do not use `Shadowrocket` or `NekoBox` to export URI and then import it as input. The URIs exported in this way may not be standard URIs. However, we have already supported some very common non-standard URIs (such as VMess, VLESS).
-
-- [x] Proxy URI Scheme(`socks5`, `socks5+tls`, `http`, `https`(it's ok))
-
-  example: `socks5+tls://user:pass@ip:port#name`
-
-- [x] URI(AnyTLS, SOCKS, SS, SSR, VMess, VLESS, Trojan, Hysteria, Hysteria 2, TUIC v5, WireGuard)
-  > Please note, HTTP(s) does not have a standard URI format, so it is not supported. Please use other formats.
-- [x] Clash Proxies YAML
-- [x] Clash Proxy JSON/JSON5/YAML(single line)
-  > [NaiveProxy](https://telegram.me/zhetengsha/4308)
-- [x] QX (SS, SSR, VMess, Trojan, HTTP, SOCKS5, VLESS, AnyTLS)
-- [x] Loon (SS, SSR, VMess, Trojan, HTTP, SOCKS5, SOCKS5-TLS, WireGuard, VLESS, Hysteria 2, AnyTLS)
-- [x] Surge (Direct, SS, VMess, Trojan, HTTP, HTTPS, HTTP/2 CONNECT, SOCKS5, SOCKS5-TLS, AnyTLS, TrustTunnel, TUIC, Snell, Hysteria 2, MASQUE(Surge), SSH(Password authentication only), External Proxy Program(only for macOS), WireGuard(Surge to Surge))
-- [x] mihomo(Clash.Meta) Compatible (Direct, SS, SSR, VMess, Trojan, HTTP, SOCKS5, Snell, VLESS, WireGuard, Hysteria, Hysteria 2, TUIC, SSH, mieru, sudoku, AnyTLS, MASQUE, Tailscale, GOST Relay, Shadow QUIC, ZeroTier, OpenVPN)
-
-Deprecated(The frontend doesn't show it, but the backend still supports it, with the query parameter `target=Clash`):
-
-- [x] Clash (SS, SSR, VMess, Trojan, HTTP, SOCKS5, Snell, VLESS, WireGuard)
-
-### Supported Target Platforms
-
-- [x] Plain JSON
-- [x] Stash
-- [x] Clash.Meta(mihomo)
-- [x] Surfboard
-- [x] Surge
-- [x] SurgeMac(Use mihomo to support protocols that are not supported by Surge itself)
-- [x] Loon
-- [x] Egern
-- [x] Shadowrocket
-- [x] QX
-- [x] sing-box
-- [x] V2Ray
-- [x] V2Ray URI
-
-Deprecated:
-
-- [x] Clash
-
-## 2. Subscription Formatting
-
-### Filtering
-
-- [x] **Regex filter**
-- [x] **Discard regex filter**
-- [x] **Region filter**
-- [x] **Type filter**
-- [x] **Useless proxies filter**
-- [x] **Script filter**
-
-### Proxy Operations
-
-- [x] **Set property operator**: set some proxy properties such as `udp`,`tfo`, `skip-cert-verify` etc.
-- [x] **Flag operator**: add flags or remove flags for proxies.
-- [x] **Sort operator**: sort proxies by name.
-- [x] **Regex sort operator**: sort proxies by keywords (fallback to normal sort).
-- [x] **Regex rename operator**: replace by regex in proxy names.
-- [x] **Regex delete operator**: delete by regex in proxy names.
-- [x] **Script operator**: modify proxy by script.
-- [x] **Resolve Domain Operator**: resolve the domain of nodes to an IP address.
-
-### Development
-
-Install `pnpm`
-
-Go to `backend` directories, install node dependencies:
-
-```
-pnpm i
-```
-
-```
-SUB_STORE_BACKEND_API_PORT=3000 pnpm esbuild:dev
-```
-
-or this one if you're using `Termux`
-
-```
-SUB_STORE_BACKEND_API_PORT=3000 pnpm run --parallel "/^dev:.*/"
-```
-
-### Build
-
-```
-pnpm bundle:esbuild
-```
-
-## LICENSE
-
-This project is under the AGPL-3.0 LICENSE.
-
-[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2FPeng-YM%2FSub-Store.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2FPeng-YM%2FSub-Store?ref=badge_large)
-
-## Star History
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/sub-store-org/Sub-Store/refs/heads/star-history/assets/my-star-history/star-history-dark.svg">
-  <img src="https://raw.githubusercontent.com/sub-store-org/Sub-Store/refs/heads/star-history/assets/my-star-history/star-history-light.svg" alt="Star History">
-</picture>
-
-## Acknowledgements
-
-- Special thanks to @KOP-XIAO for his awesome resource-parser. Please give a [star](https://github.com/KOP-XIAO/QuantumultX) for his great work!
-- Special thanks to @Orz-3 and @58xinian for their awesome icons.
-
-## Sponsors
-
-[![image](./support.nodeseek.com_page_promotion_id=8.png)](https://yxvm.com)
-
-[NodeSupport](https://github.com/NodeSeekDev/NodeSupport) sponsored this project.
-
-## 致谢
-
-感谢赞助商 [ForZTN](https://sponsorship.forztn.com/github/sub-store-org/Sub-Store) 对项目服务器的支持，感谢。
+[AGPL-3.0-only](LICENSE). This fork builds on the work of the [Sub-Store authors and contributors](https://github.com/sub-store-org/Sub-Store/graphs/contributors). Embedded utilities and delivered archives retain their dependency license notices.

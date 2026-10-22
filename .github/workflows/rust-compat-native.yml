@@ -3,7 +3,7 @@ name: Rust service and compatibility
 on:
   workflow_dispatch:
   push:
-    branches: [codex/rust-server-parity]
+    branches: [main]
     paths: [backend/**, scripts/ip-flag-node.js, rust/**, tests/compat/**, .github/workflows/rust-compat-native.yml]
 
 permissions:

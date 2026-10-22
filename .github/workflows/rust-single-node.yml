@@ -12,7 +12,7 @@ on:
         type: boolean
         default: false
   push:
-    branches: [codex/rust-server-parity]
+    branches: [main]
     paths: [.github/workflows/rust-single-node.yml, tests/performance/single-node.*, tests/performance/single_node.*]
 
 permissions:
