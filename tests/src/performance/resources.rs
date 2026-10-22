@@ -77,7 +77,7 @@ mod tests{
     #[test]
     #[ignore="owned child for the Linux resource-accounting self-check"]
     fn meter_child()->Result{
-        crate::process::actions_only();let root=std::path::PathBuf::from(std::env::var_os("PERF_METER_STATE").ok_or("Missing meter child state")?);std::fs::write(root.join("ready"),b"ready")?;
+        crate::actions_only();let root=std::path::PathBuf::from(std::env::var_os("PERF_METER_STATE").ok_or("Missing meter child state")?);std::fs::write(root.join("ready"),b"ready")?;
         let wait=|name:&str|->Result{let started=Instant::now();while !root.join(name).is_file(){check(started.elapsed()<Duration::from_secs(10),"timeout")?;thread::sleep(Duration::from_millis(5));}Ok(())};wait("go")?;let started=Instant::now();let mut count=0_u64;while started.elapsed()<Duration::from_millis(250){count=std::hint::black_box(count.wrapping_add(1));}std::fs::write(root.join("done"),count.to_string())?;wait("stop")
     }
     #[cfg(target_os="linux")]

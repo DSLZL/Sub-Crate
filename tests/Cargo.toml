@@ -21,6 +21,10 @@ tokio-rustls = { version = "=0.26.6", default-features = false, features = ["tls
 [lib]
 path = "src/lib.rs"
 
+[[bin]]
+name = "performance-fixture"
+path = "performance_fixture.rs"
+
 [[test]]
 name = "native"
 path = "native.rs"

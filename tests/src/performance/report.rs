@@ -50,9 +50,10 @@ pub fn estimates(rows:&[Value])->Result<Value>{
     }if !pairs.is_empty(){let mut interval=paired_interval(&pairs)?;interval["case"]=json!(case);interval["concurrency"]=json!(clients);estimates.push(interval);}}}Ok(json!(estimates))
 }
 pub fn pipeline_summary(samples:&[Value])->Result<String>{
+    type ProcessorKey=(Option<u64>,Option<u64>,String);
     let mut text=String::new();for sample in samples{let profiles=items(&sample["pipeline_profiles"]);if profiles.is_empty(){continue;}
         text+=&format!("\nPipeline profile: {} ({} requests). Same candidate binary; profiler-on latency includes report writing. Active time is elapsed scoped work, not OS CPU time. Parent and child intervals overlap.\n\n| Process | Processor | Type | Mean wall ms | Mean active ms |\n|---:|---:|---|---:|---:|\n",sample["case"].as_str().ok_or("Case missing")?,profiles.len());
-        let mut processors:BTreeMap<(Option<u64>,Option<u64>,String),(u128,u128)>=BTreeMap::new();let mut stages:BTreeMap<String,(u128,u128,u128)>=BTreeMap::new();
+        let mut processors:BTreeMap<ProcessorKey,(u128,u128)>=BTreeMap::new();let mut stages:BTreeMap<String,(u128,u128,u128)>=BTreeMap::new();
         for profile in profiles{let rows=items(&profile["rows"]);for row in rows{let stage=row["stage"].as_str().ok_or("Stage missing")?;let total=stages.entry(stage.to_owned()).or_default();total.0+=row["calls"].as_u64().ok_or("Calls missing")?as u128;total.1+=row["active_ns"].as_u64().ok_or("Active time missing")?as u128;total.2+=row["self_ns"].as_u64().ok_or("Self time missing")?as u128;
             if stage=="processor"{let mut parent=row["parent"].as_u64().map(|value|value as usize);while let Some(index)=parent{check(index<rows.len(),"resource")?;if rows[index]["stage"]=="process"{break;}parent=rows[index]["parent"].as_u64().map(|value|value as usize);}
                 let process=parent.and_then(|index|rows[index]["index"].as_u64());let kind=rows.iter().find(|child|child["parent"]==row["id"]).and_then(|row|row["stage"].as_str()).unwrap_or("skipped");let total=processors.entry((process,row["index"].as_u64(),kind.to_owned())).or_default();total.0+=row["wall_ns"].as_u64().ok_or("Wall time missing")?as u128;total.1+=row["active_ns"].as_u64().ok_or("Active time missing")?as u128;}
