@@ -1,5 +1,6 @@
 """Paired single-node parsing measurements; public fixtures, Actions only."""
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, contextmanager
 import hashlib
 import json
@@ -114,8 +115,20 @@ def pure(args, suite, fixtures, cases, report):
 
 def endpoint(args, suite, cases, report):
     with ExitStack() as stack:
-        origins = {kind: stack.enter_context(suite.server(kind, suite.directory("http-" + kind), clone=False))[0]
+        servers = {kind: stack.enter_context(suite.server(kind, suite.directory("http-" + kind), clone=False))
                    for kind in ("node", "rust_baseline", "rust")}
+        origins = {kind: server[0] for kind, server in servers.items()}
+        cold = None
+        for kind, origin in origins.items():
+            payload = {"data": cases[0]["raw"], "client": "JSON", "type": "internal"}
+            began = time.perf_counter_ns()
+            response = b.http(origin + "/backend/api/proxy/parse", "POST", payload)
+            elapsed = time.perf_counter_ns() - began
+            body = json.loads(response)
+            if cold is None:
+                cold = body
+            assert body == cold, f"{kind}: first-conversion mismatch"
+            report["cold"].append({"variant": kind, "case": cases[0]["id"], "ns": elapsed})
         fixtures = json.loads((Path(__file__).parents[1] / "compat/fixtures/http-cases.json").read_bytes())
         source = next(case for case in fixtures if case["id"] == "P02-input-surge-native")["steps"][0]["body"]
         probe_inputs = [*source["data"].splitlines(), source["data"],
@@ -179,6 +192,24 @@ def endpoint(args, suite, cases, report):
                         report["http"].append({"case": case["id"], "variant": kind, "mode": mode,
                                                "block": block, "ns": samples})
             print("single-node HTTP complete: " + case["id"], flush=True)
+        # Separate load cells: never mix concurrent/profile-on samples into single-client latency.
+        for clients in (1, 8):
+            for block in range(3):
+                for kind in (tuple(origins) if block % 2 == 0 else tuple(origins)[::-1]):
+                    def concurrent_request(index):
+                        case = cases[index % len(cases)]
+                        payload = {"data": case["raw"] + ("\n" if index % 2 else ""),
+                                   "client": "JSON", "type": "internal"}
+                        began = time.perf_counter_ns()
+                        body = b.http(origins[kind] + "/backend/api/proxy/parse", "POST", payload)
+                        elapsed = time.perf_counter_ns() - began
+                        assert json.loads(body) == {"status": "success", "data": suite.expected_outputs[case["id"]]}
+                        return elapsed
+                    with b.Meter(servers[kind][1], None) as meter, ThreadPoolExecutor(max_workers=clients) as pool:
+                        samples = list(pool.map(concurrent_request, range(len(cases) * 8)))
+                    report["concurrency"].append({"variant": kind, "clients": clients, "block": block,
+                                                  "ns": samples, **meter.result(len(samples))})
+        print("single-node concurrent load and retained-memory observations complete", flush=True)
 
 
 def complete_profiles(path, offset, count):
@@ -201,19 +232,36 @@ def complete_profiles(path, offset, count):
     raise TimeoutError("profile completion watchdog")
 
 
+def conversion_lifecycle(events):
+    for event in events:
+        counts = {stage: sum(row["calls"] for row in event["rows"] if row["stage"] == stage)
+                  for stage in b.PROFILE_STAGES}
+        assert counts["worker_queue"] == counts["conversion_cleanup"] == 1
+        assert counts["conversion_miss"] + counts["conversion_reuse"] == 1
+        assert counts["conversion_retain"] + counts["runtime_teardown"] == 1
+        assert counts["parse"] == counts["parse_native"] == counts["produce"] == 1
+        for stage in ("runtime_setup", "context_setup", "bootstrap"):
+            assert counts[stage] == counts["conversion_miss"], "false reuse or missing initialization"
+        assert not any(counts[stage] for stage in ("executor_setup", "state_snapshot", "bootstrap_state_encode"))
+
+
 def profiles(args, suite, cases, report):
     # Timed endpoint samples above retain default profiling-off behavior.
     args.profile_pipeline = True
     directory = suite.directory("profile-rust")
     with suite.server("rust_repeat", directory, clone=False) as server:
-        for case in cases:
+        for index, case in enumerate(cases):
             payload = {"data": case["raw"], "client": "JSON", "type": "internal"}
             expected = suite.expected_outputs[case["id"]]
             path = directory / "server.log"
             offset = path.stat().st_size
             for _ in range(2):
                 assert b.api(server[0], "proxy/parse", "POST", payload) == expected
-            complete_profiles(path, offset, 2)
+            warmup, _ = complete_profiles(path, offset, 2)
+            conversion_lifecycle(warmup)
+            if index == 0:
+                assert any(row["stage"] == "conversion_miss" for row in warmup[0]["rows"])
+                report["cold_profile"] = warmup[0]
             offset = path.stat().st_size
             client_ns = []
             for _ in range(BLOCKS):
@@ -228,10 +276,7 @@ def profiles(args, suite, cases, report):
                     f"{case['id']}: native parsing initialized the generic engine"
             assert all(row["stage"] != "parse_utilities_init" for event in events for row in event["rows"]), \
                 f"{case['id']}: parsing initialized the generic libraries"
-            assert all(sum(row["calls"] for row in event["rows"] if row["stage"] == "worker_queue") == 1
-                       and sum(row["calls"] for row in event["rows"] if row["stage"] == "runtime_teardown") == 1
-                       for event in events)
-            assert all(row["stage"] != "bootstrap_state_encode" for event in events for row in event["rows"])
+            conversion_lifecycle(events)
             report["profiles"].append({"case": case["id"], "events": events,
                                        "server_ns": server_ns, "client_ns": client_ns})
 
@@ -265,22 +310,56 @@ def summary(report):
                                     and row["mode"] == "keep_alive" for sample in row["ns"]) / 1e6
                   for variant in ("node", "rust_baseline", "rust")]
         lines.append("| " + case + " | " + " | ".join(f"{value:.3f}" for value in values) + " |")
+    lines += ["", "Full HTTP P95 (ms), in the same backend order as the P50 tables.",
+              "| Case | Node new | Previous new | Rust new | Node keep-alive | Previous keep-alive | Rust keep-alive |",
+              "|---|---:|---:|---:|---:|---:|---:|"]
+    ratios = {}
+    for case in report["cases"]:
+        values = []
+        for mode in ("new_connection", "keep_alive"):
+            medians = {}
+            for kind in ("node", "rust_baseline", "rust"):
+                samples = sorted(sample / 1e6 for row in report["http"]
+                                 if row["case"] == case and row["variant"] == kind and row["mode"] == mode
+                                 for sample in row["ns"])
+                values.append(samples[math.ceil(len(samples) * .95) - 1])
+                medians[kind] = statistics.median(samples)
+            ratios.setdefault(mode, []).append(medians["rust"] / medians["rust_baseline"])
+        lines.append("| " + case + " | " + " | ".join(f"{value:.3f}" for value in values) + " |")
+    for mode, values in ratios.items():
+        lines.append(f"Median per-fixture candidate/previous P50 ratio, {mode}: {statistics.median(values):.4f}; "
+                     f"improved {sum(value < 1 for value in values)}/{len(values)}.")
+    lines += ["", "First conversion after server readiness, one observation per backend; not a cold-start distribution.",
+              "| Backend | Case | First HTTP ms |", "|---|---|---:|"]
+    for row in report["cold"]:
+        lines.append(f"| {row['variant']} | {row['case']} | {row['ns'] / 1e6:.3f} |")
+    lines += ["", "Separate load cells: 384 changing requests over all 48 fixtures per block, three blocks.",
+              "New HTTP connections; load/allocator/worker churn is included. RSS is retained process memory, not a JS heap leak measurement.",
+              "| Backend | Clients | Block | P50 ms | P95 ms | Requests/s | CPU ms/request | End RSS MiB | Settled RSS MiB |",
+              "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    for row in report["concurrency"]:
+        samples = sorted(row["ns"])
+        lines.append(f"| {row['variant']} | {row['clients']} | {row['block']} | "
+                     f"{statistics.median(samples) / 1e6:.3f} | {samples[math.ceil(len(samples) * .95) - 1] / 1e6:.3f} | "
+                     f"{row['rps']:.1f} | {row['cpu_s_per_request'] * 1000:.3f} | "
+                     f"{row['rss_end_bytes'] / 2**20:.2f} | {row['rss_settled_bytes'] / 2**20:.2f} |")
     if report["profiles"]:
         groups = {group["case"]: group["events"] for group in report["profiles"]}
         lines += ["", "Separate Rust profiles: median active ms over seven requests per format.",
                   "Profiler-on samples do not enter the latency table. Parent/child stages overlap; active time is not OS CPU time.",
                   "", "| Stage | SS URI | Surge SS | QX SS |", "|---|---:|---:|---:|"]
-        for stage in ("executor_setup", "state_snapshot", "runtime_setup", "context_setup", "job", "bootstrap",
+        for stage in ("conversion_miss", "conversion_reuse", "conversion_cleanup", "conversion_retain",
+                      "executor_setup", "state_snapshot", "runtime_setup", "context_setup", "job", "bootstrap",
                       "bootstrap_values", "bootstrap_load", "bootstrap_eval", "bootstrap_state_encode", "bootstrap_state_parse",
                       "parse_runtime", "parse_context_init", "parse_utilities_init", "parse_scalar_probe",
-                      "parse_native", "produce", "output_encode", "runtime_teardown"):
+                      "parse_native", "value_project", "value_decode", "produce", "output_encode", "runtime_teardown"):
             values = []
             for case in ("ss_uri", "surge_ss", "qx_ss"):
                 samples = [sum(row["active_ns"] for row in event["rows"] if row["stage"] == stage) / 1e6 for event in groups[case]]
                 values.append(f"{statistics.median(samples):.3f}")
             lines.append("| " + stage + " | " + " | ".join(values) + " |")
         lines += ["", "Complete request components (separate profiler-on medians, us).",
-                  "Worker lifetime includes queueing and teardown; the response can be delivered before teardown finishes.",
+                  "Worker lifetime includes queueing and cleanup/retention or teardown; pure conversion completes before reply delivery.",
                   "Server time stops when the response is ready, before socket transmission. Client time includes HTTP transport and client work.",
                   "These intervals overlap; do not add them or subtract independent medians to infer exact overhead.",
                   "| Case | Queue | Worker lifetime | Bootstrap | Native parse | Produce | Teardown | Server response ready | Client HTTP |",
@@ -305,6 +384,16 @@ def summary(report):
                 times = [sum(row["active_ns"] for row in sample) / 1e6 for sample in rows]
                 values += [f"{statistics.median(calls):.0f}", f"{statistics.median(times):.3f}"]
             lines.append("| " + group["case"] + " | " + " | ".join(values) + " |")
+        lines += ["", "Actual environment lifecycle counts in the seven profiled requests per fixture.",
+                  "| Case | Created | Reused | Retained | Destroyed |", "|---|---:|---:|---:|---:|"]
+        for group in report["profiles"]:
+            values = [sum(row["calls"] for event in group["events"] for row in event["rows"] if row["stage"] == stage)
+                      for stage in ("conversion_miss", "conversion_reuse", "conversion_retain", "runtime_teardown")]
+            lines.append("| " + group["case"] + " | " + " | ".join(map(str, values)) + " |")
+        cold = report["cold_profile"]
+        values = {stage: sum(row["wall_ns"] for row in cold["rows"] if row["stage"] == stage) / 1000
+                  for stage in ("runtime_setup", "context_setup", "bootstrap", "execute", "conversion_cleanup")}
+        lines += ["", "Separate first-conversion profile, us: " + json.dumps(values) + "."]
     return "\n".join(lines) + "\n"
 
 
@@ -334,10 +423,11 @@ def main():
               "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(), "machine": platform.machine(),
               "clash_types": clash_types,
               "case_info": {case["id"]: {key: case[key] for key in ("protocol", "format")} for case in cases},
-              "cases": [case["id"] for case in cases], "pure": [], "http": [], "profiles": [], "status": "running"}
+              "cases": [case["id"] for case in cases], "pure": [], "http": [], "profiles": [],
+              "cold": [], "concurrency": [], "status": "running"}
     assert b.command(["git", "rev-parse", "HEAD"], args.original).decode().strip() == b.ORIGINAL
     report["rust_baseline"] = b.command(["git", "rev-parse", "HEAD"], args.rust_baseline).decode().strip()
-    assert report["rust_baseline"] == "274a4ff1f63fdbe997dda0e0dcb99daf68135d06"
+    assert report["rust_baseline"] == "9c19111bae2af2654caa339151e4eabd12b586bb"
     report["binary_sha256"] = {kind: hashlib.sha256((root / "rust/target/release/sub-store-rust").read_bytes()).hexdigest()
                                for kind, root in (("rust", args.rust), ("rust_baseline", args.rust_baseline))}
     assert len(set(report["binary_sha256"].values())) == 2, "candidate and baseline must be distinct binaries"
@@ -347,10 +437,18 @@ def main():
         pure(args, suite, fixture, cases, report)
         endpoint(args, suite, cases, report)
         profiles(args, suite, cases, report)
-        report["status"] = "passed"
         text = summary(report)
         (args.output / "summary.md").write_text(text)
         print(text, flush=True)
+        for mode in ("new_connection", "keep_alive"):
+            ratios = []
+            for case in report["cases"]:
+                medians = {kind: statistics.median(sample for row in report["http"]
+                           if row["case"] == case and row["variant"] == kind and row["mode"] == mode
+                           for sample in row["ns"]) for kind in ("rust", "rust_baseline")}
+                ratios.append(medians["rust"] / medians["rust_baseline"])
+            assert statistics.median(ratios) < 1, f"{mode}: no overall endpoint improvement"
+        report["status"] = "passed"
         for case in report["cases"]:
             samples = {variant: [round(row["elapsed_ns"] / row["iterations"] / 1000, 3)
                                 for row in report["pure"] if row["case"] == case and row["variant"] == variant]
