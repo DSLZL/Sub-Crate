@@ -11,3 +11,8 @@ fn subscription_aggregate()->Result{subscription::aggregate()}
 #[test]
 fn subscription_inspect()->Result{subscription::inspect()}
 
+#[test]
+fn single_node_compare()->Result{sub_store_tests::performance::single::run()}
+#[test]
+fn single_node_inspect()->Result{sub_store_tests::performance::single::inspect()}
+

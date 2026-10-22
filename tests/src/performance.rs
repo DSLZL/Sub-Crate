@@ -10,6 +10,8 @@ pub mod transport;
 pub mod workload;
 pub mod measure;
 pub mod subscription;
+pub mod single;
+mod single_report;
 
 pub const ORIGINAL:&str="9cc6b5fac966993364ae33da8797f446bbf7f571";
 pub const RUST:&str="af08b0649c4d2f2814fe38ce6943b1397f5e1c14";

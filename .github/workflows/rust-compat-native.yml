@@ -58,8 +58,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ${{ runner.temp }}/sub-store-frontend-build
-          key: nextest-frontend-1.98.0-${{ hashFiles('tests/Cargo.toml', 'tests/Cargo.lock', 'rust/Cargo.lock') }}
-          restore-keys: nextest-frontend-1.98.0-
+          key: nextest-frontend-temp-1.98.0-${{ hashFiles('tests/Cargo.toml', 'tests/Cargo.lock', 'rust/Cargo.lock') }}
+          restore-keys: nextest-frontend-temp-1.98.0-
       - name: Install locked frontend and reference dependencies
         run: |
           mkdir -p tests/compat/evidence/frontend-setup
