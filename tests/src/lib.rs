@@ -16,6 +16,7 @@ pub mod age;
 pub mod download;
 pub mod api;
 pub mod service;
+pub mod backup;
 #[cfg(test)]
 mod notices_tests;
 

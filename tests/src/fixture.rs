@@ -208,6 +208,8 @@ impl Fixture {
                         );
                         workers.push(std::thread::spawn(move || {
                             let result = (|| -> Result {
+                                // Accepted sockets inherit nonblocking mode on Windows.
+                                stream.set_nonblocking(false)?;
                                 stream.set_read_timeout(Some(Duration::from_secs(5)))?;
                                 stream.set_write_timeout(Some(Duration::from_secs(5)))?;
                                 if let Some(request) = Request::read(&mut stream)? {
@@ -308,4 +310,16 @@ pub fn quote(text: &str) -> String {
             }
         })
         .collect()
+}
+
+#[cfg(test)] mod tests {
+    use super::*;
+    #[test] fn accepted_connection_waits_for_delayed_request_bytes() {
+        let fixture=Fixture::new(0,|_,_|Ok(Reply::new(200,"complete"))).unwrap();
+        let mut connection=TcpStream::connect(fixture.origin.strip_prefix("http://").unwrap()).unwrap();
+        connection.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        std::thread::sleep(Duration::from_millis(80));
+        connection.write_all(b"GET /delayed HTTP/1.0\r\nHost: fixture\r\n\r\n").unwrap();
+        let mut response=String::new();connection.read_to_string(&mut response).unwrap();assert!(response.starts_with("HTTP/1.0 200 OK\r\n"));assert!(response.ends_with("complete"));assert_eq!(fixture.count(),1);fixture.healthy().unwrap();
+    }
 }

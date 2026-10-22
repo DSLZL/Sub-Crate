@@ -278,6 +278,7 @@ mod native {
                 json!({"transport":transport,"handshake":null,"server_name":null,"closed":false}),
             ));
             self.connections.lock().unwrap().push(connection.clone());
+            socket.set_nonblocking(false)?;
             socket.set_read_timeout(Some(Duration::from_secs(10)))?;
             socket.set_write_timeout(Some(Duration::from_secs(10)))?;
             if transport == "tls" {

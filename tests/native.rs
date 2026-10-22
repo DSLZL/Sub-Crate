@@ -48,6 +48,11 @@ fn conversion_business_contracts_clocks_restarts_isolation_and_concurrency() -> 
 }
 
 #[test]
+fn services_cross_decrypt_existing_age_backups_and_rollback_corruption() -> Result {
+    sub_store_tests::backup::age_interop(&process::scratch("service-backup-age")?)
+}
+
+#[test]
 fn rust_and_node_preserve_shared_state_restart_write_failure_and_rollback() -> Result {
     let output = process::scratch("state-parity")?;
     reference::verify(&output)?;
