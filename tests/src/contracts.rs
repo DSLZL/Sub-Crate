@@ -222,6 +222,28 @@ pub fn compare_step(actual: &Value, reference: &Value) -> Result {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn embedded_mmdb_helpers_and_conversion_scripts_match_the_reviewable_sources() -> Result {
+        let fixtures=json::read(crate::compat().join("fixtures/http-cases.json"))?;
+        let case=|id:&str|fixtures.as_array().unwrap().iter().find(|case|case["id"]==id).unwrap();
+        let file=|name:&str|->Result<String>{Ok(std::fs::read_to_string(crate::compat().join("fixtures").join(name))?.replace("\r\n","\n"))};
+        assert_eq!(case("PC-native-dns-mmdb-and-resolve")["steps"][0]["body"]["process"][0]["args"]["content"].as_str().unwrap().replace("\r\n","\n"),file("script-dns-mmdb-native.js")?);
+        assert!(case("PC-native-script-pure-helpers")["steps"][0]["body"]["process"][0]["args"]["content"].as_str().unwrap().replace("\r\n","\n").contains(file("script-helper-contracts.js")?.trim()));
+        assert_eq!(case("PC-native-conversion-helper-contracts")["steps"][0]["body"]["process"][0]["args"]["arguments"]["tests"].as_str().unwrap().replace("\r\n","\n").trim(),file("script-conversion-contracts.js")?.trim());Ok(())
+    }
+    #[test]
+    fn unavailable_targets_and_response_state_mismatches_fail_with_observations_preserved() -> Result {
+        let fixture=crate::fixture::Fixture::new(0,|_,_|Ok(crate::fixture::Reply::json(200,&json!({"status":"success"}))))?;
+        let root=crate::process::scratch("contract-mismatches")?;let http=Http::new(Duration::from_secs(1))?;
+        for mutation in ["valid","status","body","required-field","state"] {std::fs::write(root.join("sub-store.json"),json::stringify(&if mutation=="state"{json!({"subs":[{}]})}else{json!({"subs":[]})}))?;let mut case=json!({"id":"one","source":"self-check","steps":[{"path":"/","expect":{"status":200,"json":{"status":"success"}},"state":{"subs":[]}}]});match mutation{"status"=>case["steps"][0]["expect"]["status"]=json!(404),"body"=>case["steps"][0]["expect"]["json"]["status"]=json!("failed"),"required-field"=>case["steps"][0]["expect"]["json"]["data"]=json!({}),_=>{}}let results=run(&http,&fixture.origin,Some(&root),&[case],None);assert_eq!(results[0]["status"],if mutation=="valid"{"passed"}else{"failed"});assert!(results[0]["steps"][0].get("state").is_some());if mutation=="state"{assert_eq!(results[0]["steps"][0]["state"],json!({"subs":[{}]}));}}
+        let listener=std::net::TcpListener::bind("127.0.0.1:0")?;let origin=format!("http://{}",listener.local_addr()?);drop(listener);let result=run(&http,&origin,None,&[json!({"id":"unavailable","source":"self-check","steps":[{"path":"/","expect":{"status":200}}]})],None);assert_eq!(result[0]["status"],"failed");Ok(())
+    }
+    #[test]
+    fn provider_state_and_base64_payload_mutations_fail_and_captured_evidence_is_owned() -> Result {
+        let fixture=crate::fixture::Fixture::new(0,|_,_|Ok(crate::fixture::Reply::json(200,&json!({}))))?;let upstream=Upstream::new(0)?;let http=Http::new(Duration::from_secs(1))?;let payload=json!({"settings":{},"unknown":{"nil":null,"zero":0,"flag":false}});let stored=json!({"backup":{"description":"fixture","files":{"Sub-Store":{"content":base64::engine::general_purpose::STANDARD.encode(json::stringify(&payload))}}}});
+        for mutation in ["valid","provider","payload","invalid-base64"] {let mut case=json!({"id":"provider","source":"self-check","upstream_gists":stored,"steps":[{"path":"/","expect":{"status":200},"upstream_state":stored,"base64_backup":{"gist":"backup","file":"Sub-Store","json":payload}}]});match mutation{"provider"=>case["steps"][0]["upstream_state"]["backup"]["description"]=json!("wrong"),"payload"=>case["steps"][0]["base64_backup"]["json"]["unknown"]["flag"]=json!(0),"invalid-base64"=>case["upstream_gists"]["backup"]["files"]["Sub-Store"]["content"]=json!("not base64!"),_=>{}}let result=run(&http,&fixture.origin,None,&[case],Some(&upstream));assert_eq!(result[0]["status"],if mutation=="valid"{"passed"}else{"failed"});if mutation=="valid"{upstream.state.gists.lock().unwrap()["backup"]["description"]=json!("changed later");assert_eq!(result[0]["steps"][0]["upstream_state"],stored);}}
+        Ok(())
+    }
     use std::time::Duration;
 
     #[test]

@@ -102,7 +102,7 @@ pub fn check_host_requests(requests: &[Value]) -> Result {
     json::check(&json!(actual), &json!(expected), false)
 }
 
-pub fn check_artifact_requests(requests: &[Value]) -> Result {
+fn expected_artifact_requests() -> Vec<Value> {
     let default = "clash.meta/v1.19.23";
     let paths = [
         ("script", default),
@@ -120,7 +120,11 @@ pub fn check_artifact_requests(requests: &[Value]) -> Result {
         ("file", default),
         ("sub", default),
     ];
-    let mut expected=paths.into_iter().map(|(path,ua)| json!({"method":"GET","path":format!("/host/artifact/{path}"),"body_bytes":[],"headers":{"user-agent":ua,"accept":"*/*"}})).collect::<Vec<_>>();
+    paths.into_iter().map(|(path,ua)| json!({"method":"GET","path":format!("/host/artifact/{path}"),"body_bytes":[],"headers":{"user-agent":ua,"accept":"*/*"}})).collect()
+}
+
+pub fn check_artifact_requests(requests: &[Value]) -> Result {
+    let mut expected = expected_artifact_requests();
     let mut actual=requests.iter().map(|item| json!({"method":item["method"],"path":item["path"],"body_bytes":item["body_bytes"],"headers":item["headers"].as_object().unwrap().iter().filter(|(key,_)| !["host","connection","accept-encoding","accept-language","sec-fetch-mode"].contains(&key.as_str())).map(|(key,value)| (key.clone(),value.clone())).collect::<serde_json::Map<_,_>>()})).collect::<Vec<_>>();
     require(
         actual.len() == expected.len(),
@@ -158,6 +162,19 @@ pub fn check_artifact_state(result: &Value, persisted: &Value) -> Result {
         )?;
     }
     Ok(())
+}
+
+fn check_observation(suite: &str, actual: &Value, expected: &Value) -> Result {
+    let required = identifiers(suite)?;
+    json::check(&actual["passed"], &json!(required), false)?;
+    if suite == "processor" {
+        let names = actual["observations"].as_object().ok_or("Missing processor observations")?.keys().map(String::as_str).collect::<std::collections::BTreeSet<_>>();
+        require(names == required.iter().filter_map(Value::as_str).collect(), "Missing or extra processor observations")?;
+        require(["resourceCache", "headersCache", "dnsCache"].iter().all(|key|actual.get(key).is_some()), "Missing processor caches")?;
+    } else {
+        require(actual["storage"].get("cache").is_some() && actual["storage"].get("root").is_some(), "Missing host storage")?;
+    }
+    json::check(actual, expected, false)
 }
 
 pub fn check_processor_requests(requests: &[Value]) -> Result {
@@ -390,26 +407,11 @@ pub fn shared(output: &Path) -> Result {
                             "Resume must not perform DNS operations",
                         )?;
                     } else {
-                        json::check(&value["passed"], &json!(identifiers(suite)?), false)?;
-                        if suite == "processor" {
-                            let mut names = value["observations"]
-                                .as_object()
-                                .ok_or("Missing processor observations")?
-                                .keys()
-                                .cloned()
-                                .collect::<Vec<_>>();
-                            let mut required = identifiers(suite)?
-                                .iter()
-                                .map(|id| id.as_str().unwrap().to_owned())
-                                .collect::<Vec<_>>();
-                            names.sort();
-                            required.sort();
-                            require(names == required, "Missing or extra processor observations")?;
-                        }
                         if kind == "node" {
+                            check_observation(suite, &value, &value)?;
                             observed.insert(kind.into(), value.clone());
                         } else {
-                            json::check(&value, &observed["node"], false)?;
+                            check_observation(suite, &value, &observed["node"])?;
                         }
                         observed.insert(kind.into(), value);
                         if suite == "host" {
@@ -442,6 +444,30 @@ pub fn shared(output: &Path) -> Result {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn shared_observations_reject_incomplete_inventory_typed_state_and_both_sides_missing_fields() -> Result {
+        for suite in ["host", "processor"] {
+            let ids=identifiers(suite)?;
+            let expected=if suite=="host"{json!({"passed":ids,"storage":{"cache":{"unknown":false},"root":{}}})}else{json!({"passed":ids,"observations":ids.iter().map(|id|(id.as_str().unwrap().to_owned(),json!(false))).collect::<serde_json::Map<_,_>>(),"resourceCache":{"value":null},"headersCache":{"value":0},"dnsCache":{"value":false}})};
+            check_observation(suite,&expected,&expected)?;
+            for mutation in ["missing", "duplicate", "typed", "cache"] {
+                let mut actual=expected.clone();match mutation {
+                    "missing"=>{actual["passed"].as_array_mut().unwrap().pop();},
+                    "duplicate"=>actual["passed"][0]=ids[1].clone(),
+                    "typed"=>if suite=="host"{actual["storage"]["cache"]["unknown"]=json!(0);}else{actual["observations"][ids[0].as_str().unwrap()]=json!(0);},
+                    _=>if suite=="host"{actual["storage"].as_object_mut().unwrap().remove("root");}else{actual.as_object_mut().unwrap().remove("headersCache");}
+                }assert!(check_observation(suite,&actual,&expected).is_err());
+            }
+            let mut missing=expected.clone();if suite=="processor"{missing["observations"].as_object_mut().unwrap().remove(ids[0].as_str().unwrap());}else{missing["storage"].as_object_mut().unwrap().remove("root");}assert!(check_observation(suite,&missing,&missing).is_err());
+        }Ok(())
+    }
+    #[test]
+    fn artifact_wire_and_persistence_reject_wrong_bytes_order_headers_types_and_caches() -> Result {
+        let expected=expected_artifact_requests();check_artifact_requests(&expected)?;let mut paired=expected.clone();paired.swap(6,7);check_artifact_requests(&paired)?;
+        for mutation in ["missing","extra","header","body","method","order"] {let mut actual=expected.clone();match mutation{"missing"=>{actual.pop();},"extra"=>actual.push(actual[0].clone()),"header"=>actual[0]["headers"]["authorization"]=json!("unexpected"),"body"=>actual[0]["body_bytes"]=json!([0]),"method"=>actual[0]["method"]=json!("POST"),_=>actual.swap(0,1)}assert!(check_artifact_requests(&actual).is_err());}
+        let persisted=json!({"cache":{"artifactHelper":{"text":"远程文件🙂\r\nline\n|remote","zero":0,"flag":false}},"root":{"sub-store-cached-script-resource":"{}","sub-store-cached-headers-resource":"{}","sub-store-cached-resource":"{}"}});let result=json!({"storage":persisted,"resourceCache":{},"headersCache":{},"dnsCache":{}});check_artifact_state(&result,&persisted)?;
+        for mutation in ["text","zero","false","storage","cache"] {let(mut actual,mut state)=(result.clone(),persisted.clone());match mutation{"text"=>state["cache"]["artifactHelper"]["text"]=json!("远程文件🙂\nline\n|remote"),"zero"=>state["cache"]["artifactHelper"]["zero"]=json!(false),"false"=>state["cache"]["artifactHelper"]["flag"]=json!(0),"storage"=>{actual["storage"]["cache"].as_object_mut().unwrap().remove("artifactHelper");},_=>actual["dnsCache"]["unpersisted"]=json!(false)}if ["text","zero","false"].contains(&mutation){actual["storage"]=state.clone();}assert!(check_artifact_state(&actual,&state).is_err());}Ok(())
+    }
     #[test]
     fn processor_trace_rejects_incomplete_reordered_and_mutated_events() {
         crate::actions_only();

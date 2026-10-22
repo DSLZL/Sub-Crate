@@ -225,12 +225,14 @@ pub fn checked(
 }
 
 pub fn provenance(output: &Path) -> Result<Value> {
-    let base = "9cc6b5fac966993364ae33da8797f446bbf7f571";
-    let cwd = crate::root();
+    provenance_at(&crate::root(), "9cc6b5fac966993364ae33da8797f446bbf7f571", &crate::compat().join("approved-reference-fixes.patch"), output)
+}
+
+fn provenance_at(cwd: &Path, base: &str, approved: &Path, output: &Path) -> Result<Value> {
     let revision = checked(
         Command::new("git")
             .args(["rev-parse", "HEAD"])
-            .current_dir(&cwd),
+            .current_dir(cwd),
         output,
         "backend-revision",
         Duration::from_secs(30),
@@ -249,12 +251,12 @@ pub fn provenance(output: &Path) -> Result<Value> {
                 "backend",
                 "scripts/ip-flag-node.js",
             ])
-            .current_dir(&cwd),
+            .current_dir(cwd),
         output,
         "backend-source",
         Duration::from_secs(30),
     )?;
-    let approved = std::fs::read_to_string(crate::compat().join("approved-reference-fixes.patch"))?
+    let approved = std::fs::read_to_string(approved)?
         .replace("\r\n", "\n");
     require(
         patch.stdout.replace("\r\n", "\n") == approved,
@@ -270,7 +272,7 @@ pub fn provenance(output: &Path) -> Result<Value> {
                 "backend",
                 "scripts/ip-flag-node.js",
             ])
-            .current_dir(&cwd),
+            .current_dir(cwd),
         output,
         "backend-worktree",
         Duration::from_secs(30),
@@ -297,6 +299,16 @@ pub fn sha256(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reference_guard_uses_full_blob_ids_and_rejects_unapproved_source_changes() -> Result {
+        let root=scratch("reference-source-guard")?;std::fs::create_dir(root.join("backend"))?;let source=root.join("backend/source.txt");std::fs::write(&source,"original\n")?;
+        let git=|args:&[&str],label:&str|->Result<String>{Ok(checked(Command::new("git").args(args).current_dir(&root),&root.join(label),"git",Duration::from_secs(30))?.stdout)};
+        git(&["init"],"init")?;git(&["add","backend"],"add")?;git(&["-c","user.name=compat-fixture","-c","user.email=fixture@example.invalid","commit","--no-gpg-sign","-m","baseline"],"commit")?;let revision=git(&["rev-parse","HEAD"],"revision")?.trim().to_owned();std::fs::write(&source,"approved\n")?;
+        let approved=root.join("approved.patch");std::fs::write(&approved,git(&["diff","--no-ext-diff","--binary","--no-color","--full-index","--unified=0",&revision,"--","backend","scripts/ip-flag-node.js"],"expected")?)?;
+        for abbreviation in ["7","12"]{git(&["config","core.abbrev",abbreviation],&format!("abbrev-{abbreviation}"))?;let report=provenance_at(&root,&revision,&approved,&root.join(format!("guard-{abbreviation}")))?;assert_eq!(report["backend_commit"],revision);assert_eq!(report["backend_worktree_changed"],true);}
+        std::fs::write(&source,"approved\nunapproved\n")?;assert!(provenance_at(&root,&revision,&approved,&root.join("unapproved")).is_err());Ok(())
+    }
 
     #[test]
     fn failed_evidence_cannot_be_overwritten() {

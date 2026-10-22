@@ -181,8 +181,8 @@ jobs:
       - name: Package save extract and reload production image
         id: docker-package
         run: cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --test docker --config-file .config/nextest.toml --profile delivery -E 'test(=docker::delivery)'
-      - name: Verify native probe image
-        run: cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --test docker --config-file .config/nextest.toml --profile docker-images -E 'test(=docker::probe_image_matches_native_runner)'
+      - name: Verify native probe image and owned watchdog cleanup
+        run: cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --test docker --config-file .config/nextest.toml --profile docker-images -E 'not test(=docker::delivery)'
       - name: Actual delivered containers scripts wire state restarts and rollback
         run: cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --test native --config-file .config/nextest.toml --profile acceptance -E 'not (test(=native_delivery) or test(=corrupt_native_startups_and_restore_journals_exit_without_resetting_either_file) or test(=frozen_node_unit_suite) or test(=frozen_node_http_suites))'
       - name: Clean only containers owned by this runner job
@@ -206,6 +206,7 @@ jobs:
             ${{ runner.temp }}/sub-store-docker-tests/nextest/
             ${{ runner.temp }}/sub-store-docker-delivery-*
             ${{ runner.temp }}/sub-store-docker-probe-image-*
+            ${{ runner.temp }}/sub-store-docker-cleanup-*
             ${{ runner.temp }}/sub-store-state-parity-*
             ${{ runner.temp }}/sub-store-script-probe-*
             ${{ runner.temp }}/sub-store-age-probe-*

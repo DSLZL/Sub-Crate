@@ -725,3 +725,20 @@ pub fn check_native(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn dns_wire_rejects_wrong_packets_headers_counts_overlap_and_serial_order() -> Result {
+        let requests=expected_doh_requests()?.into_iter().map(|row|json!({"method":row["method"],"path":row["path"],"body_bytes":row["body_bytes"],"headers":{"accept":row["accept"]},"dns_overlap":true})).collect::<Vec<_>>();check_doh_requests(&requests)?;let mut reordered=requests.clone();reordered.swap(16,17);check_doh_requests(&reordered)?;
+        for mutation in ["packet","accept","missing","extra","overlap","serial"]{let mut actual=requests.clone();match mutation{"packet"=>actual[0]["path"]=json!(actual[0]["path"].as_str().unwrap().replace("?dns=","?dns=A")),"accept"=>actual[0]["headers"]["accept"]=json!("*/*"),"missing"=>{actual.pop();},"extra"=>actual.push(actual[0].clone()),"overlap"=>actual[16]["dns_overlap"]=json!(false),_=>actual.swap(14,15)}assert!(check_doh_requests(&actual).is_err());}Ok(())
+    }
+    #[test]
+    fn native_dns_rejects_packet_frame_sni_certificate_leaks_fragments_deadlines_and_errors() -> Result {
+        let mut requests=expected_native_requests()?;for row in &mut requests{if row["domain"].as_str().unwrap().starts_with("fragment-"){let packet=row["packet"].as_array().unwrap().iter().map(|value|value.as_u64().unwrap()as u8).collect::<Vec<_>>();let size=response_bytes(&packet,"good")?.len()+2;row["response_chunks"]=json!([1,1,3,3,3,size-11]);row["response_elapsed"]=json!(0.3);}}
+        let connections=expected_connections().into_iter().map(|mut row|{row["closed"]=json!(row["handshake"]!=false);row}).collect::<Vec<_>>();check_native(&requests,&connections,&[])?;
+        for mutation in ["packet","frame","missing","extra","transport","sni","certificate","open","fragment","deadline","typed-deadline","error"]{let(mut actual,mut peers,mut errors)=(requests.clone(),connections.clone(),Vec::new());let fragment=actual.iter().position(|row|row["domain"]=="fragment-tcp.fixture").unwrap();match mutation{"packet"=>actual[0]["packet"][2]=json!(0),"frame"=>actual[fragment]["frame"][1]=json!(actual[fragment]["frame"][1].as_u64().unwrap()+1),"missing"=>{actual.pop();},"extra"=>actual.push(actual[0].clone()),"transport"=>actual[0]["transport"]=json!("tcp"),"sni"=>peers.iter_mut().find(|row|row["handshake"]==true&&row["server_name"]=="localhost").unwrap()["server_name"]=serde_json::Value::Null,"certificate"=>peers.iter_mut().find(|row|row["handshake"]==false).unwrap()["handshake"]=json!(true),"open"=>peers[0]["closed"]=json!(false),"fragment"=>actual[fragment]["response_chunks"]=json!([999]),"deadline"=>actual[fragment]["response_elapsed"]=json!(0.1),"typed-deadline"=>actual[fragment]["response_elapsed"]=json!(true),_=>errors.push("fixture failure".to_owned())}assert!(check_native(&actual,&peers,&errors).is_err());}Ok(())
+    }
+}
