@@ -201,7 +201,7 @@ def summary(report):
                   "Profiler-on samples do not enter the latency table. Parent/child stages overlap; active time is not OS CPU time.",
                   "", "| Stage | SS URI | Surge SS | QX SS |", "|---|---:|---:|---:|"]
         for stage in ("executor_setup", "state_snapshot", "runtime_setup", "context_setup", "job", "bootstrap",
-                      "bootstrap_load", "bootstrap_eval", "bootstrap_state_encode", "bootstrap_state_parse",
+                      "bootstrap_values", "bootstrap_load", "bootstrap_eval", "bootstrap_state_encode", "bootstrap_state_parse",
                       "parse_runtime", "parse_context_init", "parse_utilities_init", "parse_scalar_probe",
                       "parse_native", "produce", "output_encode"):
             values = []
@@ -242,7 +242,7 @@ def main():
               "cases": [case["id"] for case in cases], "pure": [], "http": [], "profiles": [], "status": "running"}
     assert b.command(["git", "rev-parse", "HEAD"], args.original).decode().strip() == b.ORIGINAL
     report["rust_baseline"] = b.command(["git", "rev-parse", "HEAD"], args.rust_baseline).decode().strip()
-    assert report["rust_baseline"] == "ef44869c214ee669ec0af9a3cada7a54b5a7e6c7"
+    assert report["rust_baseline"] == "1cf6c2b175cee2773b25ce700b52d7ef7b2ed05e"
     report["binary_sha256"] = {kind: hashlib.sha256((root / "rust/target/release/sub-store-rust").read_bytes()).hexdigest()
                                for kind, root in (("rust", args.rust), ("rust_baseline", args.rust_baseline))}
     assert len(set(report["binary_sha256"].values())) == 2, "candidate and baseline must be distinct binaries"

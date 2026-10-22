@@ -63,7 +63,7 @@ PUBLIC_STRINGS = set(COMPARISON_KINDS + CASES) | ERRORS | {
 PUBLIC_STRINGS.update(SHARDS)
 PROFILE_STAGES = set("""
 executor_setup state_snapshot runtime_setup context_setup job bootstrap input_decode execute output_encode
-bootstrap_compile bootstrap_load bootstrap_eval
+bootstrap_compile bootstrap_load bootstrap_eval bootstrap_values
 bootstrap_state_encode bootstrap_state_parse
 sources pipeline_parse pipeline_process pipeline_produce pipeline_utility process processor
 script_operator script_filter useless_filter region_filter regex_filter type_filter conditional_filter
