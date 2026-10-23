@@ -563,9 +563,7 @@ impl Suite {
             .args
             .baseline
             .as_ref()
-            .map(|root| -> Result<String> {
-                Ok(digest(std::fs::read(rust_binary_path(root)?)?))
-            })
+            .map(|root| -> Result<String> { Ok(digest(std::fs::read(rust_binary_path(root)?)?)) })
             .transpose()?;
         check(
             baseline_binary
@@ -700,7 +698,10 @@ mod tests {
             )?;
             assert_eq!(rust_binary_path(&root)?, target.join(name));
         }
-        std::fs::write(root.join("rust/Cargo.toml"), "[package]\nname = \"unknown\"\n")?;
+        std::fs::write(
+            root.join("rust/Cargo.toml"),
+            "[package]\nname = \"unknown\"\n",
+        )?;
         assert!(rust_binary_path(&root).is_err());
         Ok(())
     }
