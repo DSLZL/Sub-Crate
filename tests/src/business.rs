@@ -214,7 +214,7 @@ pub fn utilities_sync(output: &Path) -> Result {
                     json::check(
                         &json::parse(metadata["body"].as_str().ok_or("Missing metadata body")?)?["data"]
                             ["meta"]["rust"],
-                        &json!({"version":"0.1.0","milestone":"M5","complete":true}),
+                        &json!({"version":"0.0.1","milestone":"M5","complete":true}),
                         false,
                     )?;
                 }

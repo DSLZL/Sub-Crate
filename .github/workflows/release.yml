@@ -1,0 +1,117 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      commit: ${{ steps.version.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate release tag, source and notes
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          version=$(sed -n 's/^version = "\([^"]*\)"$/\1/p' rust/Cargo.toml)
+          test "$TAG" = "v$version"
+          test -s ".github/releases/$TAG.md"
+          git merge-base --is-ancestor HEAD origin/main
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
+        with:
+          tool: actionlint@1.7.12
+      - name: Check release workflow syntax
+        run: actionlint .github/workflows/release.yml
+
+  acceptance:
+    needs: validate
+    uses: ./.github/workflows/rust-compat-native.yml
+
+  publish:
+    needs: [validate, acceptance]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+      VERSION: ${{ needs.validate.outputs.version }}
+      SOURCE_COMMIT: ${{ needs.validate.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Download only deliveries from this release run
+        run: |
+          gh run download "$GITHUB_RUN_ID" --repo "$GH_REPO" \
+            --pattern "m5-*-$GITHUB_RUN_ID-*" --dir "$RUNNER_TEMP/release-input"
+      - name: Verify source and checksums, then select release assets
+        run: |
+          mkdir release-assets
+          archives=(
+            "sub-store-rust-$VERSION-linux-x64.tar.gz"
+            "sub-store-rust-$VERSION-linux-arm64.tar.gz"
+            "sub-store-rust-$VERSION-windows-x64.zip"
+            "sub-store-rust-$VERSION-docker-linux-x64.tar.gz"
+            "sub-store-rust-$VERSION-docker-linux-arm64.tar.gz"
+            "sub-store-frontend-4bd7b0acbe65.tar.gz"
+          )
+          for archive in "${archives[@]}"; do
+            # A failed-job rerun may reuse deliveries from an earlier successful attempt.
+            path=$(find "$RUNNER_TEMP/release-input" -mindepth 2 -maxdepth 2 -type f -name "$archive" | sort -V | tail -n 1)
+            test -n "$path"
+            directory=$(dirname "$path")
+            (cd "$directory" && sha256sum --strict --check SHA256SUMS)
+            jq --exit-status --arg commit "$SOURCE_COMMIT" --arg repo "$GH_REPO" \
+              '.source_commit == $commit and .repository == $repo' "$directory/manifest.json"
+            if [[ "$archive" == sub-store-rust-* ]]; then
+              jq --exit-status --arg version "$VERSION" '.rust_version == $version' "$directory/manifest.json"
+            else
+              jq --exit-status '.frontend_commit == "4bd7b0acbe65466b933ccea14fc61dbebe036ead"' "$directory/manifest.json"
+            fi
+            expected=$(sha256sum "$path" | cut -d ' ' -f 1)
+            grep --fixed-strings --line-regexp "$expected  $archive" "$directory/SHA256SUMS"
+            cp "$path" "release-assets/$archive"
+            cp "$directory/manifest.json" "release-assets/$archive.manifest.json"
+          done
+          (cd release-assets && sha256sum -- sub-store-* > SHA256SUMS && sha256sum --strict --check SHA256SUMS)
+          test "$(find release-assets -maxdepth 1 -type f | wc -l)" -eq 13
+      - name: Upload draft and publish the complete release
+        run: |
+          if gh release view "$TAG" --json isDraft > "$RUNNER_TEMP/existing-release.json" 2>/dev/null; then
+            jq --exit-status '.isDraft == true' "$RUNNER_TEMP/existing-release.json"
+          else
+            gh release create "$TAG" --verify-tag --draft --title "$VERSION" \
+              --notes-file ".github/releases/$TAG.md"
+          fi
+          gh release upload "$TAG" release-assets/* --clobber
+          gh release view "$TAG" --json assets --jq '.assets[].name' | sort > "$RUNNER_TEMP/remote-assets.txt"
+          find release-assets -maxdepth 1 -type f -printf '%f\n' | sort > "$RUNNER_TEMP/local-assets.txt"
+          diff -u "$RUNNER_TEMP/local-assets.txt" "$RUNNER_TEMP/remote-assets.txt"
+          gh release edit "$TAG" --verify-tag --title "$VERSION" \
+            --notes-file ".github/releases/$TAG.md" --draft=false --latest

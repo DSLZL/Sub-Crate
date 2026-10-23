@@ -1003,7 +1003,7 @@ pub fn run(output: &Path, backend: Backend, standalone: bool) -> Result {
         if !matches!(backend, Backend::Node(_)) {
             json::check(
                 &metadata["env"]["meta"]["rust"],
-                &json!({"version":"0.1.0","milestone":"M5","complete":true}),
+                &json!({"version":"0.0.1","milestone":"M5","complete":true}),
                 false,
             )?;
         }

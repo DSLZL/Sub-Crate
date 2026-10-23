@@ -112,7 +112,7 @@ backend against a writable data directory.
 
 The HTTP environment keeps the frontend's `Node` discriminator and protocol
 version `2.42.4`, which the unchanged frontend uses to select supported features.
-Rust metadata identifies crate version `0.1.0`, milestone M5 and completion within
+Rust metadata identifies crate version `0.0.1`, milestone M5 and completion within
 the declared standalone scope. Archive operations and Gist/age settings use their native owners.
 Subscription/collection public recipients are validated and normalized natively
 for both X25519 and MLKEM768-X25519, including checksum and padding. Settings
@@ -209,7 +209,19 @@ Stored excluded Node scripts remain intact.
 
 ## Downloadable delivery
 
-Use the artifacts of the accepted **Rust service and compatibility** run.
+Published packages are available from [GitHub Releases](https://github.com/DSLZL/Sub-Store/releases).
+Download the package for your platform and `SHA256SUMS`; each archive also has a
+matching external `.manifest.json`. All six native, Docker and frontend jobs must
+pass on the tag's source before the workflow publishes the release.
+
+To cut a release, update the crate/lock version, version assertions and installation
+examples, then add `.github/releases/vX.Y.Z.md` with the release notes. Commit these
+changes to `main` and push the matching `vX.Y.Z` tag. Only stable SemVer tags are
+published; the tag must point to a commit in `main`. Failed uploads remain drafts
+and can be retried without replacing a published release.
+
+For an unreleased source revision, use the artifacts of the accepted
+**Rust service and compatibility** run.
 Each `m5-distribution-<target>-<run>-<attempt>` artifact contains a versioned
 archive, `SHA256SUMS` and an external `manifest.json`. Unpack the GitHub artifact
 first, verify the versioned archive against `SHA256SUMS`, then extract it.
@@ -218,8 +230,8 @@ README, `Cargo.lock`, licenses, `SOURCE.md` and its own file manifest. Keep thos
 files together. Manifests record the exact commit, target, compiler, dependency
 notices and file hashes; the GitHub artifact digest identifies the outer ZIP.
 
-Linux archives are `sub-store-rust-0.1.0-linux-x64.tar.gz` and
-`sub-store-rust-0.1.0-linux-arm64.tar.gz`. Their native runners use Ubuntu 24.04;
+Linux archives are `sub-store-rust-0.0.1-linux-x64.tar.gz` and
+`sub-store-rust-0.0.1-linux-arm64.tar.gz`. Their native runners use Ubuntu 24.04;
 the current binaries require glibc 2.38 or newer and the shared libraries listed
 in `manifest.json.linkage.dynamic_libraries`. These are GNU/Linux binaries.
 Use the Docker delivery on hosts whose native library versions do not match.
@@ -231,19 +243,19 @@ are still required; acceptance runs on the workflow's recorded Windows runner.
 For example, after unpacking the outer GitHub artifact on Linux:
 
 ```sh
-sha256sum -c SHA256SUMS
-tar -xzf sub-store-rust-0.1.0-linux-x64.tar.gz
-cd sub-store-rust-0.1.0-linux-x64
+sha256sum --ignore-missing -c SHA256SUMS
+tar -xzf sub-store-rust-0.0.1-linux-x64.tar.gz
+cd sub-store-rust-0.0.1-linux-x64
 mkdir -p data
 SUB_STORE_DATA_BASE_PATH="$PWD/data" SUB_STORE_BACKEND_API_HOST=127.0.0.1 ./sub-store-rust
 ```
 
-On Windows, compare `(Get-FileHash .\sub-store-rust-0.1.0-windows-x64.zip
+On Windows, compare `(Get-FileHash .\sub-store-rust-0.0.1-windows-x64.zip
 -Algorithm SHA256).Hash` with `SHA256SUMS`, then use PowerShell:
 
 ```powershell
-Expand-Archive .\sub-store-rust-0.1.0-windows-x64.zip .\delivery
-Set-Location .\delivery\sub-store-rust-0.1.0-windows-x64
+Expand-Archive .\sub-store-rust-0.0.1-windows-x64.zip .\delivery
+Set-Location .\delivery\sub-store-rust-0.0.1-windows-x64
 New-Item -ItemType Directory -Force data | Out-Null
 $env:SUB_STORE_DATA_BASE_PATH = (Join-Path $PWD data)
 $env:SUB_STORE_BACKEND_API_HOST = '127.0.0.1'
@@ -286,16 +298,16 @@ allowed-origin values must match the actual addresses used by the browser.
 
 ## Docker image archive
 
-Extract the matching `sub-store-rust-0.1.0-docker-linux-x64.tar.gz` or
-`sub-store-rust-0.1.0-docker-linux-arm64.tar.gz`. Its `manifest.json` records the
+Extract the matching `sub-store-rust-0.0.1-docker-linux-x64.tar.gz` or
+`sub-store-rust-0.0.1-docker-linux-arm64.tar.gz`. Its `manifest.json` records the
 image tag, immutable image ID and platform. Load its `image.tar` and run the
-tag printed by `docker load` (shown as `sub-store-m2:<run>` below):
+tag printed by `docker load` (shown as `sub-store-nextest:<run>-<attempt>-<target>` below):
 
 ```sh
 docker load --input image.tar
 mkdir -p data
 docker run --rm --read-only --tmpfs /tmp --user "$(id -u):$(id -g)" \
-  -p 127.0.0.1:3000:3000 -v "$PWD/data:/data" sub-store-m2:<run>
+  -p 127.0.0.1:3000:3000 -v "$PWD/data:/data" sub-store-nextest:<run>-<attempt>-<target>
 ```
 
 The mounted folder must be writable by that user. The runtime includes system
