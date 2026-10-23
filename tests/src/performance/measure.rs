@@ -554,7 +554,12 @@ impl Suite {
             self.measure_case(kind, case, original, clients, repeats, &directory, &mut row);
         let mut fatal = None;
         if let Err(error) = result {
-            record_failure(&mut row, error.as_ref(), &directory, self.counts(false, false));
+            record_failure(
+                &mut row,
+                error.as_ref(),
+                &directory,
+                self.counts(false, false),
+            );
             if ![
                 "output_mismatch",
                 "snapshot",

@@ -210,7 +210,10 @@ pub fn run(
             json!({"media":format!("Application/JSON; charset=\"{charset}\"")}),
         )?["data"]
             .clone();
-        require(data[key] == expected, "Body charset/UTF8 replacement mismatch")?;
+        require(
+            data[key] == expected,
+            "Body charset/UTF8 replacement mismatch",
+        )?;
     }
     for charset in ["utf-16be", "utf-16", "utf-7", "utf-7imap"] {
         request.send(b"{}",json!({"media":format!("application/json; charset={charset}"),"status":403,"parser_error":true}))?;
