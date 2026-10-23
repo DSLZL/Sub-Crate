@@ -155,8 +155,11 @@ jobs:
             if [[ "$target" == linux-x64 ]]; then architecture=amd64; fi
             manifest="$RUNNER_TEMP/release-images/sub-store-rust-$VERSION-docker-$target.tar.gz.manifest.json"
             expected_id=$(jq --raw-output '.image_id' "$manifest")
-            docker pull --platform "linux/$architecture" "$IMAGE:$TAG"
-            docker image inspect --platform "linux/$architecture" "$IMAGE:$TAG" --format '{{json .}}' | \
+            digest=$(docker buildx imagetools inspect "$IMAGE:$TAG" --raw | jq --exit-status --raw-output \
+              --arg arch "$architecture" '.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest')
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            docker pull --platform "linux/$architecture" "$IMAGE@$digest"
+            docker image inspect "$IMAGE@$digest" --format '{{json .}}' | \
               jq --exit-status --arg id "$expected_id" --arg arch "$architecture" \
                 '.Id == $id and .Os == "linux" and .Architecture == $arch'
           done
