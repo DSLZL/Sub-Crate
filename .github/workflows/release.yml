@@ -144,7 +144,7 @@ jobs:
             '(.manifests | length) == 2 and
              ([.manifests[].platform.architecture] | sort) == ["amd64", "arm64"] and
              all(.manifests[]; .platform.os == "linux")'
-          printf 'Container: `%s:%s` (`linux/amd64`, `linux/arm64`). Also tagged `%s` and `latest`.\n' \
+          printf 'Container: %s:%s (linux/amd64, linux/arm64). Also tagged %s and latest.\n' \
             "$IMAGE" "$TAG" "$VERSION" >> "$GITHUB_STEP_SUMMARY"
       - name: Verify public registry pulls retain each accepted image identity
         run: |
