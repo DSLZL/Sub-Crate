@@ -76,11 +76,15 @@ jobs:
           pnpm --dir .compat-frontend install --frozen-lockfile 2>&1 | tee tests/compat/evidence/frontend-setup/frontend-install.log
           node tests/compat/build-native-utilities.cjs
           (cd backend && node bundle-esbuild.js)
-      - name: Build unchanged frontend and source inventory
-        run: |
-          pnpm --dir .compat-frontend build 2>&1 | tee tests/compat/evidence/frontend-setup/frontend-build.log
-          node tests/compat/inventory.cjs "$GITHUB_WORKSPACE/.compat-frontend" "$GITHUB_WORKSPACE/tests/compat/evidence/frontend-setup/source-inventory.json"
-          agent-browser install --with-deps 2>&1 | tee tests/compat/evidence/frontend-setup/browser-install.log
+      - name: Build unchanged frontend
+        timeout-minutes: 5
+        run: pnpm --dir .compat-frontend build 2>&1 | tee tests/compat/evidence/frontend-setup/frontend-build.log
+      - name: Record unchanged frontend source inventory
+        timeout-minutes: 2
+        run: node tests/compat/inventory.cjs "$GITHUB_WORKSPACE/.compat-frontend" "$GITHUB_WORKSPACE/tests/compat/evidence/frontend-setup/source-inventory.json"
+      - name: Download browser using the runner's installed system libraries
+        timeout-minutes: 5
+        run: agent-browser install 2>&1 | tee tests/compat/evidence/frontend-setup/browser-install.log
       - name: Build delivered Rust backend on runner
         run: |
           cargo +1.98.0 fmt --manifest-path tests/Cargo.toml --all -- --check

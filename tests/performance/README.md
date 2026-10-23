@@ -93,3 +93,86 @@ configuration conversion, not traffic through the protocols.
 [HISTORY.md](HISTORY.md) preserves previous measurements and failures under their
 original source/harness versions. They are historical results, not acceptance
 of this migrated harness.
+
+## README release chart
+
+[Update README benchmark chart](../../.github/workflows/benchmark-chart.yml)
+reuses the supplied Chart.js design. It renders a PNG because GitHub READMEs
+cannot execute Chart.js. Chart code lives in `.github/benchmark/`; measurement,
+aggregation, rendering, self-checks and publication all run in Actions.
+
+The chart follows GitHub's latest published, non-prerelease `vMAJOR.MINOR.PATCH`
+release. After a successful Release workflow, it publishes a waiting state and
+dispatches the single-node comparison on `main` with `release_tag` set to the
+latest tag. The workflow resolves that tag to a commit before checking out the
+Rust application. The measurement harness has its own recorded source SHA;
+adding a workload does not move a published tag or substitute development
+application code. Its Node reference remains
+`9cc6b5fac966993364ae33da8797f446bbf7f571`.
+
+The coordinator waits for the exact dispatched run and explicitly dispatches
+chart publication after success, without relying on a bot-triggered
+`workflow_run` callback. To reuse a completed comparison, dispatch the chart
+workflow with its `benchmark_run` ID and `benchmark_attempt`; the same latest-tag,
+source, success and artifact checks still apply, without repeating measurements.
+
+Only a successful, same-repository comparison dispatched on trusted `main` can
+supply measurements. Aggregation verifies that the measured application is the
+latest tag, and that the report's harness SHA matches the originating run.
+Ordinary development runs, older tags, failed/partial reports, inspection runs
+and three-fixture tail diagnostics are excluded. Publication rechecks the latest
+release and peeled tag SHA; an older run/attempt or delayed waiting state cannot
+overwrite a newer completed result. Chart-only commits do not trigger additional
+benchmarks. A failed comparison leaves the waiting state visible instead of
+retaining a previous version's measurements. Release measurements require
+correctness, not a Rust speedup; slower results remain eligible for publication.
+
+| Column | Aggregation | Unit | Better |
+| --- | --- | --- | --- |
+| Pure parsing | Median of 48 fixture medians, each from seven block averages with a reused parser | µs/call | Lower |
+| Bulk conversion | Median of four format medians, each from seven paired block means | ms/10k input nodes | Lower |
+| JavaScript pipeline | Median of seven paired block means | ms/10k input nodes | Lower |
+| 8-client throughput | Median of three mixed-fixture blocks | Requests/second | Higher |
+| CPU efficiency | Same four-format aggregation as bulk conversion, using whole-process CPU per completed request | CPU ms/10k input nodes | Lower |
+| Settled RSS | Median of three 1-client blocks | MiB | Lower |
+
+The batch contains 10,000 public SS/VMess/Trojan nodes, including duplicate pairs.
+Both backends use an 8 MiB JSON body limit to import the batch before timing.
+It uses local content; no subscription provider, DNS lookup or external script
+download is part of these workloads. Built-in renaming precedes ClashMeta, Surge,
+QX and sing-box output. Each exported result must retain all 10,000 node names
+and match Node's output. The JavaScript pipeline uses the same general JS script
+on both backends to filter ports, deduplicate and rename; exactly 4,000 output
+nodes must match Node. Its duration includes normal parsing, script loading,
+bridging and JSON production, not just a JavaScript function microbenchmark.
+
+Each workload warms up five times on both backends, then alternates backend
+order over seven blocks. Equivalent original/newline inputs alternate to avoid
+last-input preprocessing cache hits; normal runtime and script reuse remain
+enabled. Requests use persistent loopback connections. Their complete durations
+include local HTTP transport and response encoding, but are not separate HTTP
+latency scores. Every timed response is validated outside its wall-clock timer.
+
+CPU comes from the owned backend process's Linux user/system counters, covering
+all its threads and excluding the driver. Each block completes at least four
+requests and accumulates at least one CPU second, bounded by 256 requests and
+60 seconds. The score uses CPU milliseconds per completed 10,000-node request,
+not CPU percentage, sampler overhead, or profiler stage duration. Raw blocks
+retain sample counts, both input/output hashes and the JS script hash.
+
+Each orange bar is 100 points. For blue bars, time and memory use
+`100 × Node / Rust`; throughput uses `100 × Rust / Node`. Higher scores are better
+for every metric: 200 points means twice the throughput, half the time or half
+the memory use of the Node baseline. The original values and units appear below
+each pair. Fixture-level medians summarize these 48 inputs; they are not a claim
+about every protocol, large subscriptions, cold start or forwarding traffic.
+Both backends run on the same hosted Linux x64 runner, whose hardware and
+contention can still vary between runs.
+
+The publisher commits only `assets/benchmark.png` and
+`assets/benchmark-data.json`. The schema-2 JSON contains six whitelisted numeric summaries,
+tag/source/harness identities and the originating run/attempt. Raw artifacts,
+subscriptions, credentials and logs are never copied into these assets. Chart
+dependencies run in a separate job without write permissions; the publisher
+validates the PNG and JSON without executing downloaded code or installing npm
+packages. The directly pinned chart dependencies are isolated from the backend.

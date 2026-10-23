@@ -356,6 +356,28 @@ pub fn summary(report: &Value) -> Result<String> {
             ],
         );
     }
+    if let Some(workloads) = report["release_workloads"].as_array() {
+        lines.extend(["".to_owned(),"Release workloads: 10,000 public input nodes; whole-process CPU, at least one CPU second per block. JavaScript pipeline returns 4,000 filtered/deduplicated nodes.".to_owned(),"| Backend | Phase | Target | Block | Requests | Mean ms | CPU ms/10k input nodes |".to_owned(),"|---|---|---|---:|---:|---:|---:|".to_owned()]);
+        for value in workloads {
+            let requests = value["requests"]
+                .as_f64()
+                .ok_or("Workload requests missing")?;
+            row(
+                &mut lines,
+                &[
+                    value["variant"].as_str().unwrap(),
+                    value["phase"].as_str().unwrap(),
+                    value["target"].as_str().unwrap(),
+                    &value["block"].to_string(),
+                ],
+                &[
+                    requests,
+                    value["elapsed_ns"].as_f64().unwrap() / requests / 1e6,
+                    value["cpu_s"].as_f64().unwrap() * 1000.0 / requests,
+                ],
+            );
+        }
+    }
     lines.extend(["".to_owned(),"Separate Rust profiles: median active ms over seven requests; parent/child intervals overlap, and active time is not OS CPU time.".to_owned(),"| Stage | SS URI | Surge SS | QX SS |".to_owned(),"|---|---:|---:|---:|".to_owned()]);
     for stage in [
         "conversion_miss",

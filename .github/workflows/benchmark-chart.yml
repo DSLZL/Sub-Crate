@@ -1,0 +1,189 @@
+name: Update README benchmark chart
+
+on:
+  workflow_dispatch:
+    inputs:
+      benchmark_run:
+        description: Completed latest-tag comparison run ID; leave blank to start a comparison
+        type: string
+        default: ''
+      benchmark_attempt:
+        description: Attempt of the completed comparison run
+        type: string
+        default: '1'
+  workflow_run:
+    workflows: [Release, Single-node parsing comparison]
+    types: [completed]
+  push:
+    branches: [main]
+    paths: [.github/benchmark/**, .github/workflows/benchmark-chart.yml]
+  pull_request:
+    paths: [.github/benchmark/**, .github/workflows/benchmark-chart.yml]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: sub-crate-readme-benchmark-${{ github.event_name == 'pull_request' && github.head_ref || 'publisher' }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24.16.0
+          package-manager-cache: false
+      - name: Check chart code and latest-tag publication rules
+        run: |
+          node --check .github/benchmark/prepare_data.cjs
+          node --check .github/benchmark/render_chart.cjs
+          node --test .github/benchmark/prepare_data.test.cjs
+      - name: Check workflow syntax
+        run: |
+          curl --fail --location --retry 3 https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz --output "$RUNNER_TEMP/actionlint.tar.gz"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" .github/workflows/benchmark-chart.yml .github/workflows/rust-single-node.yml
+
+  render:
+    needs: check
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      ready: ${{ steps.ready.outputs.ready }}
+    steps:
+      - name: Checkout trusted default branch without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24.16.0
+          package-manager-cache: false
+      - name: Resolve latest stable tag and reject unrelated measurements
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/benchmark/prepare_data.cjs source "$RUNNER_TEMP/chart-context.json"
+      - name: Download only the matching public-fixture result
+        if: steps.source.outputs.action == 'passed'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ steps.source.outputs.run_id }}
+          SOURCE_ATTEMPT: ${{ steps.source.outputs.run_attempt }}
+        run: |
+          gh run download "$SOURCE_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name "single-node-$SOURCE_RUN-$SOURCE_ATTEMPT" --dir "$RUNNER_TEMP/source-metrics"
+      - name: Prepare only sanitized release measurements or a waiting state
+        if: steps.source.outputs.action != 'skip'
+        run: |
+          node .github/benchmark/prepare_data.cjs prepare "$RUNNER_TEMP/chart-context.json" \
+            "$RUNNER_TEMP/source-metrics" "$RUNNER_TEMP/chart-publish/benchmark-data.json"
+      - name: Install isolated pinned Chart.js dependencies
+        if: steps.source.outputs.action != 'skip'
+        run: npm install --prefix .github/benchmark --no-audit --no-fund --package-lock=false
+      - name: Render the latest release chart
+        if: steps.source.outputs.action != 'skip'
+        run: |
+          node .github/benchmark/render_chart.cjs "$RUNNER_TEMP/chart-publish/benchmark-data.json" \
+            "$RUNNER_TEMP/chart-publish/benchmark.png"
+      - name: Preserve only the PNG and sanitized summary
+        if: steps.source.outputs.action != 'skip'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: readme-chart-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/chart-publish/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Mark rendered assets ready
+        id: ready
+        if: steps.source.outputs.action != 'skip'
+        run: echo 'ready=true' >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: render
+    if: needs.render.outputs.ready == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    outputs:
+      dispatch: ${{ steps.verify.outputs.dispatch }}
+      tag: ${{ steps.verify.outputs.tag }}
+    steps:
+      - name: Checkout default branch for an asset-only commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24.16.0
+          package-manager-cache: false
+      - name: Download rendered assets without running npm or downloaded code
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "readme-chart-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" --dir "$RUNNER_TEMP/publish-assets"
+      - name: Recheck latest tag, provenance, and image before publishing
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/benchmark/prepare_data.cjs verify "$RUNNER_TEMP/publish-assets"
+      - name: Commit only the current release chart and public numbers
+        if: steps.verify.outputs.ready == 'true'
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          mkdir -p assets
+          cp "$RUNNER_TEMP/publish-assets/benchmark.png" assets/benchmark.png
+          cp "$RUNNER_TEMP/publish-assets/benchmark-data.json" assets/benchmark-data.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- assets/benchmark.png assets/benchmark-data.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'docs(benchmark): update latest stable tag chart [skip ci]'
+            git push origin "HEAD:$DEFAULT_BRANCH"
+          fi
+
+  measure:
+    needs: publish
+    if: needs.publish.outputs.dispatch == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Measure the latest tag and explicitly dispatch the completed chart
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.publish.outputs.tag }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          run_id=$(gh api --method POST -H 'X-GitHub-Api-Version: 2026-03-10' \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/rust-single-node.yml/dispatches" \
+            --raw-field "ref=$DEFAULT_BRANCH" --raw-field "inputs[release_tag]=$TAG" \
+            --raw-field 'inputs[diagnose_tail]=false' --jq '.workflow_run_id')
+          [[ "$run_id" =~ ^[1-9][0-9]*$ ]]
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status --interval 30
+          # GITHUB_TOKEN dispatches do not reliably emit the downstream workflow_run event.
+          gh workflow run benchmark-chart.yml --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH" \
+            --raw-field "benchmark_run=$run_id" --raw-field benchmark_attempt=1

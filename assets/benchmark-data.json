@@ -1,0 +1,65 @@
+{
+  "schema": 2,
+  "status": "passed",
+  "release_tag": "v0.0.1",
+  "node_revision": "9cc6b5fac966993364ae33da8797f446bbf7f571",
+  "rust_revision": "18c28987fc5bc3bea229d6a8843fae050945ad69",
+  "harness_revision": "21656901fbc0aa92c1c1246c64f88e422129c4a7",
+  "runner_arch": "linux-x64",
+  "run_id": 39999478649,
+  "run_attempt": 1,
+  "generated_utc": "2026-10-23T18:13:06.028Z",
+  "aggregation": "Parse: median of 48 fixture medians; bulk/CPU: median of 4 format medians over 7 blocks; JS: 7 blocks; throughput/RSS: 3 blocks.",
+  "disclaimer": "Measures subscription/configuration conversion, not proxy traffic.",
+  "normalization": "JS = 100 points; higher is better. Rust = 100 * JS / Rust for lower-is-better metrics; 100 * Rust / JS for higher-is-better metrics.",
+  "metrics": [
+    {
+      "title": "Pure parsing",
+      "unit": "µs / call",
+      "better": "lower",
+      "note": "Reusable parser · 48 fixtures",
+      "node": 52.560162580275815,
+      "rust": 5.650996770366779
+    },
+    {
+      "title": "Bulk conversion",
+      "unit": "ms / 10k nodes",
+      "better": "lower",
+      "note": "4 output formats · 7 paired blocks",
+      "node": 795.723150625,
+      "rust": 424.47233425
+    },
+    {
+      "title": "JavaScript pipeline",
+      "unit": "ms / 10k input nodes",
+      "better": "lower",
+      "note": "Filter, deduplicate, rename · 7 paired blocks",
+      "node": 776.118633,
+      "rust": 301.99965
+    },
+    {
+      "title": "8-client throughput",
+      "unit": "requests / second",
+      "better": "higher",
+      "note": "Mixed fixtures · 3 measured blocks",
+      "node": 4048.908964541722,
+      "rust": 9869.447513725536
+    },
+    {
+      "title": "CPU efficiency",
+      "unit": "CPU ms / 10k nodes",
+      "better": "lower",
+      "note": "Whole backend process · 4 output formats",
+      "node": 1096.2499999999986,
+      "rust": 427.50000000000034
+    },
+    {
+      "title": "Settled process RSS",
+      "unit": "MiB",
+      "better": "lower",
+      "note": "1-client load · 3 measured blocks",
+      "node": 253.4140625,
+      "rust": 12.5078125
+    }
+  ]
+}

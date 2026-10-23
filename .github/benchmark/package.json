@@ -1,0 +1,11 @@
+{
+  "name": "sub-crate-readme-benchmark-chart",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Actions-only Chart.js renderer for the latest stable Sub-Crate tag",
+  "license": "AGPL-3.0-only",
+  "dependencies": {
+    "chart.js": "4.5.1",
+    "chartjs-node-canvas": "5.0.0"
+  }
+}

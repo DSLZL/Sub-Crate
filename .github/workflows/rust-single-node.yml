@@ -3,6 +3,10 @@ name: Single-node parsing comparison
 on:
   workflow_dispatch:
     inputs:
+      release_tag:
+        description: Latest stable application tag; measurement harness remains on main
+        type: string
+        default: ''
       inspect_run:
         description: Inspect public-fixture HTTP tail batches from a completed run
         type: string
@@ -65,6 +69,29 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+      - name: Resolve the application source independently from the measurement harness
+        id: application
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.release_tag }}
+          TAIL_DIAGNOSTIC: ${{ inputs.diagnose_tail }}
+        run: |
+          sha="$GITHUB_SHA"
+          if [[ -n "$REQUESTED_TAG" ]]; then
+            [[ "$GITHUB_REF" == refs/heads/main && "$TAIL_DIAGNOSTIC" != true ]]
+            [[ "$REQUESTED_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+            [[ "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)" == "$REQUESTED_TAG" ]]
+            object=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$REQUESTED_TAG" --jq .object)
+            for _ in {1..10}; do
+              [[ "$(jq -r .type <<< "$object")" == tag ]] || break
+              object=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$(jq -r .sha <<< "$object")" --jq .object)
+            done
+            [[ "$(jq -r .type <<< "$object")" == commit ]]
+            sha=$(jq -r .sha <<< "$object")
+          fi
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "tag=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: 9cc6b5fac966993364ae33da8797f446bbf7f571
@@ -72,7 +99,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ steps.application.outputs.sha }}
           path: .performance/rust
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -94,7 +121,7 @@ jobs:
           path: |
             .performance/rust/rust/target
             .performance/rust-baseline/rust/target
-          key: single-node-apps-1.98.0-${{ github.sha }}
+          key: single-node-apps-1.98.0-${{ steps.application.outputs.sha }}
           restore-keys: single-node-apps-1.98.0-
       - name: Check exact source and harness invariants
         run: |
@@ -123,8 +150,11 @@ jobs:
           PERF_BASELINE_TEST_BUILD: ${{ runner.temp }}/single-node-rust-baseline-build.jsonl
           PERF_PUBLIC: ${{ runner.temp }}/single-node-results
           PERF_DIAGNOSE_TAIL: ${{ inputs.diagnose_tail && '1' || '0' }}
+          PERF_RELEASE_TAG: ${{ steps.application.outputs.tag }}
+          PERF_RELEASE_SHA: ${{ steps.application.outputs.sha }}
         run: |
-          export TEST_NODE="$(node -p 'process.execPath')"
+          TEST_NODE="$(node -p 'process.execPath')"
+          export TEST_NODE
           cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --release --test performance --config-file .config/nextest.toml --profile single-node -E 'test(=single_node_compare)' --success-output immediate
           cat "$PERF_PUBLIC/summary.md" >> "$GITHUB_STEP_SUMMARY"
       - name: Preserve measurements, public-fixture failure logs and JUnit

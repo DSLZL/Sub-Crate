@@ -9,6 +9,7 @@ use std::{
 pub mod capsule;
 pub mod detector;
 pub mod measure;
+pub mod release;
 pub mod report;
 pub mod resources;
 pub mod single;

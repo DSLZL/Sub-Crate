@@ -1,33 +1,64 @@
-# Sub-Crate
-
-A standalone Rust backend for [Sub-Store](https://github.com/sub-store-org/Sub-Store), compatible with the unchanged official [Sub-Store frontend](https://github.com/sub-store-org/Sub-Store-Front-End).
+<!-- Logo -->
 
 [![Compatibility](https://github.com/DSLZL/Sub-Crate/actions/workflows/rust-compat-native.yml/badge.svg?branch=main)](https://github.com/DSLZL/Sub-Crate/actions/workflows/rust-compat-native.yml)
 
-## Download and deployment
+Sub-Crate is a standalone Rust backend for [Sub-Store](https://github.com/sub-store-org/Sub-Store). Use the official [Sub-Store frontend](https://github.com/sub-store-org/Sub-Store-Front-End) without modification to manage subscriptions, convert proxy configurations and run general JavaScript.
 
-[GitHub Releases](https://github.com/DSLZL/Sub-Crate/releases) provides Linux x64/arm64 and Windows x64 backend archives with `SHA256SUMS`. Multi-platform Docker images are published to `ghcr.io/dslzl/sub-crate` using the release tag. Obtain the frontend separately from its official project; backend releases do not build or bundle it. Build manifests stay in Actions artifacts.
+[Get started](#get-started) · [Frontend](#frontend) · [Script compatibility](#script-compatibility) · [Documentation](#documentation)
 
-See [the deployment guide](rust/README.md) for archive selection, environment variables, frontend hosting, Docker startup, data migration and rollback. The runtime needs no Node installation. Use a copy of existing data when migrating, and run only one backend against a writable data directory.
+## Get started
 
-## Compatibility
+### Download a package
 
-Subscription conversion, processing, resource management, storage and scheduling have Rust implementations. General JavaScript scripts run in the embedded rquickjs engine with the documented Sub-Store helpers. Node builtins, CommonJS `require`, npm loading and native addons are excluded; choose a script's general JS variant.
+| Platform | Release archive |
+| --- | --- |
+| Linux x64 | `sub-crate-<version>-linux-x64.tar.gz` |
+| Linux arm64 | `sub-crate-<version>-linux-arm64.tar.gz` |
+| Windows x64 | `sub-crate-<version>-windows-x64.zip` |
 
-The frontend API and existing data formats are retained. The frontend still sees its required `Node` discriminator; Rust metadata identifies the actual implementation. See [the acceptance contract](rust/ACCEPTANCE.md) for the pinned baseline, tested scope and deliberate differences.
+See the [deployment guide](rust/README.md) for checksums, archive contents and runtime requirements.
 
-## Branches
+### Start the backend
 
-- [`main`](https://github.com/DSLZL/Sub-Crate/tree/main) contains the Rust backend and its Actions workflows.
-- [`js`](https://github.com/DSLZL/Sub-Crate/tree/js) follows the upstream JavaScript backend. The wei/pull GitHub App reads [.github/pull.yml](.github/pull.yml) on the default branch and synchronizes upstream `sub-store-org/Sub-Store:master` into `js` using `hardreset`. Local JS changes should use a separate branch.
-- Compatibility tests restore the frozen Node reference from commit `9cc6b5fac966993364ae33da8797f446bbf7f571` on Actions runners and apply the approved reference fixes. The JavaScript application is not carried on `main`; updates to `js` do not change the comparison baseline.
+Linux:
 
-## Development and validation
+```sh
+mkdir -p data
+SUB_STORE_DATA_BASE_PATH="$PWD/data" ./sub-crate
+```
 
-All product builds, tests, browser checks, Docker execution and benchmarks run in GitHub Actions. The compatibility workflow requires all six native, Docker and unchanged frontend jobs. [Performance records](tests/performance/README.md) retain the measured source revisions and limitations.
+Windows PowerShell:
 
-See the [cleanup inventory](rust/CLEANUP.md) for removed upstream application files and retained runtime, fixture and license dependencies.
+```powershell
+New-Item -ItemType Directory -Force data | Out-Null
+$env:SUB_STORE_DATA_BASE_PATH = (Join-Path $PWD data)
+.\sub-crate.exe
+```
 
-## License and acknowledgements
+The backend listens at `http://127.0.0.1:3000`, and `/api/utils/env` returns its protocol and Rust implementation metadata.
 
-[AGPL-3.0-only](LICENSE). This fork builds on the work of the [Sub-Store authors and contributors](https://github.com/sub-store-org/Sub-Store/graphs/contributors). Embedded utilities and delivered archives retain their dependency license notices.
+## Frontend
+
+Use the official [hosted frontend](https://sub-store.vercel.app/subs), or download assets from the [frontend project](https://github.com/sub-store-org/Sub-Store-Front-End) and set `SUB_STORE_FRONTEND_PATH` to its `dist` directory. Backend releases do not build or bundle the frontend.
+
+## Script compatibility
+
+If a script has both JS and Node versions, use the general JS version.
+
+Node builtins, CommonJS `require`, `process.env`, `$substore.node`, npm loading and native addons are not supported.
+
+## Performance benchmarks
+
+![Sub-Store JavaScript vs Sub-Crate Rust benchmark for the latest stable tag](assets/benchmark.png)
+
+## Documentation
+
+| Guide | Contents |
+| --- | --- |
+| [Deployment](rust/README.md) | Downloads, environment variables, frontend hosting, Docker, migration and rollback |
+| [Acceptance contract](rust/ACCEPTANCE.md) | Fixed baselines, required platforms, tested scope and compatibility limits |
+| [Compatibility tests](tests/compat/README.md) | Reference preparation, regression harnesses and retained evidence |
+| [Performance records](tests/performance/README.md) | Benchmarks, measured source revisions and their limitations |
+| [Cleanup inventory](rust/CLEANUP.md) | Removed upstream files and retained runtime, fixture and license dependencies |
+
+Sub-Crate is based on the work of the [Sub-Store authors and contributors](https://github.com/sub-store-org/Sub-Store/graphs/contributors). It is licensed under [AGPL-3.0-only](LICENSE). Embedded utilities and delivered archives include their dependency license notices.

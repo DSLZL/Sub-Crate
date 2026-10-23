@@ -720,6 +720,14 @@ pub fn run() -> Result {
     let binaries = json!({"rust":digest(std::fs::read(workload::rust_binary_path(&suite.args.rust)?)?),"rust_baseline":digest(std::fs::read(workload::rust_binary_path(suite.args.baseline.as_ref().unwrap())?)?)});
     check(binaries["rust"] != binaries["rust_baseline"], "source")?;
     let mut report = json!({"version":1,"original":revisions["original"],"rust":revisions["rust"],"rust_baseline":revisions["rust_baseline"],"harness":suite.command(Command::new("git").args(["rev-parse","HEAD"]),"harness-revision",30)?.trim(),"fixture_sha256":digest(std::fs::read(&fixture)?),"machine":std::env::consts::ARCH,"binary_sha256":binaries,"clash_types":types,"case_info":cases.iter().map(|case|(case["id"].as_str().unwrap().to_owned(),json!({"protocol":case["protocol"],"format":case["format"]}))).collect::<serde_json::Map<_,_>>(),"cases":cases.iter().map(|case|case["id"].clone()).collect::<Vec<_>>(),"pure":[],"http":[],"profiles":[],"cold":[],"concurrency":[],"status":"running"});
+    let release_tag = std::env::var("PERF_RELEASE_TAG").unwrap_or_default();
+    report["release_tag"] = json!(release_tag);
+    if !release_tag.is_empty() {
+        check(
+            !tail && std::env::var("PERF_RELEASE_SHA").as_deref() == Ok(revisions["rust"].as_str()),
+            "source",
+        )?;
+    }
     let result = (|| -> Result {
         if tail {
             for round in 0..3 {
@@ -731,6 +739,9 @@ pub fn run() -> Result {
             }
             profiles(&mut suite, &cases, &mut report, true)?;
         } else {
+            if !release_tag.is_empty() {
+                release::measure(&mut suite, &mut report)?;
+            }
             pure(
                 &mut suite,
                 &fixture,
@@ -741,9 +752,11 @@ pub fn run() -> Result {
             )?;
             endpoint(&mut suite, &cases, &mut report, false)?;
             profiles(&mut suite, &cases, &mut report, false)?;
-            for mode in ["new_connection", "keep_alive"] {
-                let ratios = single_report::ratios(&report, mode)?;
-                check(median(&ratios)? < 1.0, "resource")?;
+            if release_tag.is_empty() {
+                for mode in ["new_connection", "keep_alive"] {
+                    let ratios = single_report::ratios(&report, mode)?;
+                    check(median(&ratios)? < 1.0, "resource")?;
+                }
             }
         }
         Ok(())
