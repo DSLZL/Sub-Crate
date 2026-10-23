@@ -67,7 +67,9 @@ fn native_notices(source: &Path, payload: &Path) -> Result {
         writeln!(
             combined,
             "\n===== {} =====\n",
-            path.strip_prefix(source)?.to_string_lossy().replace('\\', "/")
+            path.strip_prefix(source)?
+                .to_string_lossy()
+                .replace('\\', "/")
         )?;
         std::io::copy(&mut std::fs::File::open(path)?, &mut combined)?;
         writeln!(combined)?;
@@ -557,18 +559,20 @@ pub fn native(output: &Path, binary: &Path) -> Result<PathBuf> {
     source["dependency_notice_count"] = json!(count);
     let (unpacked, report) = package_payload(&payload, target, &source)?;
     require(
-        report["manifest"]["files"].as_object().is_some_and(|files| {
-            files.len() == 5
-                && [
-                    filename,
-                    "README.md",
-                    "LICENSE",
-                    "SOURCE.md",
-                    "THIRD_PARTY_NOTICES.txt",
-                ]
-                .iter()
-                .all(|name| files.contains_key(*name))
-        }),
+        report["manifest"]["files"]
+            .as_object()
+            .is_some_and(|files| {
+                files.len() == 5
+                    && [
+                        filename,
+                        "README.md",
+                        "LICENSE",
+                        "SOURCE.md",
+                        "THIRD_PARTY_NOTICES.txt",
+                    ]
+                    .iter()
+                    .all(|name| files.contains_key(*name))
+            }),
         "Unexpected native delivery files",
     )?;
     let delivered = unpacked.join(filename);
