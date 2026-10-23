@@ -1,4 +1,4 @@
-# Sub-Store Rust service
+# Sub-Crate service
 
 This branch now includes an independent Rust HTTP server in `src/`. It serves
 subscription/collection/settings CRUD and legacy JSON storage without Node.
@@ -210,10 +210,10 @@ Stored excluded Node scripts remain intact.
 
 ## Downloadable delivery
 
-Published packages are available from [GitHub Releases](https://github.com/DSLZL/Sub-Store/releases).
+Published packages are available from [GitHub Releases](https://github.com/DSLZL/Sub-Crate/releases).
 Release attachments contain only the Linux x64/arm64 and Windows x64 backend
 archives and `SHA256SUMS`. Native archives contain no `manifest.json`.
-Docker images are published to `ghcr.io/dslzl/sub-store` for `linux/amd64` and
+Docker images are published to `ghcr.io/dslzl/sub-crate` for `linux/amd64` and
 `linux/arm64`; the frontend is obtained separately from its official project.
 All five native and Docker jobs must pass on the tag's source before publication.
 The daily compatibility workflow also builds and tests the unchanged frontend;
@@ -243,12 +243,12 @@ records; they are not Release attachments. CI manifests record the
 exact commit, target, compiler, dependency notice count and file hashes; the
 GitHub artifact digest identifies the outer ZIP.
 
-Linux archives are `sub-store-rust-0.0.1-linux-x64.tar.gz` and
-`sub-store-rust-0.0.1-linux-arm64.tar.gz`. Their native runners use Ubuntu 24.04;
+Linux archives are `sub-crate-0.0.1-linux-x64.tar.gz` and
+`sub-crate-0.0.1-linux-arm64.tar.gz`. Their native runners use Ubuntu 24.04;
 the current binaries require glibc 2.38 or newer and the shared libraries listed
 in the CI artifact's `manifest.json.linkage.dynamic_libraries`. These are GNU/Linux binaries.
 Use the Docker delivery on hosts whose native library versions do not match.
-The Windows x64 ZIP contains `sub-store-rust.exe`; its MSVC runtime is linked
+The Windows x64 ZIP contains `sub-crate.exe`; its MSVC runtime is linked
 statically. The package gate checks PE architecture and imported DLLs, including
 the absence of a separate Visual C++ runtime dependency. Windows system DLLs
 are still required; acceptance runs on the workflow's recorded Windows runner.
@@ -257,22 +257,22 @@ For example, after unpacking the outer GitHub artifact on Linux:
 
 ```sh
 sha256sum --ignore-missing -c SHA256SUMS
-tar -xzf sub-store-rust-0.0.1-linux-x64.tar.gz
-cd sub-store-rust-0.0.1-linux-x64
+tar -xzf sub-crate-0.0.1-linux-x64.tar.gz
+cd sub-crate-0.0.1-linux-x64
 mkdir -p data
-SUB_STORE_DATA_BASE_PATH="$PWD/data" SUB_STORE_BACKEND_API_HOST=127.0.0.1 ./sub-store-rust
+SUB_STORE_DATA_BASE_PATH="$PWD/data" SUB_STORE_BACKEND_API_HOST=127.0.0.1 ./sub-crate
 ```
 
-On Windows, compare `(Get-FileHash .\sub-store-rust-0.0.1-windows-x64.zip
+On Windows, compare `(Get-FileHash .\sub-crate-0.0.1-windows-x64.zip
 -Algorithm SHA256).Hash` with `SHA256SUMS`, then use PowerShell:
 
 ```powershell
-Expand-Archive .\sub-store-rust-0.0.1-windows-x64.zip .\delivery
-Set-Location .\delivery\sub-store-rust-0.0.1-windows-x64
+Expand-Archive .\sub-crate-0.0.1-windows-x64.zip .\delivery
+Set-Location .\delivery\sub-crate-0.0.1-windows-x64
 New-Item -ItemType Directory -Force data | Out-Null
 $env:SUB_STORE_DATA_BASE_PATH = (Join-Path $PWD data)
 $env:SUB_STORE_BACKEND_API_HOST = '127.0.0.1'
-.\sub-store-rust.exe
+.\sub-crate.exe
 ```
 
 Both examples listen at `http://127.0.0.1:3000`; `/api/utils/env` returns the
@@ -319,10 +319,10 @@ for the host. Both `v0.0.1` and `0.0.1` refer to the same multi-platform image;
 `latest` follows the most recently published release.
 
 ```sh
-docker pull ghcr.io/dslzl/sub-store:v0.0.1
+docker pull ghcr.io/dslzl/sub-crate:v0.0.1
 mkdir -p data
 docker run --rm --read-only --tmpfs /tmp --user "$(id -u):$(id -g)" \
-  -p 127.0.0.1:3000:3000 -v "$PWD/data:/data" ghcr.io/dslzl/sub-store:v0.0.1
+  -p 127.0.0.1:3000:3000 -v "$PWD/data:/data" ghcr.io/dslzl/sub-crate:v0.0.1
 ```
 
 The mounted folder must be writable by that user. The runtime includes system

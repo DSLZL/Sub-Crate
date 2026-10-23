@@ -104,13 +104,13 @@ jobs:
           cargo +1.98.0 clippy --manifest-path .performance/rust/rust/Cargo.toml --target-dir "$GITHUB_WORKSPACE/.performance/rust/rust/target" --locked --all-targets -- -D warnings
           cargo +1.98.0 nextest list --manifest-path tests/Cargo.toml --locked --release --lib --config-file .config/nextest.toml
           cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --release --lib --config-file .config/nextest.toml --profile ci
-          cargo +1.98.0 nextest run --manifest-path .performance/rust/rust/Cargo.toml --target-dir "$GITHUB_WORKSPACE/.performance/rust/rust/target" --locked --release --bin sub-store-rust --config-file .config/nextest.toml --profile production
+          cargo +1.98.0 nextest run --manifest-path .performance/rust/rust/Cargo.toml --target-dir "$GITHUB_WORKSPACE/.performance/rust/rust/target" --locked --release --bins --config-file .config/nextest.toml --profile production
       - name: Build actual applications and interactive parser helpers
         run: |
           (cd .performance/original/backend && node bundle-esbuild.js)
           for kind in rust-baseline rust; do
-            cargo +1.98.0 build --manifest-path ".performance/$kind/rust/Cargo.toml" --target-dir "$GITHUB_WORKSPACE/.performance/$kind/rust/target" --locked --release --bin sub-store-rust
-            cargo +1.98.0 test --manifest-path ".performance/$kind/rust/Cargo.toml" --target-dir "$GITHUB_WORKSPACE/.performance/$kind/rust/target" --locked --release --bin sub-store-rust --no-run --message-format=json > "$RUNNER_TEMP/single-node-$kind-build.jsonl"
+            cargo +1.98.0 build --manifest-path ".performance/$kind/rust/Cargo.toml" --target-dir "$GITHUB_WORKSPACE/.performance/$kind/rust/target" --locked --release --bins
+            cargo +1.98.0 test --manifest-path ".performance/$kind/rust/Cargo.toml" --target-dir "$GITHUB_WORKSPACE/.performance/$kind/rust/target" --locked --release --bins --no-run --message-format=json > "$RUNNER_TEMP/single-node-$kind-build.jsonl"
             git -C ".performance/$kind" diff --exit-code
           done
           git -C .performance/original diff --exit-code

@@ -1,7 +1,7 @@
-# Sub-Store Rust
+# Sub-Crate
 
-Run `sub-store-rust.exe` from Command Prompt on Windows, or
-`./sub-store-rust` on Linux. In PowerShell, use `./sub-store-rust.exe`.
+Run `sub-crate.exe` from Command Prompt on Windows, or
+`./sub-crate` on Linux. In PowerShell, use `./sub-crate.exe`.
 No Node, npm or other application runtime is required.
 
 The backend listens on all IPv4 interfaces at `0.0.0.0:3000` by default.
@@ -13,14 +13,14 @@ To restrict access to this computer, set `SUB_STORE_BACKEND_API_HOST=127.0.0.1`.
 For example, in Command Prompt:
 
 ```cmd
-set "SUB_STORE_BACKEND_API_HOST=127.0.0.1" && sub-store-rust.exe
+set "SUB_STORE_BACKEND_API_HOST=127.0.0.1" && sub-crate.exe
 ```
 
 Or in PowerShell:
 
 ```powershell
 $env:SUB_STORE_BACKEND_API_HOST = '127.0.0.1'
-.\sub-store-rust.exe
+.\sub-crate.exe
 ```
 
 Set `SUB_STORE_BACKEND_API_PORT` to change the port. An explicit IPv6 host

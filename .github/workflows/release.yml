@@ -79,11 +79,11 @@ jobs:
         run: |
           mkdir release-assets "$RUNNER_TEMP/release-images"
           archives=(
-            "sub-store-rust-$VERSION-linux-x64.tar.gz"
-            "sub-store-rust-$VERSION-linux-arm64.tar.gz"
-            "sub-store-rust-$VERSION-windows-x64.zip"
-            "sub-store-rust-$VERSION-docker-linux-x64.tar.gz"
-            "sub-store-rust-$VERSION-docker-linux-arm64.tar.gz"
+            "sub-crate-$VERSION-linux-x64.tar.gz"
+            "sub-crate-$VERSION-linux-arm64.tar.gz"
+            "sub-crate-$VERSION-windows-x64.zip"
+            "sub-crate-$VERSION-docker-linux-x64.tar.gz"
+            "sub-crate-$VERSION-docker-linux-arm64.tar.gz"
           )
           for archive in "${archives[@]}"; do
             # A failed-job rerun may reuse deliveries from an earlier successful attempt.
@@ -105,7 +105,7 @@ jobs:
               cp "$path" "release-assets/$archive"
             fi
           done
-          (cd release-assets && sha256sum -- sub-store-* > SHA256SUMS && sha256sum --strict --check SHA256SUMS)
+          (cd release-assets && sha256sum -- sub-crate-* > SHA256SUMS && sha256sum --strict --check SHA256SUMS)
           test "$(find release-assets -maxdepth 1 -type f | wc -l)" -eq 4
       - name: Push the accepted images and publish the multi-platform tag to GHCR
         run: |
@@ -115,7 +115,7 @@ jobs:
           for target in linux-x64 linux-arm64; do
             architecture=arm64
             if [[ "$target" == linux-x64 ]]; then architecture=amd64; fi
-            archive="sub-store-rust-$VERSION-docker-$target.tar.gz"
+            archive="sub-crate-$VERSION-docker-$target.tar.gz"
             manifest="$RUNNER_TEMP/release-images/$archive.manifest.json"
             tar -xzf "$RUNNER_TEMP/release-images/$archive" -C "$RUNNER_TEMP/release-images/unpacked"
             payload="$RUNNER_TEMP/release-images/unpacked/${archive%.tar.gz}"
@@ -153,7 +153,7 @@ jobs:
           for target in linux-x64 linux-arm64; do
             architecture=arm64
             if [[ "$target" == linux-x64 ]]; then architecture=amd64; fi
-            manifest="$RUNNER_TEMP/release-images/sub-store-rust-$VERSION-docker-$target.tar.gz.manifest.json"
+            manifest="$RUNNER_TEMP/release-images/sub-crate-$VERSION-docker-$target.tar.gz.manifest.json"
             expected_id=$(jq --raw-output '.image_id' "$manifest")
             digest=$(docker buildx imagetools inspect "$IMAGE:$TAG" --raw | jq --exit-status --raw-output \
               --arg arch "$architecture" '.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest')
@@ -171,7 +171,7 @@ jobs:
           if gh release view "$TAG" --json isDraft > "$RUNNER_TEMP/existing-release.json" 2>/dev/null; then
             jq --exit-status '.isDraft == true' "$RUNNER_TEMP/existing-release.json"
           else
-            gh release create "$TAG" --verify-tag --draft --title "$VERSION" \
+            gh release create "$TAG" --verify-tag --draft --title "Sub-Crate $VERSION" \
               --notes-file ".github/releases/$TAG.md"
           fi
           gh release upload "$TAG" release-assets/* --clobber
@@ -184,5 +184,5 @@ jobs:
           gh release view "$TAG" --json assets --jq '.assets[].name' | sort > "$RUNNER_TEMP/remote-assets.txt"
           find release-assets -maxdepth 1 -type f -printf '%f\n' | sort > "$RUNNER_TEMP/local-assets.txt"
           diff -u "$RUNNER_TEMP/local-assets.txt" "$RUNNER_TEMP/remote-assets.txt"
-          gh release edit "$TAG" --verify-tag --title "$VERSION" \
+          gh release edit "$TAG" --verify-tag --title "Sub-Crate $VERSION" \
             --notes-file ".github/releases/$TAG.md" --draft=false --latest

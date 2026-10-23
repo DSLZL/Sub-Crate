@@ -84,7 +84,7 @@ jobs:
       - name: Build delivered Rust backend on runner
         run: |
           cargo +1.98.0 fmt --manifest-path tests/Cargo.toml --all -- --check
-          cargo +1.98.0 build --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust
+          cargo +1.98.0 build --manifest-path rust/Cargo.toml --locked --release --bin sub-crate
           echo "TEST_NODE=$(node -p 'process.execPath')" >> "$GITHUB_ENV"
           echo "TEST_BROWSER=$(npm root --global)/agent-browser/bin/agent-browser-linux-x64" >> "$GITHUB_ENV"
       - name: Package and extract unchanged frontend
@@ -93,7 +93,7 @@ jobs:
       - name: Package and extract Rust backend
         id: frontend-backend-package
         env:
-          TEST_RUST_BINARY: ${{ env.CARGO_TARGET_DIR }}/release/sub-store-rust
+          TEST_RUST_BINARY: ${{ env.CARGO_TARGET_DIR }}/release/sub-crate
         run: cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --test native --config-file .config/nextest.toml --profile delivery -E 'test(=native_delivery)'
       - name: Run all 21 browser flows in each of three hosting modes
         env:

@@ -1159,7 +1159,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ))
     .await?;
     println!(
-        "Sub-Store Rust {} listening on {}",
+        "Sub-Crate {} listening on {}",
         env!("CARGO_PKG_VERSION"),
         listener.local_addr()?
     );

@@ -82,19 +82,19 @@ jobs:
         working-directory: backend
         run: node bundle-esbuild.js
       - name: Build Rust service on runner
-        run: cargo +1.98.0 build --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust --example script_probe --example collect_notices
+        run: cargo +1.98.0 build --manifest-path rust/Cargo.toml --locked --release --bin sub-crate --example script_probe --example collect_notices
       - name: Attribute release parsing and conversion CPU
         if: matrix.runner == 'ubuntu-24.04'
         run: |
-          cargo +1.98.0 nextest run --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust --config-file .config/nextest.toml --profile cpu-parse --run-ignored only -E 'test(=clash::tests::profile_structured_subscription)' --success-output immediate
-          cargo +1.98.0 nextest run --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust --config-file .config/nextest.toml --profile cpu-conversion --run-ignored only -E 'test(=script_conversion::tests::profile_node_production)' --success-output immediate
+          cargo +1.98.0 nextest run --manifest-path rust/Cargo.toml --locked --release --bin sub-crate --config-file .config/nextest.toml --profile cpu-parse --run-ignored only -E 'test(=clash::tests::profile_structured_subscription)' --success-output immediate
+          cargo +1.98.0 nextest run --manifest-path rust/Cargo.toml --locked --release --bin sub-crate --config-file .config/nextest.toml --profile cpu-conversion --run-ignored only -E 'test(=script_conversion::tests::profile_node_production)' --success-output immediate
       - name: Execute migrated native contracts
         id: native
         run: |
           suffix=""
           if [[ "$RUNNER_OS" == "Windows" ]]; then suffix=".exe"; fi
-          echo "TEST_RUST_BINARY=$CARGO_TARGET_DIR/release/sub-store-rust$suffix" >> "$GITHUB_ENV"
-          export TEST_RUST_BINARY="$CARGO_TARGET_DIR/release/sub-store-rust$suffix"
+          echo "TEST_RUST_BINARY=$CARGO_TARGET_DIR/release/sub-crate$suffix" >> "$GITHUB_ENV"
+          export TEST_RUST_BINARY="$CARGO_TARGET_DIR/release/sub-crate$suffix"
           export TEST_PROBE_BINARY="$CARGO_TARGET_DIR/release/examples/script_probe$suffix"
           TEST_NODE=$(node -p 'process.execPath')
           export TEST_NODE

@@ -1,12 +1,12 @@
-# Sub-Store Rust
+# Sub-Crate
 
 A standalone Rust backend for [Sub-Store](https://github.com/sub-store-org/Sub-Store), compatible with the unchanged official [Sub-Store frontend](https://github.com/sub-store-org/Sub-Store-Front-End).
 
-[![Compatibility](https://github.com/DSLZL/Sub-Store/actions/workflows/rust-compat-native.yml/badge.svg?branch=main)](https://github.com/DSLZL/Sub-Store/actions/workflows/rust-compat-native.yml)
+[![Compatibility](https://github.com/DSLZL/Sub-Crate/actions/workflows/rust-compat-native.yml/badge.svg?branch=main)](https://github.com/DSLZL/Sub-Crate/actions/workflows/rust-compat-native.yml)
 
 ## Download and deployment
 
-[GitHub Releases](https://github.com/DSLZL/Sub-Store/releases) provides Linux x64/arm64 and Windows x64 backend archives with `SHA256SUMS`. Multi-platform Docker images are published to `ghcr.io/dslzl/sub-store` using the release tag. Obtain the frontend separately from its official project; backend releases do not build or bundle it. Build manifests stay in Actions artifacts.
+[GitHub Releases](https://github.com/DSLZL/Sub-Crate/releases) provides Linux x64/arm64 and Windows x64 backend archives with `SHA256SUMS`. Multi-platform Docker images are published to `ghcr.io/dslzl/sub-crate` using the release tag. Obtain the frontend separately from its official project; backend releases do not build or bundle it. Build manifests stay in Actions artifacts.
 
 See [the deployment guide](rust/README.md) for archive selection, environment variables, frontend hosting, Docker startup, data migration and rollback. The runtime needs no Node installation. Use a copy of existing data when migrating, and run only one backend against a writable data directory.
 
@@ -18,8 +18,8 @@ The frontend API and existing data formats are retained. The frontend still sees
 
 ## Branches
 
-- [`main`](https://github.com/DSLZL/Sub-Store/tree/main) contains the Rust backend and its Actions workflows.
-- [`js`](https://github.com/DSLZL/Sub-Store/tree/js) follows the upstream JavaScript backend. The wei/pull GitHub App reads [.github/pull.yml](.github/pull.yml) on the default branch and synchronizes upstream `sub-store-org/Sub-Store:master` into `js` using `hardreset`. Local JS changes should use a separate branch.
+- [`main`](https://github.com/DSLZL/Sub-Crate/tree/main) contains the Rust backend and its Actions workflows.
+- [`js`](https://github.com/DSLZL/Sub-Crate/tree/js) follows the upstream JavaScript backend. The wei/pull GitHub App reads [.github/pull.yml](.github/pull.yml) on the default branch and synchronizes upstream `sub-store-org/Sub-Store:master` into `js` using `hardreset`. Local JS changes should use a separate branch.
 - Compatibility tests restore the frozen Node reference from commit `9cc6b5fac966993364ae33da8797f446bbf7f571` on Actions runners and apply the approved reference fixes. The JavaScript application is not carried on `main`; updates to `js` do not change the comparison baseline.
 
 ## Development and validation
