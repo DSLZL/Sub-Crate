@@ -2,6 +2,17 @@ use crate::{json, notices, process};
 use serde_json::json;
 use std::path::Path;
 
+struct Workspace(std::path::PathBuf);
+impl Drop for Workspace {
+    fn drop(&mut self) {
+        if let Err(error) = std::fs::remove_dir_all(&self.0)
+            && !std::thread::panicking()
+        {
+            panic!("Cannot remove notices test workspace: {error}");
+        }
+    }
+}
+
 fn write(path: &Path, content: &str) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, content).unwrap();
@@ -18,6 +29,7 @@ fn seed(root: &Path) {
 #[test]
 fn target_filtered_notices_include_transitive_dependencies_and_reject_missing_licenses() {
     let root = process::scratch("notices-transitive").unwrap();
+    let _workspace = Workspace(root.clone());
     seed(&root);
     write(&root.join("dependency/Cargo.toml"), "");
     write(&root.join("dependency/LICENSE"), "dependency license");
@@ -59,6 +71,7 @@ fn target_filtered_notices_include_transitive_dependencies_and_reject_missing_li
 #[test]
 fn omitted_rquickjs_workspace_license_is_pinned_to_version_repository_and_hash() {
     let root = process::scratch("notices-rquickjs").unwrap();
+    let _workspace = Workspace(root.clone());
     seed(&root);
     std::fs::create_dir(root.join("core")).unwrap();
     let pinned = crate::compat().join("fixtures/licenses/rquickjs-v0.14.0-LICENSE");
@@ -100,5 +113,19 @@ fn omitted_rquickjs_workspace_license_is_pinned_to_version_repository_and_hash()
             )
             .is_err()
         );
+    }
+}
+
+#[test]
+fn notices_workspaces_are_removed_on_success_and_unwind() {
+    for unwind in [false, true] {
+        let root = process::scratch("notices-cleanup").unwrap();
+        write(&root.join("nested/LICENSE"), "fixture license");
+        let result = std::panic::catch_unwind(|| {
+            let _workspace = Workspace(root.clone());
+            assert!(!unwind, "Injected notices test failure");
+        });
+        assert_eq!(result.is_err(), unwind);
+        assert!(!root.exists());
     }
 }

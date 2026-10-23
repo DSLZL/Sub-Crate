@@ -182,10 +182,12 @@ pub fn run(
     ] {
         request.send(body, json!({"media":media}))?;
     }
-    for (charset, body) in [
+    for (charset, body, key, expected) in [
         (
             "utf-8",
             b"\xef\xbb\xbf{\"parserUnicode\":\"\xe4\xb8\xad\"}".to_vec(),
+            "parserUnicode",
+            "中",
         ),
         (
             "UTF-16LE",
@@ -193,20 +195,22 @@ pub fn run(
                 .encode_utf16()
                 .flat_map(u16::to_le_bytes)
                 .collect(),
+            "parserUnicode",
+            "UTF16🙂",
         ),
-        ("utf-8", b"{\"parserLossy\":\"\xff\"}".to_vec()),
+        (
+            "utf-8",
+            b"{\"parserLossy\":\"\xff\"}".to_vec(),
+            "parserLossy",
+            "�",
+        ),
     ] {
         let data = request.send(
             &body,
             json!({"media":format!("Application/JSON; charset=\"{charset}\"")}),
         )?["data"]
             .clone();
-        require(
-            data["parserLossy"] == "�"
-                || data["parserUnicode"] == "中"
-                || data["parserUnicode"] == "UTF16🙂",
-            "Body charset/UTF8 replacement mismatch",
-        )?;
+        require(data[key] == expected, "Body charset/UTF8 replacement mismatch")?;
     }
     for charset in ["utf-16be", "utf-16", "utf-7", "utf-7imap"] {
         request.send(b"{}",json!({"media":format!("application/json; charset={charset}"),"status":403,"parser_error":true}))?;

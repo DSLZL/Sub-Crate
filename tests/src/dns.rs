@@ -378,8 +378,9 @@ mod native {
                                 Ok((count, peer)) => {
                                     let (state, socket, packet) =
                                         (state.clone(), socket.clone(), buffer[..count].to_vec());
+                                    let active = state.start();
                                     workers.push(std::thread::spawn(move || {
-                                        let _active = state.start();
+                                        let _active = active;
                                         let result = state
                                             .record(transport, &packet, &[])
                                             .and_then(|(_, _, response)| {
@@ -426,8 +427,9 @@ mod native {
                             match listener.accept() {
                                 Ok((socket, _)) => {
                                     let (state, tls) = (state.clone(), tls.clone());
+                                    let active = state.start();
                                     workers.push(std::thread::spawn(move || {
-                                        let _active = state.start();
+                                        let _active = active;
                                         if let Err(error) = state.tcp(socket, transport, tls) {
                                             state
                                                 .errors
@@ -512,6 +514,37 @@ mod native {
                 let _ = thread.join();
             }
         }
+    }
+    #[cfg(test)]
+    #[test]
+    fn idle_wait_includes_registered_workers_before_their_body_starts() -> Result {
+        crate::actions_only();
+        let fixture = Arc::new(ControlledDns {
+            urls: BTreeMap::new(),
+            state: Arc::default(),
+            stop: Arc::new(AtomicBool::new(false)),
+            threads: Vec::new(),
+        });
+        let active = fixture.state.start();
+        let (release, queued) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            queued.recv().unwrap();
+            let _active = active;
+        });
+        let (finished, idle) = std::sync::mpsc::channel();
+        let waiting = fixture.clone();
+        let waiter = std::thread::spawn(move || finished.send(waiting.wait_for_idle()).unwrap());
+        let early = idle.recv_timeout(Duration::from_millis(50));
+        release.send(())?;
+        worker.join().unwrap();
+        waiter.join().unwrap();
+        assert!(matches!(
+            early,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ));
+        idle.recv_timeout(Duration::from_secs(1))??;
+        assert_eq!(*fixture.state.active.lock().unwrap(), 0);
+        Ok(())
     }
     #[cfg(all(test, windows))]
     #[test]

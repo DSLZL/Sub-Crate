@@ -98,6 +98,66 @@ pub fn audit(
         json!({"identities":records.len(),"published":snapshot["count"],"generated_at_ms":snapshot["generatedAt"],"snapshot_sha256":nodes_hash(&snapshot["proxies"],false)?,"verified":records.values().filter(|record|record["lastOk"].as_f64().is_some_and(|value|value>0.0)).count()}),
     )
 }
+fn record_failure(
+    row: &mut Value,
+    error: &(dyn std::error::Error + Send + Sync + 'static),
+    directory: &Path,
+    counts: Result<Value>,
+) {
+    row["status"] = json!("failed");
+    row["errors"] = json!(1);
+    row.as_object_mut()
+        .unwrap()
+        .extend(failure(error).as_object().unwrap().clone());
+    // Diagnostics must not replace the measured failure or prevent its publication.
+    row["counts"] = counts.unwrap_or(Value::Null);
+    row["failure_file_written"] =
+        json!(std::fs::write(directory.join("failure.txt"), format!("{error:?}")).is_ok());
+    let mut logs = String::new();
+    for filename in ["server.stdout.log", "server.stderr.log"] {
+        if let Ok(log) = std::fs::read_to_string(directory.join(filename)) {
+            logs += &log;
+        }
+    }
+    let pattern = regex::Regex::new(
+        r"input=(\d+) supported=(\d+) identities=(\d+)\s+probe_coalesced=(\d+) cache=(?:hit|empty)\s+probed=(\d+)/(\d+) ok=(\d+) failed=(\d+)\s+guarded=(\d+) budget_skipped=(\d+)\s+output=(\d+)",
+    )
+    .expect("Static health counter pattern");
+    row["health_counts"] = json!(
+        pattern
+            .captures_iter(&logs)
+            .filter_map(|capture| (1..12)
+                .map(|index| capture[index].parse::<u64>().ok())
+                .collect::<Option<Vec<_>>>())
+            .collect::<Vec<_>>()
+    );
+    if let Ok(root) = read(directory.join("state/root.json"))
+        && let Some(cache) = root["sub-store-cached-script-resource"].as_str()
+        && let Ok(cache) = serde_json::from_str::<Value>(cache)
+        && let Some(cache) = cache.as_object()
+    {
+        let health = cache
+            .iter()
+            .filter(|(key, _)| key.starts_with("http-meta:health-inc:v1:"))
+            .map(|(_, value)| &value["data"]["records"])
+            .collect::<Vec<_>>();
+        row["health_records"] = json!(
+            health
+                .iter()
+                .filter_map(|records| records.as_object().map(serde_json::Map::len))
+                .sum::<usize>()
+        );
+        row["health_verified"] = json!(
+            health
+                .iter()
+                .filter_map(|records| records.as_object())
+                .flat_map(serde_json::Map::values)
+                .filter(|record| record["lastOk"].as_f64().is_some_and(|value| value > 0.0))
+                .count()
+        );
+    }
+}
+
 impl Suite {
     pub fn audit(
         &mut self,
@@ -494,56 +554,7 @@ impl Suite {
             self.measure_case(kind, case, original, clients, repeats, &directory, &mut row);
         let mut fatal = None;
         if let Err(error) = result {
-            row["status"] = json!("failed");
-            row["errors"] = json!(1);
-            row.as_object_mut()
-                .unwrap()
-                .extend(failure(error.as_ref()).as_object().unwrap().clone());
-            row["counts"] = self.counts(false, false)?;
-            std::fs::write(directory.join("failure.txt"), format!("{error:?}"))?;
-            let mut logs = String::new();
-            for filename in ["server.stdout.log", "server.stderr.log"] {
-                if let Ok(log) = std::fs::read_to_string(directory.join(filename)) {
-                    logs += &log;
-                }
-            }
-            let pattern = regex::Regex::new(
-                r"input=(\d+) supported=(\d+) identities=(\d+)\s+probe_coalesced=(\d+) cache=(?:hit|empty)\s+probed=(\d+)/(\d+) ok=(\d+) failed=(\d+)\s+guarded=(\d+) budget_skipped=(\d+)\s+output=(\d+)",
-            )?;
-            row["health_counts"] = json!(
-                pattern
-                    .captures_iter(&logs)
-                    .map(|capture| (1..12)
-                        .map(|index| capture[index].parse::<u64>())
-                        .collect::<std::result::Result<Vec<_>, _>>())
-                    .collect::<std::result::Result<Vec<_>, _>>()?
-            );
-            if let Ok(root) = read(directory.join("state/root.json"))
-                && let Some(cache) = root["sub-store-cached-script-resource"].as_str()
-            {
-                let cache: Value = serde_json::from_str(cache)?;
-                let health = cache
-                    .as_object()
-                    .ok_or("Failed-cell cache missing")?
-                    .iter()
-                    .filter(|(key, _)| key.starts_with("http-meta:health-inc:v1:"))
-                    .map(|(_, value)| &value["data"]["records"])
-                    .collect::<Vec<_>>();
-                row["health_records"] = json!(
-                    health
-                        .iter()
-                        .filter_map(|records| records.as_object().map(serde_json::Map::len))
-                        .sum::<usize>()
-                );
-                row["health_verified"] = json!(
-                    health
-                        .iter()
-                        .filter_map(|records| records.as_object())
-                        .flat_map(serde_json::Map::values)
-                        .filter(|record| record["lastOk"].as_f64().is_some_and(|value| value > 0.0))
-                        .count()
-                );
-            }
+            record_failure(&mut row, error.as_ref(), &directory, self.counts(false, false));
             if ![
                 "output_mismatch",
                 "snapshot",
@@ -580,6 +591,64 @@ impl Suite {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn secondary_diagnostic_errors_preserve_and_publish_the_original_failure() -> Result {
+        let root = crate::process::scratch("performance-failure-diagnostics")?;
+        let valid = "input=1 supported=2 identities=3 probe_coalesced=4 cache=empty probed=5/6 ok=7 failed=8 guarded=9 budget_skipped=10 output=11";
+        for (index, cache) in [
+            "{",
+            "[]",
+            "null",
+            r#"{"http-meta:health-inc:v1:fixture":{"data":{"records":{"a":{"lastOk":1}}}}}"#,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let directory = root.join(index.to_string());
+            std::fs::create_dir_all(directory.join("state"))?;
+            write(
+                directory.join("state/root.json"),
+                &json!({"sub-store-cached-script-resource":cache}),
+            )?;
+            let overflow = valid.replace("input=1 ", "input=18446744073709551616 ");
+            std::fs::write(
+                directory.join("server.stdout.log"),
+                format!("{overflow}\n{valid}\n"),
+            )?;
+            let error = Failure {
+                code: "output_mismatch",
+                observations: None,
+            };
+            let mut row = json!({"kind":"rust","case":"parse","block":0,"concurrency":1,"status":"running","latencies_s":[0.1],"output_counts":[1],"errors":0});
+            let counts = Err(std::io::Error::other("private fixture failure").into());
+            if index == 3 {
+                std::fs::create_dir(directory.join("failure.txt"))?;
+            }
+            record_failure(&mut row, &error, &directory, counts);
+            assert_eq!(row["status"], "failed");
+            assert_eq!(row["failure"], "output_mismatch");
+            assert_eq!(row["counts"], Value::Null);
+            assert_eq!(row["failure_file_written"], index != 3);
+            assert_eq!(row["health_counts"], json!([(1..12).collect::<Vec<_>>()]));
+            assert_eq!(row["latencies_s"], json!([0.1]));
+            if index == 3 {
+                assert_eq!(row["health_records"], 1);
+                assert_eq!(row["health_verified"], 1);
+            } else {
+                assert!(
+                    std::fs::read_to_string(directory.join("failure.txt"))?
+                        .contains("output_mismatch")
+                );
+            }
+            let mut report = json!({"status":"failed","imports":[],"samples":[row]});
+            let published = directory.join("public");
+            report::publish(&mut report, &published)?;
+            let metrics = read(published.join("metrics.json"))?;
+            assert_eq!(metrics["samples"][0]["failure"], "output_mismatch");
+            assert_eq!(metrics["estimates"], json!([]));
+        }
+        Ok(())
+    }
     #[test]
     fn partial_probe_work_empty_or_stale_snapshots_and_warm_cache_misses_fail() -> Result {
         let now = workload::now_ms();
