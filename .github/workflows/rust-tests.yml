@@ -50,6 +50,13 @@ jobs:
         run: |
           cargo +1.98.0 fmt --manifest-path tests/Cargo.toml --all -- --check
           cargo +1.98.0 fmt --manifest-path rust/Cargo.toml --all -- --check
+      - name: Check delivery workflow syntax
+        if: matrix.runner == 'ubuntu-24.04'
+        run: |
+          curl --fail --location --retry 3 https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz --output "$RUNNER_TEMP/actionlint.tar.gz"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" .github/workflows/release.yml .github/workflows/rust-compat-native.yml .github/workflows/rust-tests.yml
       - name: Clippy
         run: |
           cargo +1.98.0 clippy --manifest-path tests/Cargo.toml --locked --all-targets -- -D warnings
@@ -89,7 +96,8 @@ jobs:
           echo "TEST_RUST_BINARY=$CARGO_TARGET_DIR/release/sub-store-rust$suffix" >> "$GITHUB_ENV"
           export TEST_RUST_BINARY="$CARGO_TARGET_DIR/release/sub-store-rust$suffix"
           export TEST_PROBE_BINARY="$CARGO_TARGET_DIR/release/examples/script_probe$suffix"
-          export TEST_NODE="$(node -p 'process.execPath')"
+          TEST_NODE=$(node -p 'process.execPath')
+          export TEST_NODE
           cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --test native --config-file .config/nextest.toml --profile delivery -E 'test(=native_delivery)'
       - name: Run actual contracts against extracted delivery
         env:
@@ -98,7 +106,8 @@ jobs:
           suffix=""
           if [[ "$RUNNER_OS" == "Windows" ]]; then suffix=".exe"; fi
           export TEST_PROBE_BINARY="$CARGO_TARGET_DIR/release/examples/script_probe$suffix"
-          export TEST_NODE="$(node -p 'process.execPath')"
+          TEST_NODE=$(node -p 'process.execPath')
+          export TEST_NODE
           cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --test native --config-file .config/nextest.toml --profile acceptance -E 'not test(=native_delivery)'
       - name: Preserve verified native delivery
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
