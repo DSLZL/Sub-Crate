@@ -1,0 +1,122 @@
+[profile.ci]
+fail-fast = false
+retries = 0
+
+[profile.ci.junit]
+path = "junit.xml"
+
+[test-groups]
+browser = { max-threads = 1 }
+containers = { max-threads = 1 }
+
+[[profile.ci.overrides]]
+filter = 'test(frontend::)'
+test-group = 'browser'
+
+[[profile.ci.overrides]]
+filter = 'test(docker::)'
+test-group = 'containers'
+
+[[profile.ci.overrides]]
+filter = 'test(=frozen_node_unit_suite)'
+threads-required = "num-test-threads"
+
+[[profile.ci.overrides]]
+# Cron deadlines must not compete with unrelated acceptance suites.
+filter = 'test(=actual_schedules_cover_overlap_updates_disable_delete_sync_backup_mmdb_and_startup)'
+threads-required = "num-test-threads"
+
+[profile.benchmark]
+inherits = "ci"
+test-threads = 1
+
+[profile.benchmark.junit]
+path = "junit.xml"
+
+[profile.acceptance]
+inherits = "ci"
+
+[profile.acceptance.junit]
+path = "junit-acceptance.xml"
+
+[profile.delivery]
+inherits = "ci"
+
+[profile.delivery.junit]
+path = "junit-delivery.xml"
+
+[profile.docker-images]
+inherits = "ci"
+
+[profile.docker-images.junit]
+path = "junit-docker-images.xml"
+
+[profile.production]
+inherits = "ci"
+
+[profile.production.junit]
+path = "junit-production.xml"
+
+[profile.cpu-parse]
+inherits = "ci"
+
+[profile.cpu-parse.junit]
+path = "junit-cpu-parse.xml"
+
+[profile.cpu-conversion]
+inherits = "ci"
+
+[profile.cpu-conversion.junit]
+path = "junit-cpu-conversion.xml"
+
+[profile.frontend]
+inherits = "ci"
+
+[profile.frontend.junit]
+path = "junit-frontend.xml"
+
+[profile.frontend-delivery]
+inherits = "ci"
+
+[profile.frontend-delivery.junit]
+path = "junit-frontend-delivery.xml"
+
+[profile.perf-matrix]
+inherits = "benchmark"
+[profile.perf-matrix.junit]
+path = "junit-perf-matrix.xml"
+
+[profile.perf-prepare]
+inherits = "benchmark"
+[profile.perf-prepare.junit]
+path = "junit-perf-prepare.xml"
+
+[profile.perf-pair]
+inherits = "benchmark"
+[profile.perf-pair.junit]
+path = "junit-perf-pair.xml"
+
+[profile.perf-aggregate]
+inherits = "benchmark"
+[profile.perf-aggregate.junit]
+path = "junit-perf-aggregate.xml"
+
+[profile.perf-inspect]
+inherits = "benchmark"
+[profile.perf-inspect.junit]
+path = "junit-perf-inspect.xml"
+
+[profile.single-node]
+inherits = "benchmark"
+[profile.single-node.junit]
+path = "junit-single-node.xml"
+
+[profile.single-inspect]
+inherits = "benchmark"
+[profile.single-inspect.junit]
+path = "junit-single-inspect.xml"
+
+[profile.cpu-conversion-repeat]
+inherits = "ci"
+[profile.cpu-conversion-repeat.junit]
+path = "junit-cpu-conversion-repeat.xml"

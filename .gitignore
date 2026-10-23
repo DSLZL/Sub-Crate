@@ -10,8 +10,8 @@ logs/
 
 # Build and CI outputs
 /rust/target/
+/tests/target/
 node_modules/
-__pycache__/
 /.performance/
 /.compat-frontend/
 /.compat-delivery/
