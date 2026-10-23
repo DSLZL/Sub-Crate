@@ -1154,7 +1154,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ".",
     )))?));
     let listener = TcpListener::bind((
-        configured("SUB_STORE_BACKEND_API_HOST", "::"),
+        configured("SUB_STORE_BACKEND_API_HOST", "0.0.0.0"),
         configured("SUB_STORE_BACKEND_API_PORT", "3000").parse::<u16>()?,
     ))
     .await?;
@@ -1168,7 +1168,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let frontend = TcpListener::bind((
             configured(
                 "SUB_STORE_FRONTEND_HOST",
-                &configured("SUB_STORE_BACKEND_API_HOST", "::"),
+                &configured("SUB_STORE_BACKEND_API_HOST", "0.0.0.0"),
             ),
             configured("SUB_STORE_FRONTEND_PORT", "3001").parse::<u16>()?,
         ))

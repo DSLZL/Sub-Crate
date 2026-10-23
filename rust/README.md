@@ -77,7 +77,8 @@ acceptance boundary and runtime qualifications are recorded in
 Downloaded service binaries use the existing environment variables:
 
 - `SUB_STORE_BACKEND_API_HOST` / `SUB_STORE_BACKEND_API_PORT`: listen address
-  (defaults `::` / `3000`).
+  (defaults `0.0.0.0` / `3000`, on all IPv4 interfaces). Set `127.0.0.1` for
+  access from this computer only; explicit IPv6 hosts remain supported.
 - `SUB_STORE_DATA_BASE_PATH`: data folder, retaining `sub-store.json` and
   `root.json` (default current directory).
 - `SUB_STORE_BACKEND_PREFIX` / `SUB_STORE_FRONTEND_BACKEND_PATH`: existing prefix
@@ -225,10 +226,13 @@ For an unreleased source revision, use the artifacts of the accepted
 Each `m5-distribution-<target>-<run>-<attempt>` artifact contains a versioned
 archive, `SHA256SUMS` and an external `manifest.json`. Unpack the GitHub artifact
 first, verify the versioned archive against `SHA256SUMS`, then extract it.
-The extracted directory contains the executable (or Docker `image.tar`), this
-README, `Cargo.lock`, licenses, `SOURCE.md` and its own file manifest. Keep those
-files together. Manifests record the exact commit, target, compiler, dependency
-notices and file hashes; the GitHub artifact digest identifies the outer ZIP.
+Native archives contain the executable, a short runtime README, `LICENSE`,
+`THIRD_PARTY_NOTICES.txt`, `SOURCE.md` and `manifest.json`. Dependency notice
+texts are combined without changing their bytes; development acceptance notes,
+lockfiles and dependency reports remain in source or Actions evidence. Docker
+archives retain `image.tar` and their supporting records. Manifests record the
+exact commit, target, compiler, dependency notice count and file hashes; the
+GitHub artifact digest identifies the outer ZIP.
 
 Linux archives are `sub-store-rust-0.0.1-linux-x64.tar.gz` and
 `sub-store-rust-0.0.1-linux-arm64.tar.gz`. Their native runners use Ubuntu 24.04;
