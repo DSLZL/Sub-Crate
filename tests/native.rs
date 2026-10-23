@@ -18,6 +18,57 @@ fn native_delivery() -> Result {
 }
 
 #[test]
+fn default_backend_and_separate_frontend_accept_ipv4_without_host_overrides() -> Result {
+    let output = process::scratch("service-default-ipv4")?;
+    let state = output.join("state");
+    let assets = output.join("frontend");
+    std::fs::create_dir(&state)?;
+    std::fs::create_dir(&assets)?;
+    std::fs::write(assets.join("index.html"), "default IPv4 frontend")?;
+    let mut environment = server::environment(&state);
+    environment.remove(std::ffi::OsStr::new("SUB_STORE_BACKEND_API_HOST"));
+    server::set(&mut environment, "SUB_STORE_FRONTEND_PATH", &assets);
+    server::set(
+        &mut environment,
+        "SUB_STORE_FRONTEND_PORT",
+        server::free_port()?.to_string(),
+    );
+    server::set(&mut environment, "SUB_STORE_CORS_ALLOWED_ORIGINS", "");
+    let mut listener = Server::start(
+        &sub_store_tests::service::target()?,
+        &environment,
+        &output,
+        "default-ipv4",
+        false,
+    )?;
+    let http = Http::new(Duration::from_secs(5))?;
+    let response = http.request(
+        &listener.url,
+        &json!({"path":"/api/utils/env","headers":{"Origin":"https://sub-store.vercel.app"}}),
+    )?;
+    http::check(
+        &response,
+        &json!({"status":200,"headers":{"access-control-allow-origin":"https://sub-store.vercel.app"}}),
+    )?;
+    let frontend = http.request(&listener.frontend, &json!({"path":"/"}))?;
+    require(
+        frontend["status"] == 200 && frontend["body"] == "default IPv4 frontend",
+        "Default frontend must be reachable over IPv4",
+    )?;
+    listener.stop()?;
+    let log = std::fs::read_to_string(&listener.process.stdout)?;
+    require(
+        log.contains(" listening on 0.0.0.0:")
+            && log.contains("Sub-Store frontend listening on 0.0.0.0:"),
+        "Default listeners must bind the IPv4 wildcard",
+    )?;
+    json::write_new(
+        output.join("default-ipv4.json"),
+        &json!({"backend":response,"frontend":frontend,"log":log}),
+    )
+}
+
+#[test]
 fn settings_numeric_coercion_recipient_validation_order_and_failed_writes() -> Result {
     sub_store_tests::edges::settings_and_keys(&process::scratch("service-settings-keys")?)
 }

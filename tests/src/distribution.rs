@@ -59,6 +59,22 @@ pub(crate) fn copy_tree(source: &Path, destination: &Path) -> Result {
     Ok(())
 }
 
+fn native_notices(source: &Path, payload: &Path) -> Result {
+    use std::io::Write;
+    std::fs::copy(source.join("LICENSE"), payload.join("LICENSE"))?;
+    let mut combined = std::fs::File::create_new(payload.join("THIRD_PARTY_NOTICES.txt"))?;
+    for path in files(&source.join("licenses"))? {
+        writeln!(
+            combined,
+            "\n===== {} =====\n",
+            path.strip_prefix(source)?.to_string_lossy().replace('\\', "/")
+        )?;
+        std::io::copy(&mut std::fs::File::open(path)?, &mut combined)?;
+        writeln!(combined)?;
+    }
+    Ok(())
+}
+
 pub fn frontend(output: &Path) -> Result<PathBuf> {
     let frontend =
         PathBuf::from(std::env::var_os("TEST_FRONTEND").ok_or("Missing frontend checkout")?)
@@ -479,9 +495,10 @@ pub fn native(output: &Path, binary: &Path) -> Result<PathBuf> {
         "sub-store-rust"
     };
     std::fs::copy(binary, payload.join(filename))?;
-    for name in ["README.md", "ACCEPTANCE.md", "Cargo.lock"] {
-        std::fs::copy(crate::root().join("rust").join(name), payload.join(name))?;
-    }
+    std::fs::copy(
+        crate::root().join("rust/RELEASE-README.md"),
+        payload.join("README.md"),
+    )?;
     let mut linkage = binary_imports(&payload.join(filename), target)?;
     let flags = std::env::var("RUSTFLAGS").unwrap_or_default();
     if cfg!(windows) {
@@ -519,13 +536,16 @@ pub fn native(output: &Path, binary: &Path) -> Result<PathBuf> {
         );
     }
     let sysroot = PathBuf::from(command("rustc", &["--print", "sysroot"], "rust-sysroot")?);
+    let notice_source = output.join("dependency-notices");
+    std::fs::create_dir(&notice_source)?;
     let count = notices::collect(
         &metadata,
-        &payload,
+        &notice_source,
         &sysroot,
         &crate::root(),
         &crate::compat().join("fixtures/licenses/rquickjs-v0.14.0-LICENSE"),
     )?;
+    native_notices(&notice_source, &payload)?;
     source["kind"] = json!("rust-native-distribution");
     source["target"] = json!(target);
     source["target_triple"] = json!(triple);
@@ -536,6 +556,21 @@ pub fn native(output: &Path, binary: &Path) -> Result<PathBuf> {
     source["linkage"] = linkage;
     source["dependency_notice_count"] = json!(count);
     let (unpacked, report) = package_payload(&payload, target, &source)?;
+    require(
+        report["manifest"]["files"].as_object().is_some_and(|files| {
+            files.len() == 5
+                && [
+                    filename,
+                    "README.md",
+                    "LICENSE",
+                    "SOURCE.md",
+                    "THIRD_PARTY_NOTICES.txt",
+                ]
+                .iter()
+                .all(|name| files.contains_key(*name))
+        }),
+        "Unexpected native delivery files",
+    )?;
     let delivered = unpacked.join(filename);
     require(
         digest(&delivered)? == digest(binary)?,
@@ -748,6 +783,47 @@ pub fn docker(output: &Path, image: &str) -> Result {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_notices_preserve_every_notice_without_shipping_development_files() {
+        let root = process::scratch("native-notices").unwrap();
+        let source = root.join("source");
+        let payload = root.join("payload");
+        std::fs::create_dir_all(source.join("licenses/crates/dependency-1.0")).unwrap();
+        std::fs::create_dir_all(source.join("licenses/rust-toolchain")).unwrap();
+        std::fs::create_dir(&payload).unwrap();
+        std::fs::write(source.join("LICENSE"), "application license").unwrap();
+        std::fs::write(source.join("third-party.json"), "development metadata").unwrap();
+        let notices = [
+            (
+                "licenses/crates/dependency-1.0/LICENSE",
+                b"dependency license\r\n\xff".as_slice(),
+            ),
+            (
+                "licenses/rust-toolchain/COPYRIGHT",
+                b"toolchain copyright".as_slice(),
+            ),
+        ];
+        for (name, bytes) in notices {
+            std::fs::write(source.join(name), bytes).unwrap();
+        }
+        native_notices(&source, &payload).unwrap();
+        assert_eq!(
+            std::fs::read(payload.join("LICENSE")).unwrap(),
+            b"application license"
+        );
+        let combined = std::fs::read(payload.join("THIRD_PARTY_NOTICES.txt")).unwrap();
+        for (name, bytes) in notices {
+            assert!(
+                combined
+                    .windows(name.len())
+                    .any(|part| part == name.as_bytes())
+            );
+            assert!(combined.windows(bytes.len()).any(|part| part == bytes));
+        }
+        assert_eq!(files(&payload).unwrap().len(), 2);
+        assert!(source.join("third-party.json").is_file());
+    }
+
     #[test]
     fn archives_reject_modified_missing_extra_payload_files_and_changed_manifest() {
         for target in ["linux-x64", "windows-x64"] {
