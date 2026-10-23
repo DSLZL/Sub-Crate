@@ -7,7 +7,7 @@ body:
       value: |
         **先读我**
 
-        [Rust 部署与脚本兼容说明](https://github.com/DSLZL/Sub-Store/blob/main/rust/README.md)
+        [Rust 部署与脚本兼容说明](https://github.com/DSLZL/Sub-Crate/blob/main/rust/README.md)
   - type: checkboxes
     id: read-troubleshooting
     attributes:

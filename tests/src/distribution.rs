@@ -496,14 +496,14 @@ pub fn native(output: &Path, binary: &Path) -> Result<PathBuf> {
         .ok_or("Missing application Cargo metadata")?;
     source["rust_version"] = package["version"].clone();
     let payload = output.join(format!(
-        "sub-store-rust-{}-{target}",
+        "sub-crate-{}-{target}",
         package["version"].as_str().ok_or("Missing version")?
     ));
     std::fs::create_dir(&payload)?;
     let filename = if cfg!(windows) {
-        "sub-store-rust.exe"
+        "sub-crate.exe"
     } else {
-        "sub-store-rust"
+        "sub-crate"
     };
     std::fs::copy(binary, payload.join(filename))?;
     std::fs::copy(
@@ -684,7 +684,7 @@ pub fn docker(output: &Path, image: &str) -> Result {
         .ok_or("Missing image application version")?
         .to_owned();
     source["rust_version"] = json!(version);
-    let payload = output.join(format!("sub-store-rust-{version}-docker-{target}"));
+    let payload = output.join(format!("sub-crate-{version}-docker-{target}"));
     std::fs::create_dir(&payload)?;
     std::fs::copy(crate::root().join("LICENSE"), payload.join("LICENSE"))?;
     for file in ["README.md", "ACCEPTANCE.md", "Cargo.lock"] {
@@ -701,7 +701,7 @@ pub fn docker(output: &Path, image: &str) -> Result {
     let copied = command(
         &[
             "cp",
-            &format!("{container}:/usr/share/licenses/sub-store"),
+            &format!("{container}:/usr/share/licenses/sub-crate"),
             payload
                 .join("licenses")
                 .to_str()
@@ -846,10 +846,10 @@ mod tests {
             ("windows-x64", "other-distribution"),
         ] {
             let root = process::scratch("archive-integrity").unwrap();
-            let payload = root.join("sub-store-rust");
+            let payload = root.join("sub-crate");
             std::fs::create_dir(&payload).unwrap();
             let original = b"verified executable bytes\0";
-            std::fs::write(payload.join("sub-store-rust"), original).unwrap();
+            std::fs::write(payload.join("sub-crate"), original).unwrap();
             std::fs::write(payload.join("LICENSE"), "license text").unwrap();
             let (unpacked,report)=package_payload(&payload,target,&json!({"source_commit":"ffffffffffffffffffffffffffffffffffffffff","repository":"example/sub-store","target":target,"kind":kind})).unwrap();
             let manifest = &report["manifest"];
@@ -862,7 +862,7 @@ mod tests {
                 json::read(root.join("publish/manifest.json")).unwrap(),
                 *manifest
             );
-            let binary = unpacked.join("sub-store-rust");
+            let binary = unpacked.join("sub-crate");
             std::fs::write(&binary, b"tampered").unwrap();
             assert!(verify_payload(&unpacked, manifest).is_err());
             std::fs::remove_file(&binary).unwrap();

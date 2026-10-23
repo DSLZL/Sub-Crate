@@ -717,7 +717,7 @@ pub fn run() -> Result {
         revisions["original"] == ORIGINAL && revisions["rust_baseline"] == BASELINE,
         "source",
     )?;
-    let binaries = json!({"rust":digest(std::fs::read(suite.args.rust.join("rust/target/release/sub-store-rust"))?),"rust_baseline":digest(std::fs::read(suite.args.baseline.as_ref().unwrap().join("rust/target/release/sub-store-rust"))?)});
+    let binaries = json!({"rust":digest(std::fs::read(workload::rust_binary_path(&suite.args.rust)?)?),"rust_baseline":digest(std::fs::read(workload::rust_binary_path(suite.args.baseline.as_ref().unwrap())?)?)});
     check(binaries["rust"] != binaries["rust_baseline"], "source")?;
     let mut report = json!({"version":1,"original":revisions["original"],"rust":revisions["rust"],"rust_baseline":revisions["rust_baseline"],"harness":suite.command(Command::new("git").args(["rev-parse","HEAD"]),"harness-revision",30)?.trim(),"fixture_sha256":digest(std::fs::read(&fixture)?),"machine":std::env::consts::ARCH,"binary_sha256":binaries,"clash_types":types,"case_info":cases.iter().map(|case|(case["id"].as_str().unwrap().to_owned(),json!({"protocol":case["protocol"],"format":case["format"]}))).collect::<serde_json::Map<_,_>>(),"cases":cases.iter().map(|case|case["id"].clone()).collect::<Vec<_>>(),"pure":[],"http":[],"profiles":[],"cold":[],"concurrency":[],"status":"running"});
     let result = (|| -> Result {

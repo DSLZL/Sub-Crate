@@ -10,6 +10,17 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
+pub fn rust_binary_path(root: &Path) -> Result<PathBuf> {
+    // Frozen baselines retain the old name; cached binaries must not choose the source.
+    let manifest = std::fs::read_to_string(root.join("rust/Cargo.toml"))?;
+    let name = manifest
+        .lines()
+        .find_map(|line| line.strip_prefix("name = \"")?.strip_suffix('"'))
+        .filter(|name| ["sub-crate", "sub-store-rust"].contains(name))
+        .ok_or("Unknown benchmark application package")?;
+    Ok(root.join("rust/target/release").join(name))
+}
+
 pub struct Arguments {
     pub original: PathBuf,
     pub rust: PathBuf,
@@ -197,7 +208,7 @@ impl Suite {
             if kind == "rust_repeat" && self.args.profile {
                 server::set(&mut env, "SUB_STORE_PROFILE", "1");
             }
-            let mut command = Command::new(root.join("rust/target/release/sub-store-rust"));
+            let mut command = Command::new(rust_binary_path(root)?);
             command.current_dir(root);
             command
         };
@@ -547,17 +558,13 @@ impl Suite {
                 30,
             )?;
         }
-        let rust_binary = digest(std::fs::read(
-            self.args.rust.join("rust/target/release/sub-store-rust"),
-        )?);
+        let rust_binary = digest(std::fs::read(rust_binary_path(&self.args.rust)?)?);
         let baseline_binary = self
             .args
             .baseline
             .as_ref()
             .map(|root| -> Result<String> {
-                Ok(digest(std::fs::read(
-                    root.join("rust/target/release/sub-store-rust"),
-                )?))
+                Ok(digest(std::fs::read(rust_binary_path(root)?)?))
             })
             .transpose()?;
         check(
@@ -678,6 +685,26 @@ pub fn now_ms() -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn benchmark_binary_name_follows_source_despite_cached_binaries() -> Result {
+        let root = process::scratch("benchmark-binary-name")?;
+        let target = root.join("rust/target/release");
+        std::fs::create_dir_all(&target)?;
+        for name in ["sub-crate", "sub-store-rust"] {
+            std::fs::write(target.join(name), b"cached binary")?;
+        }
+        for name in ["sub-crate", "sub-store-rust"] {
+            std::fs::write(
+                root.join("rust/Cargo.toml"),
+                format!("[package]\nname = \"{name}\"\n"),
+            )?;
+            assert_eq!(rust_binary_path(&root)?, target.join(name));
+        }
+        std::fs::write(root.join("rust/Cargo.toml"), "[package]\nname = \"unknown\"\n")?;
+        assert!(rust_binary_path(&root).is_err());
+        Ok(())
+    }
+
     #[test]
     fn script_fetch_retries_io_but_never_accepts_a_changed_pinned_digest() -> Result {
         let body = b"pinned script".to_vec();
