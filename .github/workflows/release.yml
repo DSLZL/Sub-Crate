@@ -49,14 +49,17 @@ jobs:
   acceptance:
     needs: validate
     uses: ./.github/workflows/rust-compat-native.yml
+    with:
+      skip_frontend: true
 
   publish:
     needs: [validate, acceptance]
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
       actions: read
       contents: write
+      packages: write
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -70,17 +73,17 @@ jobs:
       - name: Download only deliveries from this release run
         run: |
           gh run download "$GITHUB_RUN_ID" --repo "$GH_REPO" \
-            --pattern "m5-*-$GITHUB_RUN_ID-*" --dir "$RUNNER_TEMP/release-input"
+            --pattern "m5-distribution-*-$GITHUB_RUN_ID-*" --dir "$RUNNER_TEMP/release-input"
+          echo "IMAGE=ghcr.io/${GH_REPO,,}" >> "$GITHUB_ENV"
       - name: Verify source and checksums, then select release assets
         run: |
-          mkdir release-assets
+          mkdir release-assets "$RUNNER_TEMP/release-images"
           archives=(
             "sub-store-rust-$VERSION-linux-x64.tar.gz"
             "sub-store-rust-$VERSION-linux-arm64.tar.gz"
             "sub-store-rust-$VERSION-windows-x64.zip"
             "sub-store-rust-$VERSION-docker-linux-x64.tar.gz"
             "sub-store-rust-$VERSION-docker-linux-arm64.tar.gz"
-            "sub-store-frontend-4bd7b0acbe65.tar.gz"
           )
           for archive in "${archives[@]}"; do
             # A failed-job rerun may reuse deliveries from an earlier successful attempt.
@@ -90,18 +93,76 @@ jobs:
             (cd "$directory" && sha256sum --strict --check SHA256SUMS)
             jq --exit-status --arg commit "$SOURCE_COMMIT" --arg repo "$GH_REPO" \
               '.source_commit == $commit and .repository == $repo' "$directory/manifest.json"
-            if [[ "$archive" == sub-store-rust-* ]]; then
-              jq --exit-status --arg version "$VERSION" '.rust_version == $version' "$directory/manifest.json"
-            else
-              jq --exit-status '.frontend_commit == "4bd7b0acbe65466b933ccea14fc61dbebe036ead"' "$directory/manifest.json"
-            fi
+            jq --exit-status --arg version "$VERSION" '.rust_version == $version' "$directory/manifest.json"
             expected=$(sha256sum "$path" | cut -d ' ' -f 1)
             grep --fixed-strings --line-regexp "$expected  $archive" "$directory/SHA256SUMS"
-            cp "$path" "release-assets/$archive"
-            cp "$directory/manifest.json" "release-assets/$archive.manifest.json"
+            if [[ "$archive" == *-docker-* ]]; then
+              jq --exit-status '.kind == "rust-docker-distribution"' "$directory/manifest.json"
+              cp "$path" "$RUNNER_TEMP/release-images/$archive"
+              cp "$directory/manifest.json" "$RUNNER_TEMP/release-images/$archive.manifest.json"
+            else
+              jq --exit-status '.kind == "rust-native-distribution"' "$directory/manifest.json"
+              cp "$path" "release-assets/$archive"
+            fi
           done
           (cd release-assets && sha256sum -- sub-store-* > SHA256SUMS && sha256sum --strict --check SHA256SUMS)
-          test "$(find release-assets -maxdepth 1 -type f | wc -l)" -eq 13
+          test "$(find release-assets -maxdepth 1 -type f | wc -l)" -eq 4
+      - name: Push the accepted images and publish the multi-platform tag to GHCR
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          mkdir "$RUNNER_TEMP/release-images/unpacked"
+          sources=()
+          for target in linux-x64 linux-arm64; do
+            architecture=arm64
+            if [[ "$target" == linux-x64 ]]; then architecture=amd64; fi
+            archive="sub-store-rust-$VERSION-docker-$target.tar.gz"
+            manifest="$RUNNER_TEMP/release-images/$archive.manifest.json"
+            tar -xzf "$RUNNER_TEMP/release-images/$archive" -C "$RUNNER_TEMP/release-images/unpacked"
+            payload="$RUNNER_TEMP/release-images/unpacked/${archive%.tar.gz}"
+            cmp "$payload/manifest.json" "$manifest"
+            jq --exit-status --arg arch "$architecture" '.architecture == $arch and .os == "linux"' "$manifest"
+            echo "$(jq --raw-output '.files["image.tar"]' "$manifest")  $payload/image.tar" | sha256sum --check
+            expected_id=$(jq --raw-output '.image_id' "$manifest")
+            docker load --input "$payload/image.tar"
+            docker image inspect "$expected_id" --format '{{json .}}' | \
+              jq --exit-status --arg id "$expected_id" --arg arch "$architecture" \
+                --arg source "$GITHUB_SERVER_URL/$GH_REPO" --arg commit "$SOURCE_COMMIT" --arg version "$VERSION" \
+                '.Id == $id and .Os == "linux" and .Architecture == $arch and
+                 .Config.Labels["org.opencontainers.image.source"] == $source and
+                 .Config.Labels["org.opencontainers.image.revision"] == $commit and
+                 .Config.Labels["org.opencontainers.image.version"] == $version'
+            docker tag "$expected_id" "$IMAGE:$TAG-$architecture"
+            docker push "$IMAGE:$TAG-$architecture"
+            docker buildx imagetools inspect "$IMAGE:$TAG-$architecture" --raw | \
+              jq --exit-status --arg id "$expected_id" '.config.digest == $id'
+            digest=$(docker buildx imagetools inspect "$IMAGE:$TAG-$architecture" --format '{{json .Manifest}}' | jq --raw-output '.digest')
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            sources+=("$IMAGE@$digest")
+          done
+          docker buildx imagetools create --tag "$IMAGE:$TAG" --tag "$IMAGE:$VERSION" --tag "$IMAGE:latest" "${sources[@]}"
+          docker buildx imagetools inspect "$IMAGE:$TAG" --raw | jq --exit-status \
+            '(.manifests | length) == 2 and
+             ([.manifests[].platform.architecture] | sort) == ["amd64", "arm64"] and
+             all(.manifests[]; .platform.os == "linux")'
+          printf 'Container: `%s:%s` (`linux/amd64`, `linux/arm64`). Also tagged `%s` and `latest`.\n' \
+            "$IMAGE" "$TAG" "$VERSION" >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify public registry pulls retain each accepted image identity
+        run: |
+          export DOCKER_CONFIG="$RUNNER_TEMP/anonymous-docker"
+          mkdir "$DOCKER_CONFIG"
+          for target in linux-x64 linux-arm64; do
+            architecture=arm64
+            if [[ "$target" == linux-x64 ]]; then architecture=amd64; fi
+            manifest="$RUNNER_TEMP/release-images/sub-store-rust-$VERSION-docker-$target.tar.gz.manifest.json"
+            expected_id=$(jq --raw-output '.image_id' "$manifest")
+            docker pull --platform "linux/$architecture" "$IMAGE:$TAG"
+            docker image inspect --platform "linux/$architecture" "$IMAGE:$TAG" --format '{{json .}}' | \
+              jq --exit-status --arg id "$expected_id" --arg arch "$architecture" \
+                '.Id == $id and .Os == "linux" and .Architecture == $arch'
+          done
+      - name: Log out of GHCR
+        if: always()
+        run: docker logout ghcr.io
       - name: Upload draft and publish the complete release
         run: |
           if gh release view "$TAG" --json isDraft > "$RUNNER_TEMP/existing-release.json" 2>/dev/null; then
@@ -111,6 +172,12 @@ jobs:
               --notes-file ".github/releases/$TAG.md"
           fi
           gh release upload "$TAG" release-assets/* --clobber
+          gh release view "$TAG" --json assets --jq '.assets[].name' > "$RUNNER_TEMP/previous-assets.txt"
+          while IFS= read -r asset; do
+            if [[ ! -f "release-assets/$asset" ]]; then
+              gh release delete-asset "$TAG" "$asset" --yes
+            fi
+          done < "$RUNNER_TEMP/previous-assets.txt"
           gh release view "$TAG" --json assets --jq '.assets[].name' | sort > "$RUNNER_TEMP/remote-assets.txt"
           find release-assets -maxdepth 1 -type f -printf '%f\n' | sort > "$RUNNER_TEMP/local-assets.txt"
           diff -u "$RUNNER_TEMP/local-assets.txt" "$RUNNER_TEMP/remote-assets.txt"

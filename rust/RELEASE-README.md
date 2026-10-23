@@ -36,7 +36,7 @@ Use the general JavaScript variant of subscription scripts. Node-specific APIs,
 `require`, npm packages and native addons are unsupported.
 
 The package contains the executable, this README, `LICENSE`,
-`THIRD_PARTY_NOTICES.txt`, `SOURCE.md` and `manifest.json`. The notices retain
-dependency copyright and license texts. `SOURCE.md` links the exact source and
-full build/configuration documentation; `manifest.json` records file hashes,
-target and build provenance. Linux binaries require glibc 2.38 or newer.
+`THIRD_PARTY_NOTICES.txt` and `SOURCE.md`. The notices retain dependency copyright
+and license texts. `SOURCE.md` links the exact source and full build/configuration
+documentation. Verify the archive with the release's `SHA256SUMS`.
+Linux binaries require glibc 2.38 or newer.

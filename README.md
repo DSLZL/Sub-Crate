@@ -6,7 +6,7 @@ A standalone Rust backend for [Sub-Store](https://github.com/sub-store-org/Sub-S
 
 ## Download and deployment
 
-The [Rust service and compatibility workflow](https://github.com/DSLZL/Sub-Store/actions/workflows/rust-compat-native.yml) delivers tested Linux x64/arm64 and Windows x64 binaries, Linux x64/arm64 Docker image archives, and the unchanged official frontend. Public versions are listed on the [releases page](https://github.com/DSLZL/Sub-Store/releases).
+[GitHub Releases](https://github.com/DSLZL/Sub-Store/releases) provides Linux x64/arm64 and Windows x64 backend archives with `SHA256SUMS`. Multi-platform Docker images are published to `ghcr.io/dslzl/sub-store` using the release tag. Obtain the frontend separately from its official project; backend releases do not build or bundle it. Build manifests stay in Actions artifacts.
 
 See [the deployment guide](rust/README.md) for archive selection, environment variables, frontend hosting, Docker startup, data migration and rollback. The runtime needs no Node installation. Use a copy of existing data when migrating, and run only one backend against a writable data directory.
 

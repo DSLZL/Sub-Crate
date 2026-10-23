@@ -214,15 +214,24 @@ pub fn write_manifest(directory: &Path, metadata: &Value) -> Result<Value> {
     )?;
     let mut manifest = metadata.clone();
     manifest["files"] = json!(hashes(directory)?);
-    json::write_new(directory.join("manifest.json"), &manifest)?;
+    if metadata["kind"] != "rust-native-distribution" {
+        json::write_new(directory.join("manifest.json"), &manifest)?;
+    }
     Ok(manifest)
 }
 pub fn verify_payload(directory: &Path, manifest: &Value) -> Result {
-    json::check(
-        &json::read(directory.join("manifest.json"))?,
-        manifest,
-        false,
-    )?;
+    if manifest["kind"] == "rust-native-distribution" {
+        require(
+            !directory.join("manifest.json").exists(),
+            "Native package contains an internal manifest",
+        )?;
+    } else {
+        json::check(
+            &json::read(directory.join("manifest.json"))?,
+            manifest,
+            false,
+        )?;
+    }
     json::check(&json!(hashes(directory)?), &manifest["files"], false)
 }
 
@@ -830,16 +839,29 @@ mod tests {
 
     #[test]
     fn archives_reject_modified_missing_extra_payload_files_and_changed_manifest() {
-        for target in ["linux-x64", "windows-x64"] {
+        for (target, kind) in [
+            ("linux-x64", "rust-native-distribution"),
+            ("windows-x64", "rust-native-distribution"),
+            ("linux-x64", "other-distribution"),
+            ("windows-x64", "other-distribution"),
+        ] {
             let root = process::scratch("archive-integrity").unwrap();
             let payload = root.join("sub-store-rust");
             std::fs::create_dir(&payload).unwrap();
             let original = b"verified executable bytes\0";
             std::fs::write(payload.join("sub-store-rust"), original).unwrap();
             std::fs::write(payload.join("LICENSE"), "license text").unwrap();
-            let (unpacked,report)=package_payload(&payload,target,&json!({"source_commit":"ffffffffffffffffffffffffffffffffffffffff","repository":"example/sub-store","target":target})).unwrap();
+            let (unpacked,report)=package_payload(&payload,target,&json!({"source_commit":"ffffffffffffffffffffffffffffffffffffffff","repository":"example/sub-store","target":target,"kind":kind})).unwrap();
             let manifest = &report["manifest"];
             verify_payload(&unpacked, manifest).unwrap();
+            assert_eq!(
+                unpacked.join("manifest.json").exists(),
+                kind != "rust-native-distribution"
+            );
+            assert_eq!(
+                json::read(root.join("publish/manifest.json")).unwrap(),
+                *manifest
+            );
             let binary = unpacked.join("sub-store-rust");
             std::fs::write(&binary, b"tampered").unwrap();
             assert!(verify_payload(&unpacked, manifest).is_err());

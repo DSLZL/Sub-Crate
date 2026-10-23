@@ -2,6 +2,11 @@ name: Rust service and compatibility
 
 on:
   workflow_call:
+    inputs:
+      skip_frontend:
+        description: Skip the frontend build and browser job for backend releases
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       harness_only:
@@ -10,7 +15,7 @@ on:
         default: false
   push:
     branches: [main]
-    paths: [rust/**, tests/**, .config/nextest.toml, .github/actions/node-reference/**, .github/workflows/rust-compat-native.yml, .github/workflows/rust-tests.yml]
+    paths: [rust/**, tests/**, .config/nextest.toml, .github/actions/node-reference/**, .github/workflows/rust-compat-native.yml, .github/workflows/rust-tests.yml, .github/workflows/release.yml]
 
 permissions:
   contents: read
@@ -20,6 +25,7 @@ jobs:
     uses: ./.github/workflows/rust-tests.yml
 
   frontend-baseline:
+    if: ${{ !inputs.skip_frontend }}
     name: Unchanged frontend (nextest and headless Chrome)
     runs-on: ubuntu-24.04
     timeout-minutes: 35
@@ -178,7 +184,10 @@ jobs:
       - name: Build actual Node-free images on the native runner
         run: |
           docker build --file tests/compat/Probe.Dockerfile --tag "$TEST_DOCKER_PROBE_IMAGE" .
-          docker build --file rust/Dockerfile --tag "$TEST_DOCKER_IMAGE" .
+          docker build --file rust/Dockerfile --tag "$TEST_DOCKER_IMAGE" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.version=$(sed -n 's/^version = "\([^"]*\)"$/\1/p' rust/Cargo.toml)" .
       - name: Package save extract and reload production image
         id: docker-package
         run: cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --test docker --config-file .config/nextest.toml --profile delivery -E 'test(=docker::delivery)'
