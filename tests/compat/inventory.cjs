@@ -97,9 +97,19 @@ assert.equal(backendPatch, fs.readFileSync(path.join(__dirname, 'approved-refere
 const backendCommit = git('-C', root, 'rev-parse', 'HEAD').trim();
 const frontendMap = JSON.parse(fs.readFileSync(path.join(__dirname, 'frontend-contract-map.json'), 'utf8'));
 assert.equal(frontendMap.frontend_commit, frontendCommit);
-const frontendCases = new Set([...fs.readFileSync(path.join(__dirname, 'frontend.py'), 'utf8')
-  .matchAll(/"id": "(FE\d+-[^"]+)"/g)].map(match => match[1]));
-assert.ok(frontendCases.size, 'No executable frontend workflow IDs found');
+function frontendWorkflowIds(source) {
+  const declaration = source.match(/pub const IDS: \[&str; 21\] = \[([\s\S]*?)\];/);
+  assert.ok(declaration, 'Executable Rust frontend workflow declaration missing');
+  const ids = [...declaration[1].matchAll(/"(FE\d+-[^"]+)"/g)].map(match => match[1]);
+  assert.equal(ids.length, 21, 'Incomplete executable frontend workflow inventory');
+  assert.equal(new Set(ids).size, 21, 'Duplicate executable frontend workflow ID');
+  return new Set(ids);
+}
+const frontendSource = fs.readFileSync(path.join(root, 'tests/src/frontend.rs'), 'utf8');
+const frontendCases = frontendWorkflowIds(frontendSource);
+assert.throws(() => frontendWorkflowIds(''));
+assert.throws(() => frontendWorkflowIds(frontendSource.replace('"FE01-url-backend-setup",', '')));
+assert.throws(() => frontendWorkflowIds(frontendSource.replace('FE01-url-backend-setup', 'FE02-create-subscription')));
 const report = {backend_commit: backendCommit, backend_base_commit: backendBaseCommit, frontend_commit: frontendCommit,
   approved_reference_patch_sha256: createHash('sha256').update(backendPatch).digest('hex'),
   complete_behavior_inventory: false, routes: [], proxy_formats: [], registries: {}, frontend_requests: [], frontend_url_literals: [],

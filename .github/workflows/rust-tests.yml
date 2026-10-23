@@ -1,0 +1,130 @@
+name: Rust test harness migration
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  self-checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, windows-2025]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    env:
+      RUSTFLAGS: ${{ matrix.runner == 'windows-2025' && '-C target-feature=+crt-static' || '' }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Keep compiler output on the runner
+        run: echo "CARGO_TARGET_DIR=$RUNNER_TEMP/sub-store-test-build" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24.16.0
+          package-manager-cache: false
+      - name: Install fixed Rust toolchain
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+          rustup override set 1.98.0
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
+        with:
+          tool: nextest@0.9.149
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ runner.temp }}/sub-store-test-build
+          key: nextest-harness-${{ matrix.runner }}-1.98.0-${{ hashFiles('tests/Cargo.toml', 'tests/Cargo.lock') }}
+          restore-keys: nextest-harness-${{ matrix.runner }}-1.98.0-
+      - name: Check source formatting
+        run: |
+          cargo +1.98.0 fmt --manifest-path tests/Cargo.toml --all -- --check
+          cargo +1.98.0 fmt --manifest-path rust/Cargo.toml --all -- --check
+      - name: Clippy
+        run: |
+          cargo +1.98.0 clippy --manifest-path tests/Cargo.toml --locked --all-targets -- -D warnings
+          cargo +1.98.0 clippy --manifest-path rust/Cargo.toml --locked --all-targets -- -D warnings
+      - name: Inventory and nextest self-checks
+        if: ${{ !cancelled() }}
+        run: |
+          cargo +1.98.0 nextest list --manifest-path tests/Cargo.toml --locked --lib --config-file .config/nextest.toml
+          cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --lib --config-file .config/nextest.toml --profile ci
+      - name: Production Rust unit tests
+        run: |
+          cargo +1.98.0 nextest list --manifest-path rust/Cargo.toml --locked --all-targets --config-file .config/nextest.toml
+          cargo +1.98.0 nextest run --manifest-path rust/Cargo.toml --locked --all-targets --config-file .config/nextest.toml --profile production
+      - uses: ./.github/actions/node-reference
+      - name: Prepare fixed reference and embedded utilities
+        run: |
+          npm install --global pnpm@11.0.9
+          pnpm --dir backend install --frozen-lockfile
+          pnpm --dir tests/compat install --frozen-lockfile
+          node tests/compat/build-native-utilities.cjs
+          node tests/compat/build-helpers.cjs
+      - name: Bundle frozen reference
+        working-directory: backend
+        run: node bundle-esbuild.js
+      - name: Build Rust service on runner
+        run: cargo +1.98.0 build --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust --example script_probe --example collect_notices
+      - name: Attribute release parsing and conversion CPU
+        if: matrix.runner == 'ubuntu-24.04'
+        run: |
+          cargo +1.98.0 nextest run --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust --config-file .config/nextest.toml --profile cpu-parse --run-ignored only -E 'test(=clash::tests::profile_structured_subscription)' --success-output immediate
+          cargo +1.98.0 nextest run --manifest-path rust/Cargo.toml --locked --release --bin sub-store-rust --config-file .config/nextest.toml --profile cpu-conversion --run-ignored only -E 'test(=script_conversion::tests::profile_node_production)' --success-output immediate
+      - name: Execute migrated native contracts
+        id: native
+        run: |
+          suffix=""
+          if [[ "$RUNNER_OS" == "Windows" ]]; then suffix=".exe"; fi
+          echo "TEST_RUST_BINARY=$CARGO_TARGET_DIR/release/sub-store-rust$suffix" >> "$GITHUB_ENV"
+          export TEST_RUST_BINARY="$CARGO_TARGET_DIR/release/sub-store-rust$suffix"
+          export TEST_PROBE_BINARY="$CARGO_TARGET_DIR/release/examples/script_probe$suffix"
+          export TEST_NODE="$(node -p 'process.execPath')"
+          cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --test native --config-file .config/nextest.toml --profile delivery -E 'test(=native_delivery)'
+      - name: Run actual contracts against extracted delivery
+        env:
+          TEST_RUST_BINARY: ${{ steps.native.outputs.binary }}
+        run: |
+          suffix=""
+          if [[ "$RUNNER_OS" == "Windows" ]]; then suffix=".exe"; fi
+          export TEST_PROBE_BINARY="$CARGO_TARGET_DIR/release/examples/script_probe$suffix"
+          export TEST_NODE="$(node -p 'process.execPath')"
+          cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --test native --config-file .config/nextest.toml --profile acceptance -E 'not test(=native_delivery)'
+      - name: Preserve verified native delivery
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: m5-distribution-${{ matrix.runner }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.native.outputs.publish }}
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve test reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: rust-harness-${{ matrix.runner }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/sub-store-test-build/nextest/ci/junit.xml
+            ${{ runner.temp }}/sub-store-test-build/nextest/acceptance/junit-acceptance.xml
+            ${{ runner.temp }}/sub-store-test-build/nextest/delivery/junit-delivery.xml
+            ${{ runner.temp }}/sub-store-test-build/nextest/production/junit-production.xml
+            ${{ runner.temp }}/sub-store-test-build/nextest/cpu-parse/junit-cpu-parse.xml
+            ${{ runner.temp }}/sub-store-test-build/nextest/cpu-conversion/junit-cpu-conversion.xml
+            ${{ runner.temp }}/sub-store-native-delivery-*
+            ${{ runner.temp }}/sub-store-reference-*
+            ${{ runner.temp }}/sub-store-state-parity-*
+            ${{ runner.temp }}/sub-store-script-probe-*
+            ${{ runner.temp }}/sub-store-age-probe-*
+            ${{ runner.temp }}/sub-store-download-probe-*
+            ${{ runner.temp }}/sub-store-service-*
+          if-no-files-found: warn
+          retention-days: 7

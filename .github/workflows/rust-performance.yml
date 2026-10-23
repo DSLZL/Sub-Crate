@@ -4,23 +4,23 @@ on:
   workflow_dispatch:
     inputs:
       inspect_run:
-        description: Inspect bounded sanitized diagnostics from an existing run without rebuilding
+        description: Inspect sanitized diagnostics from a completed run
         type: string
         default: ''
       inspect_attempt:
-        description: Read this immutable attempt of inspect_run (preparation is not repeated)
+        description: Immutable attempt to inspect without repeating preparation
         type: string
         default: '1'
       diagnose_parse:
-        description: Only diagnose individual sources and three parse/pre-health requests
+        description: Diagnose all individual sources and three parse/pre-health requests
         type: boolean
         default: false
       diagnose_health:
-        description: Profile the full-input health script and three warm requests without the long matrix
+        description: Compare the full-input health script with the frozen Rust baseline
         type: boolean
         default: false
       profile_pipeline:
-        description: With diagnose_health, profile every Rust processor/stage in the repeated candidate (same binary on/off)
+        description: With diagnose_health, profile stages in the repeated candidate with the same binary
         type: boolean
         default: false
 
@@ -30,6 +30,8 @@ permissions:
 env:
   PERF_RUST_REVISION: af08b0649c4d2f2814fe38ce6943b1397f5e1c14
   PERF_BASELINE_REVISION: ee64ab9f7376a68c126950caee256bf3fb9c2b12
+  PERF_DIAGNOSTIC: ${{ inputs.diagnose_health && 'health' || inputs.diagnose_parse && 'parse' || '' }}
+  PERF_PROFILE_PIPELINE: ${{ inputs.profile_pipeline && '1' || '0' }}
 
 concurrency:
   group: ${{ inputs.inspect_run && 'subscription-report-inspection' || inputs.diagnose_health && 'subscription-health-diagnostic' || inputs.diagnose_parse && 'subscription-parse-diagnostic' || 'supplied-subscription-performance' }}
@@ -39,7 +41,7 @@ jobs:
   checks:
     name: Check benchmark invariants
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -48,68 +50,58 @@ jobs:
         with:
           node-version: 24.16.0
           package-manager-cache: false
-      - name: Check benchmark invariants and source
+      - uses: ./.github/actions/nextest
+      - name: Validate mode, source and benchmark invariants
+        shell: bash
         run: |
-          if [[ '${{ inputs.profile_pipeline }}' == 'true' ]]; then
-            [[ '${{ inputs.diagnose_health }}' == 'true' && '${{ inputs.diagnose_parse }}' != 'true' ]]
-          fi
-          python3.12 -m venv "$RUNNER_TEMP/performance-venv"
-          "$RUNNER_TEMP/performance-venv/bin/pip" install --require-hashes --only-binary=:all: -r tests/performance/requirements.txt
-          "$RUNNER_TEMP/performance-venv/bin/python" -m py_compile tests/performance/benchmark.py tests/performance/parallel.py tests/performance/test_benchmark.py
-          "$RUNNER_TEMP/performance-venv/bin/python" -m unittest discover -s tests/performance -p 'test_*.py'
-      - name: Check profiler source formatting on the runner
-        run: |
-          rustup toolchain install 1.98.0 --profile minimal --component rustfmt
-          cargo +1.98.0 fmt --manifest-path rust/Cargo.toml --all
-          git diff --exit-code -- rust
+          [[ '${{ inputs.diagnose_health }}' != 'true' || '${{ inputs.diagnose_parse }}' != 'true' ]]
+          [[ "$PERF_PROFILE_PIPELINE" != 1 || "$PERF_DIAGNOSTIC" == health ]]
+          cargo +1.98.0 fmt --manifest-path tests/Cargo.toml --all -- --check
+          cargo +1.98.0 fmt --manifest-path rust/Cargo.toml --all -- --check
+          cargo +1.98.0 clippy --manifest-path tests/Cargo.toml --locked --all-targets -- -D warnings
+          cargo +1.98.0 nextest list --manifest-path tests/Cargo.toml --locked --release --lib --config-file .config/nextest.toml
+          cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --release --lib --config-file .config/nextest.toml --profile ci
+      - name: Preserve self-check JUnit
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: subscription-performance-checks-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sub-store-nextest-build/nextest/
+          if-no-files-found: warn
+
   inspect:
     needs: checks
     if: inputs.inspect_run != ''
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
     permissions:
+      contents: read
       actions: read
     steps:
-      - name: Read existing sanitized field and work diagnostics
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/nextest
+      - name: Read existing sanitized diagnostics on runner
         env:
           GH_TOKEN: ${{ github.token }}
           INSPECT_RUN: ${{ inputs.inspect_run }}
           INSPECT_ATTEMPT: ${{ inputs.inspect_attempt }}
+          PERF_INSPECT: ${{ runner.temp }}/performance-inspect
         shell: bash
         run: |
           [[ "$INSPECT_RUN" =~ ^[0-9]+$ && "$INSPECT_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
-          gh run download "$INSPECT_RUN" --repo "$GITHUB_REPOSITORY" \
-            --name "subscription-performance-$INSPECT_RUN-$INSPECT_ATTEMPT" --dir "$RUNNER_TEMP/performance-inspect" || \
-          gh run download "$INSPECT_RUN" --repo "$GITHUB_REPOSITORY" \
-            --name "subscription-performance-prepare-$INSPECT_RUN-$INSPECT_ATTEMPT" --dir "$RUNNER_TEMP/performance-inspect"
-          python3 - <<'PY'
-          import json, math, os, statistics
-          from pathlib import Path
-          report = json.loads((Path(os.environ['RUNNER_TEMP']) / 'performance-inspect/metrics.json').read_bytes())
-          print('Report ' + json.dumps({key: report.get(key) for key in ('status', 'failure', 'failure_stack', 'provenance', 'capture', 'replay', 'estimates')}, sort_keys=True))
-          measured = [r for r in report['samples'] if r.get('latencies_s') and all(key in r for key in ('elapsed_s', 'cpu_s', 'rss_peak_bytes', 'output_count'))]
-          groups = sorted({(r['case'], r['kind'], r['concurrency']) for r in measured})
-          for case, kind, clients in groups:
-              rows = [r for r in measured if (r['case'], r['kind'], r['concurrency']) == (case, kind, clients)]
-              times = sorted(v for r in rows for v in r['latencies_s'])
-              print('Aggregate ' + json.dumps({'case': case, 'kind': kind, 'clients': clients,
-                  'blocks': len(rows), 'passed': sum(r['status'] == 'passed' for r in rows), 'requests': len(times),
-                  'median_s': statistics.median(times), 'p95_s': times[math.ceil(len(times) * .95) - 1] if len(times) >= 20 else None,
-                  'rps': len(times) / sum(r['elapsed_s'] for r in rows),
-                  'cpu_s_per_request': sum(r['cpu_s'] for r in rows) / len(times),
-                  'rss_peak_mib': max(r['rss_peak_bytes'] for r in rows) / 2**20,
-                  'rss_end_mib': max(r['rss_end_bytes'] for r in rows) / 2**20,
-                  'rss_settled_mib': max(r['rss_settled_bytes'] for r in rows) / 2**20,
-                  'output_counts': sorted({r['output_count'] for r in rows})}, sort_keys=True))
-          for row in report['samples']:
-              if (row['block'] != 0 or row['concurrency'] != 1) and row.get('status') != 'failed':
-                  continue
-              keys = ('kind', 'case', 'status', 'failure', 'failure_observations', 'counts',
-                      'warmup_counts', 'output_count', 'health_records', 'health_verified', 'work', 'health_profile', 'profiler_enabled', 'pipeline_profiles')
-              selected = {key: row[key] for key in keys if key in row}
-              selected['health_counts'] = row.get('health_counts', [])[:2]
-              print(json.dumps(selected, sort_keys=True))
-          PY
+          gh run download "$INSPECT_RUN" --repo "$GITHUB_REPOSITORY" --name "subscription-performance-$INSPECT_RUN-$INSPECT_ATTEMPT" --dir "$PERF_INSPECT" ||
+          gh run download "$INSPECT_RUN" --repo "$GITHUB_REPOSITORY" --name "subscription-performance-prepare-$INSPECT_RUN-$INSPECT_ATTEMPT" --dir "$PERF_INSPECT"
+          cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --release --test performance --config-file .config/nextest.toml --profile perf-inspect -E 'test(=subscription_inspect)' --success-output immediate
+      - name: Preserve inspection JUnit
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: subscription-performance-inspect-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sub-store-nextest-build/nextest/
+          if-no-files-found: warn
+
   prepare:
     name: Build, import and freeze inputs once
     needs: checks
@@ -152,103 +144,68 @@ jobs:
         with:
           node-version: 24.16.0
           package-manager-cache: false
+      - uses: ./.github/actions/nextest
       - name: Install fixed tooling and locked application dependencies
         run: |
           npm install --global pnpm@11.0.9 agent-browser@0.27.3
           pnpm --dir .performance/original/backend install --frozen-lockfile
           pnpm --dir .performance/frontend install --frozen-lockfile
-          python3.12 -m venv "$RUNNER_TEMP/performance-venv"
-          "$RUNNER_TEMP/performance-venv/bin/pip" install --require-hashes --only-binary=:all: -r tests/performance/requirements.txt
-      - name: Restore fixed Rust build cache (no runtime data)
-        id: rust-cache
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
             .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-${{ env.PERF_RUST_REVISION }}
-          restore-keys: subscription-performance-linux-x64-rust-1.98.0-
+            .performance/rust-baseline/rust/target
+          key: subscription-nextest-apps-1.98.0-${{ env.PERF_RUST_REVISION }}-${{ env.PERF_BASELINE_REVISION }}
       - name: Build exact original, Rust and unchanged frontend
         run: |
           (cd .performance/original/backend && node bundle-esbuild.js)
           pnpm --dir .performance/frontend build
-          rustup toolchain install 1.98.0 --profile minimal
-          cargo +1.98.0 build --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust
+          cargo +1.98.0 build --manifest-path .performance/rust/rust/Cargo.toml --target-dir "$GITHUB_WORKSPACE/.performance/rust/rust/target" --locked --release --bin sub-store-rust
           git -C .performance/original diff --exit-code
           git -C .performance/rust diff --exit-code
           git -C .performance/frontend diff --exit-code
       - name: Execute candidate regressions before whole-request comparison
         if: inputs.diagnose_health
         run: |
-          cargo +1.98.0 test --manifest-path .performance/rust/rust/Cargo.toml --locked --release --bin sub-store-rust 2>&1 | tee "$RUNNER_TEMP/candidate-tests.log"
-          grep -F 'test result: ok. 39 passed; 0 failed; 3 ignored;' "$RUNNER_TEMP/candidate-tests.log"
-      - name: Build the frozen Rust baseline in its separate target for whole-request comparison
-        if: inputs.diagnose_health
-        run: |
+          cargo +1.98.0 nextest list --manifest-path .performance/rust/rust/Cargo.toml --target-dir "$GITHUB_WORKSPACE/.performance/rust/rust/target" --locked --release --bin sub-store-rust --config-file .config/nextest.toml
+          cargo +1.98.0 nextest run --manifest-path .performance/rust/rust/Cargo.toml --target-dir "$GITHUB_WORKSPACE/.performance/rust/rust/target" --locked --release --bin sub-store-rust --config-file .config/nextest.toml --profile production
           cargo +1.98.0 build --manifest-path .performance/rust-baseline/rust/Cargo.toml --target-dir "$GITHUB_WORKSPACE/.performance/rust-baseline/rust/target" --locked --release --bin sub-store-rust
           git -C .performance/rust-baseline diff --exit-code
-      - name: Compare per-node components on this runner (candidate, baseline, candidate again)
+      - name: Compare per-node components on the same runner
         if: inputs.diagnose_health
         run: |
           for variant in candidate baseline candidate_repeat; do
-            checkout=.performance/rust
-            if [[ "$variant" == baseline ]]; then checkout=.performance/rust-baseline; fi
-            echo "Per-node profile: variant=$variant source=$(git -C "$checkout" rev-parse HEAD)"
-            cargo +1.98.0 test --manifest-path "$checkout/rust/Cargo.toml" \
-              --target-dir "$GITHUB_WORKSPACE/$checkout/rust/target" --locked --release \
-              --bin sub-store-rust script_conversion::tests::profile_node_production \
-              -- --ignored --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/node-profile-$variant.log"
+            checkout=rust; profile=cpu-conversion
+            if [[ "$variant" == baseline ]]; then checkout=rust-baseline; fi
+            if [[ "$variant" == candidate_repeat ]]; then profile=cpu-conversion-repeat; fi
+            echo "Per-node profile: variant=$variant source=$(git -C ".performance/$checkout" rev-parse HEAD)"
+            cargo +1.98.0 nextest run --manifest-path ".performance/$checkout/rust/Cargo.toml" --target-dir "$GITHUB_WORKSPACE/.performance/$checkout/rust/target" --locked --release --bin sub-store-rust --config-file .config/nextest.toml --profile "$profile" --run-ignored only -E 'test(=script_conversion::tests::profile_node_production)' --success-output immediate
           done
-      - name: Save public build inputs before private measurements
-        if: steps.rust-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            .performance/rust/rust/target
-          key: subscription-performance-linux-x64-rust-1.98.0-${{ env.PERF_RUST_REVISION }}
-      - name: Load installed browser workflow and install headless Chromium
-        run: |
-          agent-browser skills get core
-          agent-browser install --with-deps
-      - name: Import original file, capture untouched sources and seal private inputs
+      - name: Install headless Chromium
+        timeout-minutes: 15
+        run: agent-browser install --with-deps
+      - name: Import unchanged file, capture source text and seal private inputs
         env:
           BENCHMARK_SUBSCRIPTION_B64: ${{ secrets.BENCHMARK_SUBSCRIPTION_B64 }}
           BENCHMARK_ASSET_TOKEN: ${{ github.token }}
+          PERF_ORIGINAL: ${{ github.workspace }}/.performance/original
+          PERF_RUST: ${{ github.workspace }}/.performance/rust
+          PERF_FRONTEND: ${{ github.workspace }}/.performance/frontend
+          PERF_PUBLIC: ${{ runner.temp }}/subscription-performance-public
+          PERF_FROZEN: ${{ runner.temp }}/subscription-performance-inputs.bin
         run: |
           umask 077
-          diagnostic_args=()
-          if [[ '${{ inputs.diagnose_parse }}' == 'true' ]]; then
-            diagnostic_args=(--diagnose-parse)
-          fi
-          if [[ '${{ inputs.diagnose_health }}' == 'true' ]]; then
-            diagnostic_args+=(--diagnose-health --rust-baseline "$GITHUB_WORKSPACE/.performance/rust-baseline")
-          fi
-          if [[ '${{ inputs.profile_pipeline }}' == 'true' ]]; then diagnostic_args+=(--profile-pipeline); fi
-          "$RUNNER_TEMP/performance-venv/bin/python" tests/performance/benchmark.py \
-            --original "$GITHUB_WORKSPACE/.performance/original" \
-            --rust "$GITHUB_WORKSPACE/.performance/rust" \
-            --frontend "$GITHUB_WORKSPACE/.performance/frontend" \
-            --scratch "$RUNNER_TEMP/subscription-performance-private" \
-            --publish "$RUNNER_TEMP/subscription-performance-public" \
-            --prepare-only --frozen "$RUNNER_TEMP/subscription-performance-inputs.bin" "${diagnostic_args[@]}"
+          if [[ "$PERF_DIAGNOSTIC" == health ]]; then export PERF_BASELINE="$GITHUB_WORKSPACE/.performance/rust-baseline"; fi
+          export TEST_NODE="$(node -p 'process.execPath')"
+          export TEST_BROWSER="$(npm root --global)/agent-browser/bin/agent-browser-linux-x64"
+          cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --release --test performance --config-file .config/nextest.toml --profile perf-prepare -E 'test(=subscription_prepare)' --success-output immediate
       - name: Select independent same-runner pairs
         id: matrix
-        run: |
-          mode=()
-          if [[ '${{ inputs.diagnose_parse }}' == 'true' ]]; then mode=(--diagnostic parse); fi
-          if [[ '${{ inputs.diagnose_health }}' == 'true' ]]; then mode=(--diagnostic health); fi
-          value=$("$RUNNER_TEMP/performance-venv/bin/python" tests/performance/parallel.py matrix "${mode[@]}")
-          echo "value=$value" >> "$GITHUB_OUTPUT"
-          echo "attempt=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+        run: cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --release --test performance --config-file .config/nextest.toml --profile perf-matrix -E 'test(=subscription_matrix)'
       - name: Archive the public builds once
         run: |
           payloads=(.performance/original/backend/dist .performance/frontend/dist .performance/rust/rust/target/release/sub-store-rust)
-          if [[ '${{ inputs.diagnose_health }}' == 'true' ]]; then
-            payloads+=(.performance/rust-baseline/rust/target/release/sub-store-rust)
-          fi
+          if [[ "$PERF_DIAGNOSTIC" == health ]]; then payloads+=(.performance/rust-baseline/rust/target/release/sub-store-rust); fi
           tar -czf "$RUNNER_TEMP/subscription-performance-build.tar.gz" "${payloads[@]}"
       - name: Share public application builds
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -266,11 +223,18 @@ jobs:
           retention-days: 1
       - name: Show sanitized report
         if: always()
-        run: |
-          if test -f "$RUNNER_TEMP/subscription-performance-public/summary.md"; then
-            cat "$RUNNER_TEMP/subscription-performance-public/summary.md"
-          fi
-      - name: Preserve sanitized metrics, including failures
+        run: if test -f "$RUNNER_TEMP/subscription-performance-public/summary.md"; then cat "$RUNNER_TEMP/subscription-performance-public/summary.md"; fi
+      - name: Preserve preparation JUnit
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: nextest-private-prepare-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/sub-store-nextest-build/nextest/
+            .performance/rust/rust/target/nextest/
+            .performance/rust-baseline/rust/target/nextest/
+          if-no-files-found: warn
+      - name: Preserve sanitized preparation, including failures
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
@@ -322,12 +286,11 @@ jobs:
         with:
           node-version: 24.16.0
           package-manager-cache: false
-      - name: Install fixed runtime tools and sampler
+      - uses: ./.github/actions/nextest
+      - name: Install fixed Node reference dependencies
         run: |
           npm install --global pnpm@11.0.9
           pnpm --dir .performance/original/backend install --frozen-lockfile --prod
-          python3.12 -m venv "$RUNNER_TEMP/performance-venv"
-          "$RUNNER_TEMP/performance-venv/bin/pip" install --require-hashes --only-binary=:all: -r tests/performance/requirements.txt
       - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           name: subscription-performance-build-${{ github.run_id }}-${{ needs.prepare.outputs.attempt }}
@@ -336,27 +299,30 @@ jobs:
         with:
           name: subscription-performance-inputs-${{ github.run_id }}-${{ needs.prepare.outputs.attempt }}
           path: ${{ runner.temp }}/performance-inputs
-      - name: Extract the exact public builds
+      - name: Extract exact public builds
         run: tar -xzf "$RUNNER_TEMP/performance-build/subscription-performance-build.tar.gz"
-      - name: Validate fixed inputs and measure this pair
+      - name: Validate frozen inputs and measure this pair
         env:
           BENCHMARK_SUBSCRIPTION_B64: ${{ secrets.BENCHMARK_SUBSCRIPTION_B64 }}
+          PERF_ORIGINAL: ${{ github.workspace }}/.performance/original
+          PERF_RUST: ${{ github.workspace }}/.performance/rust
+          PERF_FRONTEND: ${{ github.workspace }}/.performance/frontend
+          PERF_PUBLIC: ${{ runner.temp }}/subscription-performance-public
+          PERF_FROZEN: ${{ runner.temp }}/performance-inputs/subscription-performance-inputs.bin
+          PERF_SHARD: ${{ matrix.shard }}
         run: |
           umask 077
-          mode=(--shard '${{ matrix.shard }}')
-          if [[ '${{ inputs.diagnose_parse }}' == 'true' ]]; then mode=(--diagnose-parse); fi
-          if [[ '${{ inputs.diagnose_health }}' == 'true' ]]; then
-            mode=(--diagnose-health --rust-baseline "$GITHUB_WORKSPACE/.performance/rust-baseline")
-          fi
-          if [[ '${{ inputs.profile_pipeline }}' == 'true' ]]; then mode+=(--profile-pipeline); fi
-          "$RUNNER_TEMP/performance-venv/bin/python" tests/performance/benchmark.py \
-            --original "$GITHUB_WORKSPACE/.performance/original" \
-            --rust "$GITHUB_WORKSPACE/.performance/rust" \
-            --frontend "$GITHUB_WORKSPACE/.performance/frontend" \
-            --scratch "$RUNNER_TEMP/subscription-performance-private" \
-            --publish "$RUNNER_TEMP/subscription-performance-public" \
-            --frozen "$RUNNER_TEMP/performance-inputs/subscription-performance-inputs.bin" "${mode[@]}"
-      - name: Preserve this pair including failures
+          if [[ "$PERF_DIAGNOSTIC" == health ]]; then export PERF_BASELINE="$GITHUB_WORKSPACE/.performance/rust-baseline"; fi
+          export TEST_NODE="$(node -p 'process.execPath')"
+          cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --release --test performance --config-file .config/nextest.toml --profile perf-pair -E 'test(=subscription_pair)' --success-output immediate
+      - name: Preserve pair JUnit
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: nextest-private-pair-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sub-store-nextest-build/nextest/
+          if-no-files-found: warn
+      - name: Preserve sanitized pair, including failures
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
@@ -370,11 +336,12 @@ jobs:
     needs: [prepare, compare]
     if: always() && inputs.inspect_run == '' && needs.prepare.result == 'success'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+      - uses: ./.github/actions/nextest
       - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           name: subscription-performance-prepare-${{ github.run_id }}-${{ needs.prepare.outputs.attempt }}
@@ -383,18 +350,23 @@ jobs:
         with:
           pattern: subscription-performance-shard-*-${{ github.run_id }}-*
           path: ${{ runner.temp }}/performance-workers
-      - name: Reject incomplete, duplicated or unequal work
+      - name: Reject incomplete, duplicate or unequal work
+        env:
+          PERF_PREPARED: ${{ runner.temp }}/performance-prepared
+          PERF_WORKERS: ${{ runner.temp }}/performance-workers
+          PERF_PUBLIC: ${{ runner.temp }}/subscription-performance-public
         shell: bash
         run: |
-          python3.12 -m venv "$RUNNER_TEMP/performance-venv"
-          "$RUNNER_TEMP/performance-venv/bin/pip" install --require-hashes --only-binary=:all: -r tests/performance/requirements.txt
-          mode=()
-          if [[ '${{ inputs.diagnose_parse }}' == 'true' ]]; then mode=(--diagnostic parse); fi
-          if [[ '${{ inputs.diagnose_health }}' == 'true' ]]; then mode=(--diagnostic health); fi
-          "$RUNNER_TEMP/performance-venv/bin/python" tests/performance/parallel.py aggregate \
-            --prepared "$RUNNER_TEMP/performance-prepared" --workers "$RUNNER_TEMP/performance-workers" \
-            --publish "$RUNNER_TEMP/subscription-performance-public" "${mode[@]}"
-      - name: Preserve complete sanitized comparison including failures
+          cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --release --test performance --config-file .config/nextest.toml --profile perf-aggregate -E 'test(=subscription_aggregate)' --success-output immediate
+          cat "$PERF_PUBLIC/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve aggregate JUnit
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: nextest-private-aggregate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sub-store-nextest-build/nextest/
+          if-no-files-found: warn
+      - name: Preserve sanitized aggregate, including failures
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:

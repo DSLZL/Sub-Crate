@@ -1,0 +1,42 @@
+[package]
+name = "sub-store-tests"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "AGPL-3.0-only"
+publish = false
+
+[dependencies]
+aws-lc-rs = { version = "=1.18.2", default-features = false }
+base64 = "=0.23.1"
+flate2 = { version = "=1.1.10", default-features = false, features = ["zlib-rs"] }
+jiff = "=0.2.38"
+libc = "=0.2.190"
+regex = "1"
+reqwest = { version = "=0.13.5", default-features = false, features = ["rustls", "blocking"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+tokio = { version = "1", features = ["macros", "rt", "time", "net", "io-util", "sync"] }
+tokio-rustls = { version = "=0.26.6", default-features = false, features = ["tls12", "aws-lc-rs"] }
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "performance-fixture"
+path = "performance_fixture.rs"
+
+[[test]]
+name = "native"
+path = "native.rs"
+
+[[test]]
+name = "frontend"
+path = "frontend.rs"
+
+[[test]]
+name = "docker"
+path = "docker.rs"
+
+[[test]]
+name = "performance"
+path = "performance.rs"
