@@ -62,3 +62,7 @@ Node builtins, CommonJS `require`, `process.env`, `$substore.node`, npm loading 
 | [Cleanup inventory](rust/CLEANUP.md) | Removed upstream files and retained runtime, fixture and license dependencies |
 
 Sub-Crate is based on the work of the [Sub-Store authors and contributors](https://github.com/sub-store-org/Sub-Store/graphs/contributors). It is licensed under [AGPL-3.0-only](LICENSE). Embedded utilities and delivered archives include their dependency license notices.
+
+## Friendly Links
+
+[LINUX DO](https://linux.do/)
