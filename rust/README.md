@@ -314,6 +314,53 @@ allowed-origin values must match the actual addresses used by the browser.
 
 ## Docker image
 
+### Docker Compose
+
+Use [docker-compose.example.yml](../docker-compose.example.yml) and
+[.env.example](../.env.example) from the repository root:
+
+```sh
+cp .env.example .env
+docker compose -f docker-compose.example.yml up -d
+docker compose -f docker-compose.example.yml logs -f
+```
+
+In PowerShell, use `Copy-Item .env.example .env` for the first command.
+The default URL is `http://127.0.0.1:3000`; the official hosted frontend can
+connect to that backend. Set `SUB_CRATE_BIND=0.0.0.0` to publish the port on
+all host IPv4 interfaces, or change `SUB_CRATE_PORT` to select another host port.
+The container continues to listen on `0.0.0.0:3000`.
+
+Compose mounts `./data` at `/data`. Keep this directory when recreating containers
+or running `docker compose -f docker-compose.example.yml down`. For migration,
+stop the old backend and copy its data into `./data` before starting this one.
+The root filesystem is read-only, with writable `/data` and temporary `/tmp`.
+To enable merged frontend hosting, uncomment the `/frontend` mount and all three
+merged-frontend variables in `.env`; the backend URL then ends in `/backend`.
+Leave merge/prefix flags unset or empty to disable them: `false` also enables them.
+
+The `.env` file supplies image/port interpolation and the container's runtime
+environment through `env_file`. The Compose `environment` block fixes the internal
+listener and data path. See Docker's [environment variable documentation](https://docs.docker.com/compose/how-tos/environment-variables/set-environment-variables/).
+After editing `.env`, run the `up -d` command again to apply changes.
+
+### Build from source
+
+The existing [Dockerfile](Dockerfile) builds the backend from locked Rust sources
+and embedded utility snapshots. Run from the repository root:
+
+```sh
+docker build --file rust/Dockerfile --tag sub-crate:local .
+```
+
+Set `SUB_CRATE_IMAGE=sub-crate:local` in `.env`, then start Compose with
+`docker compose -f docker-compose.example.yml up -d --pull never`.
+The Dockerfile-specific ignore file sends only required source and license inputs
+to the build context. The final image includes the executable, system trust roots,
+timezone data and license notices; it does not build or bundle the frontend.
+
+### Published image
+
 Pull the tagged image from GHCR. Docker selects `linux/amd64` or `linux/arm64`
 for the host. Both `v0.0.1` and `0.0.1` refer to the same multi-platform image;
 `latest` follows the most recently published release.

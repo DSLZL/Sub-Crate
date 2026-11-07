@@ -4,6 +4,7 @@ root.json
 /data/
 .env
 .env.*
+!.env.example
 logs/
 *.log
 *.pid

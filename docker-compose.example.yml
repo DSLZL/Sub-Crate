@@ -1,0 +1,20 @@
+services:
+  sub-crate:
+    image: ${SUB_CRATE_IMAGE:-ghcr.io/dslzl/sub-crate:v0.0.1}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Keep these container paths and ports aligned with the mounts below.
+      SUB_STORE_DATA_BASE_PATH: /data
+      SUB_STORE_BACKEND_API_HOST: 0.0.0.0
+      SUB_STORE_BACKEND_API_PORT: "3000"
+    ports:
+      - "${SUB_CRATE_BIND:-127.0.0.1}:${SUB_CRATE_PORT:-3000}:3000"
+    volumes:
+      - ./data:/data
+      # Optional: mount the official frontend's extracted dist directory.
+      # - ./frontend:/frontend:ro
+    read_only: true
+    tmpfs:
+      - /tmp

@@ -1,3 +1,4 @@
+# Build from the repository root: docker build -f rust/Dockerfile -t sub-crate:local .
 FROM rust:1.98.0-bookworm@sha256:82150a52ec202c1b14d7817e14516c392bb7f5cfebd88f1ed531cb37ebd39922 AS build
 WORKDIR /work
 COPY rust/Cargo.toml rust/Cargo.lock rust/

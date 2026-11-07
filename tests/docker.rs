@@ -1,7 +1,95 @@
-use std::{process::Command, time::Duration};
-use sub_store_tests::{Result, json, process, require};
+use std::{
+    fs,
+    process::Command,
+    time::{Duration, Instant},
+};
+use sub_store_tests::{
+    Result,
+    http::{self, Http},
+    json, process, require, server,
+};
 mod docker {
     use super::*;
+    #[test]
+    fn compose_example_loads_environment_and_preserves_data_after_recreation() -> Result {
+        let output = process::scratch("docker-compose")?;
+        let image = std::env::var("TEST_DOCKER_IMAGE")?;
+        let port = server::free_port()?.to_string();
+        let project = format!("nextest-compose-{}", std::process::id());
+        fs::copy(
+            sub_store_tests::root().join("docker-compose.example.yml"),
+            output.join("docker-compose.example.yml"),
+        )?;
+        let environment = fs::read_to_string(sub_store_tests::root().join(".env.example"))?;
+        fs::write(
+            output.join(".env"),
+            format!("{environment}\nSUB_STORE_X_POWERED_BY=compose-env-fixture\n"),
+        )?;
+        let execute = |arguments: &[&str], label: &str| {
+            process::checked(
+                Command::new("docker")
+                    .current_dir(&output)
+                    .args([
+                        "compose",
+                        "--project-name",
+                        &project,
+                        "--file",
+                        "docker-compose.example.yml",
+                    ])
+                    .args(arguments)
+                    .env("SUB_CRATE_IMAGE", &image)
+                    .env("SUB_CRATE_BIND", "127.0.0.1")
+                    .env("SUB_CRATE_PORT", &port),
+                &output,
+                label,
+                Duration::from_secs(90),
+            )
+        };
+        let result = (|| -> Result {
+            execute(&["config", "--quiet"], "config")?;
+            let http = Http::new(Duration::from_secs(2))?;
+            let address = format!("http://127.0.0.1:{port}");
+            let probe = serde_json::json!({"path":"/api/utils/env"});
+            for phase in ["initial", "recreated"] {
+                execute(&["up", "-d", "--pull", "never"], &format!("{phase}-up"))?;
+                let deadline = Instant::now() + Duration::from_secs(30);
+                let response = loop {
+                    match http.request(&address, &probe) {
+                        Ok(response) if response["status"] == 200 => break response,
+                        _ => {}
+                    }
+                    require(
+                        Instant::now() < deadline,
+                        "Compose backend did not become ready",
+                    )?;
+                    std::thread::sleep(Duration::from_millis(100));
+                };
+                http::check(
+                    &response,
+                    &serde_json::json!({"status":200,"headers":{"x-powered-by":"compose-env-fixture"}}),
+                )?;
+                let request = if phase == "initial" {
+                    serde_json::json!({"path":"/api/settings","method":"PATCH","body":{"composeExample":"retained"}})
+                } else {
+                    serde_json::json!({"path":"/api/settings"})
+                };
+                let response = http.request(&address, &request)?;
+                http::check(
+                    &response,
+                    &serde_json::json!({"status":200,"json_contains":{"data":{"composeExample":"retained"}}}),
+                )?;
+                json::write_new(output.join(format!("{phase}.json")), &response)?;
+                execute(&["logs", "--no-color"], &format!("{phase}-logs"))?;
+                execute(&["down", "--timeout", "10"], &format!("{phase}-down"))?;
+            }
+            Ok(())
+        })();
+        let _ = execute(&["logs", "--no-color"], "final-logs");
+        let cleanup = execute(&["down", "--timeout", "10"], "cleanup");
+        result?;
+        cleanup?;
+        Ok(())
+    }
     #[test]
     fn owned_probe_cleanup_preserves_other_containers_on_success_timeout_and_launch_failure()
     -> Result {

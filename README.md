@@ -37,6 +37,16 @@ $env:SUB_STORE_DATA_BASE_PATH = (Join-Path $PWD data)
 
 The backend listens at `http://127.0.0.1:3000`, and `/api/utils/env` returns its protocol and Rust implementation metadata.
 
+### Docker Compose
+
+Copy [.env.example](.env.example) to `.env`, then start the [Compose example](docker-compose.example.yml):
+
+```sh
+docker compose -f docker-compose.example.yml up -d
+```
+
+The example uses a tagged GHCR image, listens at `http://127.0.0.1:3000` and keeps data in `./data`. See the [Docker deployment guide](rust/README.md#docker-image) for configuration and building with the [Dockerfile](rust/Dockerfile).
+
 ## Frontend
 
 Use the official [hosted frontend](https://sub-store.vercel.app/subs), or download assets from the [frontend project](https://github.com/sub-store-org/Sub-Store-Front-End) and set `SUB_STORE_FRONTEND_PATH` to its `dist` directory. Backend releases do not build or bundle the frontend.
