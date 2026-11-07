@@ -57,7 +57,7 @@ jobs:
           [[ '${{ inputs.diagnose_health }}' != 'true' || '${{ inputs.diagnose_parse }}' != 'true' ]]
           [[ "$PERF_PROFILE_PIPELINE" != 1 || "$PERF_DIAGNOSTIC" == health ]]
           cargo +1.98.0 fmt --manifest-path tests/Cargo.toml --all -- --check
-          cargo +1.98.0 fmt --manifest-path rust/Cargo.toml --all -- --check
+          cargo +1.98.0 fmt --manifest-path crates/sub-crate/Cargo.toml --all -- --check
           cargo +1.98.0 clippy --manifest-path tests/Cargo.toml --locked --all-targets -- -D warnings
           cargo +1.98.0 nextest list --manifest-path tests/Cargo.toml --locked --release --lib --config-file .config/nextest.toml
           cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --release --lib --config-file .config/nextest.toml --profile ci

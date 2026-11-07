@@ -1,0 +1,7 @@
+[workspace]
+resolver = "3"
+members = ["crates/sub-crate", "tests"]
+
+# The interpreter must execute crypto fixtures within the same 15s host budget.
+[profile.dev.package.rquickjs-sys]
+opt-level = 3

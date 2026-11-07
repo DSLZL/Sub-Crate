@@ -74,7 +74,7 @@ const manifest = JSON.stringify({
   licenses_sha256: sha256(licenses),
   inputs: Object.fromEntries(Object.entries(inputs).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)),
 }, null, 2) + '\n';
-const output = path.join(root, 'rust/vendor');
+const output = path.join(root, 'crates/sub-crate/vendor');
 const evidence = path.join(__dirname, 'evidence/native-utilities');
 fs.mkdirSync(output, {recursive: true});
 fs.mkdirSync(evidence, {recursive: true});

@@ -20,5 +20,5 @@ runs:
           ~/.cargo/registry
           ~/.cargo/git
           ${{ runner.temp }}/sub-store-nextest-build
-        key: nextest-performance-${{ runner.os }}-${{ runner.arch }}-1.98.0-${{ hashFiles('tests/Cargo.toml', 'tests/Cargo.lock') }}
+        key: nextest-performance-${{ runner.os }}-${{ runner.arch }}-1.98.0-${{ hashFiles('Cargo.lock', 'tests/Cargo.toml') }}
         restore-keys: nextest-performance-${{ runner.os }}-${{ runner.arch }}-1.98.0-

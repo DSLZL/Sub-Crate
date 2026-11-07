@@ -19,7 +19,10 @@ fn write(path: &Path, content: &str) {
 }
 fn seed(root: &Path) {
     write(&root.join("LICENSE"), "application license");
-    write(&root.join("rust/vendor/LICENSES.txt"), "embedded license");
+    write(
+        &root.join("crates/sub-crate/vendor/LICENSES.txt"),
+        "embedded license",
+    );
     write(
         &root.join("toolchain/share/doc/rust/LICENSE-MIT"),
         "toolchain license",

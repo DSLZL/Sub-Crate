@@ -3,7 +3,7 @@ use std::{
     process::Command,
     time::{Duration, Instant},
 };
-use sub_store_tests::{
+use sub_crate_tests::{
     Result,
     http::{self, Http},
     json, process, require, server,
@@ -17,10 +17,10 @@ mod docker {
         let port = server::free_port()?.to_string();
         let project = format!("nextest-compose-{}", std::process::id());
         fs::copy(
-            sub_store_tests::root().join("docker-compose.example.yml"),
+            sub_crate_tests::root().join("docker-compose.example.yml"),
             output.join("docker-compose.example.yml"),
         )?;
-        let environment = fs::read_to_string(sub_store_tests::root().join(".env.example"))?;
+        let environment = fs::read_to_string(sub_crate_tests::root().join(".env.example"))?;
         fs::write(
             output.join(".env"),
             format!("{environment}\nSUB_STORE_X_POWERED_BY=compose-env-fixture\n"),
@@ -95,7 +95,7 @@ mod docker {
     -> Result {
         let output = process::scratch("docker-cleanup")?;
         let image = std::env::var("TEST_DOCKER_PROBE_IMAGE")?;
-        let target = sub_store_tests::script_target::Target::Docker(image.clone());
+        let target = sub_crate_tests::script_target::Target::Docker(image.clone());
         let prefix = format!("nextest-probe-{}", std::process::id());
         let control = format!("{prefix}-control");
         process::checked(
@@ -203,7 +203,7 @@ mod docker {
     }
     #[test]
     fn delivery() -> Result {
-        sub_store_tests::distribution::docker(
+        sub_crate_tests::distribution::docker(
             &process::scratch("docker-delivery")?,
             &std::env::var("TEST_DOCKER_IMAGE")?,
         )

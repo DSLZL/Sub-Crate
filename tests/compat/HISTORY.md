@@ -4,7 +4,7 @@ The complete production gate is `.github/workflows/rust-compat-native.yml`.
 It executes the delivered native binaries, reloaded Docker images and extracted
 official frontend, including all 21 UI workflows in three backend/hosting modes.
 The exact baselines, finite inventory, required evidence and deliberate runtime
-differences are defined in [rust/ACCEPTANCE.md](../../rust/ACCEPTANCE.md).
+differences are defined in [docs/ACCEPTANCE.md](../../docs/ACCEPTANCE.md).
 Accept only an exact source revision with all six successful jobs and its final
 source-to-result review. The runner's individual suites and contained probe are
 bounded checks, not independent whole-product acceptance.
@@ -32,13 +32,13 @@ production boundary is the acceptance document above.
 
 ## Historical discovery and contained proofs
 
-The 2026-10-17 [history audit](HISTORY-CLEANUP.md) removes speculative standalone
+The 2026-10-17 history audit (see git history of `tests/compat/HISTORY-CLEANUP.md`) removes speculative standalone
 Web API conformance work. The retained host proves actual Sub-Store helper and
 age dependencies; it is not a full browser/Node Web API implementation. General
 standards coverage is not a gate before implementing the Rust HTTP/state service.
 The unchanged frontend has separate Node-baseline and initial Rust-service CRUD
 runs in GitHub Actions. The Rust service and remaining M2 gates are documented
-in [rust/README.md](../../rust/README.md).
+in [crates/sub-crate/README.md](../../crates/sub-crate/README.md).
 
 This directory tests the Node reference with approved RF01/RF02 fixes, builds development-only JS helpers,
 and captures native rquickjs feasibility evidence. `service.py` validates the

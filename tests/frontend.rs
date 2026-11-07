@@ -1,4 +1,4 @@
-use sub_store_tests::{Result, distribution, process, reference, server::Backend, service};
+use sub_crate_tests::{Result, distribution, process, reference, server::Backend, service};
 
 #[test]
 fn frontend_delivery() -> Result {
@@ -9,7 +9,7 @@ mod frontend {
     use super::*;
     #[test]
     fn node() -> Result {
-        sub_store_tests::frontend::run(
+        sub_crate_tests::frontend::run(
             &process::scratch("frontend-node")?,
             Backend::Node(reference::node()),
             false,
@@ -17,7 +17,7 @@ mod frontend {
     }
     #[test]
     fn rust_merged() -> Result {
-        sub_store_tests::frontend::run(
+        sub_crate_tests::frontend::run(
             &process::scratch("frontend-rust-merged")?,
             service::target()?,
             false,
@@ -25,7 +25,7 @@ mod frontend {
     }
     #[test]
     fn rust_standalone() -> Result {
-        sub_store_tests::frontend::run(
+        sub_crate_tests::frontend::run(
             &process::scratch("frontend-rust-standalone")?,
             service::target()?,
             true,

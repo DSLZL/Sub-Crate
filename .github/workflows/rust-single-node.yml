@@ -21,7 +21,7 @@ on:
         default: false
   push:
     branches: [main]
-    paths: [.github/workflows/rust-single-node.yml, .github/actions/nextest/**, .config/nextest.toml, tests/Cargo.*, tests/performance.rs, tests/src/performance/**, tests/src/performance.rs, tests/performance/single-node.*, tests/performance/single_node.rs]
+    paths: [.github/workflows/rust-single-node.yml, .github/single-node-layout.sh, Cargo.lock, .github/actions/nextest/**, .config/nextest.toml, tests/Cargo.*, tests/performance.rs, tests/src/performance/**, tests/src/performance.rs, tests/performance/single-node.*, tests/performance/single_node.rs]
 
 permissions:
   contents: read
@@ -119,25 +119,29 @@ jobs:
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
+            .performance/rust/target
             .performance/rust/rust/target
+            .performance/rust-baseline/target
             .performance/rust-baseline/rust/target
           key: single-node-apps-1.98.0-${{ steps.application.outputs.sha }}
           restore-keys: single-node-apps-1.98.0-
       - name: Check exact source and harness invariants
         run: |
+          source .github/single-node-layout.sh
           cargo +1.98.0 fmt --manifest-path tests/Cargo.toml --all -- --check
-          cargo +1.98.0 fmt --manifest-path .performance/rust/rust/Cargo.toml --all -- --check
+          cargo +1.98.0 fmt --manifest-path "$(manifest rust)" --all -- --check
           cargo +1.98.0 clippy --manifest-path tests/Cargo.toml --locked --all-targets -- -D warnings
-          cargo +1.98.0 clippy --manifest-path .performance/rust/rust/Cargo.toml --target-dir "$GITHUB_WORKSPACE/.performance/rust/rust/target" --locked --all-targets -- -D warnings
+          cargo +1.98.0 clippy --manifest-path "$(manifest rust)" --target-dir "$(target_dir rust)" --locked --all-targets -- -D warnings
           cargo +1.98.0 nextest list --manifest-path tests/Cargo.toml --locked --release --lib --config-file .config/nextest.toml
           cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --release --lib --config-file .config/nextest.toml --profile ci
-          cargo +1.98.0 nextest run --manifest-path .performance/rust/rust/Cargo.toml --target-dir "$GITHUB_WORKSPACE/.performance/rust/rust/target" --locked --release --bins --config-file .config/nextest.toml --profile production
+          cargo +1.98.0 nextest run --manifest-path "$(manifest rust)" --target-dir "$(target_dir rust)" --locked --release --bins --config-file .config/nextest.toml --profile production
       - name: Build actual applications and interactive parser helpers
         run: |
+          source .github/single-node-layout.sh
           (cd .performance/original/backend && node bundle-esbuild.js)
           for kind in rust-baseline rust; do
-            cargo +1.98.0 build --manifest-path ".performance/$kind/rust/Cargo.toml" --target-dir "$GITHUB_WORKSPACE/.performance/$kind/rust/target" --locked --release --bins
-            cargo +1.98.0 test --manifest-path ".performance/$kind/rust/Cargo.toml" --target-dir "$GITHUB_WORKSPACE/.performance/$kind/rust/target" --locked --release --bins --no-run --message-format=json > "$RUNNER_TEMP/single-node-$kind-build.jsonl"
+            cargo +1.98.0 build --manifest-path "$(manifest "$kind")" --target-dir "$(target_dir "$kind")" --locked --release --bins
+            cargo +1.98.0 test --manifest-path "$(manifest "$kind")" --target-dir "$(target_dir "$kind")" --locked --release --bins --no-run --message-format=json > "$RUNNER_TEMP/single-node-$kind-build.jsonl"
             git -C ".performance/$kind" diff --exit-code
           done
           git -C .performance/original diff --exit-code

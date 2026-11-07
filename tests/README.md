@@ -22,7 +22,7 @@ a self-check-only result does not accept a new source revision.
 Runner entry points, after the workflow's setup and build steps:
 
 ```sh
-cargo +1.98.0 nextest run --manifest-path rust/Cargo.toml --locked --all-targets --config-file .config/nextest.toml --profile production
+cargo +1.98.0 nextest run --manifest-path crates/sub-crate/Cargo.toml --locked --all-targets --config-file .config/nextest.toml --profile production
 cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --lib --config-file .config/nextest.toml --profile ci
 cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --test native --config-file .config/nextest.toml --profile acceptance
 ```

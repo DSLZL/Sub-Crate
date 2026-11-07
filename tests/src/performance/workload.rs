@@ -11,14 +11,25 @@ use std::{
 };
 
 pub fn rust_binary_path(root: &Path) -> Result<PathBuf> {
-    // Frozen baselines retain the old name; cached binaries must not choose the source.
-    let manifest = std::fs::read_to_string(root.join("rust/Cargo.toml"))?;
+    // Frozen baselines retain the old `rust/` layout and name; cached binaries must not choose the source.
+    let (manifest, release) = if root.join("rust/Cargo.toml").is_file() {
+        (
+            root.join("rust/Cargo.toml"),
+            root.join("rust/target/release"),
+        )
+    } else {
+        (
+            root.join("crates/sub-crate/Cargo.toml"),
+            root.join("target/release"),
+        )
+    };
+    let manifest = std::fs::read_to_string(manifest)?;
     let name = manifest
         .lines()
         .find_map(|line| line.strip_prefix("name = \"")?.strip_suffix('"'))
         .filter(|name| ["sub-crate", "sub-store-rust"].contains(name))
         .ok_or("Unknown benchmark application package")?;
-    Ok(root.join("rust/target/release").join(name))
+    Ok(release.join(name))
 }
 
 pub struct Arguments {
@@ -703,6 +714,18 @@ mod tests {
             "[package]\nname = \"unknown\"\n",
         )?;
         assert!(rust_binary_path(&root).is_err());
+        std::fs::remove_dir_all(root.join("rust"))?;
+        std::fs::create_dir_all(root.join("crates/sub-crate"))?;
+        std::fs::write(
+            root.join("crates/sub-crate/Cargo.toml"),
+            "[package]
+name = \"sub-crate\"
+",
+        )?;
+        assert_eq!(
+            rust_binary_path(&root)?,
+            root.join("target/release/sub-crate")
+        );
         Ok(())
     }
 

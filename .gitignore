@@ -10,8 +10,7 @@ logs/
 *.pid
 
 # Build and CI outputs
-/rust/target/
-/tests/target/
+/target/
 node_modules/
 /.performance/
 /.compat-frontend/
@@ -41,3 +40,4 @@ Thumbs.db
 CODEMAP.md
 CONTEXT_BUNDLE.md
 mydocs
+target/

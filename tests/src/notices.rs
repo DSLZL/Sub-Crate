@@ -42,10 +42,10 @@ pub fn collect(
     let notices = directory.join("licenses");
     std::fs::create_dir(&notices)?;
     copy(&root.join("LICENSE"), &directory.join("LICENSE"))?;
-    let utility_files = files(&root.join("rust/vendor"))?
+    let utility_files = files(&root.join("crates/sub-crate/vendor"))?
         .into_iter()
         .filter(|path| {
-            path.parent() == Some(root.join("rust/vendor").as_path())
+            path.parent() == Some(root.join("crates/sub-crate/vendor").as_path())
                 && path
                     .file_name()
                     .unwrap()

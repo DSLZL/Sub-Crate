@@ -16,7 +16,7 @@ Sub-Crate is a standalone Rust backend for [Sub-Store](https://github.com/sub-st
 | Linux arm64 | `sub-crate-<version>-linux-arm64.tar.gz` |
 | Windows x64 | `sub-crate-<version>-windows-x64.zip` |
 
-See the [deployment guide](rust/README.md) for checksums, archive contents and runtime requirements.
+See the [deployment guide](crates/sub-crate/README.md) for checksums, archive contents and runtime requirements.
 
 ### Start the backend
 
@@ -45,7 +45,7 @@ Copy [.env.example](.env.example) to `.env`, then start the [Compose example](do
 docker compose -f docker-compose.example.yml up -d
 ```
 
-The example uses a tagged GHCR image, listens at `http://127.0.0.1:3000` and keeps data in `./data`. See the [Docker deployment guide](rust/README.md#docker-image) for configuration and building with the [Dockerfile](rust/Dockerfile).
+The example uses a tagged GHCR image, listens at `http://127.0.0.1:3000` and keeps data in `./data`. See the [Docker deployment guide](crates/sub-crate/README.md#docker-image) for configuration and building with the [Dockerfile](rust/Dockerfile).
 
 ## Frontend
 
@@ -65,11 +65,10 @@ Node builtins, CommonJS `require`, `process.env`, `$substore.node`, npm loading 
 
 | Guide | Contents |
 | --- | --- |
-| [Deployment](rust/README.md) | Downloads, environment variables, frontend hosting, Docker, migration and rollback |
-| [Acceptance contract](rust/ACCEPTANCE.md) | Fixed baselines, required platforms, tested scope and compatibility limits |
+| [Deployment](crates/sub-crate/README.md) | Downloads, environment variables, frontend hosting, Docker, migration and rollback |
+| [Acceptance contract](docs/ACCEPTANCE.md) | Fixed baselines, required platforms, tested scope and compatibility limits |
 | [Compatibility tests](tests/compat/README.md) | Reference preparation, regression harnesses and retained evidence |
 | [Performance records](tests/performance/README.md) | Benchmarks, measured source revisions and their limitations |
-| [Cleanup inventory](rust/CLEANUP.md) | Removed upstream files and retained runtime, fixture and license dependencies |
 
 Sub-Crate is based on the work of the [Sub-Store authors and contributors](https://github.com/sub-store-org/Sub-Store/graphs/contributors). It is licensed under [AGPL-3.0-only](LICENSE). Embedded utilities and delivered archives include their dependency license notices.
 

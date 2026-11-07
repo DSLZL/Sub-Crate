@@ -1,4 +1,4 @@
-use sub_store_tests::{Result, performance::subscription};
+use sub_crate_tests::{Result, performance::subscription};
 
 #[test]
 fn subscription_matrix() -> Result {
@@ -29,9 +29,9 @@ fn subscription_inspect() -> Result {
 
 #[test]
 fn single_node_compare() -> Result {
-    sub_store_tests::performance::single::run()
+    sub_crate_tests::performance::single::run()
 }
 #[test]
 fn single_node_inspect() -> Result {
-    sub_store_tests::performance::single::inspect()
+    sub_crate_tests::performance::single::inspect()
 }

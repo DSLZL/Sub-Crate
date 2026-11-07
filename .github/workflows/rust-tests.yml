@@ -44,12 +44,12 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ${{ runner.temp }}/sub-store-test-build
-          key: nextest-harness-${{ matrix.runner }}-1.98.0-${{ hashFiles('tests/Cargo.toml', 'tests/Cargo.lock') }}
+          key: nextest-harness-${{ matrix.runner }}-1.98.0-${{ hashFiles('Cargo.lock', 'tests/Cargo.toml') }}
           restore-keys: nextest-harness-${{ matrix.runner }}-1.98.0-
       - name: Check source formatting
         run: |
           cargo +1.98.0 fmt --manifest-path tests/Cargo.toml --all -- --check
-          cargo +1.98.0 fmt --manifest-path rust/Cargo.toml --all -- --check
+          cargo +1.98.0 fmt --manifest-path crates/sub-crate/Cargo.toml --all -- --check
       - name: Check delivery workflow syntax
         if: matrix.runner == 'ubuntu-24.04'
         run: |
@@ -60,7 +60,7 @@ jobs:
       - name: Clippy
         run: |
           cargo +1.98.0 clippy --manifest-path tests/Cargo.toml --locked --all-targets -- -D warnings
-          cargo +1.98.0 clippy --manifest-path rust/Cargo.toml --locked --all-targets -- -D warnings
+          cargo +1.98.0 clippy --manifest-path crates/sub-crate/Cargo.toml --locked --all-targets -- -D warnings
       - name: Inventory and nextest self-checks
         if: ${{ !cancelled() }}
         run: |
@@ -68,8 +68,8 @@ jobs:
           cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --lib --config-file .config/nextest.toml --profile ci
       - name: Production Rust unit tests
         run: |
-          cargo +1.98.0 nextest list --manifest-path rust/Cargo.toml --locked --all-targets --config-file .config/nextest.toml
-          cargo +1.98.0 nextest run --manifest-path rust/Cargo.toml --locked --all-targets --config-file .config/nextest.toml --profile production
+          cargo +1.98.0 nextest list --manifest-path crates/sub-crate/Cargo.toml --locked --all-targets --config-file .config/nextest.toml
+          cargo +1.98.0 nextest run --manifest-path crates/sub-crate/Cargo.toml --locked --all-targets --config-file .config/nextest.toml --profile production
       - uses: ./.github/actions/node-reference
       - name: Prepare fixed reference and embedded utilities
         run: |
@@ -82,12 +82,12 @@ jobs:
         working-directory: backend
         run: node bundle-esbuild.js
       - name: Build Rust service on runner
-        run: cargo +1.98.0 build --manifest-path rust/Cargo.toml --locked --release --bin sub-crate --example script_probe --example collect_notices
+        run: cargo +1.98.0 build --manifest-path crates/sub-crate/Cargo.toml --locked --release --bin sub-crate --example script_probe --example collect_notices
       - name: Attribute release parsing and conversion CPU
         if: matrix.runner == 'ubuntu-24.04'
         run: |
-          cargo +1.98.0 nextest run --manifest-path rust/Cargo.toml --locked --release --bin sub-crate --config-file .config/nextest.toml --profile cpu-parse --run-ignored only -E 'test(=clash::tests::profile_structured_subscription)' --success-output immediate
-          cargo +1.98.0 nextest run --manifest-path rust/Cargo.toml --locked --release --bin sub-crate --config-file .config/nextest.toml --profile cpu-conversion --run-ignored only -E 'test(=script_conversion::tests::profile_node_production)' --success-output immediate
+          cargo +1.98.0 nextest run --manifest-path crates/sub-crate/Cargo.toml --locked --release --bin sub-crate --config-file .config/nextest.toml --profile cpu-parse --run-ignored only -E 'test(=clash::tests::profile_structured_subscription)' --success-output immediate
+          cargo +1.98.0 nextest run --manifest-path crates/sub-crate/Cargo.toml --locked --release --bin sub-crate --config-file .config/nextest.toml --profile cpu-conversion --run-ignored only -E 'test(=script::conversion::tests::profile_node_production)' --success-output immediate
       - name: Execute migrated native contracts
         id: native
         run: |

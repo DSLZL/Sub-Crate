@@ -4,7 +4,7 @@
 runs the independent Rust harness through cargo-nextest. It requires all six
 jobs on one source revision: three native platforms, two native Docker
 architectures and the unchanged frontend in headless Chrome. The complete
-contract is [rust/ACCEPTANCE.md](../../rust/ACCEPTANCE.md).
+contract is [docs/ACCEPTANCE.md](../../docs/ACCEPTANCE.md).
 
 The native jobs call the reusable [Rust test workflow](../../.github/workflows/rust-tests.yml).
 They run formatting, clippy, harness self-checks and production Rust units before
@@ -49,5 +49,5 @@ belong on the runner. Product downloads are the separate `m5-*` artifacts;
 
 [HISTORY.md](HISTORY.md) preserves the earlier discovery, experiments and their
 original commands byte-for-byte. Its pending statements and retired Python
-commands describe those historical revisions. [HISTORY-CLEANUP.md](HISTORY-CLEANUP.md)
-records the earlier removal of unrelated Web API experiments.
+commands describe those historical revisions. The removed `HISTORY-CLEANUP.md` (see git history)
+recorded the earlier removal of unrelated Web API experiments.

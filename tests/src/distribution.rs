@@ -107,8 +107,11 @@ pub fn frontend(output: &Path) -> Result<PathBuf> {
     for file in ["LICENSE", "package.json", "pnpm-lock.yaml"] {
         std::fs::copy(frontend.join(file), payload.join(file))?;
     }
-    for file in ["README.md", "ACCEPTANCE.md"] {
-        std::fs::copy(crate::root().join("rust").join(file), payload.join(file))?;
+    for (file, path) in [
+        ("README.md", "crates/sub-crate/README.md"),
+        ("ACCEPTANCE.md", "docs/ACCEPTANCE.md"),
+    ] {
+        std::fs::copy(crate::root().join(path), payload.join(file))?;
     }
     let licenses = process::checked(
         Command::new("pnpm")
@@ -446,11 +449,15 @@ pub fn native(output: &Path, binary: &Path) -> Result<PathBuf> {
             "--",
             "LICENSE",
             ".dockerignore",
-            "rust",
+            "Cargo.toml",
+            "Cargo.lock",
+            "Dockerfile",
+            "Dockerfile.dockerignore",
+            "crates",
+            "docs",
             "tests/compat",
             "tests/src",
             "tests/Cargo.toml",
-            "tests/Cargo.lock",
             ".config/nextest.toml",
             ".github/actions/node-reference",
             ".github/workflows/rust-compat-native.yml",
@@ -464,7 +471,7 @@ pub fn native(output: &Path, binary: &Path) -> Result<PathBuf> {
             .map(|path| Ok((path.to_owned(), digest(crate::root().join(path))?)))
             .collect::<Result<BTreeMap<_, _>>>()?
     );
-    source["cargo_lock_sha256"] = json!(digest(crate::root().join("rust/Cargo.lock"))?);
+    source["cargo_lock_sha256"] = json!(digest(crate::root().join("Cargo.lock"))?);
     source["workflow_run"] = json!(std::env::var("GITHUB_RUN_ID")?);
     source["workflow_attempt"] = json!(std::env::var("GITHUB_RUN_ATTEMPT")?);
     source["frontend_protocol_version"] =
@@ -479,7 +486,7 @@ pub fn native(output: &Path, binary: &Path) -> Result<PathBuf> {
         &[
             "metadata",
             "--manifest-path",
-            "rust/Cargo.toml",
+            "crates/sub-crate/Cargo.toml",
             "--locked",
             "--format-version",
             "1",
@@ -507,7 +514,7 @@ pub fn native(output: &Path, binary: &Path) -> Result<PathBuf> {
     };
     std::fs::copy(binary, payload.join(filename))?;
     std::fs::copy(
-        crate::root().join("rust/RELEASE-README.md"),
+        crate::root().join("docs/RELEASE-README.md"),
         payload.join("README.md"),
     )?;
     let mut linkage = binary_imports(&payload.join(filename), target)?;
@@ -638,11 +645,15 @@ pub fn docker(output: &Path, image: &str) -> Result {
                 "ls-files",
                 "--",
                 "LICENSE",
-                "rust",
+                "Cargo.toml",
+                "Cargo.lock",
+                "Dockerfile",
+                "Dockerfile.dockerignore",
+                "crates",
+                "docs",
                 "tests/compat",
                 "tests/src",
                 "tests/Cargo.toml",
-                "tests/Cargo.lock",
                 ".config/nextest.toml",
                 ".github/actions/node-reference",
                 ".github/workflows/rust-compat-native.yml",
@@ -659,7 +670,7 @@ pub fn docker(output: &Path, image: &str) -> Result {
             .map(|path| Ok((path.to_owned(), digest(crate::root().join(path))?)))
             .collect::<Result<BTreeMap<_, _>>>()?
     );
-    source["cargo_lock_sha256"] = json!(digest(crate::root().join("rust/Cargo.lock"))?);
+    source["cargo_lock_sha256"] = json!(digest(crate::root().join("Cargo.lock"))?);
     source["workflow_run"] = json!(std::env::var("GITHUB_RUN_ID")?);
     source["workflow_attempt"] = json!(std::env::var("GITHUB_RUN_ATTEMPT")?);
     let metadata = process::checked(
@@ -667,7 +678,7 @@ pub fn docker(output: &Path, image: &str) -> Result {
             .args([
                 "metadata",
                 "--manifest-path",
-                "rust/Cargo.toml",
+                "crates/sub-crate/Cargo.toml",
                 "--locked",
                 "--no-deps",
                 "--format-version",
@@ -679,7 +690,14 @@ pub fn docker(output: &Path, image: &str) -> Result {
         Duration::from_secs(120),
     )?
     .stdout;
-    let version = json::parse(&metadata)?["packages"][0]["version"]
+    let version = json::parse(&metadata)?["packages"]
+        .as_array()
+        .and_then(|packages| {
+            packages
+                .iter()
+                .find(|package| package["name"] == "sub-crate")
+        })
+        .ok_or("Missing image application package")?["version"]
         .as_str()
         .ok_or("Missing image application version")?
         .to_owned();
@@ -687,8 +705,12 @@ pub fn docker(output: &Path, image: &str) -> Result {
     let payload = output.join(format!("sub-crate-{version}-docker-{target}"));
     std::fs::create_dir(&payload)?;
     std::fs::copy(crate::root().join("LICENSE"), payload.join("LICENSE"))?;
-    for file in ["README.md", "ACCEPTANCE.md", "Cargo.lock"] {
-        std::fs::copy(crate::root().join("rust").join(file), payload.join(file))?;
+    for (file, path) in [
+        ("README.md", "crates/sub-crate/README.md"),
+        ("ACCEPTANCE.md", "docs/ACCEPTANCE.md"),
+        ("Cargo.lock", "Cargo.lock"),
+    ] {
+        std::fs::copy(crate::root().join(path), payload.join(file))?;
     }
     let container = command(&["create", image], "notice-container", 120)?;
     require(

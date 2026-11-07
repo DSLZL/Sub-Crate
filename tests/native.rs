@@ -1,7 +1,7 @@
 use serde_json::json;
 use std::path::PathBuf;
 use std::time::Duration;
-use sub_store_tests::{
+use sub_crate_tests::{
     Result, contracts,
     http::{self, Http},
     json, process, reference, require,
@@ -13,7 +13,7 @@ fn native_delivery() -> Result {
     let binary =
         PathBuf::from(std::env::var_os("TEST_RUST_BINARY").ok_or("Missing release binary")?)
             .canonicalize()?;
-    sub_store_tests::distribution::native(&process::scratch("native-delivery")?, &binary)?;
+    sub_crate_tests::distribution::native(&process::scratch("native-delivery")?, &binary)?;
     Ok(())
 }
 
@@ -35,7 +35,7 @@ fn default_backend_and_separate_frontend_accept_ipv4_without_host_overrides() ->
     );
     server::set(&mut environment, "SUB_STORE_CORS_ALLOWED_ORIGINS", "");
     let mut listener = Server::start(
-        &sub_store_tests::service::target()?,
+        &sub_crate_tests::service::target()?,
         &environment,
         &output,
         "default-ipv4",
@@ -70,50 +70,50 @@ fn default_backend_and_separate_frontend_accept_ipv4_without_host_overrides() ->
 
 #[test]
 fn settings_numeric_coercion_recipient_validation_order_and_failed_writes() -> Result {
-    sub_store_tests::edges::settings_and_keys(&process::scratch("service-settings-keys")?)
+    sub_crate_tests::edges::settings_and_keys(&process::scratch("service-settings-keys")?)
 }
 #[test]
 fn crud_typed_references_null_records_raw_buffers_restart_and_node_rollback() -> Result {
-    sub_store_tests::edges::crud_lifecycle(&process::scratch("service-crud-edges")?)
+    sub_crate_tests::edges::crud_lifecycle(&process::scratch("service-crud-edges")?)
 }
 #[test]
 fn backup_import_export_codecs_calendars_atomic_restore_scalar_settings_and_node_rollback() -> Result
 {
-    sub_store_tests::persistence::backups(&process::scratch("service-backup-edges")?)
+    sub_crate_tests::persistence::backups(&process::scratch("service-backup-edges")?)
 }
 #[test]
 fn noisy_base64_legacy_migration_preserves_numeric_order_processors_and_original_snapshot() -> Result
 {
-    sub_store_tests::persistence::migration(&process::scratch("service-migration")?)
+    sub_crate_tests::persistence::migration(&process::scratch("service-migration")?)
 }
 #[test]
 fn unicode_json_and_utf16_keep_lone_surrogates_markers_restart_and_node_rollback() -> Result {
-    sub_store_tests::unicode::run(&process::scratch("service-unicode")?)
+    sub_crate_tests::unicode::run(&process::scratch("service-unicode")?)
 }
 #[test]
 fn live_raw_buffers_keep_identity_across_failed_writes_restore_restart_and_node_rollback() -> Result
 {
-    sub_store_tests::buffers::run(&process::scratch("service-buffers")?)
+    sub_crate_tests::buffers::run(&process::scratch("service-buffers")?)
 }
 #[test]
 fn runtime_proxy_header_limits_listener_prefix_cors_and_json_limits_preserve_contracts() -> Result {
-    sub_store_tests::configuration::run(&process::scratch("service-configuration")?)
+    sub_crate_tests::configuration::run(&process::scratch("service-configuration")?)
 }
 #[test]
 fn diagnostic_envelopes_native_frames_reasons_and_failed_state_match_all_environment_modes()
 -> Result {
-    sub_store_tests::configuration::diagnostics(&process::scratch("service-diagnostics")?)
+    sub_crate_tests::configuration::diagnostics(&process::scratch("service-diagnostics")?)
 }
 #[test]
 fn corrupt_native_startups_and_restore_journals_exit_without_resetting_either_file() -> Result {
-    sub_store_tests::configuration::rejected_startups(&process::scratch(
+    sub_crate_tests::configuration::rejected_startups(&process::scratch(
         "service-rejected-startups",
     )?)
 }
 #[test]
 fn merged_and_standalone_static_ranges_validators_api_methods_queries_and_forwarded_bodies()
 -> Result {
-    sub_store_tests::static_files::run(&process::scratch("service-static-http")?)
+    sub_crate_tests::static_files::run(&process::scratch("service-static-http")?)
 }
 
 #[test]
@@ -128,60 +128,60 @@ fn frozen_node_http_suites() -> Result {
 
 #[test]
 fn shared_native_script_host_processors_dns_mmdb_wire_state_and_resume() -> Result {
-    sub_store_tests::probe::shared(&process::scratch("script-probe")?)
+    sub_crate_tests::probe::shared(&process::scratch("script-probe")?)
 }
 
 #[test]
 fn fresh_age_processes_cross_decrypt_both_key_types_and_preserve_artifacts() -> Result {
-    let binary = sub_store_tests::script_target::Target::from_env()?;
-    sub_store_tests::age::run(&process::scratch("age-probe")?, &binary)
+    let binary = sub_crate_tests::script_target::Target::from_env()?;
+    sub_crate_tests::age::run(&process::scratch("age-probe")?, &binary)
 }
 
 #[test]
 fn downloads_preserve_exact_wire_cache_stream_bytes_files_and_resume() -> Result {
-    let binary = sub_store_tests::script_target::Target::from_env()?;
-    sub_store_tests::download::run(&process::scratch("download-probe")?, &binary)
+    let binary = sub_crate_tests::script_target::Target::from_env()?;
+    sub_crate_tests::download::run(&process::scratch("download-probe")?, &binary)
 }
 
 #[test]
 fn conversion_business_contracts_clocks_restarts_isolation_and_concurrency() -> Result {
-    sub_store_tests::service::conversions(&process::scratch("service-conversions")?)
+    sub_crate_tests::service::conversions(&process::scratch("service-conversions")?)
 }
 
 #[test]
 fn services_cross_decrypt_existing_age_backups_and_rollback_corruption() -> Result {
-    sub_store_tests::backup::age_interop(&process::scratch("service-backup-age")?)
+    sub_crate_tests::backup::age_interop(&process::scratch("service-backup-age")?)
 }
 
 #[test]
 fn actual_schedules_cover_overlap_updates_disable_delete_sync_backup_mmdb_and_startup() -> Result {
-    sub_store_tests::scheduling::run(&process::scratch("service-scheduling")?)
+    sub_crate_tests::scheduling::run(&process::scratch("service-scheduling")?)
 }
 
 #[test]
 fn actual_utilities_and_sync_preserve_wire_cache_ttl_state_and_rf02() -> Result {
-    sub_store_tests::business::utilities_sync(&process::scratch("service-utilities-sync")?)
+    sub_crate_tests::business::utilities_sync(&process::scratch("service-utilities-sync")?)
 }
 #[test]
 fn archive_lifecycle_preserves_restart_atomic_restore_and_write_failures() -> Result {
-    sub_store_tests::business::archives(&process::scratch("service-archives")?)
+    sub_crate_tests::business::archives(&process::scratch("service-archives")?)
 }
 #[test]
 fn logs_preserve_typed_seed_capture_filter_retention_restart_and_failed_clear() -> Result {
-    sub_store_tests::business::logs(&process::scratch("service-logs")?)
+    sub_crate_tests::business::logs(&process::scratch("service-logs")?)
 }
 #[test]
 fn notifications_preserve_provider_templates_get_bodies_parallel_delivery_and_recovery() -> Result {
-    sub_store_tests::notifications::run(&process::scratch("service-notifications")?)
+    sub_crate_tests::notifications::run(&process::scratch("service-notifications")?)
 }
 #[test]
 fn business_resource_sync_settings_and_backup_log_callers_are_exercised() -> Result {
-    sub_store_tests::business::log_callers(&process::scratch("service-business-logs")?)
+    sub_crate_tests::business::log_callers(&process::scratch("service-business-logs")?)
 }
 #[test]
 fn merged_and_standalone_shares_preserve_token_concurrency_encryption_and_failed_writes() -> Result
 {
-    sub_store_tests::sharing::run(&process::scratch("service-sharing")?)
+    sub_crate_tests::sharing::run(&process::scratch("service-sharing")?)
 }
 
 #[test]
@@ -194,7 +194,7 @@ fn rust_and_node_preserve_shared_state_restart_write_failure_and_rollback() -> R
     let mut final_states = Vec::new();
     for (kind, backend) in [
         ("node", Backend::Node(reference::node())),
-        ("rust", sub_store_tests::service::target()?),
+        ("rust", sub_crate_tests::service::target()?),
     ] {
         let state = output.join(format!("{kind}-state"));
         std::fs::create_dir(&state)?;
