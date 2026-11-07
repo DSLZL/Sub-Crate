@@ -221,7 +221,8 @@ jobs:
             ${{ runner.temp }}/sub-store-docker-delivery-*
             ${{ runner.temp }}/sub-store-docker-probe-image-*
             ${{ runner.temp }}/sub-store-docker-cleanup-*
-            ${{ runner.temp }}/sub-store-docker-compose-*
+            ${{ runner.temp }}/sub-store-docker-compose-*/*.log
+            ${{ runner.temp }}/sub-store-docker-compose-*/*.json
             ${{ runner.temp }}/sub-store-state-parity-*
             ${{ runner.temp }}/sub-store-script-probe-*
             ${{ runner.temp }}/sub-store-age-probe-*
