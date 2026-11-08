@@ -42,7 +42,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 24.16.0
+          node-version: 24.22.1
           package-manager-cache: false
       - name: Check chart code and latest-tag publication rules
         run: |
@@ -74,7 +74,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 24.16.0
+          node-version: 24.22.1
           package-manager-cache: false
       - name: Resolve latest stable tag and reject unrelated measurements
         id: source
@@ -134,7 +134,7 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 24.16.0
+          node-version: 24.22.1
           package-manager-cache: false
       - name: Download rendered assets without running npm or downloaded code
         env:

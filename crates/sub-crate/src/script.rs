@@ -1179,7 +1179,7 @@ fn initialize<'js>(ctx: &Ctx<'js>, job: Job) -> rquickjs::Result<()> {
     globals.set("__geo", ctx.json_parse(include_str!("geo-flags.json"))?)?;
     globals.set(
         "__scriptEnvironment",
-        ctx.json_parse(r#"{"backend":"Rust","version":"2.42.4","feature":{},"meta":{}}"#)?,
+        ctx.json_parse(r#"{"backend":"Rust","version":"2.44.6","feature":{},"meta":{}}"#)?,
     )?;
     let host = Object::new(ctx.clone())?;
     host.set("name", "sub-store")?;

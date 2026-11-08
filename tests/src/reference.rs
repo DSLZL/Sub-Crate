@@ -25,8 +25,8 @@ pub fn verify(output: &Path) -> Result<Value> {
         Duration::from_secs(30),
     )?;
     require(
-        version.stdout.trim() == "v24.16.0",
-        "Pinned Node v24.16.0 required",
+        version.stdout.trim() == "v24.22.1",
+        "Pinned Node v24.22.1 required",
     )?;
     require(
         crate::root()
@@ -58,7 +58,7 @@ pub fn unit(output: &Path) -> Result {
     }
     command
         .envs(environment)
-        .arg(crate::root().join("backend/node_modules/mocha/bin/_mocha"))
+        .arg(crate::root().join("backend/node_modules/mocha/bin/mocha.js"))
         .args(["src/test/**/*.spec.js", "--require", &loader, "--require"])
         .arg(crate::compat().join("unit-progress.cjs"))
         .args(["--recursive", "--reporter", "json"])
@@ -88,11 +88,11 @@ pub fn unit(output: &Path) -> Result {
     }
     require(
         result.success()
-            && mocha["stats"]["tests"] == 826
+            && mocha["stats"]["tests"] == 890
             && mocha["pending"].as_array().is_some_and(Vec::is_empty)
             && mocha["failures"].as_array().is_some_and(Vec::is_empty),
         format!(
-            "Frozen Node suite expected 826 passing tests: tests={}, pending={}, failures={}, process_success={}",
+            "Frozen Node suite expected 890 passing tests: tests={}, pending={}, failures={}, process_success={}",
             mocha["stats"]["tests"],
             mocha["stats"]["pending"],
             mocha["stats"]["failures"],

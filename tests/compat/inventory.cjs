@@ -89,7 +89,7 @@ if (process.argv.length !== 4) throw new Error('Usage: inventory.cjs <pinned-fro
 const frontendCommit = git('-C', frontend, 'rev-parse', 'HEAD').trim();
 assert.equal(frontendCommit, '4bd7b0acbe65466b933ccea14fc61dbebe036ead');
 git('-C', frontend, 'diff', '--exit-code', 'HEAD');
-const backendBaseCommit = '9cc6b5fac966993364ae33da8797f446bbf7f571';
+const backendBaseCommit = '2888806251d90d45eabf2baf7a7fd4e8be2a4787';
 const backendPatch = git('-C', root, 'diff', '--no-ext-diff', '--binary', '--no-color', '--full-index', '--unified=0', backendBaseCommit, '--',
   'backend', 'scripts/ip-flag-node.js');
 assert.equal(backendPatch, fs.readFileSync(path.join(__dirname, 'approved-reference-fixes.patch'), 'utf8').replace(/\r\n/g, '\n'),

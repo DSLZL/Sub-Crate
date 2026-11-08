@@ -587,7 +587,7 @@ impl Suite {
                         30,
                     )?
                     .trim()
-                    == "v24.16.0",
+                    == "v24.22.1",
             "source",
         )?;
         let harness = self.command(
@@ -602,7 +602,7 @@ impl Suite {
             .map(Value::String)
             .collect::<Vec<_>>();
         Ok(
-            json!({"original":ORIGINAL,"rust":RUST,"frontend":FRONTEND,"rust_baseline":self.args.baseline.as_ref().map(|_|RUST_BASELINE),"rust_baseline_binary_sha256":baseline_binary,"original_lock_sha256":digest(std::fs::read(self.args.original.join("backend/pnpm-lock.yaml"))?),"rust_lock_sha256":digest(std::fs::read(self.args.rust.join("rust/Cargo.lock"))?),"node_bundle_sha256":digest(std::fs::read(self.args.original.join("backend/dist/sub-store.bundle.js"))?),"rust_binary_sha256":rust_binary,"frontend_assets_sha256":hash(&json!(assets)),"node_version":"24.16.0","rust_toolchain":"1.98.0","browser_driver_version":"0.27.3","nextest_version":"0.9.151","harness_sha":harness.trim(),"harness_lock_sha256":digest(std::fs::read(crate::root().join("Cargo.lock"))?),"runner":resources::runner()?}),
+            json!({"original":ORIGINAL,"rust":RUST,"frontend":FRONTEND,"rust_baseline":self.args.baseline.as_ref().map(|_|RUST_BASELINE),"rust_baseline_binary_sha256":baseline_binary,"original_lock_sha256":digest(std::fs::read(self.args.original.join("backend/pnpm-lock.yaml"))?),"rust_lock_sha256":digest(std::fs::read(self.args.rust.join("rust/Cargo.lock"))?),"node_bundle_sha256":digest(std::fs::read(self.args.original.join("backend/dist/sub-store.bundle.js"))?),"rust_binary_sha256":rust_binary,"frontend_assets_sha256":hash(&json!(assets)),"node_version":"24.22.1","rust_toolchain":"1.98.0","browser_driver_version":"0.27.3","nextest_version":"0.9.151","harness_sha":harness.trim(),"harness_lock_sha256":digest(std::fs::read(crate::root().join("Cargo.lock"))?),"runner":resources::runner()?}),
         )
     }
     pub fn script(&mut self) -> Result<String> {

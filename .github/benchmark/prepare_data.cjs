@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 
-const ORIGINAL = '9cc6b5fac966993364ae33da8797f446bbf7f571';
+const ORIGINAL = '2888806251d90d45eabf2baf7a7fd4e8be2a4787';
 const TAG = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const SHA = /^[0-9a-f]{40}$/;
 const METRICS = [

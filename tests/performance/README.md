@@ -8,7 +8,7 @@ Two workflows compare Sub-Crate with the original Sub-Store backend on the same 
 
 | Input | Revision |
 | --- | --- |
-| Sub-Store | `9cc6b5fac966993364ae33da8797f446bbf7f571` |
+| Sub-Store | `2888806251d90d45eabf2baf7a7fd4e8be2a4787` |
 | Sub-Crate | The workflow's commit, or the release given in `release_tag` |
 | Sub-Crate baseline | `9c19111bae2af2654caa339151e4eabd12b586bb` |
 
@@ -20,7 +20,7 @@ It measures parsing alone, first conversion, HTTP requests over new and kept-ali
 
 | Input | Revision |
 | --- | --- |
-| Sub-Store | `9cc6b5fac966993364ae33da8797f446bbf7f571` |
+| Sub-Store | `2888806251d90d45eabf2baf7a7fd4e8be2a4787` |
 | Sub-Crate | `af08b0649c4d2f2814fe38ce6943b1397f5e1c14` |
 | Diagnostic baseline | `ee64ab9f7376a68c126950caee256bf3fb9c2b12` |
 | Frontend | `4bd7b0acbe65466b933ccea14fc61dbebe036ead` |

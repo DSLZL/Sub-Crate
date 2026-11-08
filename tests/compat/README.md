@@ -15,6 +15,6 @@ These files let the harness compare Sub-Crate with the original Sub-Store. The p
 | `package.json`, `pnpm-lock.yaml` | Reference-only JavaScript dependencies |
 | Other `*.cjs` | Small helpers the workflows call, such as the frontend source inventory |
 
-The frozen backend (`9cc6b5fac966993364ae33da8797f446bbf7f571`) is never stored here. The [node-reference](../../.github/actions/node-reference/action.yml) action restores it on the runner and checks that only the approved patch was applied. Generated bundles, installed packages and evidence are created on the runner and are not committed.
+The frozen backend (`2888806251d90d45eabf2baf7a7fd4e8be2a4787`) is never stored here. The [node-reference](../../.github/actions/node-reference/action.yml) action restores it on the runner and checks that only the approved patch was applied. Generated bundles, installed packages and evidence are created on the runner and are not committed.
 
 [HISTORY.md](HISTORY.md) is the unchanged record of earlier experiments.

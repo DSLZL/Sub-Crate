@@ -1058,7 +1058,7 @@ async fn route(
             "application/json; charset=utf-8",
             json::stringify(&json!({
                 "status":"success", "data":{
-                    "backend":"Node", "version":"2.42.4",
+                    "backend":"Node", "version":"2.44.6",
                     "feature":{"archive":true,"share":!config.frontend_backend_path.is_empty()},
                     "meta":{"node":{"env":config.environment},"rust":{"version":env!("CARGO_PKG_VERSION"),"milestone":"M5","complete":true}}
                 }

@@ -52,7 +52,7 @@ jobs:
       - uses: ./.github/actions/node-reference
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 24.16.0
+          node-version: 24.22.1
           package-manager-cache: false
       - uses: ./.github/actions/rust-setup
       - name: Install locked frontend and reference dependencies
@@ -139,7 +139,7 @@ jobs:
       - uses: ./.github/actions/node-reference
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 24.16.0
+          node-version: 24.22.1
           package-manager-cache: false
       - uses: ./.github/actions/rust-setup
       - name: Prepare frozen reference and script probe inputs

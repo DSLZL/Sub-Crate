@@ -628,7 +628,7 @@ pub fn run() -> Result {
                 30,
             )?
             .trim()
-            == "v24.16.0",
+            == "v24.22.1",
         "source",
     )?;
     let source = std::fs::read_to_string(

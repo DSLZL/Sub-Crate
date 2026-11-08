@@ -48,7 +48,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 24.16.0
+          node-version: 24.22.1
           package-manager-cache: false
       - uses: ./.github/actions/rust-setup
       - name: Validate mode, source and benchmark invariants
@@ -120,7 +120,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: 9cc6b5fac966993364ae33da8797f446bbf7f571
+          ref: 2888806251d90d45eabf2baf7a7fd4e8be2a4787
           path: .performance/original
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -142,7 +142,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 24.16.0
+          node-version: 24.22.1
           package-manager-cache: false
       - uses: ./.github/actions/rust-setup
       - name: Install fixed tooling and locked application dependencies
@@ -262,7 +262,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: 9cc6b5fac966993364ae33da8797f446bbf7f571
+          ref: 2888806251d90d45eabf2baf7a7fd4e8be2a4787
           path: .performance/original
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -284,7 +284,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 24.16.0
+          node-version: 24.22.1
           package-manager-cache: false
       - uses: ./.github/actions/rust-setup
       - name: Install fixed Node reference dependencies

@@ -995,7 +995,7 @@ pub fn run(output: &Path, backend: Backend, standalone: bool) -> Result {
                 apis.iter()
                     .any(|api| api["url"] == base && api["name"] == metadata["host"]["current"])
             }) && metadata["env"]["backend"] == "Node"
-                && metadata["env"]["version"] == "2.42.4"
+                && metadata["env"]["version"] == "2.44.6"
                 && metadata["env"]["meta"]["node"]["env"]["SUB_STORE_FRONTEND_BACKEND_PATH"]
                     == "/backend",
             "Frontend backend configuration/metadata mismatch",

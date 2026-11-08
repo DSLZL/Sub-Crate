@@ -21,7 +21,7 @@ If a script is published in both a JS and a Node version, use the JS version.
 
 ## Detecting Sub-Crate
 
-The frontend sees the backend as Sub-Store 2.42.4 so that every feature stays enabled. Scripts receive the real identity in their context:
+The frontend sees the backend as Sub-Store 2.44.6 so that every feature stays enabled. Scripts receive the real identity in their context:
 
 ```js
 async function operator(proxies, targetPlatform, context) {

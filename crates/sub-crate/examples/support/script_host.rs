@@ -172,7 +172,7 @@ pub async fn run(
                     ctx.eval::<(), _>(
                         "const processorDiagnostics = [];\n\
                          for (const level of ['log', 'info', 'warn', 'error']) $substore[level] = message => processorDiagnostics.push(String(message));\n\
-                         const processorHost = createProbeProcessors($substore, {backend: 'Rust', version: '2.42.4', meta: {}, feature: {}});\n\
+                         const processorHost = createProbeProcessors($substore, {backend: 'Rust', version: '2.44.6', meta: {}, feature: {}});\n\
                          const probeKind = 'rust'; const probeReenter = __hostReenter;\n\
                          const probeMmdbWithDefaults = (values, callback) => { const saved = __hostMmdbDefaults; __hostMmdbDefaults = values;\n\
                            try { return callback(); } finally { __hostMmdbDefaults = saved; } };",

@@ -6,7 +6,7 @@ A Sub-Crate revision is acceptable only when the [Rust service and compatibility
 
 | Reference | Revision |
 | --- | --- |
-| Sub-Store backend | `9cc6b5fac966993364ae33da8797f446bbf7f571` |
+| Sub-Store backend | `2888806251d90d45eabf2baf7a7fd4e8be2a4787` |
 | Sub-Store frontend | `4bd7b0acbe65466b933ccea14fc61dbebe036ead` |
 
 The frozen backend is restored on each runner from its commit, with the two approved fixes in `tests/compat/approved-reference-fixes.patch`. The frontend is built from its commit without changes.
@@ -23,7 +23,7 @@ The frozen backend is restored on each runner from its commit, with the two appr
 
 ## What the contracts cover
 
-- All 826 original Sub-Store unit tests and its HTTP test suites.
+- All 890 original Sub-Store unit tests and its HTTP test suites.
 - Request-by-request comparison with the reference backend: responses, stored data, outgoing requests and caches.
 - Subscription parsing and conversion for every registered input format and output target.
 - Built-in processors, user scripts and every host helper scripts can call.
@@ -32,7 +32,7 @@ The frozen backend is restored on each runner from its commit, with the two appr
 
 ## Intentional differences
 
-- The frontend sees the backend as `Node`, version `2.42.4`, so all its features stay enabled. `/api/utils/env` reports the real implementation under `meta.rust`.
+- The frontend sees the backend as `Node`, version `2.44.6`, so all its features stay enabled. `/api/utils/env` reports the real implementation under `meta.rust`.
 - Node.js-only scripts do not run; see [Scripts](scripts.md). They are kept intact and fail with a script error when invoked.
 - Error traces and parser messages come from Rust and differ in wording from Node.js.
 - Two reference bugs are fixed: Windows path handling (RF01), and a missing token during artifact restore now returns an error instead of stopping the process (RF02).

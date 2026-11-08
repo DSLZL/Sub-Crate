@@ -422,7 +422,7 @@ mod tests {
         );
         assert_eq!(message("plain🙂", "debug"), "[unknown] DEBUG: plain🙂");
         for text in [
-            "Sub-Store -- v2.42.4",
+            "Sub-Store -- v2.44.6",
             "[scope] INFO: URI Parser is activated!",
             "Pre-processor [A] activated",
             "[sub-store] INFO: [CORS] allowed origins: *",

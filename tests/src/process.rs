@@ -227,7 +227,7 @@ pub fn checked(
 pub fn provenance(output: &Path) -> Result<Value> {
     provenance_at(
         &crate::root(),
-        "9cc6b5fac966993364ae33da8797f446bbf7f571",
+        "2888806251d90d45eabf2baf7a7fd4e8be2a4787",
         &crate::compat().join("approved-reference-fixes.patch"),
         output,
     )
