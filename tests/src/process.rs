@@ -419,7 +419,7 @@ mod tests {
         );
         assert!(
             evidence["argv"].as_array().unwrap().iter().any(
-                |argument| argument == "console.log('partial output');setTimeout(()=>{},10000)"
+                |argument| argument == "console.log('partial output');setTimeout(()=>{},60000)"
             )
         );
     }

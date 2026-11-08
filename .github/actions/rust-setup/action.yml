@@ -11,7 +11,14 @@ runs:
     - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2
       with:
         tool: nextest@0.9.151
-    - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+    - id: sccache
+      continue-on-error: true
+      uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      with:
+        version: v0.19.0
+    # GitHub release downloads occasionally return 5xx; retry once.
+    - if: steps.sccache.outcome == 'failure'
+      uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       with:
         version: v0.19.0
     - name: Enable CI build settings
