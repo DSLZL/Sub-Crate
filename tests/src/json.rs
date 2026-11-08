@@ -655,7 +655,7 @@ mod tests {
                 .iter()
                 .map(|case| case["steps"].as_array().unwrap().len())
                 .sum::<usize>(),
-            1096
+            1103
         );
         assert_eq!(manifest["suites"].as_object().unwrap().len(), 22);
         for suite in manifest["suites"].as_object().unwrap().keys() {

@@ -56,6 +56,11 @@ fn milliseconds<'js>(js: &Js<'js>, raw: Value<'js>) -> rquickjs::Result<f64> {
     Ok(number * scale)
 }
 
+fn lifetime<'js>(js: &Js<'js>, options: &Value<'js>) -> rquickjs::Result<bool> {
+    let unit = optional(js, options, "expiresUnit")?;
+    Ok(unit.is_string() && js.text(js.method(unit, "trim", vec![])?)? == "lifetime")
+}
+
 fn expiration<'js>(js: &Js<'js>, options: Value<'js>) -> rquickjs::Result<Value<'js>> {
     let value = optional(js, &options, "mode")?;
     let mode = if !present(js, &value)? {
@@ -129,6 +134,21 @@ fn expiration<'js>(js: &Js<'js>, options: Value<'js>) -> rquickjs::Result<Value<
         js.set(&output, "mode", js.value(mode)?)?;
         js.set(&output, "count", js.value(count)?)?;
         js.set(&output, "usedCount", js.value(used)?)?;
+    } else if mode == "duration" && lifetime(js, &options)? {
+        // A lifetime share has no exp and stays valid until it is deleted.
+        let raw = optional(js, &options, "expiresIn")?;
+        if present(js, &raw)? {
+            return Err(invalid(
+                js,
+                "INVALID_DURATION_INPUT",
+                format!(
+                    "expiresIn option is not allowed for lifetime duration: {}",
+                    js.text(raw)?
+                ),
+            )?);
+        }
+        js.set(&output, "mode", js.value("duration")?)?;
+        js.set(&output, "expiresUnit", js.value("lifetime")?)?;
     } else {
         let raw = optional(js, &options, "expiresIn")?;
         if !present(js, &raw)? {
