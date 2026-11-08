@@ -54,9 +54,14 @@ fn alias(value: &mut Value, from: &str, to: &str, delete: bool) {
 }
 
 fn supported_version(value: &Value, supported: &[f64]) -> bool {
-    value.is_null()
-        || (!codec::trim(&codec::js_string(value)).is_empty()
-            && supported.contains(&codec::to_number(value)))
+    // Like the source, non-strings go through their string form, so true and false are not 1 and 0.
+    let text = codec::js_string(value);
+    let text = if value.is_string() {
+        codec::trim(&text)
+    } else {
+        &text
+    };
+    value.is_null() || (!text.is_empty() && supported.contains(&codec::to_number(&json!(text))))
 }
 
 fn shadow_tls(proxy: &Value) -> Option<&Value> {
@@ -67,6 +72,39 @@ fn shadow_tls(proxy: &Value) -> Option<&Value> {
     } else {
         None
     }
+}
+
+/// Mihomo accepts Snell v0-v6 with a PSK and a known obfs mode; v6 also limits the PSK size and mode.
+fn meta_snell(proxy: &Value) -> bool {
+    // A missing mode compares as "", any other non-string never matches.
+    fn mode(value: &Value) -> Option<&str> {
+        if value.is_null() {
+            Some("")
+        } else {
+            value.as_str()
+        }
+    }
+    if !supported_version(&proxy["version"], &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) {
+        return false;
+    }
+    let v6 = codec::to_number(&proxy["version"]) == 6.0;
+    let psk = &proxy["psk"];
+    let obfs = &proxy["obfs-opts"];
+    // Buffer.byteLength counts a lone surrogate as the 3-byte replacement character.
+    let psk_bytes: usize = char::decode_utf16(codec::units(&codec::js_string(psk)))
+        .map(|unit| unit.map_or(3, char::len_utf8))
+        .sum();
+    ((psk.is_string() && codec::nonfinite(psk).is_none()) || psk.is_number())
+        && (obfs.is_null() || obfs.is_object())
+        && mode(&obfs["mode"]).is_some_and(|value| {
+            ["", "shadow-tls", "restls", "jls"].contains(&value)
+                || (!v6 && ["http", "tls"].contains(&value))
+        })
+        && (!v6
+            || ((12..=255).contains(&psk_bytes)
+                && mode(&proxy["mode"]).is_some_and(|value| {
+                    ["", "default", "unshaped", "unsafe-raw"].contains(&value)
+                })))
 }
 
 fn snell_conflict(proxy: &Value) -> bool {
@@ -180,8 +218,7 @@ pub(crate) fn supported(proxy: &Value, family: Family) -> bool {
                     && proxy["headers"]
                         .as_object()
                         .is_some_and(|headers| !headers.is_empty()))
-                || (kind == "snell"
-                    && !supported_version(&proxy["version"], &[1.0, 2.0, 3.0, 4.0, 5.0]))
+                || (kind == "snell" && !meta_snell(proxy))
                 || snell_conflict(proxy)
             {
                 return false;
@@ -285,6 +322,40 @@ fn restore_shadow_tls(proxy: &mut Value, name: &str) -> bool {
     remove(proxy, "plugin");
     remove(proxy, "plugin-opts");
     enabled
+}
+
+fn meta_snell_options(proxy: &mut Value) {
+    let version = if proxy["version"].is_null() {
+        1.0
+    } else {
+        codec::to_number(&proxy["version"])
+    };
+    if !proxy["version"].is_null() && !proxy["version"].is_number() && version.fract() == 0.0 {
+        proxy["version"] = codec::numeric(version);
+    }
+    if version < 3.0 {
+        remove(proxy, "udp");
+    }
+    if version < 6.0 {
+        remove(proxy, "mode");
+    }
+    let Some(options) = shadow_tls(proxy) else {
+        return;
+    };
+    // shortcut: a non-object plugin-opts becomes {} where the source spreads its indexes, port the spread if such input appears.
+    let mut restored = options.as_object().cloned().unwrap_or_default();
+    if !truthy(&proxy["plugin"]) {
+        // The source's lastParse already moved this obfs-opts into plugin-opts: mode dropped, root alpn merged.
+        restored.shift_remove("mode");
+        if truthy(&proxy["alpn"]) && !restored.get("alpn").is_some_and(truthy) {
+            restored.insert("alpn".to_owned(), proxy["alpn"].clone());
+        }
+        remove(proxy, "alpn");
+    }
+    restored.insert("mode".to_owned(), json!("shadow-tls"));
+    proxy["obfs-opts"] = Value::Object(restored);
+    remove(proxy, "plugin");
+    remove(proxy, "plugin-opts");
 }
 
 fn transport(proxy: &mut Value, kind: &str, network: &str) {
@@ -509,13 +580,11 @@ fn normalize(proxy: &mut Value, family: Family, kind: &str, opts: &Value) {
             }
         }
         "wireguard" => wireguard(proxy, matches!(family, Family::Meta | Family::Shadowrocket)),
-        "snell" => {
+        "snell" if family != Family::Meta => {
             if number(proxy, "version") < 3.0 {
                 remove(proxy, "udp");
             }
-            let options = if family == Family::Meta {
-                shadow_tls(proxy).cloned()
-            } else if family == Family::Shadowrocket
+            let options = if family == Family::Shadowrocket
                 && proxy["plugin"] == "shadow-tls"
                 && truthy(&proxy["plugin-opts"])
             {
@@ -563,6 +632,9 @@ fn normalize(proxy: &mut Value, family: Family, kind: &str, opts: &Value) {
                 codec::to_number(&json!(raw)) != 0.0,
             _ => truthy(mux),
         });
+    }
+    if family == Family::Meta && proxy_type == "snell" {
+        meta_snell_options(proxy);
     }
     let network = text(proxy, "network");
     transport(proxy, &proxy_type, &network);
@@ -702,4 +774,160 @@ pub(crate) fn finish(list: Vec<Value>, kind: &str, opts: &Value) -> Result<Value
         output.push('\n');
     }
     Ok(json!(output))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn meta(proxies: Vec<Value>) -> Vec<Value> {
+        let output = produce(proxies, "internal", &json!({}), Family::Meta)
+            .ok()
+            .unwrap();
+        output.as_array().unwrap().clone()
+    }
+
+    fn snell(base: Value, config: &Value) -> Value {
+        let mut proxy = json!({"type":"snell","server":"snell.example.com","port":44046});
+        for source in [&base, config] {
+            for (key, value) in source.as_object().unwrap() {
+                proxy[key] = value.clone();
+            }
+        }
+        proxy
+    }
+
+    // Upstream e043346d, structured.spec.js.
+    #[test]
+    fn meta_keeps_snell_versions_one_through_six() {
+        let proxies = (1..=7)
+            .map(|version| {
+                snell(
+                    json!({"name":format!("Snell {version}"),"psk":"snell-test-psk","version":version,"udp":true}),
+                    &json!({}),
+                )
+            })
+            .collect();
+        let versions: Vec<_> = meta(proxies)
+            .iter()
+            .map(|proxy| proxy["version"].as_f64().unwrap())
+            .collect();
+        assert_eq!(versions, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    }
+
+    #[test]
+    fn meta_round_trips_snell_v6_modes_and_obfs_options() {
+        let configs: Vec<_> = [
+            json!({}),
+            json!({"mode":"default","obfs-opts":{"mode":"shadow-tls","host":"mask.example.com","password":"shadow-pass",
+                "version":3,"alpn":[],"name-cert-verify":"cert.example.com","skip-cert-verify":false}}),
+            json!({"mode":"unshaped","obfs-opts":{"mode":"restls","host":"mask.example.com","password":"restls-pass",
+                "version-hint":"tls13"}}),
+            json!({"mode":"unsafe-raw","obfs-opts":{"mode":"jls","host":"mask.example.com","username":"test-user",
+                "password":"jls-pass"}}),
+        ]
+        .iter()
+        .enumerate()
+        .map(|(index, config)| {
+            let base = json!({"name":format!("Snell v6 {index}"),"version":6,"psk":"测试密码",
+                "udp":index % 2 == 0,"reuse":index % 2 != 0});
+            snell(base, config)
+        })
+        .collect();
+        assert_eq!(meta(configs.clone()), configs);
+        // Parsed input: lastParse moved the obfs-opts into plugin-opts, so the mode comes last.
+        let output = &meta(vec![configs[1].clone()])[0];
+        assert_eq!(
+            output["obfs-opts"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .next_back()
+                .unwrap(),
+            "mode"
+        );
+        // A plugin-style source keeps its options and gains the mode.
+        let plugin = snell(
+            json!({"name":"plugin","version":6,"psk":"snell-test-psk","plugin":"shadow-tls"}),
+            &json!({"plugin-opts":{"host":"mask.example.com","password":"p","version":3}}),
+        );
+        let output = &meta(vec![plugin])[0];
+        assert_eq!(
+            output["obfs-opts"],
+            json!({"host":"mask.example.com","password":"p","version":3,"mode":"shadow-tls"})
+        );
+        assert!(output.get("plugin").is_none() && output.get("plugin-opts").is_none());
+    }
+
+    #[test]
+    fn meta_filters_invalid_snell_v6_and_drops_mode_before_v6() {
+        let proxies = [
+            json!({"mode":"unknown"}),
+            json!({"obfs-opts":{"mode":"http"}}),
+            json!({"obfs-opts":{"mode":"tls"}}),
+            json!({"psk":"x".repeat(11)}),
+            json!({"psk":"x".repeat(256)}),
+            json!({"psk":"x".repeat(255)}),
+            json!({"version":5}),
+        ]
+        .iter()
+        .enumerate()
+        .map(|(index, config)| {
+            let base = json!({"name":format!("Snell {index}"),"version":"6","mode":"unshaped","psk":"snell-test-psk"});
+            snell(base, config)
+        })
+        .collect();
+        let result: Vec<_> = meta(proxies)
+            .iter()
+            .map(|proxy| {
+                (
+                    proxy["name"].clone(),
+                    proxy["version"].as_f64(),
+                    proxy.get("mode").cloned(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            result,
+            [
+                (json!("Snell 5"), Some(6.0), Some(json!("unshaped"))),
+                (json!("Snell 6"), Some(5.0), None),
+            ]
+        );
+    }
+
+    #[test]
+    fn meta_validates_legacy_snell_options_and_the_default_version() {
+        let proxies = [
+            json!({"name":"default","obfs-opts":{"mode":"http"}}),
+            json!({"name":"zero","version":0,"obfs-opts":{"mode":"tls"}}),
+            json!({"name":"v5","version":" 5 ","obfs-opts":{"mode":"http"}}),
+            json!({"name":"invalid obfs","version":5,"obfs-opts":{"mode":"unknown"}}),
+            json!({"name":"invalid obfs options","version":4,"obfs-opts":"http"}),
+            json!({"name":"missing PSK","version":3,"psk":null}),
+            // Not upstream: false is "false", not 0, for the version check.
+            json!({"name":"false version","version":false}),
+        ]
+        .iter()
+        .map(|config| snell(json!({"psk":"short","udp":true}), config))
+        .collect();
+        let result: Vec<_> = meta(proxies)
+            .iter()
+            .map(|proxy| {
+                (
+                    proxy["name"].clone(),
+                    proxy["version"].as_f64(),
+                    proxy.get("udp").cloned(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            result,
+            [
+                (json!("default"), None, None),
+                (json!("zero"), Some(0.0), None),
+                (json!("v5"), Some(5.0), Some(json!(true))),
+            ]
+        );
+    }
 }

@@ -7126,12 +7126,6 @@
                   "name": "TroShadow"
                 },
                 {
-                  "name": "Snell2"
-                },
-                {
-                  "name": "Snell5"
-                },
-                {
                   "name": "WG",
                   "ip": "10.0.0.2/24",
                   "ipv6": "2001:db8::2/64",
@@ -7187,9 +7181,6 @@
                       }
                     }
                   }
-                },
-                {
-                  "name": "SnellShadow"
                 },
                 {
                   "name": "VUpgrade",
@@ -8169,12 +8160,6 @@
             "data": {
               "par_res": [
                 {
-                  "name": "StringVersion"
-                },
-                {
-                  "name": "NullVersion"
-                },
-                {
                   "name": "ModeSpace"
                 },
                 {
@@ -8425,10 +8410,6 @@
                 {
                   "type": "http",
                   "name": "Clash-http"
-                },
-                {
-                  "type": "snell",
-                  "name": "Clash-snell"
                 },
                 {
                   "type": "trojan",
