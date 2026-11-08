@@ -1,42 +1,37 @@
 # Sub-Crate
 
-Run `sub-crate.exe` from Command Prompt on Windows, or
-`./sub-crate` on Linux. In PowerShell, use `./sub-crate.exe`.
-No Node, npm or other application runtime is required.
+Sub-Crate is a Rust backend for Sub-Store. It needs no Node.js.
 
-The backend listens on all IPv4 interfaces at `0.0.0.0:3000` by default.
-Open <http://127.0.0.1:3000/api/utils/env> to check the connection, then enter
-`http://127.0.0.1:3000` in the backend settings at
-<https://sub-store.vercel.app/subs>.
+## Start
 
-To restrict access to this computer, set `SUB_STORE_BACKEND_API_HOST=127.0.0.1`.
-For example, in Command Prompt:
+- Linux: `./sub-crate`
+- Windows: `sub-crate.exe` (in PowerShell, `.\sub-crate.exe`)
 
-```cmd
-set "SUB_STORE_BACKEND_API_HOST=127.0.0.1" && sub-crate.exe
-```
+Open <http://127.0.0.1:3000/api/utils/env> to check that it is running. Then open <https://sub-store.vercel.app/subs> and set the backend address to `http://127.0.0.1:3000`. If the page cannot connect, allow it to access your local network in the browser.
 
-Or in PowerShell:
+## Settings
 
-```powershell
-$env:SUB_STORE_BACKEND_API_HOST = '127.0.0.1'
-.\sub-crate.exe
-```
+Set these environment variables before starting:
 
-Set `SUB_STORE_BACKEND_API_PORT` to change the port. An explicit IPv6 host
-is still supported. If the direct check opens but the online frontend cannot
-connect, check the browser's local network access permission for that site.
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `SUB_STORE_BACKEND_API_HOST` | `0.0.0.0` (all interfaces) | Use `127.0.0.1` to accept only this computer |
+| `SUB_STORE_BACKEND_API_PORT` | `3000` | Port |
+| `SUB_STORE_DATA_BASE_PATH` | current directory | Where `sub-store.json` and `root.json` are kept |
 
-Data is stored in the current working directory. Set `SUB_STORE_DATA_BASE_PATH`
-to use another directory. Preserve `sub-store.json`, `root.json` and their
-`*.pre-rust.json` backups when upgrading. Stop the previous process before
-starting its replacement; run only one backend against a writable data directory.
+Command Prompt: `set "SUB_STORE_BACKEND_API_HOST=127.0.0.1" && sub-crate.exe`
+PowerShell: `$env:SUB_STORE_BACKEND_API_HOST = '127.0.0.1'; .\sub-crate.exe`
 
-Use the general JavaScript variant of subscription scripts. Node-specific APIs,
-`require`, npm packages and native addons are unsupported.
+Sub-Crate has no login, so do not expose its port to untrusted networks. All options are listed in the project's `docs/configuration.md`.
 
-The package contains the executable, this README, `LICENSE`,
-`THIRD_PARTY_NOTICES.txt` and `SOURCE.md`. The notices retain dependency copyright
-and license texts. `SOURCE.md` links the exact source and full build/configuration
-documentation. Verify the archive with the release's `SHA256SUMS`.
-Linux binaries require glibc 2.38 or newer.
+## Upgrading and moving from Sub-Store
+
+Stop the old backend first, and run only one backend per data directory. Keep a copy of your data. On its first start Sub-Crate also saves your existing files as `*.pre-rust.json`.
+
+## Scripts
+
+Use the general JavaScript version of a script. Node.js modules, `require`, npm packages and native addons are not available.
+
+## Package contents
+
+`sub-crate` or `sub-crate.exe`, this `README.md`, `LICENSE`, `THIRD_PARTY_NOTICES.txt` and `SOURCE.md`, which links the exact source. Verify the archive with the release's `SHA256SUMS`. Linux builds need glibc 2.38 or newer.

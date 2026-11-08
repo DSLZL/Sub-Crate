@@ -108,7 +108,7 @@ pub fn frontend(output: &Path) -> Result<PathBuf> {
         std::fs::copy(frontend.join(file), payload.join(file))?;
     }
     for (file, path) in [
-        ("README.md", "crates/sub-crate/README.md"),
+        ("README.md", "docs/deployment.md"),
         ("ACCEPTANCE.md", "docs/ACCEPTANCE.md"),
     ] {
         std::fs::copy(crate::root().join(path), payload.join(file))?;
@@ -706,7 +706,7 @@ pub fn docker(output: &Path, image: &str) -> Result {
     std::fs::create_dir(&payload)?;
     std::fs::copy(crate::root().join("LICENSE"), payload.join("LICENSE"))?;
     for (file, path) in [
-        ("README.md", "crates/sub-crate/README.md"),
+        ("README.md", "docs/deployment.md"),
         ("ACCEPTANCE.md", "docs/ACCEPTANCE.md"),
         ("Cargo.lock", "Cargo.lock"),
     ] {

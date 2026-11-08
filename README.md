@@ -1,77 +1,49 @@
 <!-- Logo -->
 
-[![Compatibility](https://github.com/DSLZL/Sub-Crate/actions/workflows/rust-compat-native.yml/badge.svg?branch=main)](https://github.com/DSLZL/Sub-Crate/actions/workflows/rust-compat-native.yml)
+[![CI](https://github.com/DSLZL/Sub-Crate/actions/workflows/rust-compat-native.yml/badge.svg?branch=main)](https://github.com/DSLZL/Sub-Crate/actions/workflows/rust-compat-native.yml)
 
-Sub-Crate is a standalone Rust backend for [Sub-Store](https://github.com/sub-store-org/Sub-Store). Use the official [Sub-Store frontend](https://github.com/sub-store-org/Sub-Store-Front-End) without modification to manage subscriptions, convert proxy configurations and run general JavaScript.
+Sub-Crate is a standalone Rust backend for [Sub-Store](https://github.com/sub-store-org/Sub-Store). It works with the official [Sub-Store frontend](https://github.com/sub-store-org/Sub-Store-Front-End) as is, keeps Sub-Store's data files and API, and runs without Node.js.
 
-[Get started](#get-started) · [Frontend](#frontend) · [Script compatibility](#script-compatibility) · [Documentation](#documentation)
-
-## Get started
-
-### Download a package
-
-| Platform | Release archive |
-| --- | --- |
-| Linux x64 | `sub-crate-<version>-linux-x64.tar.gz` |
-| Linux arm64 | `sub-crate-<version>-linux-arm64.tar.gz` |
-| Windows x64 | `sub-crate-<version>-windows-x64.zip` |
-
-See the [deployment guide](crates/sub-crate/README.md) for checksums, archive contents and runtime requirements.
-
-### Start the backend
-
-Linux:
-
-```sh
-mkdir -p data
-SUB_STORE_DATA_BASE_PATH="$PWD/data" ./sub-crate
-```
-
-Windows PowerShell:
-
-```powershell
-New-Item -ItemType Directory -Force data | Out-Null
-$env:SUB_STORE_DATA_BASE_PATH = (Join-Path $PWD data)
-.\sub-crate.exe
-```
-
-The backend listens at `http://127.0.0.1:3000`, and `/api/utils/env` returns its protocol and Rust implementation metadata.
+## Quick start
 
 ### Docker Compose
 
-Copy [.env.example](.env.example) to `.env`, then start the [Compose example](docker-compose.example.yml):
-
 ```sh
+cp .env.example .env
 docker compose -f docker-compose.example.yml up -d
 ```
 
-The example uses a tagged GHCR image, listens at `http://127.0.0.1:3000` and keeps data in `./data`. See the [Docker deployment guide](crates/sub-crate/README.md#docker-image) for configuration and building with the [Dockerfile](rust/Dockerfile).
+### Native binary
 
-## Frontend
+Download the archive for your platform from [Releases](https://github.com/DSLZL/Sub-Crate/releases), extract it, then run:
 
-Use the official [hosted frontend](https://sub-store.vercel.app/subs), or download assets from the [frontend project](https://github.com/sub-store-org/Sub-Store-Front-End) and set `SUB_STORE_FRONTEND_PATH` to its `dist` directory. Backend releases do not build or bundle the frontend.
+```sh
+./sub-crate          # Linux
+.\sub-crate.exe      # Windows
+```
 
-## Script compatibility
-
-If a script has both JS and Node versions, use the general JS version.
-
-Node builtins, CommonJS `require`, `process.env`, `$substore.node`, npm loading and native addons are not supported.
-
-## Performance benchmarks
-
-![Sub-Store JavaScript vs Sub-Crate Rust benchmark for the latest stable tag](assets/benchmark.png)
+The backend listens on port 3000 and stores data in the current directory. Open the [hosted frontend](https://sub-store.vercel.app/subs) and set the backend address to `http://127.0.0.1:3000`.
 
 ## Documentation
 
-| Guide | Contents |
+| Document | Read it to |
 | --- | --- |
-| [Deployment](crates/sub-crate/README.md) | Downloads, environment variables, frontend hosting, Docker, migration and rollback |
-| [Acceptance contract](docs/ACCEPTANCE.md) | Fixed baselines, required platforms, tested scope and compatibility limits |
-| [Compatibility tests](tests/compat/README.md) | Reference preparation, regression harnesses and retained evidence |
-| [Performance records](tests/performance/README.md) | Benchmarks, measured source revisions and their limitations |
+| [Deployment](docs/deployment.md) | Install, host the frontend, migrate from Sub-Store and roll back |
+| [Configuration](docs/configuration.md) | Look up an environment variable |
+| [Scripts](docs/scripts.md) | Check which JavaScript scripts run on Sub-Crate |
+| [Development](docs/development.md) | Find your way around the code, CI and releases |
+| [Acceptance](docs/ACCEPTANCE.md) | See what a release must pass |
 
-Sub-Crate is based on the work of the [Sub-Store authors and contributors](https://github.com/sub-store-org/Sub-Store/graphs/contributors). It is licensed under [AGPL-3.0-only](LICENSE). Embedded utilities and delivered archives include their dependency license notices.
+## Benchmark
 
-## Friendly Links
+![Sub-Store JavaScript vs Sub-Crate Rust benchmark for the latest stable tag](assets/benchmark.png)
+
+Higher is better; the Sub-Store Node.js baseline scores 100. See [performance tests](tests/performance/README.md) for the method.
+
+## License
+
+[AGPL-3.0-only](LICENSE). Sub-Crate builds on the work of the [Sub-Store contributors](https://github.com/sub-store-org/Sub-Store/graphs/contributors). Release archives include the license notices of embedded dependencies.
+
+## Friendly links
 
 [LINUX DO](https://linux.do/)
