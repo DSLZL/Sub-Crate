@@ -3,8 +3,8 @@
     "json5": "2.2.3",
     "yaml": "2.9.0"
   },
-  "esbuild": "0.19.8",
-  "bundle_sha256": "2c5c2fe0c5de68b846a4a0d6d6b439ea9119813a212f7adaf424dc761928d83c",
+  "esbuild": "0.25.12",
+  "bundle_sha256": "f5a9dde6531bf757148ca757853b86bbfcca7d087d4c77e6cf7d92e7e993a4fe",
   "licenses_sha256": "f7b147594a4fd6e538042a27a0753f03f192c5d2a07d5c10ac91f28ef76e407b",
   "inputs": {
     "json5@2.2.3/dist/index.js": "c3f094c550436757e955bc1e2619fa5624ae8f22f41a7587b95af1d14175800a",

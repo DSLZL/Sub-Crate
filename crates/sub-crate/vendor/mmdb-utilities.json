@@ -7,8 +7,8 @@
   "packages": {
     "@maxmind/geoip2-node": "5.0.0"
   },
-  "esbuild": "0.19.8",
-  "bundle_sha256": "6a3ec6c1d6a443e51f84ddad503d0e1211b9a5bfbc0e668f1ca456745fdcc5af",
+  "esbuild": "0.25.12",
+  "bundle_sha256": "21c7d3a1a066d52723bb485f79c7443a3b5ec47d1f9856cf6fe8b3035784d2f2",
   "licenses_sha256": "f923d62dc78851a208222f4baf162f19d6f59d6043456020a4cb1ebdac8cf903",
   "inputs": {
     "@maxmind/geoip2-node@5.0.0/dist/src/errors.js": "d79d33995323f538e3e4bf2093b19852545cceaa9a46f106bbec9f26f2eb333f",

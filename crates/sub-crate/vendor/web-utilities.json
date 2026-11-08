@@ -3,8 +3,8 @@
     "@kayahr/text-encoding": "2.2.0",
     "web-streams-polyfill": "4.3.0"
   },
-  "esbuild": "0.19.8",
-  "bundle_sha256": "396991ce895c3ed59059ce75fd7b2287ca40c67c77581c71c224fa1b44ac3a60",
+  "esbuild": "0.25.12",
+  "bundle_sha256": "0216feecdc2b8c9d6fe0864ee56bb6de40a91a1d5d1bde081c6c0c3221d29ed9",
   "licenses_sha256": "83cb76d87e1b275481cb8c57b1461b5dbd83d97cc46bf82bfc1261985cc2e832",
   "inputs": {
     "@kayahr/text-encoding@2.2.0/lib/main/AbstractDecoder.js": "5aaec6d918797c91fe756578d2bf1fd72b6cfee90c3ad8e922bc52d980df11f4",

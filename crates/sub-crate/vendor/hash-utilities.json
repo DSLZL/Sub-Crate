@@ -2,8 +2,8 @@
   "packages": {
     "@noble/hashes": "2.2.0"
   },
-  "esbuild": "0.19.8",
-  "bundle_sha256": "a562b525adb9e8f6b2c435b853cce41c4dc91ea050bbfcabfe37d0bb3d71f7f1",
+  "esbuild": "0.25.12",
+  "bundle_sha256": "4e5a0e0bfb2245e2afab973bb49fae45447aebfffb1e0fb71770c31467e90279",
   "licenses_sha256": "d981bcb6743cef1f17a9219c36a14d9d9c0240d9a36d9f388f76389f1742f466",
   "inputs": {
     "@noble/hashes@2.2.0/_md.js": "8227b9b5cabf078a9d7f7317f7a1ace6e46627539aa9364667aec724e1636f14",

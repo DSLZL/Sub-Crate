@@ -94,7 +94,7 @@ snapshot(new Map([['json5', '2.2.3'], ['yaml', '2.9.0']]),
   'SubStoreUtilities', ['utilities.js', 'LICENSES.txt', 'utilities.json']);
 snapshot(new Map([
   ['lodash', '4.18.1'], ['buffer', '6.0.3'], ['js-base64', '3.7.8'],
-  ['ip-address', '10.3.1'], ['base64-js', '1.5.1'], ['ieee754', '1.2.1'],
+  ['ip-address', '10.7.5'], ['base64-js', '1.5.1'], ['ieee754', '1.2.1'],
 ]), "import lodash from 'lodash'; import {Buffer} from 'buffer'; import {Base64} from 'js-base64'; import * as ipAddress from 'ip-address'; export {lodash, Buffer, Base64, ipAddress};",
   'SubStoreScriptUtilities', ['script-utilities.js', 'SCRIPT-LICENSES.txt', 'script-utilities.json']);
 const fromAge = createRequire(fromBackend.resolve('age-encryption'));

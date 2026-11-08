@@ -2,8 +2,8 @@
   "packages": {
     "core-js": "3.49.0"
   },
-  "esbuild": "0.19.8",
-  "bundle_sha256": "081d58ee8a7353618e09f9f9fab72a3ded3c404877863af14f098f682ffc6757",
+  "esbuild": "0.25.12",
+  "bundle_sha256": "c3c7be48a468ac0588425880ef4c2ce91c7a6c4041b5e65e1d48597dbf69b113",
   "licenses_sha256": "c72d931d7cca773161196dc924177534330352fd6fa22b06709fb6a0c68c9017",
   "inputs": {
     "core-js@3.49.0/actual/url-search-params/index.js": "1933ffb47b255303647f771ed527aae1086f6945c29dab5785203fa7328e6404",

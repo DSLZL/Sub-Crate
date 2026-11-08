@@ -5,8 +5,8 @@
   "packages": {
     "shoutrrr-ts": "0.2.0"
   },
-  "esbuild": "0.19.8",
-  "bundle_sha256": "f0a65afb6fdc5e62183a01719dc820075b42076056a4473bc251a983db768336",
+  "esbuild": "0.25.12",
+  "bundle_sha256": "8da08e4ff3f8d5b7cc395c514002fb9c2174ca977a3ccdcda953e105e27ecf0f",
   "licenses_sha256": "ce5a3c45ad7b23b4fcad1cc2b43790bd80e25e62d5ddeaa381ad2a16b68a4605",
   "inputs": {
     "shoutrrr-ts@0.2.0/dist/native.js": "dfc871325398d4e7c5c0228f5302dc0475e74c3397641568fd2f515bd869aea9"
