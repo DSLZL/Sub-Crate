@@ -1495,19 +1495,28 @@ fn wireguard(proxy: &Value) -> Result<Value, ()> {
                 value[to] = raw.clone();
             }
         }
-        let allowed = peer
-            .get("allowed-ips")
-            .filter(|value| truthy(value))
-            .or_else(|| peer.get("allowed_ips").filter(|value| truthy(value)))
-            .cloned()
-            .unwrap_or_else(|| {
-                if truthy(&proxy["ipv6"]) {
-                    json!(["0.0.0.0/0", "::/0"])
-                } else {
-                    json!(["0.0.0.0/0"])
-                }
-            });
-        value["allowed_ips"] = allowed;
+        // Short-style input keeps allowed-ips at the root, possibly as a comma-separated string.
+        let allowed = [peer, proxy]
+            .into_iter()
+            .flat_map(|source| ["allowed-ips", "allowed_ips"].map(|key| source.get(key)))
+            .find_map(|value| value.filter(|value| truthy(value)));
+        let allowed = match allowed {
+            Some(Value::String(raw)) => json!(
+                raw.split(',')
+                    .map(codec::trim)
+                    .filter(|item| !item.is_empty())
+                    .collect::<Vec<_>>()
+            ),
+            Some(value) => value.clone(),
+            None => Value::Null,
+        };
+        value["allowed_ips"] = if allowed.as_array().is_some_and(|items| !items.is_empty()) {
+            allowed
+        } else if truthy(&proxy["ipv6"]) {
+            json!(["0.0.0.0/0", "::/0"])
+        } else {
+            json!(["0.0.0.0/0"])
+        };
         let reserved = match &peer["reserved"] {
             Value::String(raw) => Some(json!([raw])),
             Value::Array(values) if !values.is_empty() => Some(json!(values)),
@@ -1669,4 +1678,49 @@ pub fn produce(proxies: Vec<Value>, kind: &str, opts: &Value) -> Result<Value, E
         ))
         .unwrap()
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wireguard_peers_keep_root_and_comma_separated_allowed_ips() {
+        // Upstream 11baf128.
+        let proxies = vec![
+            json!({"type":"wireguard","name":"Sing-box WG Short Allowed IPs","server":"wg-short.example.com",
+                "port":51820,"private-key":"private-key-1","public-key":"public-key-1","ip":"10.0.0.2",
+                "allowed-ips":["10.0.0.0/24"]}),
+            json!({"type":"wireguard","name":"Sing-box WG String Allowed IPs","server":"wg-string.example.com",
+                "port":51820,"private-key":"private-key-2","public-key":"public-key-2","ip":"10.0.0.3",
+                "allowed-ips":"10.0.0.0/24, 192.168.1.0/24"}),
+            json!({"type":"wireguard","name":"Sing-box WG Peer Allowed IPs","server":"wg-peer.example.com",
+                "port":51820,"private-key":"private-key-3","ip":"10.0.0.4","allowed-ips":["10.0.0.0/24"],
+                "peers":[{"server":"wg-peer.example.com","port":51820,"public-key":"public-key-3",
+                    "allowed-ips":["172.16.0.0/16"]}]}),
+        ];
+        let output = produce(proxies, "external", &json!({})).ok().unwrap();
+        let output: Value = serde_json::from_str(output.as_str().unwrap()).unwrap();
+        let allowed = |tag: &str| {
+            output["endpoints"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|endpoint| endpoint["tag"] == tag)
+                .unwrap()["peers"][0]["allowed_ips"]
+                .clone()
+        };
+        assert_eq!(
+            allowed("Sing-box WG Short Allowed IPs"),
+            json!(["10.0.0.0/24"])
+        );
+        assert_eq!(
+            allowed("Sing-box WG String Allowed IPs"),
+            json!(["10.0.0.0/24", "192.168.1.0/24"])
+        );
+        assert_eq!(
+            allowed("Sing-box WG Peer Allowed IPs"),
+            json!(["172.16.0.0/16"])
+        );
+    }
 }
