@@ -43,6 +43,21 @@ async fn crypt(
     .await
 }
 
+/// Downloads the Gist backup and reports whether it decrypts to `content`.
+async fn online_matches(
+    store: &Arc<Mutex<Store>>,
+    settings: &Value,
+    encoding: &str,
+    content: &Value,
+) -> Result<bool, Error> {
+    let downloaded = gist(store, "download", Value::Null).await?;
+    let armored = downloaded
+        .as_str()
+        .is_some_and(|body| codec::trim(body).starts_with("-----BEGIN AGE ENCRYPTED FILE-----"));
+    let online = crypt(store, downloaded, settings, encoding, false).await?;
+    Ok((encoding != "age" || armored) && online == *content)
+}
+
 async fn serialize(store: &Arc<Mutex<Store>>, encoding: &str) -> Result<Value, Error> {
     let content = store.lock().unwrap().data.clone();
     job(
@@ -123,12 +138,7 @@ pub(crate) async fn action(store: &Arc<Mutex<Store>>, query: &Value) -> Result<(
         let comparison = async {
             let before = serialize(store, encoding).await?;
             crate::logs::info(&mut store.lock().unwrap(), "下载备份, 与本地内容对比...");
-            let downloaded = gist(store, "download", Value::Null).await?;
-            let armored = downloaded.as_str().is_some_and(|body| {
-                codec::trim(body).starts_with("-----BEGIN AGE ENCRYPTED FILE-----")
-            });
-            let online = crypt(store, downloaded, &settings, encoding, false).await?;
-            Ok::<_, Error>((encoding != "age" || armored) && online == before)
+            online_matches(store, &settings, encoding, &before).await
         }
         .await;
         match comparison {
@@ -145,24 +155,37 @@ pub(crate) async fn action(store: &Arc<Mutex<Store>>, query: &Value) -> Result<(
             next["settings"]["syncTime"] = json!(resources::now());
             store.commit(next).map_err(Error::state)?;
         }
-        let body = serialize(store, encoding).await?;
-        let body = crypt(store, body, &settings, encoding, true).await?;
+        let content = serialize(store, encoding).await?;
+        let body = crypt(store, content.clone(), &settings, encoding, true).await?;
         crate::logs::info(&mut store.lock().unwrap(), "上传备份中...");
         tokio::time::sleep(Duration::from_millis(100)).await;
         let mut files = json!({});
         files[FILE] = json!({"content":body});
         if let Err(error) = gist(store, "upload", files).await {
-            // The source retry references undefined `gists` before making a request.
             crate::logs::error(
                 &mut store.lock().unwrap(),
                 &format!("上传请求异常: {}", error.message),
             );
+            // The write may have landed with only the response lost, so check the Gist again.
             crate::logs::info(&mut store.lock().unwrap(), "重新获取备份, 确认上传结果...");
             tokio::time::sleep(Duration::from_millis(500)).await;
-            crate::logs::error(
-                &mut store.lock().unwrap(),
-                "上传结果确认失败: gists is not defined",
-            );
+            match online_matches(store, &settings, encoding, &content).await {
+                Ok(true) => {
+                    crate::logs::info(
+                        &mut store.lock().unwrap(),
+                        "线上内容与本次上传内容一致, 上传实际已成功",
+                    );
+                    return Ok(());
+                }
+                Ok(false) => crate::logs::error(
+                    &mut store.lock().unwrap(),
+                    "线上内容与本次上传内容不一致, 上传确认失败",
+                ),
+                Err(verify) => crate::logs::error(
+                    &mut store.lock().unwrap(),
+                    &format!("上传结果确认失败: {}", verify.message),
+                ),
+            }
             let mut store = store.lock().unwrap();
             let mut next = store.data.clone();
             if let Some(old) = settings.get("syncTime") {

@@ -467,16 +467,26 @@ pub fn patch_gists(store: &mut Value, request: &Request, origin: &str) -> Result
     if parts.len() == 2 && parts[0] == "gists" && store.get(&parts[1]).is_some() {
         let key = &parts[1];
         if request.method == "PATCH" {
-            let patch = json::parse(std::str::from_utf8(&request.body)?)?;
-            let files = store[key]["files"]
-                .as_object_mut()
-                .ok_or("Invalid Gist files")?;
-            for (name, value) in patch["files"].as_object().ok_or("Invalid Gist patch")? {
-                if value.is_null() {
-                    files.remove(name);
-                } else {
-                    files.insert(name.clone(), value.clone());
+            // "lost-response" applies the write but fails the reply; "rejected" fails without writing.
+            let failure = store[key]["fixture_patch"].as_str().map(str::to_owned);
+            if failure.as_deref() != Some("rejected") {
+                let patch = json::parse(std::str::from_utf8(&request.body)?)?;
+                let files = store[key]["files"]
+                    .as_object_mut()
+                    .ok_or("Invalid Gist files")?;
+                for (name, value) in patch["files"].as_object().ok_or("Invalid Gist patch")? {
+                    if value.is_null() {
+                        files.remove(name);
+                    } else {
+                        files.insert(name.clone(), value.clone());
+                    }
                 }
+            }
+            if let Some(failure) = failure {
+                return Ok(Reply::json(
+                    502,
+                    &json!({"message":format!("fixture upload {failure}")}),
+                ));
             }
         }
         if ["GET", "PATCH"].contains(&request.method.as_str()) {

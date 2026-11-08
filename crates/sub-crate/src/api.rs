@@ -819,6 +819,11 @@ pub(crate) fn normalized_settings(
         .cloned()
         .unwrap_or_default();
     settings.extend(patch.clone());
+    for key in ["githubUser", "gistToken"] {
+        if let Some(Value::String(raw)) = settings.get_mut(key) {
+            *raw = codec::trim(raw).to_owned();
+        }
+    }
     if let Some(appearance) = patch.get("appearanceSetting").and_then(Value::as_object) {
         let mut merged = previous_appearance;
         merged.extend(appearance.clone());

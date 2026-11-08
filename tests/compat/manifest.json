@@ -24,7 +24,7 @@
     "sync-core": ["Y01-artifact-crud-and-sync", "Y02-artifact-errors",
       "Y03-gist-artifact-create-update-delete", "Y06-native-batch-partial-and-local-sync",
       "Y04-gist-restore-and-refresh", "Y05-gist-provider-errors", "D09-gist-download-token-strategies",
-      "D10-gist-plaintext-upload", "D11-gist-base64-upload", "D12-gist-backup-validation", "D13-gist-base64-download",
+      "D10-gist-plaintext-upload", "D11-gist-base64-upload", "D12-gist-backup-validation", "D13-gist-base64-download", "D14-gist-upload-lost-response", "D15-gist-upload-rejected",
       "S02-gist-age-settings-validation-order"],
     "conversion-local": [
       "PC-native-conversion-helper-contracts",
@@ -332,7 +332,7 @@
       "D10-gist-plaintext-upload",
       "D11-gist-base64-upload",
       "D12-gist-backup-validation",
-      "D13-gist-base64-download",
+      "D13-gist-base64-download", "D14-gist-upload-lost-response", "D15-gist-upload-rejected",
       "N01-node-info-uri-and-generation-error",
       "N02-node-info-ipv6-normalization",
       "N03-node-info-provider-rejection",
@@ -483,7 +483,7 @@
       "D10-gist-plaintext-upload",
       "D11-gist-base64-upload",
       "D12-gist-backup-validation",
-      "D13-gist-base64-download"
+      "D13-gist-base64-download", "D14-gist-upload-lost-response", "D15-gist-upload-rejected"
     ],
     "node-info": [
       "N01-node-info-uri-and-generation-error",
