@@ -9915,6 +9915,14 @@
     ]
   },
   {
+    "id": "P01-output-clash",
+    "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:31",
+    "steps": [
+      {"method": "POST", "path": "/api/proxy/parse", "body": {"data": "ss://YWVzLTEyOC1nY206cGFzcw==@127.0.0.1:8388#fixture", "client": "clash"}, "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "json": {"status": "success", "data": {"par_res": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}}},
+      {"path": "/download/unused/clash?fakeSub=1&noFlow=1&content=ss%3A%2F%2FYWVzLTEyOC1nY206cGFzcw%3D%3D%40127.0.0.1%3A8388%23fixture", "expect": {"status": 200, "headers": {"content-type": "text/plain; charset=utf-8"}, "body": "proxies:\n  - {\"type\":\"ss\",\"skip-cert-verify\":false,\"udp\":true,\"server\":\"127.0.0.1\",\"port\":8388,\"cipher\":\"aes-128-gcm\",\"password\":\"pass\",\"name\":\"fixture\"}\n"}}
+    ]
+  },
+  {
     "id": "P01-output-meta",
     "source": "backend/src/restful/parser.js:23; backend/src/restful/download.js:74,200; backend/src/core/proxy-utils/producers/index.js:31",
     "steps": [

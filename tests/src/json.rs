@@ -649,13 +649,13 @@ mod tests {
         let manifest = read(crate::compat().join("manifest.json")).unwrap();
         let fixtures = read(crate::compat().join("fixtures/http-cases.json")).unwrap();
         let cases = fixtures.as_array().unwrap();
-        assert_eq!(cases.len(), 235);
+        assert_eq!(cases.len(), 236);
         assert_eq!(
             cases
                 .iter()
                 .map(|case| case["steps"].as_array().unwrap().len())
                 .sum::<usize>(),
-            1094
+            1096
         );
         assert_eq!(manifest["suites"].as_object().unwrap().len(), 22);
         for suite in manifest["suites"].as_object().unwrap().keys() {

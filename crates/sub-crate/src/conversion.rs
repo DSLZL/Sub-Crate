@@ -9,7 +9,7 @@ pub enum Error {
     Legacy(String),
 }
 
-pub(crate) const ALIASES: [&str; 33] = [
+pub(crate) const ALIASES: [&str; 34] = [
     "qx",
     "QX",
     "QuantumultX",
@@ -18,6 +18,7 @@ pub(crate) const ALIASES: [&str; 33] = [
     "SurgeMac",
     "Loon",
     "Clash",
+    "clash",
     "meta",
     "clashmeta",
     "clash.meta",
@@ -4012,5 +4013,31 @@ mod tests {
             parsed[0]["h2-opts"]["host"],
             json!(["a.example.com", "b.example.com"])
         );
+    }
+
+    #[test]
+    fn lowercase_targets_match_their_canonical_names() {
+        // Upstream ffc0a213.
+        let proxy = json!({"type":"ss","name":"SS Node","server":"1.2.3.4","port":443,
+            "cipher":"aes-128-gcm","password":"secret"});
+        for (lower, canonical) in [
+            ("clash", "Clash"),
+            ("meta", "ClashMeta"),
+            ("mihomo", "ClashMeta"),
+            ("uri", "URI"),
+            ("v2ray", "V2Ray"),
+            ("json", "JSON"),
+            ("stash", "Stash"),
+            ("egern", "Egern"),
+            ("sing-box", "sing-box"),
+        ] {
+            let output = |target| {
+                produce(vec![proxy.clone()], target, "external", &json!({}))
+                    .ok()
+                    .unwrap()
+            };
+            assert_eq!(output(lower), output(canonical), "{lower}");
+            assert!(ALIASES.contains(&lower), "{lower}");
+        }
     }
 }
