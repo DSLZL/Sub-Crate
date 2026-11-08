@@ -1369,6 +1369,12 @@ fn modern_uri(line: &str) -> Result<Option<Value>, Error> {
 }
 
 fn trojan(line: &str, language: &crate::clash::Parser) -> Result<Option<Value>, Error> {
+    // Split off the name first: with a "#name" but no query string, the port check below
+    // would not see the port and would append ":443" to the name.
+    let (line, name) = match line.split_once('#') {
+        Some((raw, name)) if !name.is_empty() => (raw, Some(name)),
+        _ => (line, None),
+    };
     let (before_query, query) = line
         .split_once('?')
         .map_or((line, None), |(raw, query)| (raw, Some(query)));
@@ -1391,9 +1397,10 @@ fn trojan(line: &str, language: &crate::clash::Parser) -> Result<Option<Value>, 
         );
         &rewritten
     };
-    let (raw, name) = line
+    let (raw, fragment) = line
         .split_once('#')
         .map_or((line, None), |(raw, name)| (raw, Some(name)));
+    let name = name.or(fragment);
     let (address, query, _) = url_parts(raw.strip_prefix("trojan://").unwrap());
     let Some((password, address)) = address.split_once('@') else {
         return Ok(None);
@@ -3947,5 +3954,41 @@ mod tests {
             assert_eq!(parsed[0]["server"], "anytls.example.com");
             assert_eq!(parsed[0]["password"], password, "{output}");
         }
+    }
+
+    #[test]
+    fn trojan_uri_keeps_the_name_without_a_query() {
+        // Upstream 24faf5e0.
+        for (raw, server, port, name) in [
+            (
+                "trojan://trojan-pass@trojan.example.com:8443#My%20Node",
+                "trojan.example.com",
+                8443.0,
+                "My Node",
+            ),
+            (
+                "trojan://trojan-pass@trojan.example.com#Default%20Port",
+                "trojan.example.com",
+                443.0,
+                "Default Port",
+            ),
+            (
+                "trojan://trojan-pass@[2001:db8::2]#IPv6%20Name",
+                "2001:db8::2",
+                443.0,
+                "IPv6 Name",
+            ),
+        ] {
+            let parsed = parse(&json!(raw), None).ok().unwrap();
+            assert_eq!(parsed.len(), 1, "{raw}");
+            assert_eq!(parsed[0]["server"], server, "{raw}");
+            assert_eq!(parsed[0]["port"].as_f64(), Some(port), "{raw}");
+            assert_eq!(parsed[0]["name"], name, "{raw}");
+        }
+        // A trailing "#" is not split off, so the source still appends the default port to the name.
+        let parsed = parse(&json!("trojan://p@h.example:8443#"), None)
+            .ok()
+            .unwrap();
+        assert_eq!(parsed[0]["name"], ":443");
     }
 }
