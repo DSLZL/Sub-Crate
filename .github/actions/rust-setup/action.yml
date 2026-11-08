@@ -16,11 +16,14 @@ runs:
       uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       with:
         version: v0.19.0
-    # GitHub release downloads occasionally return 5xx; retry once.
+    # GitHub release downloads occasionally return 5xx; retry once, then build without sccache.
     - if: steps.sccache.outcome == 'failure'
+      continue-on-error: true
       uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       with:
         version: v0.19.0
+        # The first attempt's post step already reports the stats.
+        disable_annotations: true
     - name: Enable CI build settings
       shell: bash
       run: |
@@ -31,11 +34,17 @@ runs:
           echo "CARGO_PROFILE_DEV_DEBUG=line-tables-only"
           echo "CARGO_NET_RETRY=10"
           echo "RUSTUP_MAX_RETRIES=10"
-          echo "RUSTC_WRAPPER=sccache"
-          echo "SCCACHE_GHA_ENABLED=true"
-          # The cache service throttles uploads; a rejected request must only cost a local compile.
-          echo "SCCACHE_IGNORE_SERVER_IO_ERROR=1"
         } >> "$GITHUB_ENV"
+        if command -v sccache >/dev/null; then
+          {
+            echo "RUSTC_WRAPPER=sccache"
+            echo "SCCACHE_GHA_ENABLED=true"
+            # The cache service throttles uploads; a rejected request must only cost a local compile.
+            echo "SCCACHE_IGNORE_SERVER_IO_ERROR=1"
+          } >> "$GITHUB_ENV"
+        else
+          echo "::warning::sccache could not be installed; compiling without it"
+        fi
     # Compiled dependencies, build scripts and proc macros, which sccache cannot store.
     - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       with:
