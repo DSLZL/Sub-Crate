@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/sub-crate", "tests"]
+# Benchmark workflows check out frozen revisions there; each builds as its own workspace.
+exclude = [".performance"]
 
 # The interpreter must execute crypto fixtures within the same 15s host budget.
 [profile.dev.package.rquickjs-sys]
