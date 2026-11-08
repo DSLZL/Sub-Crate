@@ -3,10 +3,15 @@ FROM rust:1.98.0-bookworm@sha256:82150a52ec202c1b14d7817e14516c392bb7f5cfebd88f1
 WORKDIR /work
 COPY Cargo.toml Cargo.lock ./
 COPY crates/sub-crate/Cargo.toml crates/sub-crate/
-COPY crates/sub-crate/src crates/sub-crate/src
-COPY crates/sub-crate/vendor crates/sub-crate/vendor
 # Cargo loads every workspace member manifest before building one.
 COPY tests/Cargo.toml tests/
+# Compile locked dependencies in a layer that source edits do not invalidate.
+RUN mkdir crates/sub-crate/src \
+    && echo 'fn main() {}' > crates/sub-crate/src/main.rs \
+    && cargo build -p sub-crate --locked --release --bin sub-crate \
+    && rm -rf crates/sub-crate/src target/release/sub-crate target/release/deps/sub_crate-* target/release/.fingerprint/sub-crate-*
+COPY crates/sub-crate/src crates/sub-crate/src
+COPY crates/sub-crate/vendor crates/sub-crate/vendor
 COPY LICENSE LICENSE
 COPY crates/sub-crate/examples/collect_notices.rs crates/sub-crate/examples/
 COPY tests/src/notices.rs tests/src/

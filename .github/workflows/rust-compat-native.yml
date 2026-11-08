@@ -14,11 +14,15 @@ on:
         type: boolean
         default: false
   push:
-    branches: [main]
-    paths: [Cargo.toml, Cargo.lock, crates/**, Dockerfile, Dockerfile.dockerignore, docs/**, tests/**, docker-compose.example.yml, .env.example, .config/nextest.toml, .github/actions/node-reference/**, .github/workflows/rust-compat-native.yml, .github/workflows/rust-tests.yml, .github/workflows/release.yml]
+    branches: ['**']
+    paths: [Cargo.toml, Cargo.lock, crates/**, Dockerfile, Dockerfile.dockerignore, tests/**, docker-compose.example.yml, .env.example, .config/nextest.toml, .github/actions/**, .github/docker-classic-store.sh, .github/workflows/rust-compat-native.yml, .github/workflows/rust-tests.yml, .github/workflows/release.yml]
 
 permissions:
   contents: read
+
+concurrency:
+  group: rust-ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' && github.ref_type == 'branch' && github.ref_name != 'main' }}
 
 jobs:
   native:
@@ -27,7 +31,7 @@ jobs:
   frontend-baseline:
     if: ${{ !inputs.skip_frontend }}
     name: Unchanged frontend (nextest and headless Chrome)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 35
     defaults:
       run:
@@ -39,8 +43,6 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Keep compiler output on the runner
-        run: echo "CARGO_TARGET_DIR=$RUNNER_TEMP/sub-store-frontend-build" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: sub-store-org/Sub-Store-Front-End
@@ -52,21 +54,7 @@ jobs:
         with:
           node-version: 24.16.0
           package-manager-cache: false
-      - name: Install fixed toolchain
-        run: |
-          rustup toolchain install 1.98.0 --profile minimal --component rustfmt
-          rustup override set 1.98.0
-      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
-        with:
-          tool: nextest@0.9.149
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ${{ runner.temp }}/sub-store-frontend-build
-          key: nextest-frontend-temp-1.98.0-${{ hashFiles('Cargo.lock', 'tests/Cargo.toml') }}
-          restore-keys: nextest-frontend-temp-1.98.0-
+      - uses: ./.github/actions/rust-setup
       - name: Install locked frontend and reference dependencies
         run: |
           mkdir -p tests/compat/evidence/frontend-setup
@@ -87,7 +75,6 @@ jobs:
         run: agent-browser install 2>&1 | tee tests/compat/evidence/frontend-setup/browser-install.log
       - name: Build delivered Rust backend on runner
         run: |
-          cargo +1.98.0 fmt --manifest-path tests/Cargo.toml --all -- --check
           cargo +1.98.0 build --manifest-path crates/sub-crate/Cargo.toml --locked --release --bin sub-crate
           echo "TEST_NODE=$(node -p 'process.execPath')" >> "$GITHUB_ENV"
           echo "TEST_BROWSER=$(npm root --global)/agent-browser/bin/agent-browser-linux-x64" >> "$GITHUB_ENV"
@@ -135,9 +122,9 @@ jobs:
       matrix:
         include:
           - target: linux-x64
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
           - target: linux-arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
     defaults:
       run:
         shell: bash
@@ -149,28 +136,12 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Keep compiler output on the runner
-        run: echo "CARGO_TARGET_DIR=$RUNNER_TEMP/sub-store-docker-tests" >> "$GITHUB_ENV"
       - uses: ./.github/actions/node-reference
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24.16.0
           package-manager-cache: false
-      - name: Install fixed toolchain
-        run: |
-          rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
-          rustup override set 1.98.0
-      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
-        with:
-          tool: nextest@0.9.149
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ${{ runner.temp }}/sub-store-docker-tests
-          key: nextest-docker-${{ matrix.target }}-1.98.0-${{ hashFiles('Cargo.lock', 'tests/Cargo.toml') }}
-          restore-keys: nextest-docker-${{ matrix.target }}-1.98.0-
+      - uses: ./.github/actions/rust-setup
       - name: Prepare frozen reference and script probe inputs
         run: |
           npm install --global pnpm@11.0.9
@@ -180,18 +151,38 @@ jobs:
           node tests/compat/build-helpers.cjs
           (cd backend && node bundle-esbuild.js)
           echo "TEST_NODE=$(node -p 'process.execPath')" >> "$GITHUB_ENV"
-      - name: Rust harness checks
-        run: |
-          cargo +1.98.0 fmt --manifest-path tests/Cargo.toml --all -- --check
-          cargo +1.98.0 clippy --manifest-path tests/Cargo.toml --locked --all-targets -- -D warnings
-          cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --lib --config-file .config/nextest.toml --profile ci
-      - name: Build actual Node-free images on the native runner
-        run: |
-          docker build --file tests/compat/Probe.Dockerfile --tag "$TEST_DOCKER_PROBE_IMAGE" .
-          docker build --file Dockerfile --tag "$TEST_DOCKER_IMAGE" \
-            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
-            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
-            --label "org.opencontainers.image.version=$(sed -n 's/^version = "\([^"]*\)"$/\1/p' crates/sub-crate/Cargo.toml)" .
+      - name: Keep image IDs equal to the config digests release checks compare
+        run: bash .github/docker-classic-store.sh
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Read application version
+        id: application
+        run: echo "version=$(sed -n 's/^version = "\([^"]*\)"$/\1/p' crates/sub-crate/Cargo.toml)" >> "$GITHUB_OUTPUT"
+      - name: Build contained probe image on the native runner
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: tests/compat/Probe.Dockerfile
+          tags: ${{ env.TEST_DOCKER_PROBE_IMAGE }}
+          load: true
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=probe-${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=probe-${{ matrix.target }}
+      - name: Build Node-free production image on the native runner
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: Dockerfile
+          tags: ${{ env.TEST_DOCKER_IMAGE }}
+          load: true
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=image-${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=image-${{ matrix.target }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.application.outputs.version }}
       - name: Package save extract and reload production image
         id: docker-package
         run: cargo +1.98.0 nextest run --manifest-path tests/Cargo.toml --locked --test docker --config-file .config/nextest.toml --profile delivery -E 'test(=docker::delivery)'
@@ -217,7 +208,7 @@ jobs:
         with:
           name: m1-docker-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/sub-store-docker-tests/nextest/
+            target/nextest/
             ${{ runner.temp }}/sub-store-docker-delivery-*
             ${{ runner.temp }}/sub-store-docker-probe-image-*
             ${{ runner.temp }}/sub-store-docker-cleanup-*

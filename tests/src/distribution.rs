@@ -249,7 +249,7 @@ pub fn package_payload(payload: &Path, target: &str, metadata: &Value) -> Result
         .as_str()
         .ok_or("Missing source repository")?;
     let mut text = format!(
-        "Source: https://github.com/{repository}/tree/{source}\n\nCorresponding source archive: https://github.com/{repository}/archive/{source}.tar.gz\n\nBuild instructions: rust/README.md in that exact source. Cargo.lock and vendored utility manifests pin dependencies.\n"
+        "Source: https://github.com/{repository}/tree/{source}\n\nCorresponding source archive: https://github.com/{repository}/archive/{source}.tar.gz\n\nBuild instructions: docs/development.md in that exact source. Cargo.lock and vendored utility manifests pin dependencies.\n"
     );
     if let Some(frontend) = metadata["frontend_commit"].as_str() {
         text.push_str(&format!("\nUnmodified frontend source: https://github.com/sub-store-org/Sub-Store-Front-End/tree/{frontend}\n"));

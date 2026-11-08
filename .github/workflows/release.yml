@@ -17,7 +17,7 @@ defaults:
 
 jobs:
   validate:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -54,7 +54,7 @@ jobs:
 
   publish:
     needs: [validate, acceptance]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
       actions: read
@@ -70,6 +70,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+      - name: Keep image IDs equal to the config digests checked below
+        run: bash .github/docker-classic-store.sh
       - name: Download only deliveries from this release run
         run: |
           gh run download "$GITHUB_RUN_ID" --repo "$GH_REPO" \
