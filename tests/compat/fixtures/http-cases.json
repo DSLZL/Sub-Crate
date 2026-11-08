@@ -10809,7 +10809,7 @@
             "status": "success",
             "data": {
               "par_res": [
-                "trojan://p:a@trojan.example:443?sni=trojan.example&type=tcp#Basic"
+                "trojan://p%3Aa@trojan.example:443?sni=trojan.example&type=tcp#Basic"
               ]
             }
           }

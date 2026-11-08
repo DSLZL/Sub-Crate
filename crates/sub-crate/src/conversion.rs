@@ -3098,7 +3098,12 @@ fn vless_output(proxy: &Value, server: &str, port: &str, anytls: bool) -> Option
     let scheme = if anytls { "anytls" } else { "vless" };
     Some(format!(
         "{scheme}://{}@{server}:{port}?{}#{}",
-        codec::text(&field_text(proxy, if anytls { "password" } else { "uuid" })),
+        if anytls {
+            // A password may contain @, :, # and other URI delimiters.
+            codec::uri_component(&field_text(proxy, "password")).ok()?
+        } else {
+            codec::text(&field_text(proxy, "uuid"))
+        },
         query
             .iter()
             .map(|(key, value)| format!("{key}={}", value.as_str().unwrap()))
@@ -3481,7 +3486,7 @@ pub(crate) fn uri(proxy: &Value) -> Option<String> {
     let mut output = if trojan {
         format!(
             "trojan://{}@{server}:{port}",
-            codec::text(&field_text(proxy, "password"))
+            codec::uri_component(&field_text(proxy, "password")).ok()?
         )
     } else {
         format!("ss://{auth}@{server}:{port}")
@@ -3911,6 +3916,36 @@ mod tests {
         }
         for address in ["host:123", "fe80::1%eth_0", "1:2:3:4:5:6:1.2.3.4"] {
             assert!(!ipv6(address), "{address}");
+        }
+    }
+
+    #[test]
+    fn uri_passwords_are_percent_encoded() {
+        // Upstream eda9781c, f9cfc754, 8c3fc576.
+        let trojan = json!({"type":"trojan","name":"URI Trojan Password","server":"trojan.example.com",
+            "port":443,"password":"p@ss:w/rd#1?","tls":true,"sni":"trojan.example.com"});
+        let output = uri(&trojan).unwrap();
+        assert_eq!(
+            output,
+            "trojan://p%40ss%3Aw%2Frd%231%3F@trojan.example.com:443?sni=trojan.example.com#URI%20Trojan%20Password"
+        );
+        let parsed = parse(&json!(output), None).ok().unwrap();
+        assert_eq!(parsed[0]["server"], "trojan.example.com");
+        assert_eq!(parsed[0]["password"], "p@ss:w/rd#1?");
+        for password in ["p@ss:w/rd#1?"] {
+            let anytls = json!({"type":"anytls","name":"URI AnyTLS Password",
+                "server":"anytls.example.com","port":443,"password":password,"sni":"anytls.example.com"});
+            let output = uri(&anytls).unwrap();
+            if password.starts_with("p@") {
+                assert!(
+                    output.starts_with("anytls://p%40ss%3Aw%2Frd%231%3F@anytls.example.com:443?"),
+                    "{output}"
+                );
+            }
+            let parsed = parse(&json!(output), None).ok().unwrap();
+            assert_eq!(parsed.len(), 1, "{output}");
+            assert_eq!(parsed[0]["server"], "anytls.example.com");
+            assert_eq!(parsed[0]["password"], password, "{output}");
         }
     }
 }
