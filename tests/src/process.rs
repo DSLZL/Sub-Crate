@@ -400,12 +400,13 @@ mod tests {
             Command::new(crate::reference::node())
                 .args([
                     "-e",
-                    "console.log('partial output');setTimeout(()=>{},10000)",
+                    "console.log('partial output');setTimeout(()=>{},60000)",
                 ])
                 .current_dir(&directory),
             &directory,
             "timeout",
-            Duration::from_secs(1),
+            // Cold Node starts on hosted Windows arm64 can exceed one second.
+            Duration::from_secs(5),
         )
         .unwrap();
         assert!(completed.timed_out && !completed.success());

@@ -41,7 +41,8 @@ impl Api {
                 label,
                 matches!(backend, Backend::Docker(_)),
             )?,
-            http: Http::new(Duration::from_secs(5))?,
+            // Interpreted age/ML-KEM steps take ~3s on hosted Windows; keep the 15s crypto budget.
+            http: Http::new(Duration::from_secs(15))?,
             state: state.to_owned(),
             proof,
             next: Cell::new(0),
