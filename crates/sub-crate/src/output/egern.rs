@@ -630,9 +630,14 @@ fn convert(mut proxy: Value, kind: &str) -> Result<Value, ()> {
                 &[
                     ("private-key", "private_key"),
                     ("public-key", "peer_public_key"),
-                    ("preshared-key", "preshared_key"),
                 ],
             );
+            if let Some(value) = get(&proxy, "preshared-key")
+                .filter(|value| !value.is_null())
+                .or_else(|| get(&proxy, "pre-shared-key"))
+            {
+                out.insert("preshared_key".to_owned(), value.clone());
+            }
             if let Some(value) = list_text(proxy.get("reserved"), '/')? {
                 out.insert("reserved".to_owned(), value);
             }
@@ -840,4 +845,21 @@ pub fn produce(proxies: Vec<Value>, kind: &str, opts: &Value) -> Result<Value, E
         .filter_map(|proxy| convert(proxy, kind).ok())
         .collect();
     crate::output::clash::finish(list, kind, opts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wireguard_preshared_key_falls_back_to_pre_shared_key() {
+        // Upstream 526e83ed.
+        for key in ["preshared-key", "pre-shared-key"] {
+            let mut proxy = json!({"type":"wireguard","name":"wg","server":"1.2.3.4","port":51820,
+                "private-key":"private","public-key":"public","ip":"10.0.0.2"});
+            proxy[key] = json!("shared");
+            let output = produce(vec![proxy], "internal", &json!({})).ok().unwrap();
+            assert_eq!(output[0]["wireguard"]["preshared_key"], "shared", "{key}");
+        }
+    }
 }
