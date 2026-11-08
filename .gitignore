@@ -28,6 +28,7 @@ Thumbs.db
 /.idea/
 /.vscode/
 /.agents/
+/.claude/
 /.codex/
 /.codegraph/
 /.serena/
