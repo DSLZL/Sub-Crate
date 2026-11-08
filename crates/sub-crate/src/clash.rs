@@ -6,7 +6,10 @@ use rquickjs::{
     context::{Intrinsic, intrinsic},
 };
 use serde_json::Value;
+use std::borrow::Cow;
 use std::cell::{OnceCell, RefCell};
+use std::collections::HashMap;
+use std::ops::Range;
 
 pub struct Parser {
     context: OnceCell<Context>,
@@ -172,30 +175,178 @@ fn subscription_yaml<'js>(ctx: &Ctx<'js>, raw: &str) -> rquickjs::Result<JsValue
     }
 }
 
-pub(crate) fn short_ids(raw: &str) -> String {
-    let mut output = String::new();
-    let mut remaining = raw;
-    while let Some((before, tail)) = remaining.split_once("short-id:") {
-        output.push_str(before);
-        let end = tail.find(['#', '\n', ',', '}']).unwrap_or(tail.len());
-        let value = codec::trim(&tail[..end]);
-        output.push_str("short-id: ");
-        if value == "null"
-            || (value.len() >= 2
-                && !value.contains(['\r', '\n', '\u{2028}', '\u{2029}'])
-                && ((value.starts_with('"') && value.ends_with('"'))
-                    || (value.starts_with('\'') && value.ends_with('\''))))
-        {
-            output.push_str(value);
-        } else {
-            output.push('"');
-            output.push_str(value);
-            output.push('"');
-        }
-        remaining = &tail[end..];
+/// Whether a plain YAML scalar loads as something other than a string or null.
+// shortcut: %YAML 1.1 yes/no, 1_000, 1:20 and dates stay strings here because no hex short-id
+// looks like them; add them if non-hex short-ids ever matter.
+fn non_string(word: &str, yaml_1_1: bool) -> bool {
+    fn digits(text: Option<&str>, radix: u32) -> bool {
+        text.is_some_and(|text| !text.is_empty() && text.chars().all(|c| c.is_digit(radix)))
     }
-    output.push_str(remaining);
-    output
+    let unsigned = word.strip_prefix(['+', '-']).unwrap_or(word);
+    let exponent = unsigned.strip_prefix(['e', 'E']);
+    matches!(
+        word,
+        "true" | "True" | "TRUE" | "false" | "False" | "FALSE" | ".nan" | ".NaN" | ".NAN"
+    ) || matches!(unsigned, ".inf" | ".Inf" | ".INF")
+        || digits(word.strip_prefix("0x"), 16)
+        || (!yaml_1_1 && digits(word.strip_prefix("0o"), 8))
+        // Rust's float grammar is exactly the core schema's int, float and exponent patterns.
+        || (word.bytes().all(|c| c.is_ascii_digit() || b"+-.eE".contains(&c))
+            && word.parse::<f64>().is_ok())
+        || (yaml_1_1
+            && (digits(unsigned.strip_prefix("0b"), 2)
+                || digits(exponent.map(|e| e.strip_prefix(['+', '-']).unwrap_or(e)), 10)))
+}
+
+/// A YAML node; maps list their keys and values alternately.
+enum Node<'a> {
+    /// The text and, when it would not load as a string, the byte range to quote.
+    Scalar(Cow<'a, str>, Option<Range<usize>>),
+    Alias(usize),
+    Seq(Vec<usize>),
+    Map(Vec<usize>),
+}
+
+/// Byte ranges of plain REALITY short-ids that a YAML load reads as numbers or booleans.
+/// Like upstream, a short-id counts anywhere under `reality-opts` or `reality-config`,
+/// including nodes those reach through aliases and merges.
+fn unquoted_short_ids(raw: &str) -> Option<Vec<Range<usize>>> {
+    use serde_saphyr::granit_parser::{Event, Parser, ScalarStyle};
+    // The JS loader retries legacy `!<str>value`; `!!str ` has the same length, so spans match raw.
+    let source = if raw.contains("!<str>") {
+        Cow::Owned(raw.replace("!<str>", "!!str "))
+    } else {
+        Cow::Borrowed(raw)
+    };
+    let mut nodes: Vec<Node> = Vec::new();
+    let mut open: Vec<usize> = Vec::new();
+    let mut anchors: HashMap<usize, usize> = HashMap::new();
+    let (mut documents, mut yaml_1_1) = (0, false);
+    for item in Parser::new_from_str(&source) {
+        let (event, span) = item.ok()?;
+        let (node, anchor) = match event {
+            Event::DocumentStart(_, version) => {
+                documents += 1;
+                yaml_1_1 = version.is_some_and(|v| (v.major, v.minor) == (1, 1));
+                continue;
+            }
+            Event::Alias(anchor) => (Node::Alias(*anchors.get(&anchor)?), 0),
+            Event::Scalar(text, style, anchor, tag) => {
+                let quote = span.byte_range().filter(|_| {
+                    style == ScalarStyle::Plain && tag.is_none() && non_string(&text, yaml_1_1)
+                });
+                (Node::Scalar(text, quote), anchor)
+            }
+            Event::SequenceStart(_, anchor, _) => (Node::Seq(Vec::new()), anchor),
+            Event::MappingStart(_, anchor, _) => (Node::Map(Vec::new()), anchor),
+            Event::SequenceEnd | Event::MappingEnd => {
+                open.pop();
+                continue;
+            }
+            _ => continue,
+        };
+        let index = nodes.len();
+        if let Some(&parent) = open.last()
+            && let Node::Seq(children) | Node::Map(children) = &mut nodes[parent]
+        {
+            children.push(index);
+        }
+        if anchor != 0 {
+            anchors.insert(anchor, index);
+        }
+        if matches!(node, Node::Seq(_) | Node::Map(_)) {
+            open.push(index);
+        }
+        nodes.push(node);
+    }
+    if documents != 1 || nodes.is_empty() {
+        return None;
+    }
+    let target = |index: usize| match nodes[index] {
+        Node::Alias(target) => target,
+        _ => index,
+    };
+    let named = |index: usize, names: &[&str]| matches!(&nodes[target(index)], Node::Scalar(text, _) if names.contains(&&**text));
+    let mut pending: Vec<usize> = nodes
+        .iter()
+        .filter_map(|node| match node {
+            Node::Map(children) => Some(children.as_chunks::<2>().0.iter()),
+            _ => None,
+        })
+        .flatten()
+        .filter(|pair| named(pair[0], &["reality-opts", "reality-config"]))
+        .map(|pair| pair[1])
+        .collect();
+    // Aliases and merges inside a REALITY config bring their targets into it.
+    let mut reality = vec![false; nodes.len()];
+    while let Some(config) = pending.pop() {
+        if std::mem::replace(&mut reality[config], true) {
+            continue;
+        }
+        let mut walk = vec![config];
+        while let Some(index) = walk.pop() {
+            match &nodes[index] {
+                Node::Alias(target) => pending.push(*target),
+                Node::Seq(children) | Node::Map(children) => walk.extend(children),
+                Node::Scalar(..) => {}
+            }
+        }
+    }
+    let mut values = Vec::new();
+    let mut walk = vec![(0, false)];
+    while let Some((index, outer)) = walk.pop() {
+        let inside = outer || reality[index];
+        if let Node::Seq(children) | Node::Map(children) = &nodes[index] {
+            walk.extend(children.iter().map(|&child| (child, inside)));
+        }
+        if inside && let Node::Map(children) = &nodes[index] {
+            values.extend(
+                children
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .filter(|pair| named(pair[0], &["short-id"]))
+                    .map(|pair| pair[1]),
+            );
+        }
+    }
+    // A short-id list counts item by item.
+    let mut seen = vec![false; nodes.len()];
+    let mut ranges = Vec::new();
+    while let Some(value) = values.pop() {
+        let node = target(value);
+        if std::mem::replace(&mut seen[node], true) {
+            continue;
+        }
+        match &nodes[node] {
+            Node::Seq(items) => values.extend(items),
+            Node::Scalar(_, Some(range)) => ranges.push(range.clone()),
+            _ => {}
+        }
+    }
+    ranges.sort_unstable_by_key(|range| range.start);
+    Some(ranges)
+}
+
+/// Quote REALITY short-ids such as `0088` that a later YAML load would read as numbers.
+/// Returns `None` when nothing changes.
+pub(crate) fn short_ids(raw: &str) -> Option<String> {
+    if !raw.contains("short-id") {
+        return None;
+    }
+    let ranges = unquoted_short_ids(raw).filter(|ranges| !ranges.is_empty())?;
+    let mut output = String::with_capacity(raw.len() + 2 * ranges.len());
+    let mut offset = 0;
+    for range in ranges {
+        // These scalars are one ASCII word, so JSON quoting only adds the quotes.
+        output.push_str(&raw[offset..range.start]);
+        output.push('"');
+        output.push_str(&raw[range.clone()]);
+        output.push('"');
+        offset = range.end;
+    }
+    output.push_str(&raw[offset..]);
+    Some(output)
 }
 
 impl Parser {
@@ -296,18 +447,7 @@ impl Parser {
                     let options = ctx.json_parse(r#"{"lineWidth":0}"#)?;
                     dump.call((content, options))?
                 };
-                Ok(
-                    if text.contains("proxies:")
-                        && text.contains("short-id:")
-                        && value["proxies"]
-                            .as_array()
-                            .is_some_and(|proxies| !proxies.is_empty())
-                    {
-                        short_ids(&text)
-                    } else {
-                        text
-                    },
-                )
+                Ok(short_ids(&text).unwrap_or(text))
             })();
             result.map_err(|error| {
                 ctx.catch();
@@ -328,10 +468,12 @@ impl Parser {
         self.context().ok()?.with(|ctx| {
             let result = (|| -> rquickjs::Result<Option<String>> {
                 // Downloads serialize YAML entries as canonical JSON; retain YAML for other syntax.
-                if let Some(entries) = raw
-                    .strip_prefix("proxies:\n")
-                    .filter(|entries| !entries.contains("short-id:"))
-                {
+                if let Some(entries) = raw.strip_prefix("proxies:\n").filter(|entries| {
+                    // Only string short-ids can skip the YAML normalization.
+                    entries
+                        .match_indices("short-id")
+                        .all(|(at, key)| entries[at + key.len()..].starts_with("\":\""))
+                }) {
                     let mut output = String::new();
                     let mut canonical = true;
                     for line in entries.split_terminator('\n') {
@@ -388,13 +530,14 @@ impl Parser {
                 if !proxies.is_array() && !groups.is_array() {
                     return Ok(None);
                 }
-                let value = if raw.contains("proxies:")
-                    && raw.contains("short-id:")
-                    && proxies.as_array().is_some_and(|array| !array.is_empty())
-                {
-                    subscription_yaml(&ctx, &short_ids(raw))?
-                } else {
-                    value
+                let normalized = proxies
+                    .as_array()
+                    .is_some_and(|array| !array.is_empty())
+                    .then(|| short_ids(raw))
+                    .flatten();
+                let value = match normalized {
+                    Some(raw) => subscription_yaml(&ctx, &raw)?,
+                    None => value,
                 };
                 let Some(root) = value.as_object() else {
                     return Ok(None);
@@ -715,8 +858,152 @@ mod tests {
         assert_ne!(changed, lines);
         assert_eq!(parser.preprocess(raw), Some(lines));
         assert!(parser.preprocess("proxies: not-an-array").is_none());
+        // Upstream #667 reads the tree, so text that only mentions short-id stays intact.
         let literal = "proxies:\n  - {\"type\":\"ss\",\"extra\":\"short-id: raw\"}\n";
-        assert!(parser.preprocess(literal).is_none());
+        assert_eq!(
+            parser.preprocess(literal).unwrap(),
+            "{\"type\":\"ss\",\"extra\":\"short-id: raw\"}\n"
+        );
+    }
+
+    fn assert_quotes(input: &str, ids: &str) {
+        let expected = ids.split_whitespace().fold(input.to_owned(), |text, id| {
+            text.replacen(id, &format!("\"{id}\""), 1)
+        });
+        let output = short_ids(input).unwrap_or_else(|| input.to_owned());
+        assert_eq!(output, expected, "{input}");
+        assert_eq!(short_ids(&output), None, "{input}");
+    }
+
+    // Upstream 28888062, preprocessors.spec.js normalizeClashYaml.
+    #[test]
+    fn short_ids_are_quoted_only_inside_reality_options_through_aliases_and_merges() {
+        let numeric = "11111111111 0000000000000001 9007199254740993";
+        let block =
+            "\n        - 11111111111\n        - 0000000000000001\n        - 9007199254740993";
+        let flow = " [11111111111, 0000000000000001, 9007199254740993]";
+        let listener = |ids: &str| {
+            format!(
+                "listeners:\n  - name: relay-proxy\n    type: vless\n    reality-config:\n      short-id:{ids}\n"
+            )
+        };
+        let aliased = "listeners: [{reality-config: {short-id: *ids}}]\n";
+        for (input, ids) in [
+            ("proxies:\n  - reality-opts:\n      short-id: 08\n  - reality-opts:\n      short-id: 0088\n  - reality-opts:\n      short-id: '51'\n  - reality-opts:\n      short-id: \"\"\n  - reality-opts:\n      short-id: null\n".to_owned(), "08 0088"),
+            ("metadata: {short-id: 1234}\nproxies:\n  - name: test\n    short-id: 5678\n    reality-opts: {short-id: 0088}\n".to_owned(), "0088"),
+            ("opts: &opts {short-id: 0088}\nproxies:\n  - reality-opts: *opts\n  - reality-opts: *opts\n".to_owned(), "0088"),
+            ("id: &id 0011\nproxies: [{reality-opts: {short-id: *id}}]\n".to_owned(), "0011"),
+            ("base: &base {short-id: 0011}\nmid: &mid {<<: *base}\nopts: &opts {<<: *mid}\nproxies: [{reality-opts: *opts}]\n".to_owned(), "0011"),
+            ("template: &template {reality-opts: {short-id: 0011}}\ntemplates: &templates [*template]\nnode: &node {<<: *templates}\nproxies: [*node]\n".to_owned(), "0011"),
+            ("opts: &opts {short-id: 0011}\nnode: &node {reality-opts: *opts}\nnodes: &nodes [*node]\nprofile: &profile {proxies: *nodes}\ninherited: &inherited {<<: *profile}\n<<: *inherited\n".to_owned(), "0011"),
+            ("profile: &profile {listeners: [{reality-config: {short-id: [0011]}}]}\nprofiles: &profiles [*profile]\n<<: *profiles\n".to_owned(), "0011"),
+            ("profile: &profile {proxies: [{reality-opts: {short-id: 0011}}]}\nprofiles: &profiles [*profile]\n<<: *profiles\n".to_owned(), "0011"),
+            (format!("%YAML 1.1\n---\nids: &ids [0011]\n{aliased}"), "0011"),
+            (format!("ids: &ids [0088, !!int 0011, !!str 0088, null]\n{aliased}"), "0088"),
+            ("ids: &ids 0011 # keep\nlisteners: [{reality-config: {short-id: [*ids]}}]\n".to_owned(), "0011"),
+            (format!("ids: &ids [0011] # keep\n{aliased}"), "0011"),
+            (format!("ids: &ids [0011 # keep\n]\n{aliased}"), "0011"),
+            (format!("ids: &ids\n  # keep\n  - 0011\n{aliased}"), "0011"),
+            (format!("ids: &ids\n  - 0011\n\n  - 0022\n{aliased}"), "0011 0022"),
+            (listener(block), numeric),
+            (format!("proxies: []\n{}", listener(flow)), numeric),
+            (format!("proxies: [{{name: test}}]\n{}", listener(block)), numeric),
+            ("ids: &ids [11111111111, 0000000000000001]\nlisteners:\n  - reality-config: {short-id: *ids}\n  - reality-config: {short-id: *ids}\n".to_owned(), "11111111111 0000000000000001"),
+            ("# short-id: 0011\nproxies:\n  - {name: test, reality-opts: {short-id: 0088}}\nshort-ids: &ids [6a0f0e0ede903cad]\nlisteners:\n  - reality-config: {short-id: *ids}\ndescription: 'short-id: 0022'\nscript: |\n  short-id: 0033\nempty:\n  short-id:\n".to_owned(), "0088"),
+            ("opts: &opts {short-id: 0011, \"<<\": keep}\nmetadata: *opts\nproxies: [{reality-opts: *opts}]\n".to_owned(), "0011"),
+            ("proxies:\n  - name: first\n    &opts reality-opts: {&sid short-id: 0088}\n  - name: second\n    *opts : {*sid : 0011}\n".to_owned(), "0088 0011"),
+            ("first: &opts {short-id: 0088}\nproxies:\n  - reality-opts: *opts\n  - reality-opts: &opts {short-id: 0011}\n  - reality-opts: *opts\n".to_owned(), "0088 0011"),
+            ("first: &first {short-id: 0011}\nsecond: &second {short-id: 0022}\nproxies:\n  - reality-opts: *second\n  - reality-opts: {<<: *first}\n".to_owned(), "0011 0022"),
+            ("proxies:\n  - name: !<str>Legacy\n    server: !<str>example.com\n    reality-opts:\n      short-id: 0088\n".to_owned(), "0088"),
+            ("ids: &loop [*loop, 0011]\nproxies: [{reality-opts: {short-id: *loop}}]\n".to_owned(), "0011"),
+            ("%YAML 1.1\n---\nproxies: [{reality-opts: {short-id: [0b10, e5, 0o17]}}]\n".to_owned(), "0b10 e5"),
+            ("proxies: [{reality-opts: {short-id: [0b10, e5, 0o17, 1e5, true]}}]\n".to_owned(), "0o17 1e5 true"),
+            ("proxies: [{reality-opts: {short-id: \"0088\"}}]\n".to_owned(), ""),
+            ("proxies:\n  - name: broken\n    short-id: [".to_owned(), ""),
+            ("proxies: [{reality-opts: {short-id: 0088}}]\n---\nproxies: []\n".to_owned(), ""),
+            ("ss://YWVzLTEyOC1nY206c2VjcmV0@example.com:8388".to_owned(), ""),
+        ] {
+            assert_quotes(&input, ids);
+        }
+        for value in [
+            "abcdef0123456789",
+            "!!str 0088",
+            "!!int 0088",
+            "!custom 0088",
+        ] {
+            assert_quotes(
+                &format!("proxies:\n  - name: test\n    reality-opts: {{short-id: {value}}}\n"),
+                "",
+            );
+        }
+        for value in [
+            "\n        - 6a0f0e0ede903cad",
+            " # ids\n        - 6a0f0e0ede903cad",
+            " &ids\n        - 6a0f0e0ede903cad",
+            " []",
+            " [6a0f0e0ede903cad, \"08\"]",
+            " &ids [6a0f0e0ede903cad]",
+        ] {
+            assert_quotes(
+                &format!(
+                    "proxies:\n  - name: test\n    type: vless\n    reality-opts:\n      short-id: 0088\nlisteners:\n  - type: vless\n    reality-config:\n      short-id:{value}\n"
+                ),
+                "0088",
+            );
+        }
+        for word in [
+            "1e3", ".5", "-1", "+0.", "0x1F", "0o17", "true", "False", ".inf", "-.INF", ".NaN",
+        ] {
+            assert!(non_string(word, false), "{word}");
+        }
+        for word in [
+            "0b11", "e5", "1_000", "yes", "12:34", "6a0f", "1e", "+", ".", "-.nan", "0x", "0o8",
+            "~", "",
+        ] {
+            assert!(!non_string(word, false), "{word}");
+        }
+        assert!(non_string("-0b11", true) && non_string("E-5", true) && !non_string("0o17", true));
+    }
+
+    #[test]
+    fn preprocess_keeps_short_ids_through_aliased_field_names_merges_and_legacy_tags() {
+        let parser = Parser::new().ok().unwrap();
+        for (raw, expected) in [
+            (
+                "proxies:\n  - name: first\n    &opts reality-opts: {&sid short-id: 0088}\n  - name: second\n    *opts : {*sid : 0011}\n",
+                json!(["0088", "0011"]),
+            ),
+            (
+                "first: &opts {short-id: 0088}\nproxies:\n  - reality-opts: *opts\n  - reality-opts: &opts {short-id: 0011}\n  - reality-opts: *opts\n",
+                json!(["0088", "0011", "0011"]),
+            ),
+            (
+                "first: &first {short-id: 0011}\nsecond: &second {short-id: 0022}\nproxies:\n  - reality-opts: *second\n  - reality-opts: {<<: *first}\n  - reality-opts: *second\n",
+                json!(["0022", "0011", "0022"]),
+            ),
+            (
+                "proxies:\n  - name: !<str>Legacy\n    type: vless\n    server: !<str>example.com\n    reality-opts:\n      short-id: 0088\n",
+                json!(["0088"]),
+            ),
+            (
+                "proxies:\n  - {\"name\":\"canonical\",\"reality-opts\":{\"short-id\":88}}\n",
+                json!(["88"]),
+            ),
+            (
+                "proxies:\n  - {\"name\":\"canonical\",\"reality-opts\":{\"short-id\":\"88\"}}\n",
+                json!(["88"]),
+            ),
+        ] {
+            let ids: Vec<Value> = parser
+                .preprocess(raw)
+                .unwrap()
+                .lines()
+                .map(|line| {
+                    serde_json::from_str::<Value>(line).unwrap()["reality-opts"]["short-id"].clone()
+                })
+                .collect();
+            assert_eq!(json!(ids), expected, "{raw}");
+        }
     }
 
     #[test]

@@ -448,16 +448,21 @@ pub(crate) fn normalize_yaml<'js>(js: &Js<'js>, raw: Value<'js>) -> rquickjs::Re
         return Ok(raw);
     }
     let text = js.text(raw.clone())?;
-    if !text.contains("proxies:") || !text.contains("short-id:") {
+    if !text.contains("short-id") {
         return Ok(raw);
     }
     let valid = (|| {
         let parsed = yaml(js, "safeLoad", raw.clone())?;
-        let proxies = js.get(&parsed, "proxies")?;
-        Ok::<_, rquickjs::Error>(proxies.is_array() && js.truthy(&js.get(&proxies, "length")?)?)
+        for key in ["proxies", "listeners"] {
+            let items = js.get(&parsed, key)?;
+            if items.is_array() && js.truthy(&js.get(&items, "length")?)? {
+                return Ok(true);
+            }
+        }
+        Ok::<_, rquickjs::Error>(false)
     })();
     match valid {
-        Ok(true) => js.value(crate::clash::short_ids(&text)),
+        Ok(true) => crate::clash::short_ids(&text).map_or(Ok(raw), |text| js.value(text)),
         Ok(false) => Ok(raw),
         Err(_) => {
             js.ctx.catch();
