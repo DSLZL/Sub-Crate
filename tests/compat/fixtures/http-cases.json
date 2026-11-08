@@ -12395,7 +12395,7 @@
               "par_res": [
                 {
                   "name": "Double",
-                  "password": "p:q",
+                  "password": "p%3Aq",
                   "udp": false,
                   "disable-reuse": "1",
                   "reuse": false,

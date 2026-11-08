@@ -778,7 +778,7 @@ fn anytls(line: &str) -> Result<Option<Value>, Error> {
     let Some((server, port)) = endpoint.rsplit_once(':') else {
         return Ok(None);
     };
-    let Some(password) = component(auth).and_then(|raw| component(&codec::text(&raw))) else {
+    let Some(password) = component(auth) else {
         return Ok(None);
     };
     let name = if let Some(raw) = fragment {
@@ -3932,7 +3932,7 @@ mod tests {
         let parsed = parse(&json!(output), None).ok().unwrap();
         assert_eq!(parsed[0]["server"], "trojan.example.com");
         assert_eq!(parsed[0]["password"], "p@ss:w/rd#1?");
-        for password in ["p@ss:w/rd#1?"] {
+        for password in ["p@ss:w/rd#1?", "p%40ss", "p%ss"] {
             let anytls = json!({"type":"anytls","name":"URI AnyTLS Password",
                 "server":"anytls.example.com","port":443,"password":password,"sni":"anytls.example.com"});
             let output = uri(&anytls).unwrap();
