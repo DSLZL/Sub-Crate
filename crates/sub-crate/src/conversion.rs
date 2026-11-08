@@ -3201,12 +3201,17 @@ fn vmess_output(proxy: &Value, server: &str, port: &str) -> Option<String> {
                 output["path"] = json!(path);
             }
             let host = crate::xhttp::transport_host(network, options);
-            let host = host
-                .as_array()
-                .and_then(|items| items.first())
-                .unwrap_or(host);
-            if truthy(host) {
-                output["host"] = host.clone();
+            if network == "h2" && host.is_array() {
+                // h2 takes a comma-separated host list, which the VMess URI parser splits into h2-opts.host.
+                output["host"] = json!(codec::js_string(host));
+            } else {
+                let host = host
+                    .as_array()
+                    .and_then(|items| items.first())
+                    .unwrap_or(host);
+                if truthy(host) {
+                    output["host"] = host.clone();
+                }
             }
         }
     }
@@ -3990,5 +3995,22 @@ mod tests {
             .ok()
             .unwrap();
         assert_eq!(parsed[0]["name"], ":443");
+    }
+
+    #[test]
+    fn vmess_uri_keeps_every_h2_host() {
+        // Upstream 9404971f.
+        let output = uri(&json!({"type":"vmess","name":"URI VMess H2","server":"vmess.example.com",
+            "port":443,"uuid":"6ba7b810-9dad-11d1-80b4-00c04fd430c8","alterId":0,"cipher":"auto",
+            "tls":true,"network":"h2","h2-opts":{"path":"/h2","host":["a.example.com","b.example.com"]}}))
+        .unwrap();
+        let encoded = output.strip_prefix("vmess://").unwrap();
+        let link: Value = serde_json::from_slice(&STANDARD.decode(encoded).unwrap()).unwrap();
+        assert_eq!(link["host"], "a.example.com,b.example.com");
+        let parsed = parse(&json!(output), None).ok().unwrap();
+        assert_eq!(
+            parsed[0]["h2-opts"]["host"],
+            json!(["a.example.com", "b.example.com"])
+        );
     }
 }
