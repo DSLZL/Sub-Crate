@@ -1,5 +1,4 @@
 use crate::json as codec;
-use crate::state::truthy;
 use flate2::{Decompress, FlushDecompress, Status};
 use http_body_util::{BodyExt, Limited};
 use hyper::{HeaderMap, Request, body::Bytes, body::Incoming};
@@ -362,13 +361,16 @@ fn form_decode(value: &str) -> String {
     codec::encode(&decoded)
 }
 
-// Input keys escape this marker; remove the unreachable bookkeeping key in compact.
-const OVERFLOW: &str = "\u{e000}overflow";
-
-fn overflow_index(value: &Value) -> Option<f64> {
-    value.get(OVERFLOW).and_then(Value::as_f64)
+// qs 6.16.1 as Express 4.22.3 parses queries and body-parser 1.20.9 parses forms.
+enum Node {
+    Text(String),
+    /// A JavaScript array: length, present items by index, and qs's strictMerge conflict mark.
+    List(usize, BTreeMap<usize, Node>, bool),
+    /// A plain object with qs's overflow and conflict side channels (their highest index).
+    Dict(Vec<(String, Node)>, Option<f64>, Option<f64>),
 }
 
+/// Keys qs treats as numbers: `String(parseInt(key, 10)) === key`, not negative.
 fn numeric_index(key: &str) -> Option<f64> {
     key.parse::<f64>().ok().filter(|index| {
         index.is_finite()
@@ -379,156 +381,235 @@ fn numeric_index(key: &str) -> Option<f64> {
     })
 }
 
-fn array_object(items: Vec<Value>, overflow: Option<f64>) -> Value {
-    let mut fields: Map<_, _> = items
+/// JavaScript `parseInt(key, 10)`.
+fn parse_int(key: &str) -> f64 {
+    let text = codec::trim(key);
+    let digits = text.strip_prefix(['+', '-']).unwrap_or(text);
+    let end = digits
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(digits.len());
+    let value = digits[..end].parse::<f64>().unwrap_or(f64::NAN);
+    if text.starts_with('-') { -value } else { value }
+}
+
+/// JavaScript objects list array-index keys first in numeric order, then the rest as inserted.
+fn js_order<T>(mut fields: Vec<(String, T)>) -> Vec<(String, T)> {
+    fields.sort_by_key(|(key, _)| {
+        key.parse::<u32>()
+            .ok()
+            .filter(|index| *index < u32::MAX && index.to_string() == *key)
+            .map_or(u64::MAX, u64::from)
+    });
+    fields
+}
+
+fn set(fields: &mut Vec<(String, Node)>, key: String, value: Node) {
+    match fields.iter_mut().find(|(name, _)| *name == key) {
+        Some((_, slot)) => *slot = value,
+        None => fields.push((key, value)),
+    }
+}
+
+fn object(items: BTreeMap<usize, Node>) -> Vec<(String, Node)> {
+    items
         .into_iter()
-        .enumerate()
-        .filter(|(_, value)| !value.is_null())
-        .map(|(index, value)| (index.to_string(), value))
-        .collect();
-    if let Some(index) = overflow {
-        fields.insert(OVERFLOW.to_owned(), json!(index));
-    }
-    Value::Object(fields)
+        .map(|(index, item)| (index.to_string(), item))
+        .collect()
 }
 
-fn combine(left: Value, right: Value, limit: usize) -> Value {
-    if let Some(index) = overflow_index(&left) {
-        let mut result = left;
-        result[(index + 1.0).to_string()] = right;
-        result[OVERFLOW] = json!(index + 1.0);
-        return result;
-    }
-    let mut items = match left {
-        Value::Array(items) => items,
-        value => vec![value],
-    };
-    match right {
-        Value::Array(right) => items.extend(right),
-        value => items.push(value),
-    }
-    if items.len() > limit {
-        let last = items.len() - 1;
-        array_object(items, Some(last as f64))
+/// `[].concat`: appends a value, spreading one array level with its holes.
+fn append(len: &mut usize, items: &mut BTreeMap<usize, Node>, value: Node) {
+    if let Node::List(more_len, more, _) = value {
+        items.extend(more.into_iter().map(|(index, item)| (*len + index, item)));
+        *len += more_len;
     } else {
-        Value::Array(items)
+        items.insert(*len, value);
+        *len += 1;
     }
 }
 
-fn merge(target: &mut Value, source: Value, query: bool, limit: usize) {
-    if !truthy(&source) {
-        return;
+/// Arrays past the limit become objects that remember their last index.
+fn overflowed(len: usize, items: BTreeMap<usize, Node>, conflict: bool, limit: usize) -> Node {
+    if len > limit {
+        Node::Dict(object(items), Some((len - 1) as f64), None)
+    } else {
+        Node::List(len, items, conflict)
     }
-    if target.is_null() {
-        *target = source;
-        return;
-    }
+}
+
+/// `utils.combine`. `left` is never an overflowed object here: a form's arrayLimit is
+/// at least its parameter count, and a query keeps at most 1000 parameters.
+fn combine(left: Node, right: Node, limit: usize) -> Node {
+    let (mut len, mut items) = (0, BTreeMap::new());
+    append(&mut len, &mut items, left);
+    append(&mut len, &mut items, right);
+    overflowed(len, items, false, limit)
+}
+
+/// `utils.merge` with the default strictMerge.
+fn merge(target: Node, source: Node, limit: usize) -> Node {
     match (target, source) {
-        (Value::Array(left), Value::Array(right)) => {
-            for (index, value) in right.into_iter().enumerate() {
-                if value.is_null() {
-                    continue;
+        (target, Node::Text(text)) if text.is_empty() => target,
+        (Node::List(len, mut items, conflict), source @ Node::Text(_)) => {
+            items.insert(len, source);
+            overflowed(len + 1, items, conflict, limit)
+        }
+        (Node::Dict(mut fields, Some(index), conflict), source @ Node::Text(_)) => {
+            set(&mut fields, (index + 1.0).to_string(), source);
+            Node::Dict(fields, Some(index + 1.0), conflict)
+        }
+        (Node::Dict(mut fields, None, Some(index)), source @ Node::Text(_)) => {
+            set(&mut fields, (index + 1.0).to_string(), source);
+            Node::Dict(fields, None, Some(index + 1.0))
+        }
+        // Both limits are at least 100, so qs's limited pair stays an array.
+        (target @ Node::Dict(..), source @ Node::Text(_)) => {
+            Node::List(2, BTreeMap::from([(0, target), (1, source)]), true)
+        }
+        (target @ Node::Text(_), Node::Dict(fields, Some(index), _)) => {
+            let mut result = vec![("0".to_owned(), target)];
+            for (key, value) in js_order(fields) {
+                set(&mut result, (parse_int(&key) + 1.0).to_string(), value);
+            }
+            Node::Dict(result, Some(index + 1.0), None)
+        }
+        (target @ Node::Text(_), source) => combine(target, source, limit),
+        (Node::List(mut len, mut items, conflict), Node::List(_, more, _)) => {
+            for (index, item) in more {
+                let nested = !matches!(item, Node::Text(_));
+                match items.remove(&index) {
+                    Some(old) if nested && !matches!(old, Node::Text(_)) => {
+                        items.insert(index, merge(old, item, limit));
+                    }
+                    Some(old) => {
+                        items.insert(index, old);
+                        items.insert(len, item);
+                        len += 1;
+                    }
+                    None => {
+                        items.insert(index, item);
+                        len = len.max(index + 1);
+                    }
                 }
-                if index >= left.len() {
-                    left.resize(index + 1, Value::Null);
-                    left[index] = value;
-                } else if left[index].is_null() {
-                    left[index] = value;
-                } else if (left[index].is_object() || left[index].is_array())
-                    && (value.is_object() || value.is_array())
+            }
+            overflowed(len, items, conflict, limit)
+        }
+        (target, source) => {
+            let (mut fields, mut overflow, mut conflict) = match target {
+                Node::Dict(fields, overflow, conflict) => (fields, overflow, conflict),
+                Node::List(len, items, marked) => {
+                    (object(items), None, marked.then_some(len as f64 - 1.0))
+                }
+                Node::Text(_) => unreachable!("text targets are merged above"),
+            };
+            let (entries, source_overflow) = match source {
+                Node::Dict(fields, overflow, _) => (js_order(fields), overflow),
+                Node::List(_, items, _) => (object(items), None),
+                Node::Text(_) => unreachable!("text sources are merged above"),
+            };
+            for (key, value) in entries {
+                let index = numeric_index(&key);
+                match fields.iter().position(|(name, _)| *name == key) {
+                    Some(at) => {
+                        let old = std::mem::replace(&mut fields[at].1, Node::Text(String::new()));
+                        fields[at].1 = merge(old, value, limit);
+                    }
+                    None => fields.push((key, value)),
+                }
+                if let Some(source) = source_overflow
+                    && overflow.is_none()
                 {
-                    merge(&mut left[index], value, query, limit);
-                } else {
-                    left.push(value);
+                    let indexes = fields.iter().filter_map(|(name, _)| numeric_index(name));
+                    overflow = Some(indexes.fold(source, f64::max));
+                }
+                for mark in [&mut overflow, &mut conflict] {
+                    if let (Some(maximum), Some(index)) = (mark.as_mut(), index) {
+                        *maximum = maximum.max(index);
+                    }
                 }
             }
+            Node::Dict(fields, overflow, conflict)
         }
-        (left @ Value::Array(_), right @ Value::Object(_)) => {
-            let items = std::mem::take(left).as_array().unwrap().clone();
-            *left = array_object(items, None);
-            merge(left, right, query, limit);
-        }
-        (Value::Object(left), Value::Object(mut right)) => {
-            let overflow = right.remove(OVERFLOW).and_then(|value| value.as_f64());
-            for (key, value) in right {
-                if let Some(old) = left.get_mut(&key) {
-                    merge(old, value, query, limit);
-                } else {
-                    left.insert(key.clone(), value);
-                }
-                let maximum = left.get(OVERFLOW).and_then(Value::as_f64).or(overflow);
-                if let Some(maximum) = maximum {
-                    let index = numeric_index(&key).unwrap_or(maximum).max(maximum);
-                    left.insert(OVERFLOW.to_owned(), json!(index));
-                }
-            }
-        }
-        (left @ Value::Object(_), Value::Array(right)) => {
-            merge(left, array_object(right, None), query, limit);
-        }
-        (left @ Value::Object(_), right) if !right.is_array() && !right.is_object() => {
-            if let Some(index) = overflow_index(left) {
-                left[(index + 1.0).to_string()] = right;
-                left[OVERFLOW] = json!(index + 1.0);
-            } else if query {
-                let key = right
-                    .as_str()
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| right.to_string());
-                if key != "__proto__" {
-                    left[key] = Value::Bool(true);
-                }
-            } else {
-                *left = json!([std::mem::take(left), right]);
-            }
-        }
-        (left @ Value::Array(_), right) => {
-            let items = left.as_array_mut().unwrap();
-            items.push(right);
-            let last = items.len() - 1;
-            if last > limit {
-                *left = array_object(std::mem::take(items), Some(last as f64));
-            }
-        }
-        (left, right @ Value::Array(_)) => {
-            *left = combine(std::mem::take(left), right, limit);
-        }
-        (left, right) if overflow_index(&right).is_some() => {
-            let maximum = overflow_index(&right).unwrap() + 1.0;
-            let mut fields = Map::from_iter([("0".to_owned(), std::mem::take(left))]);
-            for (key, value) in right.as_object().unwrap() {
-                if key != OVERFLOW {
-                    let text = codec::trim(key);
-                    let digits = text
-                        .strip_prefix('+')
-                        .or_else(|| text.strip_prefix('-'))
-                        .unwrap_or(text);
-                    let end = digits
-                        .find(|c: char| !c.is_ascii_digit())
-                        .unwrap_or(digits.len());
-                    let index = digits[..end].parse::<f64>().unwrap_or(f64::NAN);
-                    let index = if text.starts_with('-') { -index } else { index };
-                    fields.insert((index + 1.0).to_string(), value.clone());
-                }
-            }
-            fields.insert(OVERFLOW.to_owned(), json!(maximum));
-            *left = Value::Object(fields);
-        }
-        (left, right) => *left = json!([std::mem::take(left), right]),
     }
 }
 
-fn compact(value: &mut Value) {
-    match value {
-        Value::Array(items) => {
-            items.retain(|v| !v.is_null());
-            items.iter_mut().for_each(compact);
+/// `splitKeyIntoSegments`: the parent, then balanced bracket groups up to `depth`.
+/// Returns `None` when a strict depth is exceeded.
+fn segments(key: &str, depth: usize, strict: bool) -> Option<Vec<(&str, bool)>> {
+    let first = key.find('[');
+    let parent = &key[..first.unwrap_or(key.len())];
+    let mut segments = Vec::new();
+    if !parent.is_empty() {
+        segments.push((parent, false));
+    }
+    let mut open = first;
+    let mut collected = 0;
+    while let Some(start) = open.filter(|_| collected < depth) {
+        let mut level = 0;
+        let close = key[start..].bytes().position(|byte| {
+            level += match byte {
+                b'[' => 1,
+                b']' => -1,
+                _ => 0,
+            };
+            level == 0
+        });
+        let Some(close) = close.map(|offset| start + offset) else {
+            // An unterminated group stays one literal segment.
+            segments.push((&key[start..], true));
+            return Some(segments);
+        };
+        segments.push((&key[start + 1..close], true));
+        collected += 1;
+        open = key[close + 1..].find('[').map(|offset| close + 1 + offset);
+    }
+    if let Some(start) = open {
+        if strict {
+            return None;
         }
-        Value::Object(fields) => {
-            fields.remove(OVERFLOW);
-            fields.values_mut().for_each(compact);
+        segments.push((&key[start..], true));
+    }
+    Some(segments)
+}
+
+/// `parseObject`; bracketed segments come without their brackets.
+fn parse_object(chain: &[(&str, bool)], leaf: Node, limit: usize) -> Node {
+    chain.iter().rev().fold(leaf, |leaf, &(root, bracket)| {
+        if bracket && root.is_empty() {
+            if matches!(leaf, Node::Dict(_, Some(_), _)) {
+                leaf
+            } else {
+                combine(Node::List(0, BTreeMap::new(), false), leaf, limit)
+            }
+        } else if let Some(index) = numeric_index(root).filter(|_| bracket) {
+            if index < limit as f64 {
+                Node::List(
+                    index as usize + 1,
+                    BTreeMap::from([(index as usize, leaf)]),
+                    false,
+                )
+            } else {
+                Node::Dict(vec![(root.to_owned(), leaf)], Some(index), None)
+            }
+        } else if root == "__proto__" {
+            Node::Dict(Vec::new(), None, None)
+        } else {
+            Node::Dict(vec![(root.to_owned(), leaf)], None, None)
         }
-        _ => {}
+    })
+}
+
+/// `utils.compact`, which also drops the side channels.
+fn compact(node: Node) -> Value {
+    match node {
+        Node::Text(text) => Value::String(text),
+        Node::List(_, items, _) => items.into_values().map(compact).collect(),
+        Node::Dict(fields, ..) => Value::Object(
+            js_order(fields)
+                .into_iter()
+                .map(|(key, value)| (key, compact(value)))
+                .collect(),
+        ),
     }
 }
 
@@ -545,8 +626,9 @@ fn parse_fields(text: &str, query: bool) -> Result<Value, u16> {
     if !query && count > 1000 {
         return Err(413);
     }
-    let mut fields = Map::new();
-    let limit = if query { 20 } else { count.max(100) };
+    // Express passes arrayLimit 1000; body-parser passes max(100, parameter count).
+    let limit = if query { 1000 } else { count.max(100) };
+    let mut values: Vec<(String, Node)> = Vec::new();
     for pair in text.split('&').take(1000) {
         let pair = pair
             .replace("%5B", "[")
@@ -558,72 +640,50 @@ fn parse_fields(text: &str, query: bool) -> Result<Value, u16> {
             .map(|i| (&pair[..i], &pair[i + 1..]))
             .unwrap_or((&pair, ""));
         let key = form_decode(key);
-        let value = Value::String(form_decode(value));
-        if let Some(old) = fields.get_mut(&key) {
-            *old = combine(std::mem::take(old), value, limit);
-        } else {
-            fields.insert(key, value);
+        let value = Node::Text(form_decode(value));
+        match values.iter_mut().find(|(name, _)| *name == key) {
+            Some((_, old)) => {
+                *old = combine(
+                    std::mem::replace(old, Node::Text(String::new())),
+                    value,
+                    limit,
+                );
+            }
+            None => values.push((key, value)),
         }
     }
-    let mut result = json!({});
-    for (key, mut value) in fields {
+    let mut result = Node::Dict(Vec::new(), None, None);
+    for (key, value) in js_order(values) {
         if key.is_empty() {
             continue;
         }
-        let mut segments = Vec::new();
-        let mut offset = 0;
-        let mut opening = None;
-        let mut depth = 0;
-        for (end, character) in key.char_indices() {
-            if character == '[' {
-                opening = Some(end);
-            } else if character == ']'
-                && let Some(start) = opening.take()
-            {
-                depth += 1;
-                if depth > if query { 5 } else { 32 } {
-                    if !query {
-                        return Err(400);
-                    }
-                    segments.push((&key[start..], true));
-                    break;
-                }
-                if segments.is_empty() && start > 0 {
-                    segments.push((&key[..start], false));
-                }
-                segments.push((&key[start + 1..end], true));
-                offset = end + 1;
-            }
-        }
-        if offset == 0 {
-            segments.push((&key, false));
-        }
-        for (key, bracket) in segments.into_iter().rev() {
-            value = if key == "__proto__" {
-                json!({})
-            } else if bracket && key.is_empty() {
-                if overflow_index(&value).is_some() {
-                    value
-                } else {
-                    combine(json!([]), value, limit)
-                }
-            } else if bracket && let Some(index) = numeric_index(key) {
-                if index < limit as f64 {
-                    let mut items = vec![Value::Null; index as usize + 1];
-                    items[index as usize] = value;
-                    Value::Array(items)
-                } else {
-                    Value::Object(Map::from_iter([
-                        (key.to_owned(), value),
-                        (OVERFLOW.to_owned(), json!(index)),
-                    ]))
-                }
-            } else {
-                Value::Object(Map::from_iter([(key.to_owned(), value)]))
-            };
-        }
-        merge(&mut result, value, query, limit);
+        let chain = segments(&key, if query { 5 } else { 32 }, !query).ok_or(400u16)?;
+        result = merge(result, parse_object(&chain, value, limit), limit);
     }
-    compact(&mut result);
-    Ok(result)
+    Ok(compact(result))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn queries_and_forms_match_qs() {
+        // Generated with qs 6.16.1 and the Express 4.22.3 and body-parser 1.20.9 options.
+        let cases: Value =
+            serde_json::from_str(include_str!("../../../tests/compat/fixtures/qs-cases.json"))
+                .unwrap();
+        for case in cases["query"].as_array().unwrap() {
+            let text = case[0].as_str().unwrap();
+            assert_eq!(query(text).to_string(), case[1].to_string(), "{text}");
+        }
+        for case in cases["form"].as_array().unwrap() {
+            let text = case[0].as_str().unwrap();
+            let actual = match parse_fields(text, false) {
+                Ok(value) => json!({ "value": value }),
+                Err(status) => json!({ "status": status }),
+            };
+            assert_eq!(actual.to_string(), case[1].to_string(), "{text}");
+        }
+    }
 }

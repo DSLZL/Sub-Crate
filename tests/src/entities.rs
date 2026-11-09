@@ -614,19 +614,26 @@ impl Entities<'_> {
                 ("mode[]=permanent".into(), "permanent".into()),
                 ("m%6Fde%5B%5D=permanent".into(), "permanent".into()),
                 ("mode[0]=permanent&mode[2]=".into(), "permanent,".into()),
-                ("mode[19]=permanent".into(), "permanent".into()),
+                ("mode[999]=permanent".into(), "permanent".into()),
+                (
+                    "mode[x]=archive&mode=permanent".into(),
+                    "[object Object],permanent".into(),
+                ),
+                (
+                    "mode[x]=one&mode=toString".into(),
+                    "[object Object],toString".into(),
+                ),
                 ("mode=+permanent+".into(), " permanent ".into()),
                 ("mode=%2570ermanent".into(), "%70ermanent".into()),
                 ("mode=%FF%20permanent".into(), "%FF%20permanent".into()),
             ];
             for query in [
-                "mode[20]=permanent",
+                "mode[1000]=permanent",
                 "mode[x]=permanent",
-                "mode[x]=archive&mode=permanent",
-                "mode=lead&mode[20]=tail",
-                "mode[20]=tail&mode=toString",
-                "mode[x]=one&mode[20]=last&mode=toString",
-                "mode[20]=tail&mode[x]=one&mode=more",
+                "mode=lead&mode[1000]=tail",
+                "mode[1000]=tail&mode=toString",
+                "mode[x]=one&mode[1000]=last&mode=toString",
+                "mode[1000]=tail&mode[x]=one&mode=more",
                 "mode[x][y][z][u][v][w]=permanent",
                 "mode[__proto__]=permanent",
             ] {
@@ -639,7 +646,7 @@ impl Entities<'_> {
                 ),
                 (
                     vec!["mode=permanent"; 21].join("&"),
-                    "[object Object]".into(),
+                    vec!["permanent"; 21].join(","),
                 ),
                 (
                     format!("mode=invalid&{}mode=permanent", "x=&".repeat(999)),
@@ -659,7 +666,6 @@ impl Entities<'_> {
             }
             for query in [
                 "mode[toString]=not-callable",
-                "mode[x]=one&mode=toString",
                 "mode[][toString]=not-callable",
             ] {
                 let reply = self.send(
