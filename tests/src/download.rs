@@ -231,15 +231,16 @@ pub fn expected_wire(base: &str) -> Vec<Value> {
     for path in [
         "/file/small",
         "/file/small",
+        "/redirect/3",
         "/redirect/2",
         "/redirect/1",
         "/redirect/0",
         "/status/201",
         "/status/404",
+        "/redirect/4",
         "/redirect/3",
         "/redirect/2",
         "/redirect/1",
-        "/redirect/0",
         "/loop",
     ] {
         add(path.into(), json!({}), "GET");

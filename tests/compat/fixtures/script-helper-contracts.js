@@ -276,6 +276,14 @@ globalThis.runHelperContracts = async function(check, host, operator, assert, eq
   await check('PC125-script-http-compressed-subscription-responses', async () => {
     const results = {};
     for (const mode of ['gzip','x-gzip','deflate','compress','x-compress','nested','status']) {
+      if (mode.endsWith('compress')) {
+        // compress is UNIX LZW, which the source no longer inflates.
+        const raw = await $substore.http.get({url:probeUpstream+'/host/compressed/'+mode,encoding:null});
+        const bytes = Array.from(new Uint8Array(raw.body));
+        assert(bytes[0] === 120 && Number(raw.headers['content-length']) === bytes.length && raw.headers['content-encoding'] === mode, 'compress stays raw: '+mode);
+        results[mode] = {bytes,status:raw.statusCode};
+        continue;
+      }
       const response = await $substore.http.get({url:probeUpstream+'/host/compressed/'+mode});
       assert(response.body === '订阅🙂\r\nsecond\n', 'decoded subscription text: '+mode);
       assert(response.statusCode === (mode === 'status' ? 503 : 200), 'status retained: '+mode);

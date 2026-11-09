@@ -98,7 +98,7 @@ fn decoded(
     }
     if encodings
         .iter()
-        .any(|value| !["", "gzip", "x-gzip", "deflate", "compress", "x-compress"].contains(value))
+        .any(|value| !["", "gzip", "x-gzip", "deflate"].contains(value))
     {
         return Ok(bytes);
     }
@@ -186,14 +186,14 @@ async fn open_response(
         {
             return Err("Headers Overflow Error".into());
         }
-        // Pinned Undici rejects the third followed response, including a final 200.
-        if followed == 3 {
-            return Err("max redirects".into());
-        }
         let status = response.status().as_u16();
         if [300, 301, 302, 303, 307, 308].contains(&status)
             && let Some(location) = response.headers().get(hyper::header::LOCATION)
         {
+            // Pinned Undici follows three redirects and rejects only a fourth one.
+            if followed == 3 {
+                return Err("max redirects".into());
+            }
             let next = url.join(location.to_str()?)?;
             history.push(url.clone());
             if history.contains(&next) {
@@ -218,7 +218,7 @@ async fn open_response(
         }
         return Ok(response);
     }
-    unreachable!("redirect loop returns at the third follow")
+    unreachable!("the response after the third redirect returns")
 }
 
 pub(crate) async fn request<'js>(

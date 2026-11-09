@@ -156,12 +156,12 @@
     const target = file('binary🙂.bin');
     equal(await downloadFile(url('/file/small'), target), target, 'returns input path');
     equal(Array.from(read('binary🙂.bin')), [0, 255, 128, 13, 10, 65], 'raw binary');
-    await downloadFile(url('/redirect/2'), target);
-    for (const path of ['/status/201', '/status/404', '/redirect/3', '/loop']) {
+    await downloadFile(url('/redirect/3'), target);
+    for (const path of ['/status/201', '/status/404', '/redirect/4', '/loop']) {
       await rejects(() => downloadFile(url(path), target), path.startsWith('/status/') ? 'Failed to download file from ' + url(path) : undefined);
       equal(Array.from(read('binary🙂.bin')), [0, 255, 128, 13, 10, 65], 'error retains existing file');
     }
-    return {bytes: [0, 255, 128, 13, 10, 65], redirects: 2, rejected: 4};
+    return {bytes: [0, 255, 128, 13, 10, 65], redirects: 3, rejected: 4};
   });
   await check('DL14-binary-stream-visible-before-finish-and-partial-on-error', async () => {
     const result = [];

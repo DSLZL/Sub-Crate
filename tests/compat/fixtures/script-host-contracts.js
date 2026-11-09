@@ -111,9 +111,9 @@
 
   const redirected = await $substore.http.get(probeUpstream + '/host/redirect/2');
   assert(redirected.body === value.text, 'two redirects allowed');
-  // Pinned Undici rejects the third follow even when that response is already 200.
-  await rejects(() => $substore.http.get(probeUpstream + '/host/redirect/3'), /redirect/i, 'third follow rejects final success');
-  await rejects(() => $substore.http.get(probeUpstream + '/host/redirect/4'), /redirect/i, 'long redirect chain rejects');
+  const limit = await $substore.http.get(probeUpstream + '/host/redirect/3');
+  assert(limit.body === value.text, 'three redirects allowed');
+  await rejects(() => $substore.http.get(probeUpstream + '/host/redirect/4'), /redirect/i, 'fourth redirect rejects');
   passed.push('SH10-redirect-limit');
 
   const calls = [];
